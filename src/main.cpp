@@ -25,6 +25,10 @@ std::mutex mtx;
 ThreadPool<std::function<bool()>> threadPool;
 Log lg;
 
+std::mutex mtx;
+ThreadPool<std::function<bool()>> threadPool;
+Log lg;
+
 int main(int argc, char **argv) {
     
     short int c; // optarg
@@ -38,7 +42,11 @@ int main(int argc, char **argv) {
 
     UserInput userInput;
     
-    if (argc == 1) { // gfastats with no arguments
+    bool isPipe = false; // to check if input is from pipe
+    
+    UserInput userInput;
+    
+    if (argc == 1) { // mytool with no arguments
             
         printf("teloscope [command]\n-h for additional help. Use -f to initiate the tool.\n");
         exit(0);

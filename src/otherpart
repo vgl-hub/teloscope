@@ -1,0 +1,48 @@
+#include <iostream>
+#include <string>
+#include <iostream>
+#include <vector>
+
+
+
+
+int main(){
+    std::string P = segment->getInSequence();
+	std::string S = "TTAGGG";
+    uint8_t sSize = S.size();
+    uint64_t pSize = P.size();
+    int step = 1;
+    int windowSize = 15;
+    int thresh = 1;
+    std::vector<bool> telo_location (pSize, false);
+    std::vector<uint64_t> aver;
+    std::vector<uint32_t> pos = {0};
+    std::vector<bool> tt (pSize, false);
+
+
+for (uint64_t i = 0; i < pSize; ++i){
+    if (aver[i] >= thresh)
+    tt[i] = true;
+}
+
+int mid = pSize/2;
+for (uint64_t i = 0; i < pSize; ++i){
+    if (tt[i] == true){
+        if (i > mid){
+        int endP = tt[i + windowSize - 1];
+        pos.push_back(endP);
+        }
+        if (i < mid){
+        int startP = tt[i + sSize - 1];
+        pos.push_back(startP);
+        }
+    }
+}
+
+pos.push_back(pSize);
+
+for (int values : tt){
+    std::cout << values << ", ";
+}
+
+}
