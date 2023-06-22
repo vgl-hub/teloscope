@@ -21,9 +21,6 @@ int hc_cutoff;
 int terminalOvlLen = 0;
 int maxThreads = 0;
 int cmd_flag;
-std::mutex mtx;
-ThreadPool<std::function<bool()>> threadPool;
-Log lg;
 
 std::mutex mtx;
 ThreadPool<std::function<bool()>> threadPool;
@@ -40,10 +37,6 @@ int main(int argc, char **argv) {
 
     bool isPipe = false; // to check if input is from pipe
 
-    UserInput userInput;
-    
-    bool isPipe = false; // to check if input is from pipe
-    
     UserInput userInput;
     
     if (argc == 1) { // mytool with no arguments
@@ -119,7 +112,7 @@ int main(int argc, char **argv) {
                 printf("teloscope [command]\n");
                 printf("\nOptions:\n");
                 printf("-v --version software version.\n");
-                printf("--cmd print $0 to stdout.\n");
+                printf("--use '-f' to initiate tool with fasta file.\n");
                 exit(0);
         }
         
