@@ -1,5 +1,5 @@
 [submodule "gfalibs"]
 	path = gfalibs
-	url = https://github.com/vgl-hub/gfalibs.git
+	url = https://github.com/vgl-hub/gfalibs
     ignore = untracked
     ignore = dirty
