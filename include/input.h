@@ -13,7 +13,7 @@ public:
     
     void load(UserInput userInput);
     
-    void read(InSequences& inSequence);
+    void read(InSequences &inSequence);
     
 };
 

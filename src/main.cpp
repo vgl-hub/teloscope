@@ -142,6 +142,8 @@ int main(int argc, char **argv) {
     lg.verbose("Sequence object generated");
     in.read(inSequences); // read input content to inSequences container
 
+    threadPool.join();
+
     exit(EXIT_SUCCESS);
     
 }

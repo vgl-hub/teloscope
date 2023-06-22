@@ -8,6 +8,8 @@
 #include "bed.h"
 #include "struct.h"
 #include "functions.h"
+#include "stream-obj.h"
+#include "fastx.h"
 
 #include "gfa-lines.h"
 #include "gfa.h"
@@ -21,30 +23,11 @@ void Input::load(UserInput userInput) {
     
 }
 
-void Input::read(InSequences& inSequences) {
+void Input::read(InSequences &inSequence) {
 
-    ////actually load the sequence you just read
+    loadSequences(userInput, &inSequence, 'f', 0); // load from FASTA/FASTQ to templated object
 
-    std::vector<InSegment*>* segments = inSequences.getInSegments();
-    
-    for (InSegment* segment : *segments) {
-        
-        //threadPool.queueJob([=]{ return
-        
-        findTelomeres(segment, userInput);
-            
-        //});
-        
-        std::unique_lock<std::mutex> lck(mtx);
-        for (auto it = logs.begin(); it != logs.end(); it++) {
-         
-            it->print();
-            logs.erase(it--);
-            
-        }
-        
-    }
-    
     jobWait(threadPool);
+
 
 }
