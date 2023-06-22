@@ -5,4 +5,4 @@ This tool uses a sliding window to detect the occurences of a given string in a 
 
 **Installation**
 
-Either download one of the releases or 'git clone https://github.com/vgl-hub/gfastats.git --recursive' and 'make -j' in 'gfastats' folder.
+Either download one of the releases or 'git clone https://github.com/MacGooder/teloscope.git --recursive' and 'make -j' in 'gfastats' folder.
