@@ -60,7 +60,7 @@ void Input::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vec
                 
             if (component->orientation == '+') {
 
-                findTelomeres(sequence, userInput);
+                findTelomeres(path->getHeader(), sequence, userInput);
 
 
             

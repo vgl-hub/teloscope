@@ -50,13 +50,13 @@ std::vector<uint64_t> maxSum(std::vector<bool> seq, uint32_t windowSize, int ste
     return aver;
 }
 
-void findTelomeres(std::string &P, UserInput userInput){
+void findTelomeres(std::string pHeader, std::string &P, UserInput userInput){
 
 	std::string S = "TTAGGG";
     uint8_t sSize = S.size();
     uint64_t pSize = P.size();
     int step = 1;
-    int windowSize = 150;
+    int windowSize = 500;
     ///int thresh = 1;
     std::vector<bool> telo_location (pSize, false);
     std::vector<uint64_t> aver;
@@ -75,13 +75,16 @@ void findTelomeres(std::string &P, UserInput userInput){
 
     aver = maxSum(telo_location, windowSize, step);
 
-    for (uint64_t value : aver) {
-        std::cout << value << std::endl;
+    for (uint64_t value : pos) {
+        std::cout << pHeader << "  ";
+        std::cout << value << "  " << value + windowSize - 1 << "  ";
+        std::cout << aver[value] << std::endl;
     }
 
     for (uint64_t value : pos) {
-        std::cout << value <<" - "<< value + sSize - 1 << "  ";
-        std::cout << aver[value] << "  " << sSize << std::endl;
+        std::cout << pHeader << "  ";
+        std::cout << value <<"  "<< value + sSize - 1 << "  ";
+        std::cout << std::endl;
     }
 
   
