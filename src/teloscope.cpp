@@ -56,7 +56,7 @@ void findTelomeres(std::string &P, UserInput userInput){
     uint8_t sSize = S.size();
     uint64_t pSize = P.size();
     int step = 1;
-    int windowSize = 15;
+    int windowSize = 150;
     ///int thresh = 1;
     std::vector<bool> telo_location (pSize, false);
     std::vector<uint64_t> aver;
@@ -80,7 +80,8 @@ void findTelomeres(std::string &P, UserInput userInput){
     }
 
     for (uint64_t value : pos) {
-        std::cout << value <<" - "<< value + sSize - 1 << std::endl;
+        std::cout << value <<" - "<< value + sSize - 1 << "  ";
+        std::cout << aver[value] << "  " << sSize << std::endl;
     }
 
   
