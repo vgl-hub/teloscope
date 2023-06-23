@@ -14,6 +14,8 @@ public:
     void load(UserInput userInput);
     
     void read(InSequences &inSequence);
+
+    void walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
     
 };
 

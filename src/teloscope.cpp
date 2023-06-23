@@ -50,11 +50,8 @@ std::vector<uint64_t> maxSum(std::vector<bool> seq, uint32_t windowSize, int ste
     return aver;
 }
 
-void findTelomeres(InSegment* segment, UserInput userInput){
+void findTelomeres(std::string &P, UserInput userInput){
 
-    if (userInput.inSequence.empty()) {return;}
-
-    std::string P = segment->getInSequence();
 	std::string S = "TTAGGG";
     uint8_t sSize = S.size();
     uint64_t pSize = P.size();
