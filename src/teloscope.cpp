@@ -75,11 +75,11 @@ void findTelomeres(std::string pHeader, std::string &P, UserInput userInput){
 
     aver = maxSum(telo_location, windowSize, step);
 
-    for (uint64_t value : pos) {
-        std::cout << pHeader << "  ";
-        std::cout << value << "  " << value + windowSize - 1 << "  ";
-        std::cout << aver[value] << std::endl;
-    }
+    // for (uint64_t value : pos) {
+    //     std::cout << pHeader << "  ";
+    //     std::cout << value << "  " << value + windowSize - 1 << "  ";
+    //     std::cout << aver[value] << std::endl;
+    // }
 
     for (uint64_t value : pos) {
         std::cout << pHeader << "  ";
