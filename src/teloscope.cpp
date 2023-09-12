@@ -1,3 +1,13 @@
+// Tasks: jack
+// replace P for genome or similar 
+// replace S for pattern or similar TELOMERE_SEQUENCE
+// replace aver for average
+// replace pos for positions
+// S has to be dinamically defined (from common k-mers) or from array
+// UserInput userInput not used!!!!
+// pHeader for p.header
+// L67: int windowSize = 500; shouldn't be hardcoded but an argument of teloscope
+
 #include <istream>
 #include <fstream>
 #include <sstream>
@@ -53,7 +63,7 @@ std::vector<uint64_t> maxSum(std::vector<bool> seq, uint32_t windowSize, int ste
 void findTelomeres(std::string pHeader, std::string &P, UserInput userInput){
 
 	std::string S = "TTAGGG";
-    uint8_t sSize = S.size();
+    uint16_t sSize = S.size();
     uint64_t pSize = P.size();
     int step = 1;
     int windowSize = 500;
@@ -87,7 +97,14 @@ void findTelomeres(std::string pHeader, std::string &P, UserInput userInput){
         std::cout << std::endl;
     }
 
-  
+    // jack: BED file
+    std::ofstream bedFile("telomere_locations.bed"); // no hardcode!!!! use {genome}.fa > {genome}.bed
+
+    for (uint64_t value : pos) {
+        bedFile << pHeader << "\t" << value << "\t" << value + sSize << std::endl;
+    }
+
+    bedFile.close();
 }
 
 

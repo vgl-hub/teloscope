@@ -7,6 +7,7 @@
 #include <string>
 #include <iostream>
 #include <unordered_map>
+#include <filesystem> // jack
 
 #include <getopt.h>
 

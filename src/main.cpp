@@ -3,7 +3,7 @@
 std::string version = "0.0.1";
 
 std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now(); // immediately start the clock when the program is run
-short int tabular_flag;
+short int tabular_flag; // jack: why don't we group this by struct (e.g. input, output, operations)?
 int verbose_flag;
 int seqReport_flag;
 int outSequence_flag;
@@ -51,7 +51,7 @@ int main(int argc, char **argv) {
         {"verbose", no_argument, &verbose_flag, 1},
         {"cmd", no_argument, &cmd_flag, 1},
         {"version", no_argument, 0, 'v'},
-        {"help", no_argument, 0, 'h'},
+        {"help", no_argument, 0, 'h'}, // giulio: expand the arguments, tax ID 
         
         {0, 0, 0, 0}
     };
@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
         
         int option_index = 0;
         
-        c = getopt_long(argc, argv, "-:f:vh",
+        c = getopt_long(argc, argv, "-:f:vh", // giulio: add short letter
                         long_options, &option_index);
         
         if (c == -1) { // exit the loop if run out of options
