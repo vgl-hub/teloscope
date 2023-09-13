@@ -22,6 +22,7 @@
 
 #include "gfa-lines.h"
 #include "gfa.h"
+#include "input-gfa.h"
 
 #include "teloscope.h"
 #include "input.h"
@@ -33,10 +34,8 @@ void Input::load(UserInput userInput) {
 }
 
 void Input::read(InSequences &inSequences) {
-
-    loadSequences(userInput, &inSequences, 'f', 0); // load from FASTA/FASTQ to templated object
-
-    jobWait(threadPool);
+    
+    loadGenome(userInput, inSequences); // load from FA/FQ/GFA to templated object
 
     std::vector<InPath> inPaths = inSequences.getInPaths();
     std::vector<InSegment*> *inSegments = inSequences.getInSegments();
@@ -94,36 +93,36 @@ void Input::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vec
 }
 
 // jack attempt: simpler range-based for loop, ./-> object/pointer
-void Input::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps) {
-    
-    unsigned int cUId = 0, gapLen = 0;
-    std::vector<PathComponent> pathComponents = path->getComponents(); // auto? 
-    uint64_t absPos = 0;
-    
-    for (const auto& component : pathComponents) { // giulio: it doesnt knonw where you are in the vector
-        cUId = component.id; // jack: not sure if this will work
-    
-        if (component.type == SEGMENT) {
-            
-            auto inSegment = std::find_if(inSegments.begin(), inSegments.end(), [cUId](InSegment* obj) { // giulio: lambda: [ciud] space of the function
-                return obj->getuId() == cUId; // giulio: looking at the obj in the genome
-            });
-
-            std::string sequence = (*inSegment)->getInSequence(component.start, component.end);
-            absPos += sequence.size();
-
-            if (component.orientation == '+') {
-                findTelomeres(path->getHeader(), sequence, userInput); // giulio: what is your purpose?
-            } else {} // giulio: gfa support (eventually!)
-            
-        } else if (component.type == GAP) {
-            auto inGap = std::find_if(inGaps.begin(), inGaps.end(), [cUId](InGap& obj) {
-                return obj.getuId() == cUId;
-            });
-            
-            gapLen += inGap->getDist(component.start - component.end);
-            absPos += gapLen;
-        } else {}
-            // need to handle edges, cigars etc //  giulio: SEGMENT, GAP, EDGE (not a priority right now)    
-    }
-}
+//void Input::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps) {
+//
+//    unsigned int cUId = 0, gapLen = 0;
+//    std::vector<PathComponent> pathComponents = path->getComponents(); // auto?
+//    uint64_t absPos = 0;
+//
+//    for (const auto& component : pathComponents) { // giulio: it doesnt knonw where you are in the vector
+//        cUId = component.id; // jack: not sure if this will work
+//
+//        if (component.type == SEGMENT) {
+//
+//            auto inSegment = std::find_if(inSegments.begin(), inSegments.end(), [cUId](InSegment* obj) { // giulio: lambda: [ciud] space of the function
+//                return obj->getuId() == cUId; // giulio: looking at the obj in the genome
+//            });
+//
+//            std::string sequence = (*inSegment)->getInSequence(component.start, component.end);
+//            absPos += sequence.size();
+//
+//            if (component.orientation == '+') {
+//                findTelomeres(path->getHeader(), sequence, userInput); // giulio: what is your purpose?
+//            } else {} // giulio: gfa support (eventually!)
+//
+//        } else if (component.type == GAP) {
+//            auto inGap = std::find_if(inGaps.begin(), inGaps.end(), [cUId](InGap& obj) {
+//                return obj.getuId() == cUId;
+//            });
+//
+//            gapLen += inGap->getDist(component.start - component.end);
+//            absPos += gapLen;
+//        } else {}
+//            // need to handle edges, cigars etc //  giulio: SEGMENT, GAP, EDGE (not a priority right now)
+//    }
+//}
