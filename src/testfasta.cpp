@@ -62,30 +62,39 @@ void readCSV(const std::string& fileName, int& chrSeqLength, char& mode1, char& 
 
 
 std::string generateTelomereSequence(const TelomereInfo& info, char mode, int repeats) {
-    std::string sequence; // make it work, then add things later
+    std::string sequence;
+    std::vector<std::string> blocks;
 
     if (mode == 'c') {
-    for (int i = 0; i < repeats; ++i) {
-        sequence += info.pattern;
+        for (int i = 0; i < repeats; ++i) {
+            sequence += info.pattern;
         }
     }
     else if (mode == 'r') {
-        std::srand(std::time(0));
+        std::srand(static_cast<unsigned int>(std::time(nullptr)));
+        
         for (int i = 0; i < repeats; ++i) {
-            sequence += info.pattern[rand() % info.pattern.length()]; // check this out!! be efficient
+            blocks.push_back(info.pattern);
+        }
+        
+        std::random_shuffle(blocks.begin(), blocks.end());
+        
+        for (const auto& block : blocks) {
+            sequence += block;
         }
     }
     else if (mode == 'i') {
-        std::string combined;
-        for (int i = 0; i < repeats; ++i) {
-            combined += info.pattern;
-        }
-        
-        for (size_t i = 0; i < combined.length(); ++i) {
-            sequence += combined[i % combined.length()];
+        std::vector<std::string> intercalate_blocks;
+        int remaining_repeats = repeats;
+
+        while (remaining_repeats > 0) {
+            for (const auto& info : telomeres) {
+                if (remaining_repeats == 0) break;
+                sequence += info.pattern;
+                remaining_repeats--;
+            }
         }
     }
-    
     return sequence;
 }
 
