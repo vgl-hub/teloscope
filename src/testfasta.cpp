@@ -144,7 +144,7 @@ int main() {
     std::cout << "Debug: tel1 + mismatches = " << tel1 << std::endl;
     std::cout << "Debug: tel2 + mismatches = " << tel2 << std::endl;
     std::cout << "Debug: randomSeq = " << randomSeq << std::endl;
-    std::cout << "Debug: finalSeq = " << finalSeq << std::endl;
+    std::cout << "Debug: finalSeq = " << finalSeq << std::endl; //add outputs in log?
 
     std::filesystem::path logPath = std::filesystem::current_path() / ".." / "testFiles" / "test.log";
     std::ofstream logFile(logPath.string(), std::ios_base::app);
