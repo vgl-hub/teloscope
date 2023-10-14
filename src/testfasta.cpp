@@ -1,161 +1,161 @@
-#include <iostream>
+#include <boost/program_options.hpp>
 #include <fstream>
-#include <vector>
-#include <string>
+#include <iostream>
 #include <sstream>
-#include <cstdlib>
-#include <ctime>
-#include <algorithm>
-#include <filesystem>
+#include <string>
+#include <vector>
 #include <chrono>
+#include <random>
+#include <thread>
+#include <cmath>
+#include <queue>
+#include "../gfalibs/include/log.h"
+#include "../gfalibs/include/threadpool.h"
 
 struct TelomereInfo {
     std::string pattern;
-    int repeats1, repeats2;
+    int pRepeats, qRepeats;
 };
 
-std::string generateRandomSequence(int length) { //, unsigned seed)
-    std::string bases = "ATCG";
+Log lg;
+
+std::string getRandomSequence(int length);
+void readCSV(const std::string& fileName, std::vector<TelomereInfo>& telomeres);
+std::string generateAndMutateTelomere(const std::vector<TelomereInfo>& telomeres, char mode, bool isPTelomere, double substitutionRate);
+
+
+int main(int argc, char **argv) {
+    auto start = std::chrono::high_resolution_clock::now();
+    
+    ThreadPool<std::function<void()>> pool;  // type??
+    pool.init(std::thread::hardware_concurrency());  // Initialize the thread pool
+
+    namespace po = boost::program_options;
+    po::options_description desc("Allowed options");
+    desc.add_options()
+        ("help,h", "print help")
+        ("input,i", po::value<std::string>()->required(), "Input CSV file")
+        ("length,l", po::value<int>()->required(), "Chromosome length")
+        ("mode,m", po::value<std::string>()->default_value("concatenate"), "Mode ('concatenate' or 'random')")
+        ("substitution,s", po::value<double>()->default_value(0.01), "Substitution rate")
+        ("output,o", po::value<std::string>(), "Output FASTA file");
+    
+    po::variables_map vm;
+    po::store(po::parse_command_line(argc, argv, desc), vm);
+    po::notify(vm);
+
+    std::string inputFileName = vm["input"].as<std::string>();
+    int chromosomeLength = vm["length"].as<int>();
+    std::string mode = vm["mode"].as<std::string>();
+    double substitutionRate = vm["substitution"].as<double>();
+    std::string outputFileName = vm.count("output") ? vm["output"].as<std::string>() : inputFileName + ".fasta";
+
+    std::vector<TelomereInfo> telomeres;
+    readCSV(inputFileName, telomeres);
+
+    std::string pTelomere, qTelomere;
+
+    // pool.queueJob([&] {
+    //     pTelomere = generateAndMutateTelomere(telomeres, mode[0], true, substitutionRate);
+    // });
+
+    // pool.queueJob([&] {
+    //     qTelomere = generateAndMutateTelomere(telomeres, mode[0], false, substitutionRate);
+    // });
+
+    // jobWait(pool);
+
+    int nonTelomereLength = chromosomeLength - pTelomere.length() - qTelomere.length();
+    std::string nonTelomere = getRandomSequence(nonTelomereLength);
+    nonTelomere = addSubstitutions(nonTelomere, substitutionRate);
+
+    std::string finalSeq = pTelomere + nonTelomere + qTelomere;
+
+    std::ofstream fastaFile("../testFiles/" + outputFileName);
+    fastaFile << "> Length: " << chromosomeLength << ", mode: " << mode << ", substitution rate: " << substitutionRate << "\n";
+    for (size_t i = 0; i < finalSeq.length(); i += 80) {
+        fastaFile << finalSeq.substr(i, 80) << "\n";
+    }
+    fastaFile.close();
+
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end - start;
+
+    std::ofstream logFile("../testFiles/test.log", std::ios_base::app);
+    logFile << elapsed_seconds.count() << "\t" << chromosomeLength << "\t"
+            << (pTelomere.length() + qTelomere.length()) << "\t"
+            << ((double)chromosomeLength / elapsed_seconds.count()) << "bp/ms"
+            << std::endl;
+    logFile.close();
+
+    return 0;
+}
+
+std::string getRandomSequence(int length) {
+    static std::mt19937 gen(std::random_device{}());
+    static std::uniform_int_distribution<> dist(0, 3);
+    const std::string bases = "ATCG";
     std::string sequence;
-    std::srand(std::time(nullptr)); //std::srand(seed);
     for (int i = 0; i < length; ++i) {
-        sequence += bases[std::rand() % 4];
+        sequence += bases[dist(gen)];
     }
     return sequence;
 }
 
-std::string introduceMismatches(const std::string& sequence, int mismatches) { //, unsigned seed)
-    std::string mutatedSequence = sequence;
-    std::srand(std::time(nullptr)); //std::srand(seed);
-    for (int i = 0; i < mismatches; ++i) {
-        int position = std::rand() % mutatedSequence.size();
-        char original = mutatedSequence[position];
-        char replacement;
-        do {
-            int randomNucleotide = std::rand() % 4;
-            replacement = "ATCG"[randomNucleotide];
-        } while (replacement == original);
-        mutatedSequence[position] = replacement;
-    }
-    return mutatedSequence;
-}
 
-void readCSV(const std::string& fileName, int& chrSeqLength, char& mode1, char& mode2, double& mismatchRate, std::vector<TelomereInfo>& telomeres) {
-    std::ifstream file(fileName); // functions.cpp gfalibs 366 > loop, store in a vector, change type later
+void readCSV(const std::string& fileName, std::vector<TelomereInfo>& telomeres) {
+    std::ifstream file(fileName);
+    if (!file) {
+        throw std::runtime_error("Failed to open file: " + fileName);
+    }
     std::string line;
-    std::getline(file, line);
-    std::stringstream ss(line);
-    std::string temp;
-    std::getline(ss, temp, ','); chrSeqLength = std::stoi(temp);
-    std::getline(ss, temp, ','); mode1 = temp[0];
-    std::getline(ss, temp, ','); mode2 = temp[0];
-    std::getline(ss, temp, ','); mismatchRate = std::stod(temp);
-    
+    std::getline(file, line);  // Skip the header
     while (std::getline(file, line)) {
         std::stringstream ss(line);
         TelomereInfo info;
+        std::string temp;
         std::getline(ss, info.pattern, ',');
-        std::getline(ss, temp, ','); info.repeats1 = std::stoi(temp);
-        std::getline(ss, temp, ','); info.repeats2 = std::stoi(temp);
+        std::getline(ss, temp, ','); info.pRepeats = std::stoi(temp);
+        std::getline(ss, temp, ','); info.qRepeats = std::stoi(temp);
         telomeres.push_back(info);
     }
 }
 
-
-std::string generateTelomereSequence(const TelomereInfo& info, char mode, int repeats) {
+std::string generateAndMutateTelomere(const std::vector<TelomereInfo>& telomeres, char mode, bool isPTelomere, double substitutionRate) {
     std::string sequence;
     std::vector<std::string> blocks;
 
-    if (mode == 'c') {
-        for (int i = 0; i < repeats; ++i) {
-            sequence += info.pattern;
-        }
-    }
-    else if (mode == 'r') {
-        std::srand(static_cast<unsigned int>(std::time(nullptr)));
-        
+    // Generate telomere
+    for (const auto& info : telomeres) {
+        int repeats = isPTelomere ? info.pRepeats : info.qRepeats;
         for (int i = 0; i < repeats; ++i) {
             blocks.push_back(info.pattern);
         }
-        
-        std::random_shuffle(blocks.begin(), blocks.end());
-        
-        for (const auto& block : blocks) {
-            sequence += block;
-        }
     }
+
+    if (mode == 'r') {
+        std::shuffle(blocks.begin(), blocks.end(), std::mt19937{std::random_device{}()});
+    }
+
+    for (const auto& block : blocks) {
+        sequence += block;
+    }
+
+    // Add substitutions
+    static std::mt19937 gen(std::random_device{}());
+    int substitutions = std::round(sequence.length() * substitutionRate);
+    static std::uniform_int_distribution<> posDist(0, sequence.length() - 1);
+    static std::uniform_int_distribution<> baseDist(0, 3);
+    const std::string bases = "ATCG";
+
+    for (int i = 0; i < substitutions; ++i) {
+        int position = posDist(gen);
+        char replacement;
+        do {
+            replacement = bases[baseDist(gen)];
+        } while (replacement == sequence[position]);
+        sequence[position] = replacement;
+    }
+
     return sequence;
 }
-
-void generateFasta(const std::string& fileName, const std::string& sequence, const std::string& headerInfo) {
-    std::ofstream file(fileName); // get name, extracting from format 263 functions.cpp
-    file << ">" << headerInfo << std::endl;
-    file << sequence << std::endl;
-}
-
-int main() {
-    //std::srand(static_cast<unsigned int>(std::time(nullptr)));
-    // unsigned seed = std::time(nullptr);
-    auto start = std::chrono::high_resolution_clock::now();
-
-
-    int chrSeqLength;
-    char mode1, mode2;
-    double mismatchRate;
-    std::vector<TelomereInfo> telomeres;
-    
-    readCSV("testfasta.csv", chrSeqLength, mode1, mode2, mismatchRate, telomeres);
-
-    int tel1Length = 0, tel2Length = 0;
-    std::string tel1, tel2;
-    
-    for (const auto& info : telomeres) {
-        std::cout << "Debug: Processing telomere pattern = " << info.pattern << std::endl;
-        tel1 += generateTelomereSequence(info, mode1, info.repeats1);
-        tel2 += generateTelomereSequence(info, mode2, info.repeats2);
-        tel1Length += info.pattern.length() * info.repeats1;
-        tel2Length += info.pattern.length() * info.repeats2;
-    }
-    
-    int randomSeqLength = chrSeqLength - tel1Length - tel2Length;
-    
-    if (randomSeqLength <= 0) {
-        std::cerr << "Error: Non-telomeric sequence length must be positive.";
-        return 1;
-    }
-
-    int mismatches1 = static_cast<int>(tel1Length * mismatchRate);
-    int mismatches2 = static_cast<int>(tel2Length * mismatchRate);
-    tel1 = introduceMismatches(tel1, mismatches1); //, seed);
-    tel2 = introduceMismatches(tel2, mismatches2); //, seed);
-
-    std::string randomSeq = generateRandomSequence(randomSeqLength); //, seed);
-    std::string finalSeq = tel1 + randomSeq + tel2;
-
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = end - start;
-
-    std::cout << "Debug: Number of telomere patterns = " << telomeres.size() << std::endl;
-    std::cout << "Debug: tel1 = " << tel1 << std::endl;
-    std::cout << "Debug: tel2 = " << tel2 << std::endl;
-    std::cout << "Debug: tel1Length = " << tel1Length << std::endl;
-    std::cout << "Debug: tel2Length = " << tel2Length << std::endl;
-    std::cout << "Debug: randomSeqLength = " << randomSeqLength << std::endl;
-    std::cout << "Debug: tel1 + mismatches = " << tel1 << std::endl;
-    std::cout << "Debug: tel2 + mismatches = " << tel2 << std::endl;
-    std::cout << "Debug: randomSeq = " << randomSeq << std::endl;
-    std::cout << "Debug: finalSeq = " << finalSeq << std::endl; //add outputs in log?
-
-    std::filesystem::path logPath = std::filesystem::current_path() / ".." / "testFiles" / "test.log";
-    std::ofstream logFile(logPath.string(), std::ios_base::app);
-    logFile << "Chromosome Length: " << chrSeqLength << ", Time Taken: " << elapsed.count() << "s\n";
-
-    std::filesystem::path csvPath("testfasta.csv");
-    std::string fastaFileName = csvPath.stem().string() + ".fasta";
-    std::filesystem::path fastaPath = std::filesystem::current_path() / ".." / "testFiles" / fastaFileName;
-
-    generateFasta(fastaPath.string(), finalSeq, "Header Information");
-
-    return 0;
-}
-// add timestamps, large files
