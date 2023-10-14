@@ -1,9 +1,22 @@
 #ifndef INPUT_H
 #define INPUT_H
 
+// Add poly+inh of UserInputTeloscope
+
+struct UserInputTeloscope : UserInput {
+
+    std::string telomerePattern = "TTAGGG";
+    int windowSize = 500;  
+    uint8_t kmerLen = 21;
+    int step = 1;    
+    double maxMem = 0;
+    std::string prefix = ".", outFile = "";
+
+};
+
 class Input {
     
-    UserInput userInput;
+    UserInputTeloscope userInput;
     
     std::shared_ptr<std::istream> stream;
     
@@ -11,7 +24,7 @@ public:
 
     std::vector<Log> logs;
     
-    void load(UserInput userInput);
+    void load(UserInputTeloscope userInput);
     
     void read(InSequences &inSequence);
 

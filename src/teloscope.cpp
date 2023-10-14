@@ -1,13 +1,3 @@
-// Tasks: jack
-// replace P for genome or similar 
-// replace S for pattern or similar TELOMERE_SEQUENCE
-// replace aver for average
-// replace pos for positions
-// S has to be dinamically defined (from common k-mers) or from array
-// UserInput userInput not used!!!!
-// pHeader for p.header
-// L67: int windowSize = 500; shouldn't be hardcoded but an argument of teloscope
-
 #include <istream>
 #include <fstream>
 #include <sstream>
@@ -34,6 +24,8 @@
 
 #include "teloscope.h"
 
+BedCoordinates bedCoords;
+
 std::vector<uint64_t> maxSum(std::vector<bool> seq, uint32_t windowSize, int step){
     std::vector<uint64_t> aver;
     uint64_t pSize = seq.size();
@@ -43,7 +35,7 @@ std::vector<uint64_t> maxSum(std::vector<bool> seq, uint32_t windowSize, int ste
         return aver;
     }
 
-    uint32_t max_sum = 0;
+    uint32_t max_sum = 0; // check this
     for (uint32_t i = 0; i < windowSize; ++i){
         if (seq[i])
             max_sum += 1;
@@ -52,31 +44,28 @@ std::vector<uint64_t> maxSum(std::vector<bool> seq, uint32_t windowSize, int ste
     aver.push_back(window_sum);
 
     for (uint64_t i = windowSize; i < pSize; i += step){
-        window_sum += seq[i] - seq[i - windowSize];
+        window_sum += seq[i] - seq[i - windowSize]; // rolling average -> do this 
         max_sum = std::max(max_sum, window_sum);
         aver.push_back(window_sum);
     }
     
-    return aver;
+    return aver; // float? change for count
 }
 
 void findTelomeres(std::string pHeader, std::string &P, UserInput userInput){
 
-	std::string S = "TTAGGG";
+    std::string S = userInput.telomerePattern;
     uint16_t sSize = S.size();
     uint64_t pSize = P.size();
-    int step = 1;
-    int windowSize = 500;
-    ///int thresh = 1;
-    std::vector<bool> telo_location (pSize, false);
+    int windowSize = userInput.windowSize; // change int for.. less variables
+    int step = userInput.step; 
+        std::vector<bool> telo_location (pSize, false);
     std::vector<uint64_t> aver;
     std::vector<uint32_t> pos;
-    ///std::vector<bool> tt (pSize, false);
-
-    
+        
 
 	for (uint64_t i = 0;i < pSize - sSize + 1; ++i){
-		if (S == P.substr(i,6)) {
+		if (S == P.substr(i, sSize)) {
             telo_location[i] = true;
             pos.push_back(i);
             i = i + sSize - 1;
@@ -91,21 +80,22 @@ void findTelomeres(std::string pHeader, std::string &P, UserInput userInput){
     //     std::cout << aver[value] << std::endl;
     // }
 
-    for (uint64_t value : pos) {
-        std::cout << pHeader << "  ";
-        std::cout << value <<"  "<< value + sSize - 1 << "  ";
-        std::cout << std::endl;
-    }
-
-    // jack: BED file
-    std::ofstream bedFile("telomere_locations.bed"); // no hardcode!!!! use {genome}.fa > {genome}.bed
+    // for (uint64_t value : pos) {
+    //     std::cout << pHeader << "  ";
+    //     std::cout << value <<"  "<< value + sSize - 1 << "  ";
+    //     std::cout << std::endl;
+    // }
 
     for (uint64_t value : pos) {
-        bedFile << pHeader << "\t" << value << "\t" << value + sSize << std::endl;
+        bedCoords.pushCoordinates(pHeader, value, value + sSize - 1);
     }
 
+    std::string bedFileName = "./output/" + userInput.nameInput + "_telomere_locations.bed";
+
+    std::ofstream bedFile(bedFileName);
+    for (unsigned int i = 0; i < bedCoords.size(); ++i) {
+        bedFile << bedCoords.getSeqHeader(i) << "\t" << bedCoords.getBegin(i) << "\t" << bedCoords.getEnd(i) << std::endl; // replace to /n 
+    }
     bedFile.close();
+
 }
-
-
-

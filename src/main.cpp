@@ -37,7 +37,7 @@ int main(int argc, char **argv) {
 
     bool isPipe = false; // to check if input is from pipe
 
-    UserInput userInput;
+    UserInput userInput; //UserInputTeloscope
     
     if (argc == 1) { // mytool with no arguments
             
