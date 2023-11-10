@@ -27,7 +27,7 @@
 #include "teloscope.h"
 #include "input.h"
 
-void Input::load(UserInput userInput) {
+void Input::load(UserInputTeloscope userInput) {
     
     this->userInput = userInput;
     
