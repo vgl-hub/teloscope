@@ -5,7 +5,7 @@
 
 struct UserInputTeloscope : UserInput {
 
-    std::string telomerePattern = "TTAGGG";
+    std::vector<std::string> patterns = {"TTAGGG", "CCCCT"};
     int windowSize = 500;  
     uint8_t kmerLen = 21;
     int step = 1;    
