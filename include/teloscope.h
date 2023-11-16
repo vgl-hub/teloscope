@@ -1,4 +1,7 @@
+#include "input.h"
 
-std::vector<uint64_t> maxSum(std::vector<bool> seq, uint32_t windowSize, int step);
+std::vector<uint64_t> getPatternFrequency(const std::vector<bool>& patternMatches, uint32_t windowSize, uint32_t step);
 
-void findTelomeres(std::string pHeader, std::string &P, UserInput userInput);
+double getShannonEntropy(const std::string& window);
+
+void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput)

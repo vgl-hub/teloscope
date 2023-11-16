@@ -14,7 +14,8 @@
 #include "global.h"
 #include "uid-generator.h"
 
-#include "bed.h"
+// #include "bed.h"
+#include "gfalibs/include/bed.h"
 #include "struct.h"
 #include "functions.h"
 
@@ -59,7 +60,7 @@ std::vector<uint64_t> getPatternFrequency(const std::vector<bool>& patternMatche
 }
 
 
-double getShannonEntropy(const std::string& window) {
+double getShannonEntropy(const std::string& window) { // float, less memory?
     std::array<int, 128> freq = {0};
     for (char nucleotide : window) {
         freq[static_cast<unsigned char>(nucleotide)]++;
@@ -101,7 +102,7 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     for (uint64_t i = 0; i <= seqLength; ++i) {
         for (const auto& pattern : userInput.patterns) {
             if (i + pattern.size() <= seqLength && pattern == sequence.substr(i, pattern.size())) {
-                patternMatchesMap[pattern][i] = true;
+                patternMatchesMap[pattern][i] = true; // giulio exit loop when true!!!
             }
         }
     }
