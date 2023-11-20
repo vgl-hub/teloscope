@@ -77,15 +77,6 @@ double getShannonEntropy(const std::string& window) { // float, less memory?
 
 void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput) {
 
-    //test
-    std::string dummySequence = "TTAGGGCCCCTTTAGGGTTAGGGCCCCTTTAGGGTTAGGGCCCCTTTAGGG"; 
-    header = "test"; 
-    sequence = dummySequence; 
-    userInput.patterns = {"TTAGGG", "CCCCT"}; 
-    userInput.windowSize = 10; 
-    userInput.step = 5;
-
-
     uint64_t seqLength = sequence.size();
     uint32_t windowSize = static_cast<uint32_t>(userInput.windowSize);
     uint32_t step = static_cast<uint32_t>(userInput.step);
@@ -118,12 +109,12 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     // Calculate and print pattern fractions
     for (const auto& pattern : userInput.patterns) {
         std::vector<uint64_t> patternFreq = getPatternFrequency(patternMatchesMap[pattern], windowSize, step);
-        std::cout << "Pattern Frequency Fraction for \"" << pattern << "\": ";
+        std::cout << "Pattern Frequency Fraction for \"" << pattern << "\": " << std::endl;
 
         for (uint64_t i = 0; i < patternFreq.size(); ++i) {
             double patternFraction = static_cast<double>(patternFreq[i] * pattern.size()) / windowSize;
-            double noneFraction = 1.0 - static_cast<double>(totalPatternRange[i]) / windowSize;
-            std::cout << "Window " << i << ": Pattern = " << patternFraction << ", None = " << noneFraction << " | ";
+            double noneFraction = std::max(1.0 - static_cast<double>(totalPatternRange[i]) / windowSize, 0.0); // Ensure non-negative
+            std::cout << "Window " << i << ": Pattern = " << patternFraction << ", None = " << noneFraction << std::endl;
         }
         std::cout << std::endl;
     }
@@ -139,14 +130,38 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         }
 
         // Get concatenated BED file for pattern matches
-        std::string bedFileName = "./output/" + header + "_all_patterns_matches.bed";
+        std::string bedFileName = "/mnt/d/research/vgl/teloscope/output/output/" + header + "_all_patterns_matches.bed";
         std::ofstream bedFile(bedFileName, std::ios::app); // Append mode
 
-        for (uint64_t i = 0; i < patternMatchesMap[pattern].size(); ++i) {
-            if (patternMatchesMap[pattern][i]) {
-                bedFile << header << "\t" << i << "\t" << i + pattern.size() << "\t" << pattern << std::endl;
+        if (!bedFile.is_open()) {
+            std::cerr << "Failed to open BED file: " << bedFileName << std::endl;
+            return;
+        }
+
+        for (const auto& pattern : userInput.patterns) {
+            std::vector<uint64_t> patternFreq = getPatternFrequency(patternMatchesMap[pattern], windowSize, step);
+
+            for (uint64_t i = 0; i < patternMatchesMap[pattern].size(); ++i) {
+                if (patternMatchesMap[pattern][i]) {
+                    bedFile << header << "\t" << i << "\t" << (i + pattern.size()) << "\t" << pattern << std::endl;
+                }
             }
         }
+
         bedFile.close();
     }
+}
+
+int main() {
+    // test
+    std::string header = "test";
+    std::string sequence = "TTAGGGCCCCTTTAGGGTTAGGGCCCCTTTAGGGTTAGGGCCCCTTTAGGG";
+    UserInputTeloscope userInput;
+    userInput.patterns = {"TTAGGG", "CCCCT"};
+    userInput.windowSize = 11;
+    userInput.step = 5;
+
+    findTelomeres(header, sequence, userInput);
+
+    return 0;
 }
