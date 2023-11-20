@@ -4,4 +4,4 @@ std::vector<uint64_t> getPatternFrequency(const std::vector<bool>& patternMatche
 
 double getShannonEntropy(const std::string& window);
 
-void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput)
+void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput);
