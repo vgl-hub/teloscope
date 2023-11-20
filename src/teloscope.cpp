@@ -14,8 +14,7 @@
 #include "global.h"
 #include "uid-generator.h"
 
-// #include "bed.h"
-#include "gfalibs/include/bed.h"
+#include "bed.h"
 #include "struct.h"
 #include "functions.h"
 
