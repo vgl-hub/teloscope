@@ -130,7 +130,7 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         }
 
         // Get concatenated BED file for pattern matches
-        std::string bedFileName = "/mnt/d/research/vgl/teloscope/output/output/" + header + "_all_patterns_matches.bed";
+        std::string bedFileName = "../../output/" + header + "_all_patterns_matches.bed";
         std::ofstream bedFile(bedFileName, std::ios::app); // Append mode
 
         if (!bedFile.is_open()) {
@@ -152,13 +152,13 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     }
 }
 
+// test
 int main() {
-    // test
-    std::string header = "test";
-    std::string sequence = "TTAGGGCCCCTTTAGGGTTAGGGCCCCTTTAGGGTTAGGGCCCCTTTAGGG";
+    std::string header = "H1.scaffold_401";
+    std::string sequence = "TTAGGGGCCCCTTCGATCGATCGATCTCGATCGATCGATCCCCTTTAGGG";
     UserInputTeloscope userInput;
     userInput.patterns = {"TTAGGG", "CCCCT"};
-    userInput.windowSize = 11;
+    userInput.windowSize = 9;
     userInput.step = 5;
 
     findTelomeres(header, sequence, userInput);
