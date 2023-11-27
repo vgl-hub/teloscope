@@ -35,10 +35,10 @@ BedCoordinates bedCoords;
 
 std::vector<uint64_t> getPatternFrequency(const std::vector<bool>& patternMatches, uint32_t windowSize, uint32_t step) {
     std::vector<uint64_t> patternFreq;
-    uint64_t seqLength = patternMatches.size();
-    patternFreq.reserve(seqLength);
+    uint64_t vecBoolLength = patternMatches.size();
+    patternFreq.reserve(vecBoolLength);
 
-    if (seqLength < windowSize) {
+    if (vecBoolLength < windowSize) {
         return patternFreq;
     }
 
@@ -50,7 +50,7 @@ std::vector<uint64_t> getPatternFrequency(const std::vector<bool>& patternMatche
     }
     patternFreq.push_back(windowCounts);
 
-    for (uint64_t i = windowSize; i < seqLength; i += step) {
+    for (uint64_t i = windowSize; i < vecBoolLength; i += step) {
         windowCounts += patternMatches[i] - patternMatches[i - windowSize];
         patternFreq.push_back(windowCounts);
     }
@@ -74,91 +74,86 @@ double getShannonEntropy(const std::string& window) { // float, less memory?
     return entropy;
 }
 
-
 void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput) {
-
-    uint64_t seqLength = sequence.size();
+    uint64_t segLength = sequence.size();
     uint32_t windowSize = static_cast<uint32_t>(userInput.windowSize);
     uint32_t step = static_cast<uint32_t>(userInput.step);
-    
 
     // Map of pattern matches
     std::map<std::string, std::vector<bool>> patternMatchesMap;
+    uint64_t vecBoolLength = 0; 
     for (const auto& pattern : userInput.patterns) {
-        patternMatchesMap[pattern] = std::vector<bool>(seqLength - pattern.size() + 1, false);
-    }
-
-    // Single pass over the sequence
-    for (uint64_t i = 0; i <= seqLength; ++i) {
-        for (const auto& pattern : userInput.patterns) {
-            if (i + pattern.size() <= seqLength && pattern == sequence.substr(i, pattern.size())) {
-                patternMatchesMap[pattern][i] = true; // giulio exit loop when true!!!
+        vecBoolLength = segLength - pattern.size() + 1; 
+        patternMatchesMap[pattern] = std::vector<bool>(vecBoolLength, false);
+        for (uint64_t i = 0; i <= segLength - pattern.size(); ++i) {
+            if (pattern == sequence.substr(i, pattern.size())) {
+                patternMatchesMap[pattern][i] = true;
             }
         }
     }
 
-    // Pattern range covered in sliding window
-    std::vector<uint64_t> totalPatternRange(seqLength, 0);
-    for (const auto& pattern : userInput.patterns) {
-        std::vector<uint64_t> patternFreq = getPatternFrequency(patternMatchesMap[pattern], windowSize, step);
-        for (uint64_t i = 0; i < patternFreq.size(); ++i) {
-            totalPatternRange[i] += patternFreq[i] * pattern.size();
-        }
+    // Diagnostic Print
+    std::cout << "Pattern Matches Map Size: " << vecBoolLength << std::endl;
+
+    // BED File Setup
+    std::string bedFileName = "../../output/" + header + "_all_patterns_matches.bed";
+    std::ofstream bedFile(bedFileName, std::ios::out); // Open in write mode
+    if (!bedFile.is_open()) {
+        std::cerr << "Failed to open BED file: " << bedFileName << std::endl;
+        return;
     }
 
-    // Calculate and print pattern fractions
-    for (const auto& pattern : userInput.patterns) {
-        std::vector<uint64_t> patternFreq = getPatternFrequency(patternMatchesMap[pattern], windowSize, step);
-        std::cout << "Pattern Frequency Fraction for \"" << pattern << "\": " << std::endl;
+    // Looping over the sliding window
+    for (uint64_t windowStart = 0; windowStart <= segLength - windowSize; windowStart += step) {
+        std::string window = sequence.substr(windowStart, windowSize);
+        double entropy = getShannonEntropy(window);
+        std::cout << "\nShannon Entropy for window [" << windowStart + 1 << ", " << (windowStart + windowSize) << "]: " << entropy << std::endl;
 
-        for (uint64_t i = 0; i < patternFreq.size(); ++i) {
-            double patternFraction = static_cast<double>(patternFreq[i] * pattern.size()) / windowSize;
-            double noneFraction = std::max(1.0 - static_cast<double>(totalPatternRange[i]) / windowSize, 0.0); // Ensure non-negative
-            std::cout << "Window " << i << ": Pattern = " << patternFraction << ", None = " << noneFraction << std::endl;
-        }
-        std::cout << std::endl;
-    }
-
-    for (const auto& pattern : userInput.patterns) {
-        std::vector<uint64_t> patternFreq = getPatternFrequency(patternMatchesMap[pattern], windowSize, step);
-
-        // Shannon Entropy
-        for (uint64_t i = 0; i < seqLength - windowSize + 1; i += step) {
-            std::string window = sequence.substr(i, windowSize);
-            double entropy = getShannonEntropy(window);
-            std::cout << "Shannon Entropy for window [" << i << ", " << (i + windowSize) << "]: " << entropy << std::endl;
-        }
-
-        // Get concatenated BED file for pattern matches
-        std::string bedFileName = "../../output/" + header + "_all_patterns_matches.bed";
-        std::ofstream bedFile(bedFileName, std::ios::app); // Append mode
-
-        if (!bedFile.is_open()) {
-            std::cerr << "Failed to open BED file: " << bedFileName << std::endl;
-            return;
-        }
-
+        double totalPatternFraction = 0.0;
         for (const auto& pattern : userInput.patterns) {
-            std::vector<uint64_t> patternFreq = getPatternFrequency(patternMatchesMap[pattern], windowSize, step);
+            uint64_t patternLength = pattern.size();
+            std::vector<bool> currentWindowMatches(windowSize, false);
 
-            for (uint64_t i = 0; i < patternMatchesMap[pattern].size(); ++i) {
+            // Diagnostic Print
+            std::cout << "Analyzing Pattern: " << pattern << std::endl;            
+
+            for (uint64_t i = windowStart; i < windowStart + windowSize && i < vecBoolLength; ++i) {
                 if (patternMatchesMap[pattern][i]) {
-                    bedFile << header << "\t" << i << "\t" << (i + pattern.size()) << "\t" << pattern << std::endl;
+                    currentWindowMatches[i - windowStart] = true;
+                    
+                    // Diagnostic Print
+                    std::cout << "Pattern Match at Position: " << i << std::endl;
+                }
+            }
+            uint64_t patternCount = std::count(currentWindowMatches.begin(), currentWindowMatches.end(), true);
+            double patternFraction = static_cast<double>(patternCount * patternLength) / windowSize;
+            totalPatternFraction += patternFraction;
+
+            std::cout << "Window " << windowStart + 1 << ": Pattern \"" << pattern << "\" = " << patternFraction << std::endl;
+
+            // BED file logic here
+            for (uint64_t i = windowStart; i < windowStart + windowSize && i < vecBoolLength; ++i) {
+                if (patternMatchesMap[pattern][i]) {
+                    bedFile << header << "\t" << i << "\t" << i + patternLength << "\t" << pattern << std::endl;
+                    i += patternLength - 1; // Skip ahead to avoid duplicate entries
                 }
             }
         }
 
-        bedFile.close();
+        double noneFraction = std::max(1.0 - totalPatternFraction, 0.0); // Ensure non-negative
+        std::cout << "Window " << windowStart + 1 << ": None = " << noneFraction << std::endl;
     }
+
+    bedFile.close();
 }
 
 // test
 int main() {
     std::string header = "H1.scaffold_401";
-    std::string sequence = "TTAGGGGCCCCTTCGATCGATCGATCTCGATCGATCGATCCCCTTTAGGG";
+    std::string sequence = "TTAGGGGCCCCTTCGATCGACCCTTTAGGG";
     UserInputTeloscope userInput;
-    userInput.patterns = {"TTAGGG", "CCCCT"};
-    userInput.windowSize = 9;
+    userInput.patterns = {"TTAGGG", "CCCT"};
+    userInput.windowSize = 10;
     userInput.step = 5;
 
     findTelomeres(header, sequence, userInput);
