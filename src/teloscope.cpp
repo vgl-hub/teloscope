@@ -108,36 +108,34 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         std::string window = sequence.substr(windowStart, windowSize);
         double entropy = getShannonEntropy(window);
         std::cout << "\nShannon Entropy for window [" << windowStart + 1 << ", " << (windowStart + windowSize) << "]: " << entropy << std::endl;
-
         double totalPatternFraction = 0.0;
+
         for (const auto& pattern : userInput.patterns) {
             uint64_t patternLength = pattern.size();
             std::vector<bool> currentWindowMatches(windowSize, false);
 
             // Diagnostic Print
-            std::cout << "Analyzing Pattern: " << pattern << std::endl;            
+            std::cout << "Analyzing Pattern: " << pattern << std::endl;
 
+            // Merged loop
             for (uint64_t i = windowStart; i < windowStart + windowSize && i < vecBoolLength; ++i) {
-                if (patternMatchesMap[pattern][i]) {
+                if (patternMatchesMap[pattern][i] && i + patternLength <= windowStart + windowSize) {
                     currentWindowMatches[i - windowStart] = true;
-                    
+
                     // Diagnostic Print
                     std::cout << "Pattern Match at Position: " << i << std::endl;
+
+                    // BED file writing logic
+                    bedFile << header << "\t" << i << "\t" << i + patternLength << "\t" << pattern << std::endl;
+                    i += patternLength - 1; // Skip ahead to avoid duplicate entries
                 }
             }
+
             uint64_t patternCount = std::count(currentWindowMatches.begin(), currentWindowMatches.end(), true);
             double patternFraction = static_cast<double>(patternCount * patternLength) / windowSize;
             totalPatternFraction += patternFraction;
 
             std::cout << "Window " << windowStart + 1 << ": Pattern \"" << pattern << "\" = " << patternFraction << std::endl;
-
-            // BED file logic here
-            for (uint64_t i = windowStart; i < windowStart + windowSize && i < vecBoolLength; ++i) {
-                if (patternMatchesMap[pattern][i]) {
-                    bedFile << header << "\t" << i << "\t" << i + patternLength << "\t" << pattern << std::endl;
-                    i += patternLength - 1; // Skip ahead to avoid duplicate entries
-                }
-            }
         }
 
         double noneFraction = std::max(1.0 - totalPatternFraction, 0.0); // Ensure non-negative
