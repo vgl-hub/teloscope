@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <type_traits>
 
 #include <parallel_hashmap/phmap.h>
 
@@ -62,7 +63,7 @@ std::vector<uint64_t> getPatternFrequency(const std::vector<bool>& patternMatche
 double getShannonEntropy(const std::string& window) { // float, less memory?
     std::array<int, 128> freq = {0};
     for (char nucleotide : window) {
-        freq[static_cast<unsigned char>(nucleotide)]++;
+        freq[static_cast<unsigned char>(nucleotide)]++; // giulio: no need to cast, check kmer.h 71
     }
     double entropy = 0.0;
     for (int f : freq) {
@@ -74,75 +75,77 @@ double getShannonEntropy(const std::string& window) { // float, less memory?
     return entropy;
 }
 
+template <typename T>
+void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, uint64_t, T>>& data, const std::string& fileName) {
+    std::string bedFileName = "../../output/" + header + "_" + fileName + (std::is_floating_point<T>::value ? ".bedgraph" : ".bed");
+    std::ofstream bedFile(bedFileName, std::ios::out);
+    if (!bedFile.is_open()) {
+        std::cerr << "Failed to open file: " << bedFileName << std::endl;
+        return;
+    }
+
+    for (const auto& entry : data) {
+        uint64_t start = std::get<0>(entry);
+        uint64_t end = std::get<1>(entry);
+        T value = std::get<2>(entry);
+
+        bedFile << header << "\t" << start << "\t" << end << "\t" << value << std::endl;
+    }
+
+    bedFile.close();
+}
+
 void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput) {
     uint64_t segLength = sequence.size();
     uint32_t windowSize = static_cast<uint32_t>(userInput.windowSize);
     uint32_t step = static_cast<uint32_t>(userInput.step);
 
-    // Map of pattern matches
-    std::map<std::string, std::vector<bool>> patternMatchesMap;
-    uint64_t vecBoolLength = 0; 
-    for (const auto& pattern : userInput.patterns) {
-        vecBoolLength = segLength - pattern.size() + 1; 
-        patternMatchesMap[pattern] = std::vector<bool>(vecBoolLength, false);
-        for (uint64_t i = 0; i <= segLength - pattern.size(); ++i) {
-            if (pattern == sequence.substr(i, pattern.size())) {
-                patternMatchesMap[pattern][i] = true;
-            }
-        }
-    }
+    std::vector<std::tuple<uint64_t, uint64_t, std::string>> patternBEDData;
+    std::vector<std::tuple<uint64_t, uint64_t, double>> entropyData;
+    std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t, uint64_t>>> patternCountData;
 
-    // Diagnostic Print
-    std::cout << "Pattern Matches Map Size: " << vecBoolLength << std::endl;
-
-    // BED File Setup
-    std::string bedFileName = "../../output/" + header + "_all_patterns_matches.bed";
-    std::ofstream bedFile(bedFileName, std::ios::out); // Open in write mode
-    if (!bedFile.is_open()) {
-        std::cerr << "Failed to open BED file: " << bedFileName << std::endl;
-        return;
-    }
-
-    // Looping over the sliding window
     for (uint64_t windowStart = 0; windowStart <= segLength - windowSize; windowStart += step) {
         std::string window = sequence.substr(windowStart, windowSize);
         double entropy = getShannonEntropy(window);
-        std::cout << "\nShannon Entropy for window [" << windowStart + 1 << ", " << (windowStart + windowSize) << "]: " << entropy << std::endl;
-        double totalPatternFraction = 0.0;
+        std::cout << "\nShannon Entropy for window [" << windowStart << ", " << (windowStart + windowSize - 1) << "]: " << entropy << std::endl;
+        entropyData.emplace_back(windowStart, windowStart + windowSize - 1, entropy);
+        // double totalPatternFraction = 0.0;
 
+        std::map<std::string, uint64_t> windowPatternCounts;
         for (const auto& pattern : userInput.patterns) {
             uint64_t patternLength = pattern.size();
-            std::vector<bool> currentWindowMatches(windowSize, false);
+            uint64_t patternCount = 0;
 
             // Diagnostic Print
             std::cout << "Analyzing Pattern: " << pattern << std::endl;
-
+            
             // Merged loop
-            for (uint64_t i = windowStart; i < windowStart + windowSize && i < vecBoolLength; ++i) {
-                if (patternMatchesMap[pattern][i] && i + patternLength <= windowStart + windowSize) {
-                    currentWindowMatches[i - windowStart] = true;
-
-                    // Diagnostic Print
-                    std::cout << "Pattern Match at Position: " << i << std::endl;
-
-                    // BED file writing logic
-                    bedFile << header << "\t" << i << "\t" << i + patternLength << "\t" << pattern << std::endl;
+            for (uint64_t i = windowStart; i < windowStart + windowSize && i + patternLength <= segLength; ++i) {
+                if (pattern == sequence.substr(i, patternLength)) {
+                    patternCount++;
+                    patternBEDData.emplace_back(i, i + patternLength - 1, pattern);
                     i += patternLength - 1; // Skip ahead to avoid duplicate entries
                 }
             }
+            windowPatternCounts[pattern] = patternCount;
 
-            uint64_t patternCount = std::count(currentWindowMatches.begin(), currentWindowMatches.end(), true);
+            // Print pattern fraction for the window
             double patternFraction = static_cast<double>(patternCount * patternLength) / windowSize;
-            totalPatternFraction += patternFraction;
-
-            std::cout << "Window " << windowStart + 1 << ": Pattern \"" << pattern << "\" = " << patternFraction << std::endl;
+            std::cout << "Window " << windowStart << ": Pattern \"" << pattern << "\" = " << patternFraction << std::endl;
         }
 
-        double noneFraction = std::max(1.0 - totalPatternFraction, 0.0); // Ensure non-negative
-        std::cout << "Window " << windowStart + 1 << ": None = " << noneFraction << std::endl;
+        // Arrange pattern count data for each window
+        for (const auto& [pattern, count] : windowPatternCounts) {
+            patternCountData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, count);
+        }
     }
 
-    bedFile.close();
+    // Generate BED and BEDgraph files
+    generateBEDFile(header, patternBEDData, "pattern_mapping");
+    generateBEDFile(header, entropyData, "window_entropy");
+    for (const auto& [pattern, data] : patternCountData) {
+        generateBEDFile(header, data, pattern + "_count");
+    }
 }
 
 // test
