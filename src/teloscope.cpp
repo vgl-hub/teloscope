@@ -103,6 +103,7 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     std::vector<std::tuple<uint64_t, uint64_t, std::string>> patternBEDData;
     std::vector<std::tuple<uint64_t, uint64_t, double>> entropyData;
     std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t, uint64_t>>> patternCountData;
+    std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t, uint64_t>>> patternFractionData;
 
     for (uint64_t windowStart = 0; windowStart <= segLength - windowSize; windowStart += step) {
         std::string window = sequence.substr(windowStart, windowSize);
@@ -121,7 +122,11 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
             
             // Merged loop
             for (uint64_t i = windowStart; i < windowStart + windowSize && i + patternLength <= segLength; ++i) {
-                if (pattern == sequence.substr(i, patternLength)) {
+                if (pattern == sequence.substr(i, patternLength) && i + patternLength <= windowStart + windowSize) {
+
+                    // Diagnostic Print
+                    std::cout << "Pattern Match at Position: " << i << std::endl;
+
                     patternCount++;
                     patternBEDData.emplace_back(i, i + patternLength - 1, pattern);
                     i += patternLength - 1; // Skip ahead to avoid duplicate entries
