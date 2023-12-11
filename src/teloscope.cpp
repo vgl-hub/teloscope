@@ -112,7 +112,6 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         entropyData.emplace_back(windowStart, windowStart + windowSize - 1, entropy);
         std::cout << "\nShannon Entropy for window [" << windowStart << ", " << (windowStart + windowSize - 1) << "]: " << entropy << std::endl;
 
-        std::map<std::string, uint64_t> windowPatternCounts;
         for (const auto& pattern : userInput.patterns) {
             uint64_t patternLength = pattern.size();
             uint64_t patternCount = 0;
@@ -127,7 +126,7 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
                     std::cout << "Pattern Match at Position: " << windowStart + i << std::endl;
                 }
             }
-            windowPatternCounts[pattern] = patternCount;
+
             double patternFraction = static_cast<double>(patternCount * patternLength) / windowSize;
             patternFractionData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, patternFraction);
             patternCountData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, patternCount);
