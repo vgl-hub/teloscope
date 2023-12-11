@@ -105,8 +105,9 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t, uint64_t>>> patternCountData;
     std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t, double>>> patternFractionData;
 
+    std::string window = sequence.substr(0, windowSize);
+
     for (uint64_t windowStart = 0; windowStart <= segLength - windowSize; windowStart += step) {
-        std::string window = sequence.substr(windowStart, windowSize);
         double entropy = getShannonEntropy(window);
         entropyData.emplace_back(windowStart, windowStart + windowSize - 1, entropy);
         std::cout << "\nShannon Entropy for window [" << windowStart << ", " << (windowStart + windowSize - 1) << "]: " << entropy << std::endl;
@@ -116,27 +117,28 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
             uint64_t patternLength = pattern.size();
             uint64_t patternCount = 0;
 
-            // Diagnostic Print
             std::cout << "Analyzing Pattern: " << pattern << std::endl;
-
-            for (uint64_t i = windowStart; i < windowStart + windowSize && i + patternLength <= segLength; ++i) {
-                if (pattern == sequence.substr(i, patternLength) && i + patternLength <= windowStart + windowSize) {
+            
+            for (uint64_t i = 0; i + patternLength <= windowSize; ++i) {
+                if (pattern == window.substr(i, patternLength)) {
                     patternCount++;
-                    patternBEDData.emplace_back(i, i + patternLength - 1, pattern);
+                    patternBEDData.emplace_back(windowStart + i, windowStart + i + patternLength - 1, pattern);
 
-                    // Diagnostic Print
-                    std::cout << "Pattern Match at Position: " << i << std::endl;
+                    std::cout << "Pattern Match at Position: " << windowStart + i << std::endl;
                 }
             }
             windowPatternCounts[pattern] = patternCount;
-
-            // Calculate and store pattern fraction
             double patternFraction = static_cast<double>(patternCount * patternLength) / windowSize;
             patternFractionData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, patternFraction);
             patternCountData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, patternCount);
+            
+            std::cout << "Window " << windowStart << ": Pattern Count \"" << pattern << "\" = " << patternCount << std::endl;
+            std::cout << "Window " << windowStart << ": Pattern Fraction \"" << pattern << "\" = " << patternFraction << std::endl;
+        }
 
-            // Diagnostic Print for Pattern Fraction
-            std::cout << "Window " << windowStart << ": Pattern \"" << pattern << "\" = " << patternFraction << std::endl;
+        // Update window for next iteration
+        if (windowStart + windowSize + step <= segLength) {
+            window = window.substr(step) + sequence.substr(windowStart + windowSize, step);
         }
     }
 
@@ -150,6 +152,7 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         generateBEDFile(header, fractionData, pattern + "_fraction");
     }
 }
+
 
 // test
 int main() {
