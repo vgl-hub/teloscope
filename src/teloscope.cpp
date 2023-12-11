@@ -77,7 +77,7 @@ double getShannonEntropy(const std::string& window) { // float, less memory?
 
 template <typename T>
 void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, uint64_t, T>>& data, const std::string& fileName) {
-    std::string bedFileName = "../../output/" + header + "_" + fileName + (std::is_floating_point<T>::value ? ".bedgraph" : ".bed");
+    std::string bedFileName = "../../output/" + header + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
     std::ofstream bedFile(bedFileName, std::ios::out);
     if (!bedFile.is_open()) {
         std::cerr << "Failed to open file: " << bedFileName << std::endl;
@@ -103,14 +103,13 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     std::vector<std::tuple<uint64_t, uint64_t, std::string>> patternBEDData;
     std::vector<std::tuple<uint64_t, uint64_t, double>> entropyData;
     std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t, uint64_t>>> patternCountData;
-    std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t, uint64_t>>> patternFractionData;
+    std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t, double>>> patternFractionData;
 
     for (uint64_t windowStart = 0; windowStart <= segLength - windowSize; windowStart += step) {
         std::string window = sequence.substr(windowStart, windowSize);
         double entropy = getShannonEntropy(window);
-        std::cout << "\nShannon Entropy for window [" << windowStart << ", " << (windowStart + windowSize - 1) << "]: " << entropy << std::endl;
         entropyData.emplace_back(windowStart, windowStart + windowSize - 1, entropy);
-        // double totalPatternFraction = 0.0;
+        std::cout << "\nShannon Entropy for window [" << windowStart << ", " << (windowStart + windowSize - 1) << "]: " << entropy << std::endl;
 
         std::map<std::string, uint64_t> windowPatternCounts;
         for (const auto& pattern : userInput.patterns) {
@@ -119,37 +118,36 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
 
             // Diagnostic Print
             std::cout << "Analyzing Pattern: " << pattern << std::endl;
-            
-            // Merged loop
+
             for (uint64_t i = windowStart; i < windowStart + windowSize && i + patternLength <= segLength; ++i) {
                 if (pattern == sequence.substr(i, patternLength) && i + patternLength <= windowStart + windowSize) {
+                    patternCount++;
+                    patternBEDData.emplace_back(i, i + patternLength - 1, pattern);
 
                     // Diagnostic Print
                     std::cout << "Pattern Match at Position: " << i << std::endl;
-
-                    patternCount++;
-                    patternBEDData.emplace_back(i, i + patternLength - 1, pattern);
-                    i += patternLength - 1; // Skip ahead to avoid duplicate entries
                 }
             }
             windowPatternCounts[pattern] = patternCount;
 
-            // Print pattern fraction for the window
+            // Calculate and store pattern fraction
             double patternFraction = static_cast<double>(patternCount * patternLength) / windowSize;
-            std::cout << "Window " << windowStart << ": Pattern \"" << pattern << "\" = " << patternFraction << std::endl;
-        }
+            patternFractionData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, patternFraction);
+            patternCountData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, patternCount);
 
-        // Arrange pattern count data for each window
-        for (const auto& [pattern, count] : windowPatternCounts) {
-            patternCountData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, count);
+            // Diagnostic Print for Pattern Fraction
+            std::cout << "Window " << windowStart << ": Pattern \"" << pattern << "\" = " << patternFraction << std::endl;
         }
     }
 
     // Generate BED and BEDgraph files
     generateBEDFile(header, patternBEDData, "pattern_mapping");
     generateBEDFile(header, entropyData, "window_entropy");
-    for (const auto& [pattern, data] : patternCountData) {
-        generateBEDFile(header, data, pattern + "_count");
+    for (const auto& [pattern, countData] : patternCountData) {
+        generateBEDFile(header, countData, pattern + "_count");
+    }
+    for (const auto& [pattern, fractionData] : patternFractionData) {
+        generateBEDFile(header, fractionData, pattern + "_fraction");
     }
 }
 
