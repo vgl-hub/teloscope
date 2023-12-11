@@ -2,7 +2,7 @@ CXX ?= g++
 INCLUDE_DIR ?= -I./include -Igfalibs/include
 WARNINGS = -Wall -Wextra
 
-CXXFLAGS = -g -std=gnu++14 -O3 $(INCLUDE_DIR) $(WARNINGS) $(CFLAGS)
+CXXFLAGS = -g -std=gnu++17 -O3 $(INCLUDE_DIR) $(WARNINGS) $(CFLAGS)
 
 TARGET = teloscope
 BUILD = build/bin
