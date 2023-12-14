@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <type_traits>
+#include <chrono>
 
 #include <parallel_hashmap/phmap.h>
 
@@ -31,8 +32,6 @@
 
 #include "teloscope.h"
 #include "input.h"
-
-BedCoordinates bedCoords;
 
 std::vector<uint64_t> getPatternFrequency(const std::vector<bool>& patternMatches, uint32_t windowSize, uint32_t step) {
     std::vector<uint64_t> patternFreq;
@@ -59,20 +58,33 @@ std::vector<uint64_t> getPatternFrequency(const std::vector<bool>& patternMatche
     return patternFreq;
 }
 
-
-double getShannonEntropy(const std::string& window) { // float, less memory?
+float getShannonEntropy(const std::string& window) {
     std::array<int, 128> freq = {0};
     for (char nucleotide : window) {
-        freq[static_cast<unsigned char>(nucleotide)]++; // giulio: no need to cast, check kmer.h 71
+        freq[(nucleotide)]++; // giulio: no need to cast, check kmer.h 71
     }
-    double entropy = 0.0;
+    float entropy = 0.0;
     for (int f : freq) {
         if (f > 0) {
-            double probability = static_cast<double>(f) / window.size();
+            float probability = static_cast<float>(f) / window.size();
             entropy -= probability * std::log2(probability);
         }
     }
     return entropy;
+}
+
+float getGCContent(const std::string& window) {
+    uint64_t gcCount = 0;
+
+    // for (char nucleotide : window) {
+    //     if (nucleotide == 'G' || nucleotide == 'C') {
+    //         gcCount++;
+    //     }
+    // }
+
+    gcCount = std::count_if(window.begin(), window.end(), [](char n) { return n == 'G' || n == 'C'; });
+
+    return float(gcCount) / window.size() * 100.0; 
 }
 
 template <typename T>
@@ -80,7 +92,7 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
     std::string bedFileName = "../../output/" + header + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
     std::ofstream bedFile(bedFileName, std::ios::out);
     if (!bedFile.is_open()) {
-        std::cerr << "Failed to open file: " << bedFileName << std::endl;
+        std::cerr << "Failed to open file: " << bedFileName << '\n';
         return;
     }
 
@@ -89,7 +101,7 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
         uint64_t end = std::get<1>(entry);
         T value = std::get<2>(entry);
 
-        bedFile << header << "\t" << start << "\t" << end << "\t" << value << std::endl;
+        bedFile << header << "\t" << start << "\t" << end << "\t" << value << '\n';
     }
 
     bedFile.close();
@@ -97,60 +109,72 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
 
 void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput) {
     uint64_t segLength = sequence.size();
-    uint32_t windowSize = static_cast<uint32_t>(userInput.windowSize);
-    uint32_t step = static_cast<uint32_t>(userInput.step);
+    uint32_t windowSize = userInput.windowSize;
+    uint32_t step = userInput.step;
 
+    std::vector<std::tuple<uint64_t, uint64_t, float>> GCData;
+    std::vector<std::tuple<uint64_t, uint64_t, float>> entropyData;
     std::vector<std::tuple<uint64_t, uint64_t, std::string>> patternBEDData;
-    std::vector<std::tuple<uint64_t, uint64_t, double>> entropyData;
     std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t, uint64_t>>> patternCountData;
-    std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t, double>>> patternFractionData;
+    std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t, float>>> patternFractionData;
 
     std::string window = sequence.substr(0, windowSize);
+    // uint64_t windowStart = 0;
 
     for (uint64_t windowStart = 0; windowStart <= segLength - windowSize; windowStart += step) {
-        double entropy = getShannonEntropy(window);
+    // while (windowStart + windowSize <= segLength) {
+
+        float GC = getGCContent(window);
+        GCData.emplace_back(windowStart, windowStart + windowSize - 1, GC);
+
+        float entropy = getShannonEntropy(window);
         entropyData.emplace_back(windowStart, windowStart + windowSize - 1, entropy);
-        std::cout << "\nShannon Entropy for window [" << windowStart << ", " << (windowStart + windowSize - 1) << "]: " << entropy << std::endl;
 
         for (const auto& pattern : userInput.patterns) {
             uint64_t patternLength = pattern.size();
             uint64_t patternCount = 0;
 
-            std::cout << "Analyzing Pattern: " << pattern << std::endl;
-            
             for (uint64_t i = 0; i + patternLength <= windowSize; ++i) {
                 if (pattern == window.substr(i, patternLength)) {
                     patternCount++;
                     patternBEDData.emplace_back(windowStart + i, windowStart + i + patternLength - 1, pattern);
-
-                    std::cout << "Pattern Match at Position: " << windowStart + i << std::endl;
                 }
             }
 
-            double patternFraction = static_cast<double>(patternCount * patternLength) / windowSize;
+            float patternFraction = static_cast<float>(patternCount * patternLength) / windowSize;
             patternFractionData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, patternFraction);
             patternCountData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, patternCount);
             
-            std::cout << "Window " << windowStart << ": Pattern Count \"" << pattern << "\" = " << patternCount << std::endl;
-            std::cout << "Window " << windowStart << ": Pattern Fraction \"" << pattern << "\" = " << patternFraction << std::endl;
+            std::cout << "Window starting at " << windowStart << ": Pattern Count \"" << pattern << "\" = " << patternCount << '\n';
+            std::cout << "Window starting at " << windowStart << ": Pattern Fraction \"" << pattern << "\" = " << patternFraction << '\n';
         }
 
         // Update window for next iteration
         if (windowStart + windowSize + step <= segLength) {
             window = window.substr(step) + sequence.substr(windowStart + windowSize, step);
         }
+
+        // // Update window for next iteration
+        // windowStart += step;
+        // if (windowStart + windowSize <= segLength) {
+        //     window = window.substr(step) + sequence.substr(windowStart + windowSize - step, step);
+        // }
     }
 
     // Generate BED and BEDgraph files
-    generateBEDFile(header, patternBEDData, "pattern_mapping");
+    
+    generateBEDFile(header, GCData, "window_gc");
     generateBEDFile(header, entropyData, "window_entropy");
-    for (const auto& [pattern, countData] : patternCountData) {
+    generateBEDFile(header, patternBEDData, "pattern_mapping");
+        for (const auto& [pattern, countData] : patternCountData) {
         generateBEDFile(header, countData, pattern + "_count");
     }
     for (const auto& [pattern, fractionData] : patternFractionData) {
         generateBEDFile(header, fractionData, pattern + "_fraction");
     }
 }
+
+
 
 
 // test
@@ -162,7 +186,12 @@ int main() {
     userInput.windowSize = 10;
     userInput.step = 5;
 
+    auto start = std::chrono::high_resolution_clock::now();
     findTelomeres(header, sequence, userInput);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Execution time: " << duration.count() << " milliseconds" << '\n';
 
     return 0;
 }

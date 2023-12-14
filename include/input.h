@@ -6,9 +6,9 @@
 struct UserInputTeloscope : UserInput {
 
     std::vector<std::string> patterns = {"TTAGGG", "CCCCT"};
-    int windowSize = 500;  
+    uint32_t windowSize = 500;  
     uint8_t kmerLen = 21;
-    int step = 1;    
+    uint32_t step = 1;    
     double maxMem = 0;
     std::string prefix = ".", outFile = "";
 
