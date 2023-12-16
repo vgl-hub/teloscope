@@ -33,6 +33,8 @@
 #include "teloscope.h"
 #include "input.h"
 
+UserInputTeloscope userInput;
+
 std::vector<uint64_t> getPatternFrequency(const std::vector<bool>& patternMatches, uint32_t windowSize, uint32_t step) {
     std::vector<uint64_t> patternFreq;
     uint64_t vecBoolLength = patternMatches.size();
@@ -76,12 +78,6 @@ float getShannonEntropy(const std::string& window) {
 float getGCContent(const std::string& window) {
     uint64_t gcCount = 0;
 
-    // for (char nucleotide : window) {
-    //     if (nucleotide == 'G' || nucleotide == 'C') {
-    //         gcCount++;
-    //     }
-    // }
-
     gcCount = std::count_if(window.begin(), window.end(), [](char n) { return n == 'G' || n == 'C'; });
 
     return float(gcCount) / window.size() * 100.0; 
@@ -96,13 +92,29 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
         return;
     }
 
+    // for (const auto& entry : data) {
+    //     uint64_t start = std::get<0>(entry);
+    //     uint64_t end = std::get<1>(entry);
+    //     T value = std::get<2>(entry);
+
+    //     bedFile << header << "\t" << start << "\t" << end << "\t" << value << '\n';
+    // }
+
+    int end;
+    
     for (const auto& entry : data) {
         uint64_t start = std::get<0>(entry);
-        uint64_t end = std::get<1>(entry);
+        if (typeid(T) == typeid(std::string)) { 
+            end = start + value.size() - 1;
+            }
+        else { 
+            end = start + userInput.windowSize - 1;
+            }
         T value = std::get<2>(entry);
 
         bedFile << header << "\t" << start << "\t" << end << "\t" << value << '\n';
     }
+    
 
     bedFile.close();
 }
@@ -119,10 +131,10 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t, float>>> patternFractionData;
 
     std::string window = sequence.substr(0, windowSize);
-    // uint64_t windowStart = 0;
+    uint64_t windowStart = 0;
 
-    for (uint64_t windowStart = 0; windowStart <= segLength - windowSize; windowStart += step) {
-    // while (windowStart + windowSize <= segLength) {
+    // for (uint64_t windowStart = 0; windowStart <= segLength - windowSize; windowStart += step) {
+    while (windowStart + windowSize <= segLength) {
 
         float GC = getGCContent(window);
         GCData.emplace_back(windowStart, windowStart + windowSize - 1, GC);
@@ -130,35 +142,52 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         float entropy = getShannonEntropy(window);
         entropyData.emplace_back(windowStart, windowStart + windowSize - 1, entropy);
 
+        // std::map<std::string, std::vector<bool>> patternMatchesMap;
+        // uint64_t vecBoolLength = 0; 
+
         for (const auto& pattern : userInput.patterns) {
             uint64_t patternLength = pattern.size();
             uint64_t patternCount = 0;
+
+        // vecBoolLength = segLength - pattern.size() + 1; 
+        // patternMatchesMap[pattern] = std::vector<bool>(vecBoolLength, false);
 
             for (uint64_t i = 0; i + patternLength <= windowSize; ++i) {
                 if (pattern == window.substr(i, patternLength)) {
                     patternCount++;
                     patternBEDData.emplace_back(windowStart + i, windowStart + i + patternLength - 1, pattern);
+                    // patternMatchesMap[pattern][i] = true
                 }
             }
 
             float patternFraction = static_cast<float>(patternCount * patternLength) / windowSize;
             patternFractionData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, patternFraction);
             patternCountData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, patternCount);
-            
-            std::cout << "Window starting at " << windowStart << ": Pattern Count \"" << pattern << "\" = " << patternCount << '\n';
-            std::cout << "Window starting at " << windowStart << ": Pattern Fraction \"" << pattern << "\" = " << patternFraction << '\n';
-        }
-
-        // Update window for next iteration
-        if (windowStart + windowSize + step <= segLength) {
-            window = window.substr(step) + sequence.substr(windowStart + windowSize, step);
         }
 
         // // Update window for next iteration
-        // windowStart += step;
-        // if (windowStart + windowSize <= segLength) {
-        //     window = window.substr(step) + sequence.substr(windowStart + windowSize - step, step);
+        // if (windowStart + windowSize + step <= segLength) {
+
+        //     // for (size_t i = 0; i < step; ++i) {
+        //     //     char outgoing = window[i];
+        //     //     char incoming = sequence[windowStart + windowSize + i];
+        //     //     freq[outgoing]--;
+        //     //     freq[incoming]++;
+        //     //     if (outgoing == 'G' || outgoing == 'C') gcCount--;
+        //     //     if (incoming == 'G' || incoming == 'C') gcCount++;
+        //     // }
+        //     window = window.substr(step) + sequence.substr(windowStart + windowSize, step);
+        //     windowStart += step;
         // }
+        // else {
+        //     break;
+        // }
+
+        // Update window for next iteration
+        windowStart += step;
+        if (windowStart + windowSize <= segLength) {
+            window = window.substr(step) + sequence.substr(windowStart + windowSize - step, step);
+        }
     }
 
     // Generate BED and BEDgraph files
@@ -166,14 +195,13 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     generateBEDFile(header, GCData, "window_gc");
     generateBEDFile(header, entropyData, "window_entropy");
     generateBEDFile(header, patternBEDData, "pattern_mapping");
-        for (const auto& [pattern, countData] : patternCountData) {
+    for (const auto& [pattern, countData] : patternCountData) {
         generateBEDFile(header, countData, pattern + "_count");
     }
     for (const auto& [pattern, fractionData] : patternFractionData) {
         generateBEDFile(header, fractionData, pattern + "_fraction");
     }
 }
-
 
 
 
