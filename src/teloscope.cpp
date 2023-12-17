@@ -31,7 +31,7 @@
 #include "teloscope.h"
 #include "input.h"
 
-// UserInputTeloscope userInput;
+UserInputTeloscope userInput;
 
 float getShannonEntropy(const std::string& window) {
     std::array<int, 128> freq = {0};
@@ -57,36 +57,41 @@ float getGCContent(const std::string& window) {
 }
 
 template <typename T>
-void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, uint64_t, T>>& data, const std::string& fileName) {
+void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, T>>& data, const std::string& fileName) {
     std::string bedFileName = "../../output/" + header + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
     std::ofstream bedFile(bedFileName, std::ios::out);
     if (!bedFile.is_open()) {
-        std::cerr << "Failed to open file: " << bedFileName << std::endl;
+        std::cerr << "Failed to open file: " << bedFileName << '\n';
         return;
     }
 
     for (const auto& entry : data) {
         uint64_t start = std::get<0>(entry);
-        uint64_t end = std::get<1>(entry);
-        T value = std::get<2>(entry);
+        T value = std::get<1>(entry);
+        uint64_t end;
 
-        bedFile << header << "\t" << start << "\t" << end << "\t" << value << std::endl;
+        if constexpr (std::is_same<T, std::string>::value) {
+            end = start + value.size() - 1; // For pattern data, use the string size
+        } else {
+            end = start + userInput.windowSize - 1; // For other data, use the window size
+        }
+
+        bedFile << header << "\t" << start << "\t" << end << "\t" << value << '\n';
     }
 
     bedFile.close();
 }
-
 
 void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput) {
     uint64_t segLength = sequence.size();
     uint32_t windowSize = userInput.windowSize;
     uint32_t step = userInput.step;
 
-    std::vector<std::tuple<uint64_t, uint64_t, float>> GCData;
-    std::vector<std::tuple<uint64_t, uint64_t, float>> entropyData;
-    std::vector<std::tuple<uint64_t, uint64_t, std::string>> patternBEDData;
-    std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t, uint64_t>>> patternCountData;
-    std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t, float>>> patternFractionData;
+    std::vector<std::tuple<uint64_t, float>> GCData;
+    std::vector<std::tuple<uint64_t, float>> entropyData;
+    std::vector<std::tuple<uint64_t, std::string>> patternBEDData;
+    std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t>>> patternCountData;
+    std::map<std::string, std::vector<std::tuple<uint64_t, float>>> patternFractionData;
 
     std::string window = sequence.substr(0, windowSize);
     uint64_t windowStart = 0;
@@ -95,10 +100,10 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     while (windowStart + windowSize <= segLength) {
 
         float GC = getGCContent(window);
-        GCData.emplace_back(windowStart, windowStart + windowSize - 1, GC);
+        GCData.emplace_back(windowStart, GC);
 
         float entropy = getShannonEntropy(window);
-        entropyData.emplace_back(windowStart, windowStart + windowSize - 1, entropy);
+        entropyData.emplace_back(windowStart, entropy);
 
         for (const auto& pattern : userInput.patterns) {
             uint64_t patternLength = pattern.size();
@@ -107,13 +112,13 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
             for (uint64_t i = 0; i + patternLength <= windowSize; ++i) {
                 if (pattern == window.substr(i, patternLength)) {
                     patternCount++;
-                    patternBEDData.emplace_back(windowStart + i, windowStart + i + patternLength - 1, pattern);
+                    patternBEDData.emplace_back(windowStart + i, pattern);
                 }
             }
 
             float patternFraction = static_cast<float>(patternCount * patternLength) / windowSize;
-            patternFractionData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, patternFraction);
-            patternCountData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, patternCount);
+            patternFractionData[pattern].emplace_back(windowStart, patternFraction);
+            patternCountData[pattern].emplace_back(windowStart, patternCount);
         }
 
         // Update window for next iteration
