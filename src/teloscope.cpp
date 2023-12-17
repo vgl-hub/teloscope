@@ -31,7 +31,7 @@
 #include "teloscope.h"
 #include "input.h"
 
-UserInputTeloscope userInput;
+// UserInputTeloscope userInput;
 
 float getShannonEntropy(const std::string& window) {
     std::array<int, 128> freq = {0};
@@ -57,7 +57,7 @@ float getGCContent(const std::string& window) {
 }
 
 template <typename T>
-void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, T>>& data, const std::string& fileName) {
+void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, T>>& data, const std::string& fileName, uint32_t windowSize) {
     std::string bedFileName = "../../output/" + header + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
     std::ofstream bedFile(bedFileName, std::ios::out);
     if (!bedFile.is_open()) {
@@ -73,7 +73,7 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
         if constexpr (std::is_same<T, std::string>::value) {
             end = start + value.size() - 1; // For pattern data, use the string size
         } else {
-            end = start + userInput.windowSize - 1; // For other data, use the window size
+            end = start + windowSize - 1; // For other data, use the window size
         }
 
         bedFile << header << "\t" << start << "\t" << end << "\t" << value << '\n';
@@ -130,14 +130,14 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
 
     // Generate BED and BEDgraph files
     
-    generateBEDFile(header, GCData, "window_gc");
-    generateBEDFile(header, entropyData, "window_entropy");
-    generateBEDFile(header, patternBEDData, "pattern_mapping");
+    generateBEDFile(header, GCData, "window_gc", windowSize);
+    generateBEDFile(header, entropyData, "window_entropy", windowSize);
+    generateBEDFile(header, patternBEDData, "pattern_mapping", windowSize);
     for (const auto& [pattern, countData] : patternCountData) {
-        generateBEDFile(header, countData, pattern + "_count");
+        generateBEDFile(header, countData, pattern + "_count", windowSize);
     }
     for (const auto& [pattern, fractionData] : patternFractionData) {
-        generateBEDFile(header, fractionData, pattern + "_fraction");
+        generateBEDFile(header, fractionData, pattern + "_fraction", windowSize);
     }
 }
 
