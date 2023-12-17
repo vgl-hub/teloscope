@@ -1,8 +1,8 @@
 #include <main.h>
 
-std::string version = "0.0.1";
+std::string version = "0.1.1";
 
-std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now(); // immediately start the clock when the program is run
+std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
 short int tabular_flag; // jack: why don't we group this by struct (e.g. input, output, operations)?
 int verbose_flag;
 int seqReport_flag;
