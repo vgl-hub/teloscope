@@ -10,8 +10,6 @@
 #include <type_traits>
 #include <chrono>
 
-#include <parallel_hashmap/phmap.h>
-
 #include "log.h"
 #include "global.h"
 #include "uid-generator.h"
@@ -33,32 +31,7 @@
 #include "teloscope.h"
 #include "input.h"
 
-UserInputTeloscope userInput;
-
-std::vector<uint64_t> getPatternFrequency(const std::vector<bool>& patternMatches, uint32_t windowSize, uint32_t step) {
-    std::vector<uint64_t> patternFreq;
-    uint64_t vecBoolLength = patternMatches.size();
-    patternFreq.reserve(vecBoolLength);
-
-    if (vecBoolLength < windowSize) {
-        return patternFreq;
-    }
-
-    uint32_t windowCounts = 0;
-    for (uint32_t i = 0; i < windowSize; ++i) {
-        if (patternMatches[i]) {
-            windowCounts++;
-        }
-    }
-    patternFreq.push_back(windowCounts);
-
-    for (uint64_t i = windowSize; i < vecBoolLength; i += step) {
-        windowCounts += patternMatches[i] - patternMatches[i - windowSize];
-        patternFreq.push_back(windowCounts);
-    }
-
-    return patternFreq;
-}
+// UserInputTeloscope userInput;
 
 float getShannonEntropy(const std::string& window) {
     std::array<int, 128> freq = {0};
@@ -88,36 +61,21 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
     std::string bedFileName = "../../output/" + header + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
     std::ofstream bedFile(bedFileName, std::ios::out);
     if (!bedFile.is_open()) {
-        std::cerr << "Failed to open file: " << bedFileName << '\n';
+        std::cerr << "Failed to open file: " << bedFileName << std::endl;
         return;
     }
 
-    // for (const auto& entry : data) {
-    //     uint64_t start = std::get<0>(entry);
-    //     uint64_t end = std::get<1>(entry);
-    //     T value = std::get<2>(entry);
-
-    //     bedFile << header << "\t" << start << "\t" << end << "\t" << value << '\n';
-    // }
-
-    int end;
-    
     for (const auto& entry : data) {
         uint64_t start = std::get<0>(entry);
-        if (typeid(T) == typeid(std::string)) { 
-            end = start + value.size() - 1;
-            }
-        else { 
-            end = start + userInput.windowSize - 1;
-            }
+        uint64_t end = std::get<1>(entry);
         T value = std::get<2>(entry);
 
-        bedFile << header << "\t" << start << "\t" << end << "\t" << value << '\n';
+        bedFile << header << "\t" << start << "\t" << end << "\t" << value << std::endl;
     }
-    
 
     bedFile.close();
 }
+
 
 void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput) {
     uint64_t segLength = sequence.size();
@@ -142,21 +100,14 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         float entropy = getShannonEntropy(window);
         entropyData.emplace_back(windowStart, windowStart + windowSize - 1, entropy);
 
-        // std::map<std::string, std::vector<bool>> patternMatchesMap;
-        // uint64_t vecBoolLength = 0; 
-
         for (const auto& pattern : userInput.patterns) {
             uint64_t patternLength = pattern.size();
             uint64_t patternCount = 0;
-
-        // vecBoolLength = segLength - pattern.size() + 1; 
-        // patternMatchesMap[pattern] = std::vector<bool>(vecBoolLength, false);
 
             for (uint64_t i = 0; i + patternLength <= windowSize; ++i) {
                 if (pattern == window.substr(i, patternLength)) {
                     patternCount++;
                     patternBEDData.emplace_back(windowStart + i, windowStart + i + patternLength - 1, pattern);
-                    // patternMatchesMap[pattern][i] = true
                 }
             }
 
@@ -164,24 +115,6 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
             patternFractionData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, patternFraction);
             patternCountData[pattern].emplace_back(windowStart, windowStart + windowSize - 1, patternCount);
         }
-
-        // // Update window for next iteration
-        // if (windowStart + windowSize + step <= segLength) {
-
-        //     // for (size_t i = 0; i < step; ++i) {
-        //     //     char outgoing = window[i];
-        //     //     char incoming = sequence[windowStart + windowSize + i];
-        //     //     freq[outgoing]--;
-        //     //     freq[incoming]++;
-        //     //     if (outgoing == 'G' || outgoing == 'C') gcCount--;
-        //     //     if (incoming == 'G' || incoming == 'C') gcCount++;
-        //     // }
-        //     window = window.substr(step) + sequence.substr(windowStart + windowSize, step);
-        //     windowStart += step;
-        // }
-        // else {
-        //     break;
-        // }
 
         // Update window for next iteration
         windowStart += step;
@@ -202,8 +135,6 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         generateBEDFile(header, fractionData, pattern + "_fraction");
     }
 }
-
-
 
 // test
 int main() {
