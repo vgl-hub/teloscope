@@ -128,7 +128,7 @@ int main(int argc, char **argv) {
             case 'p': {
                 userInput.patterns.clear(); // Clear default patterns
                 userInput.patterns.push_back("TTAGGG"); // Add canonical pattern
-                userInput.patterns.push_back("CCCCT");  // Add reverse complement of the canonical pattern
+                userInput.patterns.push_back("CCCTAA");  // Add reverse complement of the canonical pattern
 
                 std::istringstream patternStream(optarg);
                 std::string pattern;
