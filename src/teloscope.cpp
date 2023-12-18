@@ -140,22 +140,3 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         generateBEDFile(header, fractionData, pattern + "_fraction", windowSize);
     }
 }
-
-// test
-int main() {
-    std::string header = "H1.scaffold_401";
-    std::string sequence = "TTAGGGGCCCCTTCGATCGACCCTTTAGGG";
-    UserInputTeloscope userInput;
-    userInput.patterns = {"TTAGGG", "CCCT"};
-    userInput.windowSize = 10;
-    userInput.step = 5;
-
-    auto start = std::chrono::high_resolution_clock::now();
-    findTelomeres(header, sequence, userInput);
-    auto end = std::chrono::high_resolution_clock::now();
-
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << "Execution time: " << duration.count() << " milliseconds" << '\n';
-
-    return 0;
-}

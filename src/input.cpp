@@ -1,8 +1,3 @@
-// Tasks: jack
-// throw std::runtime_error("Invalid input");
-// throw std::runtime_error("Stream not initialized");
-// throw std::runtime_error("Null path");
-// throw std::runtime_error("Segment not found");
 // giulio: error cout string, directly
 // L40:42 std::vector<> for auto, * symbol not necessary
 
@@ -45,6 +40,22 @@ void Input::read(InSequences &inSequences) {
         walkPath(&inPath, *inSegments, *inGaps);
 
 }
+
+// void Input::read(InSequences &inSequences) {
+//     std::vector<InPath> inPaths = inSequences.getInPaths();
+//     std::vector<InSegment*> *inSegments = inSequences.getInSegments();
+//     std::vector<InGap> *inGaps = inSequences.getInGaps();
+
+//     for (InPath& inPath : inPaths) {
+//         threadPool.submit([&inPath, this, inSegments, inGaps]() {
+//             walkPath(&inPath, *inSegments, *inGaps);
+//             return true;
+//         });
+//     }
+
+//     jobWait(threadPool); // Wait for all jobs to complete
+// }
+
 
 void Input::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps) {
     

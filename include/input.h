@@ -1,6 +1,8 @@
 #ifndef INPUT_H
 #define INPUT_H
 
+#include "main.h"
+
 // Add poly+inh of UserInputTeloscope
 
 struct UserInputTeloscope : UserInput {
@@ -8,7 +10,7 @@ struct UserInputTeloscope : UserInput {
     std::vector<std::string> patterns = {"TTAGGG", "CCCCT"};
     uint32_t windowSize = 500;  
     uint8_t kmerLen = 21;
-    uint32_t step = 1;    
+    uint32_t step = 200;    
     double maxMem = 0;
     std::string prefix = ".", outFile = "";
 
