@@ -7,7 +7,7 @@
 
 struct UserInputTeloscope : UserInput {
 
-    std::vector<std::string> patterns = {"TTAGGG", "CCCCT"};
+    std::vector<std::string> patterns = {"TTAGGG", "CCCT"};
     uint32_t windowSize = 500;  
     uint8_t kmerLen = 21;
     uint32_t step = 200;    

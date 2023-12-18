@@ -56,9 +56,19 @@ float getGCContent(const std::string& window) {
     return float(gcCount) / window.size() * 100.0; 
 }
 
+std::string cleanString(const std::string& input) {
+    std::string output = input;
+    output.erase(std::remove(output.begin(), output.end(), '\r'), output.end());
+    return output;
+}
+
+
 template <typename T>
 void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, T>>& data, const std::string& fileName, uint32_t windowSize) {
-    std::string bedFileName = "../../output/" + header + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
+    std::string cleanedHeader = cleanString(header); // Clean the header string
+    std::string bedFileName = "../../output/" + cleanedHeader + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
+
+    // std::string bedFileName = "../../output/" + header + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
     std::ofstream bedFile(bedFileName, std::ios::out);
     if (!bedFile.is_open()) {
         std::cerr << "Failed to open file: " << bedFileName << '\n';
@@ -76,7 +86,7 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
             end = start + windowSize - 1; // For other data, use the window size
         }
 
-        bedFile << header << "\t" << start << "\t" << end << "\t" << value << '\n';
+        bedFile << cleanedHeader << "\t" << start << "\t" << end << "\t" << value << "\n";
     }
 
     bedFile.close();
