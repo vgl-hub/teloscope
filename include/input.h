@@ -5,9 +5,9 @@
 
 // Add poly+inh of UserInputTeloscope
 
-struct UserInputTeloscope : UserInput {
+struct UserInputTeloscope : UserInput { // jack: why do we need inheritance?
 
-    std::vector<std::string> patterns = {"TTAGGG", "CCCT"};
+    std::vector<std::string> patterns = {"TTAGGG", "CCCTAA"};
     uint32_t windowSize = 500;  
     uint8_t kmerLen = 21;
     uint32_t step = 200;    

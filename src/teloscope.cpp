@@ -9,6 +9,8 @@
 #include <cmath>
 #include <type_traits>
 #include <chrono>
+#include <memory>
+#include <unordered_map>
 
 #include "log.h"
 #include "global.h"
@@ -31,7 +33,40 @@
 #include "teloscope.h"
 #include "input.h"
 
-// UserInputTeloscope userInput;
+struct TrieNode {
+    std::unordered_map<char, std::shared_ptr<TrieNode>> children;
+    bool isEndOfWord = false;
+};
+
+void insertPattern(std::shared_ptr<TrieNode> root, const std::string &pattern) {
+    auto current = root;
+    for (char ch : pattern) {
+        if (current->children.find(ch) == current->children.end()) {
+            current->children[ch] = std::make_shared<TrieNode>();
+        }
+        current = current->children[ch];
+    }
+    current->isEndOfWord = true;
+}
+
+void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &window,
+                        uint64_t windowStart, std::vector<std::tuple<uint64_t, std::string>> &patternBEDData,
+                        std::map<std::string, uint64_t> &lastPatternPositions, uint32_t step) {
+    for (uint64_t i = 0; i < window.size(); ++i) {
+        auto current = root;
+        for (uint64_t j = i; j < window.size(); ++j) {
+            if (current->children.find(window[j]) == current->children.end()) break;
+            current = current->children[window[j]];
+            if (current->isEndOfWord) {
+                std::string pattern = window.substr(i, j - i + 1);
+                if (lastPatternPositions[pattern] <= windowStart + i) {
+                    patternBEDData.emplace_back(windowStart + i, pattern);
+                    lastPatternPositions[pattern] = windowStart + i + step - 1;
+                }
+            }
+        }
+    }
+}
 
 float getShannonEntropy(const std::string& window) {
     std::array<int, 128> freq = {0};
@@ -97,56 +132,35 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     uint32_t windowSize = userInput.windowSize;
     uint32_t step = userInput.step;
 
+    // Trie structure to store patterns
+    auto root = std::make_shared<TrieNode>();
+    for (const auto& pattern : userInput.patterns) {
+        insertPattern(root, pattern);
+    }
+    
     std::vector<std::tuple<uint64_t, float>> GCData;
     std::vector<std::tuple<uint64_t, float>> entropyData;
     std::vector<std::tuple<uint64_t, std::string>> patternBEDData;
-    std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t>>> patternCountData;
-    std::map<std::string, std::vector<std::tuple<uint64_t, float>>> patternFractionData;
+    std::map<std::string, uint64_t> lastPatternPositions;
 
     std::string window = sequence.substr(0, windowSize);
     uint64_t windowStart = 0;
 
-    // for (uint64_t windowStart = 0; windowStart <= segLength - windowSize; windowStart += step) {
     while (windowStart + windowSize <= segLength) {
-
         float GC = getGCContent(window);
         GCData.emplace_back(windowStart, GC);
-
         float entropy = getShannonEntropy(window);
         entropyData.emplace_back(windowStart, entropy);
 
-        for (const auto& pattern : userInput.patterns) {
-            uint64_t patternLength = pattern.size();
-            uint64_t patternCount = 0;
+        findPatternsInWindow(root, window, windowStart, patternBEDData, lastPatternPositions, step);
 
-            for (uint64_t i = 0; i + patternLength <= windowSize; ++i) {
-                if (pattern == window.substr(i, patternLength)) {
-                    patternCount++;
-                    patternBEDData.emplace_back(windowStart + i, pattern);
-                }
-            }
-
-            float patternFraction = static_cast<float>(patternCount * patternLength) / windowSize;
-            patternFractionData[pattern].emplace_back(windowStart, patternFraction);
-            patternCountData[pattern].emplace_back(windowStart, patternCount);
-        }
-
-        // Update window for next iteration
         windowStart += step;
         if (windowStart + windowSize <= segLength) {
             window = window.substr(step) + sequence.substr(windowStart + windowSize - step, step);
         }
     }
 
-    // Generate BED and BEDgraph files
-    
     generateBEDFile(header, GCData, "window_gc", windowSize);
     generateBEDFile(header, entropyData, "window_entropy", windowSize);
     generateBEDFile(header, patternBEDData, "pattern_mapping", windowSize);
-    for (const auto& [pattern, countData] : patternCountData) {
-        generateBEDFile(header, countData, pattern + "_count", windowSize);
-    }
-    for (const auto& [pattern, fractionData] : patternFractionData) {
-        generateBEDFile(header, fractionData, pattern + "_fraction", windowSize);
-    }
 }
