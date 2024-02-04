@@ -51,8 +51,14 @@ void insertPattern(std::shared_ptr<TrieNode> root, const std::string &pattern) {
 
 void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &window,
                         uint64_t windowStart, std::vector<std::tuple<uint64_t, std::string>> &patternBEDData,
-                        std::map<std::string, uint64_t> &lastPatternPositions, uint32_t step) {
+                        std::map<std::string, uint64_t> &lastPatternPositions, uint32_t step,
+                        std::map<char, uint64_t> &nucleotideCounts) {
+
+    nucleotideCounts = {{'A', 0}, {'C', 0}, {'G', 0}, {'T', 0}};
+
     for (uint64_t i = 0; i < window.size(); ++i) {
+        nucleotideCounts[window[i]]++;
+
         auto current = root;
         for (uint64_t j = i; j < window.size(); ++j) {
             if (current->children.find(window[j]) == current->children.end()) break;
@@ -68,27 +74,21 @@ void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &win
     }
 }
 
-float getShannonEntropy(const std::string& window) {
-    std::array<int, 128> freq = {0};
-    for (char nucleotide : window) {
-        freq[(nucleotide)]++; // giulio: no need to cast, check kmer.h 71
-    }
+
+float getShannonEntropy(const std::map<char, uint64_t>& nucleotideCounts, uint32_t windowSize) {
     float entropy = 0.0;
-    for (int f : freq) {
-        if (f > 0) {
-            float probability = static_cast<float>(f) / window.size();
+    for (auto &[nucleotide, count] : nucleotideCounts) {
+        if (count > 0) {
+            float probability = static_cast<float>(count) / windowSize;
             entropy -= probability * std::log2(probability);
         }
     }
     return entropy;
 }
 
-float getGCContent(const std::string& window) {
-    uint64_t gcCount = 0;
-
-    gcCount = std::count_if(window.begin(), window.end(), [](char n) { return n == 'G' || n == 'C'; });
-
-    return float(gcCount) / window.size() * 100.0; 
+float getGCContent(const std::map<char, uint64_t>& nucleotideCounts, uint32_t windowSize) {
+    uint64_t gcCount = nucleotideCounts.at('G') + nucleotideCounts.at('C');
+    return float(gcCount) / windowSize * 100.0;
 }
 
 std::string cleanString(const std::string& input) {
@@ -142,17 +142,18 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     std::vector<std::tuple<uint64_t, float>> entropyData;
     std::vector<std::tuple<uint64_t, std::string>> patternBEDData;
     std::map<std::string, uint64_t> lastPatternPositions;
+    std::map<char, uint64_t> nucleotideCounts;
 
     std::string window = sequence.substr(0, windowSize);
     uint64_t windowStart = 0;
 
     while (windowStart + windowSize <= segLength) {
-        float GC = getGCContent(window);
-        GCData.emplace_back(windowStart, GC);
-        float entropy = getShannonEntropy(window);
-        entropyData.emplace_back(windowStart, entropy);
+        findPatternsInWindow(root, window, windowStart, patternBEDData, lastPatternPositions, step, nucleotideCounts);
 
-        findPatternsInWindow(root, window, windowStart, patternBEDData, lastPatternPositions, step);
+        float GC = getGCContent(nucleotideCounts, windowSize);
+        GCData.emplace_back(windowStart, GC);
+        float entropy = getShannonEntropy(nucleotideCounts, windowSize);
+        entropyData.emplace_back(windowStart, entropy);
 
         windowStart += step;
         if (windowStart + windowSize <= segLength) {
