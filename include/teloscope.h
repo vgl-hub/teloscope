@@ -10,14 +10,16 @@
 
 // Forward declaration
 struct TrieNode;
-
-float getShannonEntropy(const std::map<char, uint64_t>& nucleotideCounts, uint32_t windowSize);
-float getGCContent(const std::map<char, uint64_t>& nucleotideCounts, uint32_t windowSize);
 void insertPattern(std::shared_ptr<TrieNode> root, const std::string &pattern);
 void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &window,
                         uint64_t windowStart, std::vector<std::tuple<uint64_t, std::string>> &patternBEDData,
                         std::map<std::string, uint64_t> &lastPatternPositions, uint32_t step,
-                        std::map<char, uint64_t> &nucleotideCounts, std::map<char, uint64_t> &prevOverlapCounts);
+                        std::map<char, uint64_t> &nucleotideCounts, std::unordered_map<std::string, uint32_t> &patternCounts);
+
+float getShannonEntropy(const std::map<char, uint64_t>& nucleotideCounts, uint32_t windowSize);
+float getGCContent(const std::map<char, uint64_t>& nucleotideCounts, uint32_t windowSize);
+
+
 template <typename T>
 void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, T>>& data, 
                     const std::string& fileName, uint32_t windowSize);
