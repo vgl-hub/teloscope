@@ -169,6 +169,9 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         windowStart += step;
         if (windowStart + windowSize <= segLength) {
             window = window.substr(step) + sequence.substr(windowStart + windowSize - step, step);
+        } else if (windowStart <= segLength) {
+            window = window.substr(step) + sequence.substr(windowStart + windowSize - step);
+            windowSize = segLength - windowStart;
         }
     }
 
