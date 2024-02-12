@@ -107,9 +107,8 @@ template <typename T>
 void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, T>>& data, const std::string& fileName, uint32_t windowSize) {
     std::string cleanedHeader = cleanString(header); // Clean the header string
     std::string bedFileName = "../../output/" + cleanedHeader + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
-
-    // std::string bedFileName = "../../output/" + header + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
     std::ofstream bedFile(bedFileName, std::ios::out);
+    
     if (!bedFile.is_open()) {
         std::cerr << "Failed to open file: " << bedFileName << '\n';
         return;
@@ -155,17 +154,15 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     std::string window = sequence.substr(0, windowSize);
     uint64_t windowStart = 0;
 
-    // void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string& window, uint64_t windowStart, std::vector<std::tuple<uint64_t, std::string>>& patternBEDData, std::map<std::string, uint64_t>& lastPatternPositions, uint32_t step, std::map<char, uint64_t>& nucleotideCounts);
-
     while (windowStart + windowSize <= segLength) {
+
+        patternCounts.clear(); // for (const auto& pattern : userInput.patterns) {patternCountData[pattern].emplace_back(windowStart, patternCounts[pattern]); }
         findPatternsInWindow(root, window, windowStart, patternBEDData, lastPatternPositions, step, nucleotideCounts, patternCounts);
 
-        float GC = getGCContent(nucleotideCounts, windowSize);
-        GCData.emplace_back(windowStart, GC);
-        float entropy = getShannonEntropy(nucleotideCounts, windowSize);
-        entropyData.emplace_back(windowStart, entropy);
+        GCData.emplace_back(windowStart, getGCContent(nucleotideCounts, windowSize));
+        entropyData.emplace_back(windowStart, getShannonEntropy(nucleotideCounts, windowSize));
 
-        for (const auto& [pattern, count] : patternCounts) {
+        for (const auto& [pattern, count] : patternCounts) { // for (const auto& pattern : userInput.patterns) {patternCountData[pattern].emplace_back(windowStart, patternCounts[pattern]); }
             patternCountData[pattern].emplace_back(windowStart, count);
         }
 
