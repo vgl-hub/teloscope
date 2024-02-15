@@ -49,34 +49,6 @@ void insertPattern(std::shared_ptr<TrieNode> root, const std::string &pattern) {
     current->isEndOfWord = true;
 }
 
-// void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &window,
-//                         uint64_t windowStart, std::vector<std::tuple<uint64_t, std::string>> &patternBEDData,
-//                         std::map<std::string, uint64_t> &lastPatternPositions, uint32_t step,
-//                         std::map<char, uint64_t> &nucleotideCounts, std::unordered_map<std::string, uint32_t> &patternCounts) {
-    
-//     nucleotideCounts = {{'A', 0}, {'C', 0}, {'G', 0}, {'T', 0}};
-    
-//     for (uint64_t i = 0; i < window.size(); ++i) {
-//         nucleotideCounts[window[i]]++;
-
-//         auto current = root;
-//         for (uint64_t j = i; j < window.size(); ++j) {
-
-//             if (current->children.find(window[j]) == current->children.end()) break;
-//             current = current->children[window[j]];
-
-//             if (current->isEndOfWord) {
-//                 std::string pattern = window.substr(i, j - i + 1);
-//                 patternCounts[pattern]++; // outside to count them per window
-
-//                 if (lastPatternPositions[pattern] <= windowStart + i) {
-//                     patternBEDData.emplace_back(windowStart + i, pattern);
-//                     lastPatternPositions[pattern] = windowStart + i + step - 1;
-//                 }
-//             }
-//         }
-//     }
-// }
 
 void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &window,
                         uint64_t windowStart, std::vector<std::tuple<uint64_t, std::string>> &patternBEDData,
