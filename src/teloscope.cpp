@@ -69,7 +69,7 @@ void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &win
                 std::string pattern = window.substr(i, j - i + 1);
                 patternCounts[pattern]++; // outside to count them per window
 
-                if (i >= window.size() - step) {
+                if (i > window.size() - step - pattern.size() || windowStart == 0) {
                     patternBEDData.emplace_back(windowStart + i, pattern);
                 }
             }
@@ -144,7 +144,6 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     std::vector<std::tuple<uint64_t, std::string>> patternBEDData;
     std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t>>> patternCountData;
 
-    std::map<std::string, uint64_t> lastPatternPositions;
     std::map<char, uint64_t> nucleotideCounts;
     std::unordered_map<std::string, uint32_t> patternCounts;
 
@@ -165,6 +164,10 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         GCData.emplace_back(windowStart, getGCContent(nucleotideCounts, currentWindowSize));
         entropyData.emplace_back(windowStart, getShannonEntropy(nucleotideCounts, currentWindowSize));
         
+        std::cout << "Window start: " << windowStart << '\n';
+        std::cout << "Window size: " << currentWindowSize << '\n';
+        std::cout << window << '\n';
+
         windowStart += step;
         if (currentWindowSize == windowSize) {
             window = window.substr(step) + sequence.substr(windowStart + windowSize - step, step);
@@ -173,7 +176,6 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         }
     }
 
-    // Example call within findTelomeres
     generateBEDFile(header, GCData, "window_gc", windowSize, segLength);
     generateBEDFile(header, entropyData, "window_entropy", windowSize, segLength);
     generateBEDFile(header, patternBEDData, "pattern_mapping", windowSize, segLength);
