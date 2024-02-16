@@ -69,9 +69,12 @@ void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &win
                 std::string pattern = window.substr(i, j - i + 1);
                 patternCounts[pattern]++; // outside to count them per window
 
-                if (i > window.size() - step - pattern.size() || windowStart == 0) {
-                    patternBEDData.emplace_back(windowStart + i, pattern);
-                }
+                patternBEDData.emplace_back(windowStart + i + step - step, pattern);
+
+                // if (i > window.size() - step - pattern.size() || windowStart == 0) {
+                // if (i >= window.size() - step || windowStart == 0) {    
+                //     patternBEDData.emplace_back(windowStart + i, pattern);
+                // }
             }
         }
     }
@@ -121,7 +124,7 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
         if constexpr (std::is_same<T, std::string>::value) {
             end = start + value.size() - 1; // For pattern data, use the string size
         } else {
-            end = (start + windowSize - 1 < segLength) ? start + windowSize - 1 : segLength - 1;; // For other data, use the window size
+            end = (start + windowSize - 1 < segLength) ? start + windowSize - 1 : segLength - 1; // For other data, use the window size
         }
 
         bedFile << cleanedHeader << "\t" << start << "\t" << end << "\t" << value << "\n";
@@ -164,9 +167,9 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         GCData.emplace_back(windowStart, getGCContent(nucleotideCounts, currentWindowSize));
         entropyData.emplace_back(windowStart, getShannonEntropy(nucleotideCounts, currentWindowSize));
         
-        std::cout << "Window start: " << windowStart << '\n';
-        std::cout << "Window size: " << currentWindowSize << '\n';
-        std::cout << window << '\n';
+        // std::cout << "Window start: " << windowStart << '\n';
+        // std::cout << "Window size: " << currentWindowSize << '\n';
+        // std::cout << window << '\n';
 
         windowStart += step;
         if (currentWindowSize == windowSize) {
