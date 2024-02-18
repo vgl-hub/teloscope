@@ -4,11 +4,11 @@
 #include <map>
 #include <vector>
 #include <string>
-#include <algorithm>
-#include <array>
+#include <algorithm> // check
+#include <array> // check
 #include <cmath>
-#include <type_traits>
-#include <chrono>
+#include <type_traits> // check
+#include <chrono> // check
 #include <memory>
 #include <unordered_map>
 
@@ -33,6 +33,8 @@
 #include "teloscope.h"
 #include "input.h"
 
+
+
 struct TrieNode {
     std::unordered_map<char, std::shared_ptr<TrieNode>> children;
     bool isEndOfWord = false;
@@ -52,12 +54,13 @@ void insertPattern(std::shared_ptr<TrieNode> root, const std::string &pattern) {
 
 void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &window,
                         uint64_t windowStart, std::vector<std::tuple<uint64_t, std::string>> &patternBEDData,
-                        uint32_t step, std::map<char, uint64_t> &nucleotideCounts, std::unordered_map<std::string, uint32_t> &patternCounts) {
+                        uint32_t windowSize, uint32_t step, 
+                        std::map<char, uint64_t> &nucleotideCounts, std::unordered_map<std::string, uint32_t> &patternCounts) {
     
     nucleotideCounts = {{'A', 0}, {'C', 0}, {'G', 0}, {'T', 0}};
 
     for (uint64_t i = 0; i < window.size(); ++i) {
-        nucleotideCounts[window[i]]++; // Count every nucleotide for GC/entropy
+        nucleotideCounts[window[i]]++; // For GC/entropy
 
         auto current = root;
         for (uint64_t j = i; j < window.size(); ++j) {
@@ -67,14 +70,12 @@ void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &win
 
             if (current->isEndOfWord) {
                 std::string pattern = window.substr(i, j - i + 1);
-                patternCounts[pattern]++; // outside to count them per window
+                patternCounts[pattern]++; // Count all matches
 
-                patternBEDData.emplace_back(windowStart + i + step - step, pattern);
-
-                // if (i > window.size() - step - pattern.size() || windowStart == 0) {
-                // if (i >= window.size() - step || windowStart == 0) {    
-                //     patternBEDData.emplace_back(windowStart + i, pattern);
-                // }
+                if (windowSize == step || windowStart == 0 || j >= windowSize - step) {
+                    patternBEDData.emplace_back(windowStart + i, pattern);
+                }
+            
             }
         }
     }
@@ -158,7 +159,7 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         currentWindowSize = (windowSize <= segLength - windowStart) ? windowSize : (segLength - windowStart);
 
         patternCounts.clear();
-        findPatternsInWindow(root, window, windowStart, patternBEDData, step, nucleotideCounts, patternCounts);
+        findPatternsInWindow(root, window, windowStart, patternBEDData, windowSize, step, nucleotideCounts, patternCounts);
 
         for (const auto& [pattern, count] : patternCounts) {
             patternCountData[pattern].emplace_back(windowStart, count);
@@ -166,10 +167,6 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
 
         GCData.emplace_back(windowStart, getGCContent(nucleotideCounts, currentWindowSize));
         entropyData.emplace_back(windowStart, getShannonEntropy(nucleotideCounts, currentWindowSize));
-        
-        // std::cout << "Window start: " << windowStart << '\n';
-        // std::cout << "Window size: " << currentWindowSize << '\n';
-        // std::cout << window << '\n';
 
         windowStart += step;
         if (currentWindowSize == windowSize) {
