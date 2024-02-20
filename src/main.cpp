@@ -56,8 +56,8 @@ int main(int argc, char **argv) {
         {"patterns", required_argument, 0, 'p'},
         {"window", required_argument, 0, 'w'},
         {"step", required_argument, 0, 's'},
+        {"mode", required_argument, 0, 'm'},
         // {"taxid", no_argument, 0, 't'},
-
         {0, 0, 0, 0}
     };
     
@@ -65,7 +65,7 @@ int main(int argc, char **argv) {
         
         int option_index = 0;
         
-        c = getopt_long(argc, argv, "-:f:pw:s:vh", long_options, &option_index);
+        c = getopt_long(argc, argv, "-:f:pw:s:vhm", long_options, &option_index);
         
         if (c == -1) { // exit the loop if run out of options
             break;
@@ -126,7 +126,6 @@ int main(int argc, char **argv) {
                 exit(0);
                 
             case 'p': {
-                // User defined-patterns
                 std::istringstream patternStream(optarg);
                 std::string pattern;
                 while (std::getline(patternStream, pattern, ',')) {
@@ -141,7 +140,58 @@ int main(int argc, char **argv) {
 
             case 's':
                 userInput.step = std::stoi(optarg);
+                if (userInput.step > userInput.windowSize) {
+                    fprintf(stderr, "Error: Steps larger than window sizes lead to data loss.\n");
+                    exit(EXIT_FAILURE);
+                }
+                if (userInput.step == userInput.windowSize) {
+                    fprintf(stderr, "Warning: Using equal step and window sizes results in 'Binning'.\n");
+                    fprintf(stderr, "Note: Large or different sizes are recommended to avoid missing matches.\n");
+                }
                 break;
+            
+            case 's':
+                userInput.step = std::stoi(optarg);
+                printf("/// Teloscope v%s\n", version.c_str());
+
+                if (userInput.step > userInput.windowSize) {
+                    fprintf(stderr, "Error: Step size (%d) larger than window size (%d) is not allowed.\n", userInput.step, userInput.windowSize);
+                    exit(EXIT_FAILURE);
+                } else if (userInput.step == userInput.windowSize) {
+                    fprintf(stderr, "Warning: Equal step and window sizes will bin the sequence. Larger window sizes and steps are recommended to avoid missing matches.\n");
+                } else {
+                    fprintf(stderr, "Sliding windows with step size (%d) and window size (%d). \n", userInput.step, userInput.windowSize);
+                    fprintf(stderr, "Note: A step value close the window size results in fast runs.\n");
+                }
+                break;
+
+
+            case 'm': {
+                std::istringstream modeStream(optarg);
+                std::string mode;
+                while (std::getline(modeStream, mode, ',')) {
+                    userInput.mode.push_back(mode); // Store each mode in userInput.mode
+                }
+                break;
+            }
+
+            case 'm': {
+                std::istringstream modeStream(optarg);
+                std::string mode;
+                bool allModeSelected = false;
+                while (std::getline(modeStream, mode, ',')) {
+                    if (mode == "all") {
+                        allModeSelected = true;
+                        break; // If 'all' is specified, flag it and break
+                    }
+                    userInput.mode.push_back(mode);
+                }
+                if (allModeSelected || userInput.mode.empty()) {
+                    userInput.mode = {"match", "count", "fraction", "entropy", "gc"};
+                }
+                break;
+            }
+
         }
         
         if  (argc == 2 || // handle various cases in which the output should include summary stats

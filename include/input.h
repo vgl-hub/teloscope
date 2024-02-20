@@ -5,16 +5,17 @@
 
 // Add poly+inh of UserInputTeloscope
 
-struct UserInputTeloscope : UserInput { // jack: why do we need inheritance?
+struct UserInputTeloscope : UserInput { // Inheritance to reuse UserInput properties
 
     std::vector<std::string> patterns = {"TTAGGG", "CCCTAA"};
-    uint32_t windowSize = 500;  
+    uint32_t windowSize = 500;
     uint8_t kmerLen = 21;
-    uint32_t step = 200;    
+    uint32_t step = 200;
     double maxMem = 0;
     std::string prefix = ".", outFile = "";
-
+    std::vector<std::string> mode;
 };
+
 
 class Input {
     
