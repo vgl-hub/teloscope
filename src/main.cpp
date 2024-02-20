@@ -40,7 +40,7 @@ int main(int argc, char **argv) {
 
     UserInputTeloscope userInput; //UserInputTeloscope
     
-    if (argc == 1) { // mytool with no arguments
+    if (argc == 1) { // case: with no arguments
             
         printf("teloscope [command]\n-h for additional help. Use -f to initiate the tool.\n");
         exit(0);
@@ -140,40 +140,18 @@ int main(int argc, char **argv) {
 
             case 's':
                 userInput.step = std::stoi(optarg);
-                if (userInput.step > userInput.windowSize) {
-                    fprintf(stderr, "Error: Steps larger than window sizes lead to data loss.\n");
-                    exit(EXIT_FAILURE);
-                }
-                if (userInput.step == userInput.windowSize) {
-                    fprintf(stderr, "Warning: Using equal step and window sizes results in 'Binning'.\n");
-                    fprintf(stderr, "Note: Large or different sizes are recommended to avoid missing matches.\n");
-                }
-                break;
-            
-            case 's':
-                userInput.step = std::stoi(optarg);
                 printf("/// Teloscope v%s\n", version.c_str());
 
                 if (userInput.step > userInput.windowSize) {
                     fprintf(stderr, "Error: Step size (%d) larger than window size (%d) is not allowed.\n", userInput.step, userInput.windowSize);
                     exit(EXIT_FAILURE);
                 } else if (userInput.step == userInput.windowSize) {
-                    fprintf(stderr, "Warning: Equal step and window sizes will bin the sequence. Larger window sizes and steps are recommended to avoid missing matches.\n");
+                    fprintf(stderr, "Warning: Equal step and window sizes will bin the sequence. Larger window/step sizes are recommended to avoid missing matches.\n");
                 } else {
                     fprintf(stderr, "Sliding windows with step size (%d) and window size (%d). \n", userInput.step, userInput.windowSize);
                     fprintf(stderr, "Note: A step value close the window size results in fast runs.\n");
                 }
                 break;
-
-
-            case 'm': {
-                std::istringstream modeStream(optarg);
-                std::string mode;
-                while (std::getline(modeStream, mode, ',')) {
-                    userInput.mode.push_back(mode); // Store each mode in userInput.mode
-                }
-                break;
-            }
 
             case 'm': {
                 std::istringstream modeStream(optarg);
@@ -182,7 +160,7 @@ int main(int argc, char **argv) {
                 while (std::getline(modeStream, mode, ',')) {
                     if (mode == "all") {
                         allModeSelected = true;
-                        break; // If 'all' is specified, flag it and break
+                        break;
                     }
                     userInput.mode.push_back(mode);
                 }

@@ -147,6 +147,7 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     std::vector<std::tuple<uint64_t, float>> GCData, entropyData;
     std::vector<std::tuple<uint64_t, std::string>> patternBEDData;
     std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t>>> patternCountData;
+    std::map<std::string, std::vector<std::tuple<uint64_t, float>>> patternDensityData;
 
     std::map<char, uint64_t> nucleotideCounts;
     std::unordered_map<std::string, uint32_t> patternCounts;
@@ -162,6 +163,8 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         findPatternsInWindow(root, window, windowStart, patternBEDData, windowSize, step, nucleotideCounts, patternCounts);
 
         for (const auto& [pattern, count] : patternCounts) {
+            float density = static_cast<float>(count * pattern.size()) / currentWindowSize;
+            patternDensityData[pattern].emplace_back(windowStart, density);
             patternCountData[pattern].emplace_back(windowStart, count);
         }
 
@@ -181,5 +184,8 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     generateBEDFile(header, patternBEDData, "pattern_mapping", windowSize, segLength);
     for (const auto& [pattern, countData] : patternCountData) {
         generateBEDFile(header, countData, pattern + "_count", windowSize, segLength);
+    }
+    for (const auto& [pattern, densityData] : patternDensityData) {
+        generateBEDFile(header, densityData, pattern + "_density", windowSize, segLength);
     }
 }
