@@ -146,7 +146,7 @@ int main(int argc, char **argv) {
                     fprintf(stderr, "Error: Step size (%d) larger than window size (%d) is not allowed.\n", userInput.step, userInput.windowSize);
                     exit(EXIT_FAILURE);
                 } else if (userInput.step == userInput.windowSize) {
-                    fprintf(stderr, "Warning: Equal step and window sizes will bin the sequence. Larger window/step sizes are recommended to avoid missing matches.\n");
+                    fprintf(stderr, "Warning: Equal step and window sizes will bin the sequence. Large window/step sizes are recommended to avoid missing matches.\n");
                 } else {
                     fprintf(stderr, "Sliding windows with step size (%d) and window size (%d). \n", userInput.step, userInput.windowSize);
                     fprintf(stderr, "Note: A step value close the window size results in fast runs.\n");
@@ -165,7 +165,7 @@ int main(int argc, char **argv) {
                     userInput.mode.push_back(mode);
                 }
                 if (allModeSelected || userInput.mode.empty()) {
-                    userInput.mode = {"match", "count", "fraction", "entropy", "gc"};
+                    userInput.mode = {"match", "count", "density", "entropy", "gc"};
                 }
                 break;
             }

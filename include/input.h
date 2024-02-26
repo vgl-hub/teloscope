@@ -7,7 +7,7 @@
 
 struct UserInputTeloscope : UserInput { // Inheritance to reuse UserInput properties
 
-    std::vector<std::string> patterns = {"TTAGGG", "CCCTAA"};
+    std::vector<std::string> patterns = {"TTAGGC", "GCCTAA"}; 
     uint32_t windowSize = 1000;
     uint8_t kmerLen = 21;
     uint32_t step = 500;

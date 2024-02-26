@@ -154,10 +154,14 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
 
     std::string window = sequence.substr(0, windowSize);
     uint64_t windowStart = 0;
-    uint32_t currentWindowSize = userInput.windowSize;
+    uint32_t currentWindowSize;
 
     while (windowStart < segLength) {
         currentWindowSize = (windowSize <= segLength - windowStart) ? windowSize : (segLength - windowStart);
+
+        if (std::any_of(window.begin(), window.end(), [](char c){ return c >= 'a' && c <= 'z'; })) {
+            std::transform(window.begin(), window.end(), window.begin(), ::toupper);
+        }
 
         patternCounts.clear();
         findPatternsInWindow(root, window, windowStart, patternBEDData, windowSize, step, nucleotideCounts, patternCounts);
@@ -181,7 +185,7 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
 
     generateBEDFile(header, GCData, "window_gc", windowSize, segLength);
     generateBEDFile(header, entropyData, "window_entropy", windowSize, segLength);
-    generateBEDFile(header, patternBEDData, "pattern_mapping", windowSize, segLength);
+    generateBEDFile(header, patternBEDData, "pattern_matching", windowSize, segLength);
     for (const auto& [pattern, countData] : patternCountData) {
         generateBEDFile(header, countData, pattern + "_count", windowSize, segLength);
     }
