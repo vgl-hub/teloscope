@@ -110,6 +110,7 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
                     const std::string& fileName, uint32_t windowSize, uint64_t segLength) {    
     std::string cleanedHeader = cleanString(header); // Clean the header string
     std::string bedFileName = "../../output/" + cleanedHeader + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
+    // std::string bedFileName = outRoute + cleanedHeader + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
     std::ofstream bedFile(bedFileName, std::ios::out);
     
     if (!bedFile.is_open()) {
@@ -159,9 +160,9 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     while (windowStart < segLength) {
         currentWindowSize = (windowSize <= segLength - windowStart) ? windowSize : (segLength - windowStart);
 
-        if (std::any_of(window.begin(), window.end(), [](char c){ return c >= 'a' && c <= 'z'; })) {
-            std::transform(window.begin(), window.end(), window.begin(), ::toupper);
-        }
+        // if (std::any_of(window.begin(), window.end(), [](char c){ return c >= 'a' && c <= 'z'; })) {
+        //     std::transform(window.begin(), window.end(), window.begin(), ::toupper);
+        // }
 
         patternCounts.clear();
         findPatternsInWindow(root, window, windowStart, patternBEDData, windowSize, step, nucleotideCounts, patternCounts);

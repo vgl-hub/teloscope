@@ -1,7 +1,11 @@
 #include <input.h>
+#include <iostream>
 #include <main.h>
+#include <sstream>
+#include <stdlib.h>
+#include <string>
 
-std::string version = "0.1.2";
+std::string version = "0.1.3";
 
 std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
 short int tabular_flag; // jack: why don't we group this by struct (e.g. input, output, operations)?
@@ -57,6 +61,7 @@ int main(int argc, char **argv) {
         {"window", required_argument, 0, 'w'},
         {"step", required_argument, 0, 's'},
         {"mode", required_argument, 0, 'm'},
+        {"output", required_argument, 0, 'o'},
         // {"taxid", no_argument, 0, 't'},
         {0, 0, 0, 0}
     };
@@ -65,13 +70,12 @@ int main(int argc, char **argv) {
         
         int option_index = 0;
         
-        c = getopt_long(argc, argv, "-:f:pw:s:vhm", long_options, &option_index);
+        c = getopt_long(argc, argv, "-:f:p:w:s:o:vhm", long_options, &option_index);
         
         if (c == -1) { // exit the loop if run out of options
             break;
             
         }
-
         switch (c) {
             case ':': // handle options without arguments
                 switch (optopt) { // the command line option last matched
@@ -107,32 +111,28 @@ int main(int argc, char **argv) {
                     
                 break;
                 
-            case 'v': // software version
-                printf("/// Teloscope v%s\n", version.c_str());
-                printf("Giulio Formenti giulio.formenti@gmail.com\n");
-                printf("Jack A. Medico amedico@rockefeller.edu\n");
-                exit(0);
+            case 'o':
+            {
+                std::string outRoute;
+                outRoute = optarg;
+
+                if (outRoute.empty()) {
+                    fprintf(stderr, "Error: Output route is required. Use --output or -o to specify it.\n");
+                    exit(EXIT_FAILURE);
+                }
+            }
+                break;
                 
-            case 'h': // help
-                printf("teloscope [command]\n");
-                printf("\nRequired Parameters:\n");
-                printf("--input-sequence    '-f'    Initiate tool with fasta file.\n");
-                printf("--patterns    '-p'    Set patterns to explore.\n");
-                printf("--window    '-w'    Set sliding window size.\n");
-                printf("--step    '-s'    Set sliding window step.\n");
-                printf("\nOptional Parameters:\n");
-                printf("--version   -v  Print current software version.\n");
-                printf("--help   -h  Print current software options.\n");
-                exit(0);
-                
-            case 'p': {
+            case 'p':
+            {
                 std::istringstream patternStream(optarg);
                 std::string pattern;
                 while (std::getline(patternStream, pattern, ',')) {
-                    userInput.patterns.push_back(pattern);
+                    std::cout << "Adding pattern: " << pattern << std::endl;
+                    userInput.patterns.emplace_back(pattern);
                 }
-                break;
             }
+                break;
 
             case 'w':
                 userInput.windowSize = std::stoi(optarg);
@@ -169,7 +169,23 @@ int main(int argc, char **argv) {
                 }
                 break;
             }
-
+            case 'v': // software version
+                printf("/// Teloscope v%s\n", version.c_str());
+                printf("Giulio Formenti giulio.formenti@gmail.com\n");
+                printf("Jack A. Medico amedico@rockefeller.edu\n");
+                exit(0);
+                
+            case 'h': // help
+                printf("teloscope [command]\n");
+                printf("\nRequired Parameters:\n");
+                printf("--input-sequence    '-f'    Initiate tool with fasta file.\n");
+                printf("--patterns    '-p'    Set patterns to explore.\n");
+                printf("--window    '-w'    Set sliding window size.\n");
+                printf("--step    '-s'    Set sliding window step.\n");
+                printf("\nOptional Parameters:\n");
+                printf("--version   -v  Print current software version.\n");
+                printf("--help   -h  Print current software options.\n");
+                exit(0);
         }
         
         if  (argc == 2 || // handle various cases in which the output should include summary stats
