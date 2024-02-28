@@ -1,35 +1,23 @@
-#include <input.h>
-#include <iostream>
+#include <input.h> // check
 #include <main.h>
+#include <iostream>
 #include <sstream>
 #include <stdlib.h>
 #include <string>
 
 std::string version = "0.1.3";
-
 std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
-short int tabular_flag; // jack: why don't we group this by struct (e.g. input, output, operations)?
+
+short int tabular_flag;
 int verbose_flag;
-int seqReport_flag;
-int outSequence_flag;
-int nstarReport_flag;
-int outSize_flag;
-int outCoord_flag;
-int outFile_flag;
-int outBubbles_flag;
-int stats_flag;
-int rmGaps_flag;
-int discoverPaths_flag;
-int extractContigs_flag;
-int hc_flag;
-int hc_cutoff;
-int terminalOvlLen = 0;
-int maxThreads = 0;
 int cmd_flag;
 
+int maxThreads = 0;
 std::mutex mtx;
 ThreadPool<std::function<bool()>> threadPool;
 Log lg;
+
+UserInputTeloscope userInput; // init input object
 
 int main(int argc, char **argv) {
     
@@ -41,12 +29,10 @@ int main(int argc, char **argv) {
     std::string cmd;
 
     bool isPipe = false; // to check if input is from pipe
-
-    UserInputTeloscope userInput; //UserInputTeloscope
     
     if (argc == 1) { // case: with no arguments
             
-        printf("teloscope [command]\n-h for additional help. Use -f to initiate the tool.\n");
+        printf("teloscope -f input.[fasta] \n-h for additional help. Use -f to initiate the tool.\n");
         exit(0);
         
     }
@@ -62,6 +48,7 @@ int main(int argc, char **argv) {
         {"step", required_argument, 0, 's'},
         {"mode", required_argument, 0, 'm'},
         {"output", required_argument, 0, 'o'},
+        {"threads", required_argument, 0, 'j'},
         // {"taxid", no_argument, 0, 't'},
         {0, 0, 0, 0}
     };
@@ -70,7 +57,7 @@ int main(int argc, char **argv) {
         
         int option_index = 0;
         
-        c = getopt_long(argc, argv, "-:f:p:w:s:o:vhm", long_options, &option_index);
+        c = getopt_long(argc, argv, "-:f:j:m:o:p:s:w:vh", long_options, &option_index);
         
         if (c == -1) { // exit the loop if run out of options
             break;
@@ -79,8 +66,8 @@ int main(int argc, char **argv) {
         switch (c) {
             case ':': // handle options without arguments
                 switch (optopt) { // the command line option last matched
-                    case 'b':
-                        break;
+                    // case 'b':
+                    //     break;
                         
                     default:
                         fprintf(stderr, "option -%c is missing a required argument\n", optopt);
@@ -110,7 +97,28 @@ int main(int argc, char **argv) {
                 }
                     
                 break;
-                
+            
+            case 'j': // max threads
+                maxThreads = atoi(optarg);
+                userInput.stats_flag = 1;
+                break;
+
+            case 'm': {
+                std::istringstream modeStream(optarg);
+                std::string mode;
+                bool allModeSelected = false;
+                while (std::getline(modeStream, mode, ',')) {
+                    if (mode == "all") {
+                        allModeSelected = true;
+                        break;
+                    }
+                    userInput.mode.push_back(mode);
+                }
+                if (allModeSelected || userInput.mode.empty()) {
+                    userInput.mode = {"match", "count", "density", "entropy", "gc"};
+                }
+                break;
+            }
             case 'o':
             {
                 std::string outRoute;
@@ -149,30 +157,16 @@ int main(int argc, char **argv) {
                 if (userInput.step > userInput.windowSize) {
                     fprintf(stderr, "Error: Step size (%d) larger than window size (%d) is not allowed.\n", userInput.step, userInput.windowSize);
                     exit(EXIT_FAILURE);
+
                 } else if (userInput.step == userInput.windowSize) {
                     fprintf(stderr, "Warning: Equal step and window sizes will bin the sequence. Large window/step sizes are recommended to avoid missing matches.\n");
+                    
                 } else {
                     fprintf(stderr, "Sliding windows with step size (%d) and window size (%d). \n", userInput.step, userInput.windowSize);
                     fprintf(stderr, "Note: A step value close the window size results in fast runs.\n");
                 }
                 break;
 
-            case 'm': {
-                std::istringstream modeStream(optarg);
-                std::string mode;
-                bool allModeSelected = false;
-                while (std::getline(modeStream, mode, ',')) {
-                    if (mode == "all") {
-                        allModeSelected = true;
-                        break;
-                    }
-                    userInput.mode.push_back(mode);
-                }
-                if (allModeSelected || userInput.mode.empty()) {
-                    userInput.mode = {"match", "count", "density", "entropy", "gc"};
-                }
-                break;
-            }
             case 'v': // software version
                 printf("/// Teloscope v%s\n", version.c_str());
                 printf("Giulio Formenti giulio.formenti@gmail.com\n");
