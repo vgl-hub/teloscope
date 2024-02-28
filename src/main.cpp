@@ -131,6 +131,10 @@ int main(int argc, char **argv) {
                     std::cout << "Adding pattern: " << pattern << std::endl;
                     userInput.patterns.emplace_back(pattern);
                 }
+                // if (userInput.patterns.empty()) {
+                //     userInput.patterns = {"TTAGGG", "CCCTAA"};
+                //     std::cout << "No patterns selected: Using canonical TTAAGGG and CCCTAA" << std::endl;
+                // }
             }
                 break;
 
