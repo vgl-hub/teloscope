@@ -119,11 +119,12 @@ int main(int argc, char **argv) {
                 }
                 break;
             }
+
             case 'o':
             {
                 std::string outRoute;
                 outRoute = optarg;
-
+                
                 if (outRoute.empty()) {
                     fprintf(stderr, "Error: Output route is required. Use --output or -o to specify it.\n");
                     exit(EXIT_FAILURE);

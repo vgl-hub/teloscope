@@ -1,11 +1,9 @@
 #ifndef INPUT_H
 #define INPUT_H
 
-#include "main.h"
+#include "main.h" //check
 
-// Add poly+inh of UserInputTeloscope
-
-struct UserInputTeloscope : UserInput { // Inheritance to reuse UserInput properties
+struct UserInputTeloscope : UserInput {
 
     // std::vector<std::string> patterns = {"TTAGGG", "CCCTAA"};
     std::vector<std::string> patterns;
@@ -21,7 +19,7 @@ struct UserInputTeloscope : UserInput { // Inheritance to reuse UserInput proper
 class Input {
     
     UserInputTeloscope userInput;
-    
+    // giulio: add vector to keep track of the order of jobs submitted
     std::shared_ptr<std::istream> stream;
     
 public:
@@ -32,7 +30,7 @@ public:
     
     void read(InSequences &inSequence);
 
-    void walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
+    bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
     
 };
 
