@@ -19,7 +19,7 @@ struct UserInputTeloscope : UserInput {
 class Input {
     
     UserInputTeloscope userInput;
-    // giulio: add vector to keep track of the order of jobs submitted
+    // giulio: add vector to keep track of the order of jobs submitted. Avoid concurrency. Make sure the vector updates could be atomic. The operation  is atomic, e.g. push_back. 
     std::shared_ptr<std::istream> stream;
     
 public:

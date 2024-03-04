@@ -109,8 +109,8 @@ template <typename T>
 void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, T>>& data, 
                     const std::string& fileName, uint32_t windowSize, uint64_t segLength) {    
     std::string cleanedHeader = cleanString(header); // Clean the header string
-    std::string bedFileName = "../../output/" + cleanedHeader + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
-    // std::string bedFileName = outRoute + cleanedHeader + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
+    // std::string bedFileName = "output/" + cleanedHeader + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
+    std::string bedFileName = outRoute + "/" + cleanedHeader + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
     std::ofstream bedFile(bedFileName, std::ios::out);
     
     if (!bedFile.is_open()) {

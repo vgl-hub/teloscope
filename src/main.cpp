@@ -16,6 +16,8 @@ int maxThreads = 0;
 std::mutex mtx;
 ThreadPool<std::function<bool()>> threadPool;
 Log lg;
+std::vector<Log> logs;
+std::string outRoute;
 
 UserInputTeloscope userInput; // init input object
 
@@ -97,7 +99,7 @@ int main(int argc, char **argv) {
                 }
                     
                 break;
-            
+
             case 'j': // max threads
                 maxThreads = atoi(optarg);
                 userInput.stats_flag = 1;
@@ -122,7 +124,6 @@ int main(int argc, char **argv) {
 
             case 'o':
             {
-                std::string outRoute;
                 outRoute = optarg;
                 
                 if (outRoute.empty()) {
@@ -131,7 +132,7 @@ int main(int argc, char **argv) {
                 }
             }
                 break;
-                
+
             case 'p':
             {
                 std::istringstream patternStream(optarg);
