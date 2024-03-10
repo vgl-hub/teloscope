@@ -138,9 +138,6 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
 
 
 void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput) {
-    // uint32_t windowSize = userInput.windowSize;
-    // uint32_t step = userInput.step;
-
     auto root = std::make_shared<TrieNode>();
     for (const auto& pattern : userInput.patterns) {
         insertPattern(root, pattern);

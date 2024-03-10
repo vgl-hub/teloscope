@@ -52,7 +52,7 @@ bool Input::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vec
             
         cUId = component->id;
     
-        if (component->type == SEGMENT) {
+        if (component->componentType == SEGMENT) {
             
             auto inSegment = find_if(inSegments.begin(), inSegments.end(), [cUId](InSegment* obj) {return obj->getuId() == cUId;}); // given a node Uid, find it
             std::string sequence = (*inSegment)->getInSequence(component->start, component->end);
@@ -67,7 +67,7 @@ bool Input::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vec
             } else{
             }
             
-        }else if (component->type == GAP){
+        }else if (component->componentType == GAP){
             
             auto inGap = find_if(inGaps.begin(), inGaps.end(), [cUId](InGap& obj) {return obj.getuId() == cUId;}); // given a node Uid, find it
             gapLen += inGap->getDist(component->start - component->end);
