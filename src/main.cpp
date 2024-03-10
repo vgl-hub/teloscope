@@ -127,7 +127,7 @@ int main(int argc, char **argv) {
                 outRoute = optarg;
                 
                 if (outRoute.empty()) {
-                    fprintf(stderr, "Error: Output route is required. Use --output or -o to specify it.\n");
+                    fprintf(stderr, "Error: Output route is required. Use --output or -o to specify it.\n"); // Jack: we have to define output as default
                     exit(EXIT_FAILURE);
                 }
             }

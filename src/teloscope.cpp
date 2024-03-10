@@ -1,13 +1,13 @@
 #include <iostream>
 #include <fstream>
-#include <sstream>
+#include <sstream> // check
 #include <map>
 #include <vector>
 #include <string>
-#include <algorithm> // check
+#include <algorithm> // cleanString
 #include <array> // check
 #include <cmath>
-#include <type_traits> // check
+#include <type_traits> // generateBEDFile
 #include <chrono> // check
 #include <memory>
 #include <unordered_map>
@@ -40,6 +40,7 @@ struct TrieNode {
     bool isEndOfWord = false;
 };
 
+
 void insertPattern(std::shared_ptr<TrieNode> root, const std::string &pattern) {
     auto current = root;
     for (char ch : pattern) {
@@ -52,11 +53,10 @@ void insertPattern(std::shared_ptr<TrieNode> root, const std::string &pattern) {
 }
 
 
-void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &window,
-                        uint64_t windowStart, std::vector<std::tuple<uint64_t, std::string>> &patternBEDData,
-                        uint32_t windowSize, uint32_t step, 
+void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &window, uint64_t windowStart, 
+                        std::vector<std::tuple<uint64_t, std::string>> &patternBEDData, const UserInputTeloscope& userInput,
                         std::map<char, uint64_t> &nucleotideCounts, std::unordered_map<std::string, uint32_t> &patternCounts) {
-    
+
     nucleotideCounts = {{'A', 0}, {'C', 0}, {'G', 0}, {'T', 0}};
 
     for (uint64_t i = 0; i < window.size(); ++i) {
@@ -72,7 +72,7 @@ void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &win
                 std::string pattern = window.substr(i, j - i + 1);
                 patternCounts[pattern]++; // Count all matches
 
-                if (windowSize == step || windowStart == 0 || j >= windowSize - step) {
+                if (userInput.windowSize == userInput.step || windowStart == 0 || j >= userInput.windowSize - userInput.step) {
                     patternBEDData.emplace_back(windowStart + i, pattern);
                 }
             
@@ -93,10 +93,12 @@ float getShannonEntropy(const std::map<char, uint64_t>& nucleotideCounts, uint32
     return entropy;
 }
 
+
 float getGCContent(const std::map<char, uint64_t>& nucleotideCounts, uint32_t windowSize) {
     uint64_t gcCount = nucleotideCounts.at('G') + nucleotideCounts.at('C');
     return float(gcCount) / windowSize * 100.0;
 }
+
 
 std::string cleanString(const std::string& input) {
     std::string output = input;
@@ -107,9 +109,8 @@ std::string cleanString(const std::string& input) {
 
 template <typename T>
 void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, T>>& data, 
-                    const std::string& fileName, uint32_t windowSize, uint64_t segLength) {    
+                    const std::string& fileName, const UserInputTeloscope& userInput, std::string &sequence) {
     std::string cleanedHeader = cleanString(header); // Clean the header string
-    // std::string bedFileName = "output/" + cleanedHeader + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
     std::string bedFileName = outRoute + "/" + cleanedHeader + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
     std::ofstream bedFile(bedFileName, std::ios::out);
     
@@ -126,7 +127,7 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
         if constexpr (std::is_same<T, std::string>::value) {
             end = start + value.size() - 1; // For pattern data, use the string size
         } else {
-            end = (start + windowSize - 1 < segLength) ? start + windowSize - 1 : segLength - 1; // For other data, use the window size
+            end = (start + userInput.windowSize - 1 < sequence.size()) ? start + userInput.windowSize - 1 : sequence.size() - 1; // For other data, use the window size
         }
 
         bedFile << cleanedHeader << "\t" << start << "\t" << end << "\t" << value << "\n";
@@ -135,10 +136,10 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
     bedFile.close();
 }
 
+
 void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput) {
-    uint64_t segLength = sequence.size();
-    uint32_t windowSize = userInput.windowSize;
-    uint32_t step = userInput.step;
+    // uint32_t windowSize = userInput.windowSize;
+    // uint32_t step = userInput.step;
 
     auto root = std::make_shared<TrieNode>();
     for (const auto& pattern : userInput.patterns) {
@@ -153,19 +154,15 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     std::map<char, uint64_t> nucleotideCounts;
     std::unordered_map<std::string, uint32_t> patternCounts;
 
-    std::string window = sequence.substr(0, windowSize);
+    std::string window = sequence.substr(0, userInput.windowSize);
     uint64_t windowStart = 0;
     uint32_t currentWindowSize;
 
-    while (windowStart < segLength) {
-        currentWindowSize = (windowSize <= segLength - windowStart) ? windowSize : (segLength - windowStart);
-
-        // if (std::any_of(window.begin(), window.end(), [](char c){ return c >= 'a' && c <= 'z'; })) {
-        //     std::transform(window.begin(), window.end(), window.begin(), ::toupper);
-        // }
+    while (windowStart < sequence.size()) {
+        currentWindowSize = (userInput.windowSize <= sequence.size() - windowStart) ? userInput.windowSize : (sequence.size() - windowStart);
 
         patternCounts.clear();
-        findPatternsInWindow(root, window, windowStart, patternBEDData, windowSize, step, nucleotideCounts, patternCounts);
+        findPatternsInWindow(root, window, windowStart, patternBEDData, userInput, nucleotideCounts, patternCounts);
 
         for (const auto& [pattern, count] : patternCounts) {
             float density = static_cast<float>(count * pattern.size()) / currentWindowSize;
@@ -176,21 +173,21 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         GCData.emplace_back(windowStart, getGCContent(nucleotideCounts, currentWindowSize));
         entropyData.emplace_back(windowStart, getShannonEntropy(nucleotideCounts, currentWindowSize));
 
-        windowStart += step;
-        if (currentWindowSize == windowSize) {
-            window = window.substr(step) + sequence.substr(windowStart + windowSize - step, step);
+        windowStart += userInput.step;
+        if (currentWindowSize == userInput.windowSize) {
+            window = window.substr(userInput.step) + sequence.substr(windowStart + userInput.windowSize - userInput.step, userInput.step);
         } else {
             break;
         }
     }
 
-    generateBEDFile(header, GCData, "window_gc", windowSize, segLength);
-    generateBEDFile(header, entropyData, "window_entropy", windowSize, segLength);
-    generateBEDFile(header, patternBEDData, "pattern_matching", windowSize, segLength);
+    generateBEDFile(header, GCData, "window_gc", userInput, sequence);
+    generateBEDFile(header, entropyData, "window_entropy", userInput, sequence);
+    generateBEDFile(header, patternBEDData, "pattern_matching", userInput, sequence);
     for (const auto& [pattern, countData] : patternCountData) {
-        generateBEDFile(header, countData, pattern + "_count", windowSize, segLength);
+        generateBEDFile(header, countData, pattern + "_count", userInput, sequence);
     }
     for (const auto& [pattern, densityData] : patternDensityData) {
-        generateBEDFile(header, densityData, pattern + "_density", windowSize, segLength);
+        generateBEDFile(header, densityData, pattern + "_density", userInput, sequence);
     }
 }
