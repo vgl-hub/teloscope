@@ -110,9 +110,9 @@ std::string cleanString(const std::string& input) {
 template <typename T>
 void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, T>>& data, 
                     const std::string& fileName, const UserInputTeloscope& userInput, std::string &sequence) {
-    std::string cleanedHeader = cleanString(header); // Clean the header string
-    std::string bedFileName = outRoute + "/" + cleanedHeader + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
-    std::ofstream bedFile(bedFileName, std::ios::out);
+    std::string cleanedHeader = cleanString(header);
+    std::string bedFileName = outRoute + "/teloscope_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
+    std::ofstream bedFile(bedFileName, std::ios::out | std::ios::app); // Open file in append mode
     
     if (!bedFile.is_open()) {
         std::cerr << "Failed to open file: " << bedFileName << '\n';
@@ -125,9 +125,9 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
         uint64_t end;
 
         if constexpr (std::is_same<T, std::string>::value) {
-            end = start + value.size() - 1; // For pattern data, use the string size
+            end = start + value.size() - 1; // For patterns, use the string size
         } else {
-            end = (start + userInput.windowSize - 1 < sequence.size()) ? start + userInput.windowSize - 1 : sequence.size() - 1; // For other data, use the window size
+            end = (start + userInput.windowSize - 1 < sequence.size()) ? start + userInput.windowSize - 1 : sequence.size() - 1; // Otherwise, use the window size
         }
 
         bedFile << cleanedHeader << "\t" << start << "\t" << end << "\t" << value << "\n";
@@ -137,7 +137,7 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
 }
 
 
-void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput) {
+void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput) { // const UserInputTeloscope& userInput
     auto root = std::make_shared<TrieNode>();
     for (const auto& pattern : userInput.patterns) {
         insertPattern(root, pattern);
