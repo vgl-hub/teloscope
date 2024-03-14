@@ -213,6 +213,7 @@ int main(int argc, char **argv) {
     InSequences inSequences; // initialize sequence collection object
     lg.verbose("Sequence object generated");
     in.read(inSequences); // read input content to inSequences container
+    // in.sortOutput(); // jack: ??????? 
 
     threadPool.join();
 
