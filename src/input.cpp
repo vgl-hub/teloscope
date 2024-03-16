@@ -42,58 +42,11 @@ void Input::read(InSequences &inSequences) {
     jobWait(threadPool); // Wait for all jobs to complete
 } 
 
-// bool Input::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps) {
-//     // create an instance of the object to store the output. At the end of the loop, add the object to the shared vector. 
-//     unsigned int cUId = 0, gapLen = 0;
-//     std::vector<PathComponent> pathComponents = path->getComponents();
-//     uint64_t absPos = 0;
-    
-//     for (std::vector<PathComponent>::iterator component = pathComponents.begin(); component != pathComponents.end(); component++) {
-            
-//         cUId = component->id;
-    
-//         if (component->componentType == SEGMENT) {
-            
-//             auto inSegment = find_if(inSegments.begin(), inSegments.end(), [cUId](InSegment* obj) {return obj->getuId() == cUId;}); // given a node Uid, find it
-//             std::string sequence = (*inSegment)->getInSequence(component->start, component->end);
-
-//             unmaskSequence(sequence);
-//             absPos += sequence.size();
-                
-//             if (component->orientation == '+') {
-
-//                 findTelomeres(path->getHeader(), sequence, userInput);
-
-//             } else{
-//             }
-            
-//         }else if (component->componentType == GAP){
-            
-//             auto inGap = find_if(inGaps.begin(), inGaps.end(), [cUId](InGap& obj) {return obj.getuId() == cUId;}); // given a node Uid, find it
-//             gapLen += inGap->getDist(component->start - component->end);
-//             absPos += gapLen;
-            
-//         }else{
-//         } // need to handle edges, cigars etc
-        
-//     }
-
-//     // protect the push_back?      std::unique_lock<std::mutex> lck (mtx);
-//     // here put the push_back to the vector, or the shared object, to keep track of the order of jobs submitted.
-//     return true;
-// }
-
-
 bool Input::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps) {
     // create an instance of the object to store the output. At the end of the loop, add the object to the shared vector. 
     unsigned int cUId = 0, gapLen = 0;
     std::vector<PathComponent> pathComponents = path->getComponents();
-    uint64_t absPos = 0;
-
-    // std::string sequence = (*inPath)->getInSequence(path->start, path->end);
-
-    std::string sequence;
-    
+        
     for (std::vector<PathComponent>::iterator component = pathComponents.begin(); component != pathComponents.end(); component++) {
             
         cUId = component->id;
@@ -101,126 +54,32 @@ bool Input::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vec
         if (component->componentType == SEGMENT) {
             
             auto inSegment = find_if(inSegments.begin(), inSegments.end(), [cUId](InSegment* obj) {return obj->getuId() == cUId;}); // given a node Uid, find it
-            std::string segSeq = (*inSegment)->getInSequence(component->start, component->end);
+            std::string sequence = (*inSegment)->getInSequence(component->start, component->end);
+            unmaskSequence(sequence);
+            
+            if (component->orientation == '+') {
 
-            unmaskSequence(segSeq);
-            absPos += segSeq.size();
-            sequence.append(segSeq);
+                findTelomeres(path->getHeader(), sequence, userInput);
+
+            } else {
+            }
+            
+            userInput.absPos += sequence.size();
             
         }else if (component->componentType == GAP){
             
             auto inGap = find_if(inGaps.begin(), inGaps.end(), [cUId](InGap& obj) {return obj.getuId() == cUId;}); // given a node Uid, find it
             gapLen += inGap->getDist(component->start - component->end);
-            absPos += gapLen;
-            sequence.append(gapLen, 'N');
+            userInput.absPos += gapLen;
             
-        }else{
+        } else {
         } // need to handle edges, cigars etc
+        
     }
 
-    findTelomeres(path->getHeader(), sequence, userInput);
+    userInput.absPos = 0; // reset the absolute position for the next segment
 
     // protect the push_back?      std::unique_lock<std::mutex> lck (mtx);
     // here put the push_back to the vector, or the shared object, to keep track of the order of jobs submitted.
     return true;
 }
-
-
-
-
-
-
-
-
-
-
- 
-
-// std::mutex resultsMutex; // Mutex for thread-safe result collection 
-
-// std::vector<std::pair<int, OutputType>> results; // Pair of order ID and output data 
-
-  
-
-// void Input::load(UserInputTeloscope userInput) { 
-
-//     this->userInput = userInput; 
-
-// } 
-
-  
-
-// void Input::read(InSequences& inSequences) {  
-
-//     loadGenome(userInput, inSequences); 
-
-  
-
-//     std::vector<InPath> inPaths = inSequences.getInPaths(); 
-
-//     std::vector<std::future<void>> futures; 
-
-  
-
-//     int order = 0; 
-
-//     for (InPath& inPath : inPaths) { 
-
-//         futures.push_back( 
-
-//             threadPool.enqueue([this, &inPath, order]() { 
-
-//                 walkPath(inPath, order); 
-
-//             }) 
-
-//         ); 
-
-//         order++; 
-
-//     } 
-
-  
-
-//     for (auto& future : futures) { 
-
-//         future.get();
-
-//     } 
-
-  
-
-//     // Ensure results are sorted by their original order before finalizing 
-
-//     std::sort(results.begin(), results.end(), [](const auto& a, const auto& b) { 
-
-//         return a.first < b.first; 
-
-//     }); 
-
-
-//     // Process sorted results... 
-
-// } 
-
-  
-
-// void Input::walkPath(const InPath& path, int order) { 
-
-//     // Process path... 
-
-//     // Simulate output generation for the path 
-
-//     OutputType output = ...; // memory-based construct 
-
-  
-
-//     { 
-
-//         std::lock_guard<std::mutex> lock(resultsMutex); 
-
-//         results.push_back(std::make_pair(order, output)); 
-
-//     } 
-
-// } 

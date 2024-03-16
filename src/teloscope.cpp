@@ -2,6 +2,7 @@
 #include <fstream>
 #include <sstream> // check
 #include <map>
+#include <stdint.h> // what's this for?
 #include <vector>
 #include <string>
 #include <algorithm> // cleanString
@@ -32,8 +33,6 @@
 
 #include "teloscope.h"
 #include "input.h"
-
-
 
 struct TrieNode {
     std::unordered_map<char, std::shared_ptr<TrieNode>> children;
@@ -110,6 +109,10 @@ std::string cleanString(const std::string& input) {
 template <typename T>
 void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, T>>& data, 
                     const std::string& fileName, const UserInputTeloscope& userInput, std::string &sequence) {
+    // std::string cleanedHeader = cleanString(header); // Clean the header string
+    // std::string bedFileName = outRoute + "/" + cleanedHeader + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
+    // std::ofstream bedFile(bedFileName, std::ios::out);
+
     std::string cleanedHeader = cleanString(header);
     std::string bedFileName = outRoute + "/teloscope_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
     std::ofstream bedFile(bedFileName, std::ios::out | std::ios::app); // Open file in append mode
@@ -130,7 +133,7 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
             end = (start + userInput.windowSize - 1 < sequence.size()) ? start + userInput.windowSize - 1 : sequence.size() - 1; // Otherwise, use the window size
         }
 
-        bedFile << cleanedHeader << "\t" << start << "\t" << end << "\t" << value << "\n";
+        bedFile << cleanedHeader << "\t" << start + userInput.absPos << "\t" << end + userInput.absPos<< "\t" << value << "\n";
     }
 
     bedFile.close();
