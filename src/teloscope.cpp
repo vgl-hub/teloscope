@@ -106,12 +106,43 @@ std::string cleanString(const std::string& input) {
 }
 
 
+// template <typename T>
+// void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, T>>& data, 
+//                     const std::string& fileName, const UserInputTeloscope& userInput, std::string &sequence) {
+//     // std::string cleanedHeader = cleanString(header); // Clean the header string
+//     // std::string bedFileName = outRoute + "/" + cleanedHeader + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
+//     // std::ofstream bedFile(bedFileName, std::ios::out);
+
+//     std::string cleanedHeader = cleanString(header);
+//     std::string bedFileName = outRoute + "/teloscope_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
+//     std::ofstream bedFile(bedFileName, std::ios::out | std::ios::app); // Open file in append mode
+    
+//     if (!bedFile.is_open()) {
+//         std::cerr << "Failed to open file: " << bedFileName << '\n';
+//         return;
+//     }
+
+//     for (const auto& entry : data) {
+//         uint64_t start = std::get<0>(entry);
+//         T value = std::get<1>(entry);
+//         uint64_t end;
+
+//         if constexpr (std::is_same<T, std::string>::value) {
+//             end = start + value.size() - 1; // For patterns, use the string size
+//         } else {
+//             end = (start + userInput.windowSize - 1 < sequence.size()) ? start + userInput.windowSize - 1 : sequence.size() - 1; // Otherwise, use the window size
+//         }
+
+//         bedFile << cleanedHeader << "\t" << start + userInput.absPos << "\t" << end + userInput.absPos<< "\t" << value << "\n";
+//     }
+
+//     bedFile.close();
+// }
+
 template <typename T>
 void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, T>>& data, 
-                    const std::string& fileName, const UserInputTeloscope& userInput, std::string &sequence) {
-    // std::string cleanedHeader = cleanString(header); // Clean the header string
-    // std::string bedFileName = outRoute + "/" + cleanedHeader + "_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
-    // std::ofstream bedFile(bedFileName, std::ios::out);
+                    const std::string& fileName, const UserInputTeloscope& userInput, 
+                    std::string &sequence, unsigned int pathId, const std::map<unsigned int, uint64_t>& pathAbsPos) {
 
     std::string cleanedHeader = cleanString(header);
     std::string bedFileName = outRoute + "/teloscope_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
@@ -121,6 +152,14 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
         std::cerr << "Failed to open file: " << bedFileName << '\n';
         return;
     }
+
+    auto it = pathAbsPos.find(pathId);
+    // if (it == pathAbsPos.end()) {
+    //     std::cerr << "Invalid pathId: " << pathId << ". absPos not found.\n";
+    //     return;
+    // }
+
+    uint64_t absPos = it->second;
 
     for (const auto& entry : data) {
         uint64_t start = std::get<0>(entry);
@@ -133,7 +172,7 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
             end = (start + userInput.windowSize - 1 < sequence.size()) ? start + userInput.windowSize - 1 : sequence.size() - 1; // Otherwise, use the window size
         }
 
-        bedFile << cleanedHeader << "\t" << start + userInput.absPos << "\t" << end + userInput.absPos<< "\t" << value << "\n";
+        bedFile << cleanedHeader << "\t" << start  + absPos << "\t" << end  + absPos << "\t" << value << "\n";
     }
 
     bedFile.close();
@@ -157,6 +196,14 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
     std::string window = sequence.substr(0, userInput.windowSize);
     uint64_t windowStart = 0;
     uint32_t currentWindowSize;
+    unsigned int pathId;
+    std::map<unsigned int, uint64_t> pathAbsPos;
+
+    // Example debug output
+    for (const auto& pair : pathAbsPos) {
+        std::cout << "Path ID: " << pair.first << ", AbsPos: " << pair.second << std::endl;
+    }
+
 
     while (windowStart < sequence.size()) {
         currentWindowSize = (userInput.windowSize <= sequence.size() - windowStart) ? userInput.windowSize : (sequence.size() - windowStart);
@@ -181,13 +228,13 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         }
     }
 
-    generateBEDFile(header, GCData, "window_gc", userInput, sequence);
-    generateBEDFile(header, entropyData, "window_entropy", userInput, sequence);
-    generateBEDFile(header, patternBEDData, "pattern_matching", userInput, sequence);
+    generateBEDFile(header, GCData, "window_gc", userInput, sequence, pathId, pathAbsPos);
+    generateBEDFile(header, entropyData, "window_entropy", userInput, sequence, pathId, pathAbsPos);
+    generateBEDFile(header, patternBEDData, "pattern_matching", userInput, sequence, pathId, pathAbsPos);
     for (const auto& [pattern, countData] : patternCountData) {
-        generateBEDFile(header, countData, pattern + "_count", userInput, sequence);
+        generateBEDFile(header, countData, pattern + "_count", userInput, sequence, pathId, pathAbsPos);
     }
     for (const auto& [pattern, densityData] : patternDensityData) {
-        generateBEDFile(header, densityData, pattern + "_density", userInput, sequence);
+        generateBEDFile(header, densityData, pattern + "_density", userInput, sequence, pathId, pathAbsPos);
     }
 }

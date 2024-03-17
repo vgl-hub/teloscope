@@ -11,6 +11,7 @@
 #include <istream>
 #include <fstream>
 #include <sstream>
+#include <map>
 
 #include <getopt.h>
 
