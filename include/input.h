@@ -12,7 +12,7 @@ struct UserInputTeloscope : UserInput {
     double maxMem = 0;
     std::string prefix = ".", outFile = "";
     std::vector<std::string> mode;
-    uint64_t absPos = 0;
+    // uint64_t absPos = 0; // Safe for a single thread only
 };
 
 
@@ -20,6 +20,9 @@ class Input {
     
     UserInputTeloscope userInput;
     std::shared_ptr<std::istream> stream;
+
+    std::map<unsigned int, uint64_t> pathAbsPos; // Maps path ID to its absPos
+    std::mutex pathAbsPosMutex; // Mutex for thread-safe access to pathAbsPos
     
 public:
 

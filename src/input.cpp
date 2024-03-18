@@ -46,6 +46,10 @@ bool Input::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vec
     // create an instance of the object to store the output. At the end of the loop, add the object to the shared vector. 
     unsigned int cUId = 0, gapLen = 0;
     std::vector<PathComponent> pathComponents = path->getComponents();
+
+    std::lock_guard<std::mutex> guard(pathAbsPosMutex); // Ensure thread-safe access to pathAbsPos
+    unsigned int pathId = path->getpUId(); // Gfalibs: get a unique identifier for the path
+    uint64_t& absPos = pathAbsPos[pathId]; // Direct reference to absPos for this path
         
     for (std::vector<PathComponent>::iterator component = pathComponents.begin(); component != pathComponents.end(); component++) {
             
@@ -59,25 +63,28 @@ bool Input::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vec
             
             if (component->orientation == '+') {
 
-                findTelomeres(path->getHeader(), sequence, userInput);
+                findTelomeres(path->getHeader(), sequence, userInput, absPos);
 
             } else {
             }
             
-            userInput.absPos += sequence.size();
+            // userInput.absPos += sequence.size();
+            absPos += sequence.size();
             
         }else if (component->componentType == GAP){
             
             auto inGap = find_if(inGaps.begin(), inGaps.end(), [cUId](InGap& obj) {return obj.getuId() == cUId;}); // given a node Uid, find it
             gapLen += inGap->getDist(component->start - component->end);
-            userInput.absPos += gapLen;
+
+            // userInput.absPos += gapLen;
+            absPos += gapLen;
             
         } else {
         } // need to handle edges, cigars etc
         
     }
 
-    userInput.absPos = 0; // reset the absolute position for the next segment
+    // userInput.absPos = 0; // reset the absolute position for the next segment
 
     // protect the push_back?      std::unique_lock<std::mutex> lck (mtx);
     // here put the push_back to the vector, or the shared object, to keep track of the order of jobs submitted.
