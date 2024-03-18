@@ -1,7 +1,7 @@
 #ifndef INPUT_H
 #define INPUT_H
 
-#include "main.h" //check
+#include "main.h" // not in Mac's code
 
 struct UserInputTeloscope : UserInput {
 
@@ -12,7 +12,7 @@ struct UserInputTeloscope : UserInput {
     double maxMem = 0;
     std::string prefix = ".", outFile = "";
     std::vector<std::string> mode;
-
+    uint64_t absPos = 0;
 };
 
 
@@ -20,10 +20,6 @@ class Input {
     
     UserInputTeloscope userInput;
     std::shared_ptr<std::istream> stream;
-    
-    unsigned int pathId; // Progressive ID assigned to each path
-    std::map<unsigned int, uint64_t> pathAbsPos; // Maps path ID to its absPos
-    std::vector<unsigned int> pathOrder; // Track original path order
     
 public:
 

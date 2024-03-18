@@ -31,25 +31,12 @@ void Input::read(InSequences &inSequences) {
 
     std::vector<InPath> inPaths = inSequences.getInPaths(); 
     std::vector<InSegment*> *inSegments = inSequences.getInSegments(); 
-    std::vector<InGap> *inGaps = inSequences.getInGaps();
+    std::vector<InGap> *inGaps = inSequences.getInGaps(); 
 
-    pathId = 0;
-
-    // for (InPath& inPath : inPaths)
-    //     threadPool.queueJob([&inPath, this, inSegments, inGaps]() { 
-    //         return walkPath(&inPath, *inSegments, *inGaps); // add counter to track job order submission to be collected next, create shared object e.g. std:vector accessible to all threads. How? 
-    //     });
-
-    for (InPath& inPath : inPaths) {
-        pathAbsPos[pathId] = 0; // Initialize absPos for this path
-        pathOrder.push_back(pathId); // Track the order of this path
-
+    for (InPath& inPath : inPaths)
         threadPool.queueJob([&inPath, this, inSegments, inGaps]() { 
-            return walkPath(&inPath, *inSegments, *inGaps);
-        });
-
-        pathId++; // Increment for the next path
-    }
+            return walkPath(&inPath, *inSegments, *inGaps); // add counter to track job order submission to be collected next, create shared object e.g. std:vector accessible to all threads. How? 
+        }); 
 
     std::cout << "Waiting for jobs to complete" << std::endl;
     jobWait(threadPool); // Wait for all jobs to complete
@@ -77,21 +64,20 @@ bool Input::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vec
             } else {
             }
             
-            pathAbsPos[pathId] += sequence.size();
+            userInput.absPos += sequence.size();
             
         }else if (component->componentType == GAP){
             
             auto inGap = find_if(inGaps.begin(), inGaps.end(), [cUId](InGap& obj) {return obj.getuId() == cUId;}); // given a node Uid, find it
             gapLen += inGap->getDist(component->start - component->end);
-
-            pathAbsPos[pathId] += gapLen;
+            userInput.absPos += gapLen;
             
         } else {
         } // need to handle edges, cigars etc
         
     }
 
-    // userInput.absPos = 0; // reset the absolute position for the next segment
+    userInput.absPos = 0; // reset the absolute position for the next segment
 
     // protect the push_back?      std::unique_lock<std::mutex> lck (mtx);
     // here put the push_back to the vector, or the shared object, to keep track of the order of jobs submitted.

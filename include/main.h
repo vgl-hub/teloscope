@@ -44,6 +44,6 @@
 #include "input-filters.h"
 #include "input-gfa.h"
 
-#include "input.h"
+#include "input.h" // was in Mac's code
 
 #endif /* MAIN_H */
