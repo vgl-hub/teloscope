@@ -8,14 +8,29 @@
 #include <memory>
 #include <unordered_map>
 
-// Forward declaration
-struct TrieNode;
+class Trie {
 
-void insertPattern(std::shared_ptr<TrieNode> root, const std::string &pattern);
+    struct TrieNode {
+        std::unordered_map<char, std::shared_ptr<TrieNode>> children;
+        bool isEndOfWord = false;
+    };
 
-void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &window, uint64_t windowStart, 
-                        std::vector<std::tuple<uint64_t, std::string>> &patternBEDData, const UserInputTeloscope& userInput,
-                        std::map<char, uint64_t> &nucleotideCounts, std::unordered_map<std::string, uint32_t> &patternCounts);
+    std::shared_ptr<TrieNode> root;
+
+public:
+
+    Trie() : root(std::make_shared<TrieNode>()) {}
+
+    void insertPattern(const std::string& pattern);
+
+    void findPatternsInWindow(const std::string &window, uint64_t windowStart,
+                            std::vector<std::tuple<uint64_t, std::string>> &patternBEDData, const UserInputTeloscope& userInput,
+                            std::map<char, uint64_t> &nucleotideCounts, std::unordered_map<std::string, uint32_t> &patternCounts);
+};
+
+// void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &window, uint64_t windowStart, 
+//                         std::vector<std::tuple<uint64_t, std::string>> &patternBEDData, const UserInputTeloscope& userInput,
+//                         std::map<char, uint64_t> &nucleotideCounts, std::unordered_map<std::string, uint32_t> &patternCounts);
 
 float getShannonEntropy(const std::map<char, uint64_t>& nucleotideCounts, uint32_t windowSize);
 
