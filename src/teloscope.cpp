@@ -4,14 +4,11 @@
 #include <map>
 #include <stdint.h> // what's this for?
 #include <vector>
-#include <string>
 #include <algorithm> // cleanString
 #include <array> // check
 #include <cmath>
 #include <type_traits> // generateBEDFile
 #include <chrono> // check
-#include <memory>
-#include <unordered_map>
 
 #include "log.h"
 #include "global.h"
@@ -34,13 +31,7 @@
 #include "teloscope.h"
 #include "input.h"
 
-struct TrieNode {
-    std::unordered_map<char, std::shared_ptr<TrieNode>> children;
-    bool isEndOfWord = false;
-};
-
-
-void insertPattern(std::shared_ptr<TrieNode> root, const std::string &pattern) {
+void Trie::insertPattern(const std::string& pattern) {
     auto current = root;
     for (char ch : pattern) {
         if (current->children.find(ch) == current->children.end()) {
@@ -52,9 +43,9 @@ void insertPattern(std::shared_ptr<TrieNode> root, const std::string &pattern) {
 }
 
 
-void findPatternsInWindow(std::shared_ptr<TrieNode> root, const std::string &window, uint64_t windowStart, 
-                        std::vector<std::tuple<uint64_t, std::string>> &patternBEDData, const UserInputTeloscope& userInput,
-                        std::map<char, uint64_t> &nucleotideCounts, std::unordered_map<std::string, uint32_t> &patternCounts) {
+void Trie::findPatternsInWindow(const std::string &window, uint64_t windowStart,
+                                std::vector<std::tuple<uint64_t, std::string>> &patternBEDData, const UserInputTeloscope& userInput,
+                                std::map<char, uint64_t> &nucleotideCounts, std::unordered_map<std::string, uint32_t> &patternCounts) {
 
     nucleotideCounts = {{'A', 0}, {'C', 0}, {'G', 0}, {'T', 0}};
 
@@ -141,8 +132,12 @@ std::string cleanString(const std::string& input) {
 
 template <typename T>
 void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, T>>& data, 
+<<<<<<< HEAD
                     const std::string& fileName, const UserInputTeloscope& userInput, 
                     std::string &sequence, unsigned int pathId, const std::map<unsigned int, uint64_t>& pathAbsPos) {
+=======
+                    const std::string& fileName, const UserInputTeloscope& userInput, std::string &sequence) {
+>>>>>>> teloscope-oop
 
     std::string cleanedHeader = cleanString(header);
     std::string bedFileName = outRoute + "/teloscope_" + fileName + (typeid(T) == typeid(std::string) ? ".bed" : ".bedgraph");
@@ -180,11 +175,11 @@ void generateBEDFile(const std::string& header, const std::vector<std::tuple<uin
 
 
 void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput) { // const UserInputTeloscope& userInput
-    auto root = std::make_shared<TrieNode>();
+   
+    Trie trie;
     for (const auto& pattern : userInput.patterns) {
-        insertPattern(root, pattern);
+        trie.insertPattern(pattern);
     }
-    
     std::vector<std::tuple<uint64_t, float>> GCData, entropyData;
     std::vector<std::tuple<uint64_t, std::string>> patternBEDData;
     std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t>>> patternCountData;
@@ -209,7 +204,7 @@ void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope
         currentWindowSize = (userInput.windowSize <= sequence.size() - windowStart) ? userInput.windowSize : (sequence.size() - windowStart);
 
         patternCounts.clear();
-        findPatternsInWindow(root, window, windowStart, patternBEDData, userInput, nucleotideCounts, patternCounts);
+        trie.findPatternsInWindow(window, windowStart, patternBEDData, userInput, nucleotideCounts, patternCounts);
 
         for (const auto& [pattern, count] : patternCounts) {
             float density = static_cast<float>(count * pattern.size()) / currentWindowSize;
