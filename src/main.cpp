@@ -208,12 +208,11 @@ int main(int argc, char **argv) {
 
     Input in;
     in.load(userInput); // load user input
-    lg.verbose("Loaded user input");
+    lg.verbose("Loaded user input"); // jack: log not defined yet
     
     InSequences inSequences; // initialize sequence collection object
     lg.verbose("Sequence object generated");
     in.read(inSequences); // read input content to inSequences container
-    // in.sortOutput(); // jack: ??????? 
 
     threadPool.join();
 

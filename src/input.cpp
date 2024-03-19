@@ -43,13 +43,14 @@ void Input::read(InSequences &inSequences) {
 } 
 
 bool Input::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps) {
-    // create an instance of the object to store the output. At the end of the loop, add the object to the shared vector. 
+    // Giulio: create an instance of the object to store the output. At the end of the loop, add the object to the shared vector.
+    // Jack: We need a container for storing and a method for sorting the objects.
     unsigned int cUId = 0, gapLen = 0;
     std::vector<PathComponent> pathComponents = path->getComponents();
 
-    std::lock_guard<std::mutex> guard(pathAbsPosMutex); // Ensure thread-safe access to pathAbsPos
+    std::lock_guard<std::mutex> guard(pathAbsPosMutex); // Thread-safe access to pathAbsPos
     unsigned int pathId = path->getpUId(); // Gfalibs: get a unique identifier for the path
-    uint64_t& absPos = pathAbsPos[pathId]; // Direct reference to absPos for this path
+    uint64_t& absPos = pathAbsPos[pathId]; // Direct ref to absPos for this path
         
     for (std::vector<PathComponent>::iterator component = pathComponents.begin(); component != pathComponents.end(); component++) {
             
@@ -83,8 +84,6 @@ bool Input::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vec
         } // need to handle edges, cigars etc
         
     }
-
-    // userInput.absPos = 0; // reset the absolute position for the next segment
 
     // protect the push_back?      std::unique_lock<std::mutex> lck (mtx);
     // here put the push_back to the vector, or the shared object, to keep track of the order of jobs submitted.

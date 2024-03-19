@@ -12,7 +12,6 @@ struct UserInputTeloscope : UserInput {
     double maxMem = 0;
     std::string prefix = ".", outFile = "";
     std::vector<std::string> mode;
-    // uint64_t absPos = 0; // Safe for a single thread only
 };
 
 

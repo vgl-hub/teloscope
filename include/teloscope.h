@@ -32,15 +32,12 @@ float getShannonEntropy(const std::map<char, uint64_t>& nucleotideCounts, uint32
 
 float getGCContent(const std::map<char, uint64_t>& nucleotideCounts, uint32_t windowSize);
 
-// template <typename T>
-// void generateBEDFile(const std::string& header, const std::vector<std::tuple<uint64_t, T>>& data, 
-//                     const std::string& fileName, const UserInputTeloscope& userInput, std::string &sequence);
 
 class BEDFileGenerator {
     std::string header;
     std::string fileName;
     UserInputTeloscope userInput;
-    uint64_t absPos; // Absolute position for the current path
+    uint64_t absPos;
 
 public:
     BEDFileGenerator(const std::string& header, const UserInputTeloscope& userInput, uint64_t absPos)
@@ -50,8 +47,26 @@ public:
     void generateBEDFile(const std::vector<std::tuple<uint64_t, T>>& data, const std::string& fileName, const std::string& sequence);
 };
 
-
-// void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput);
 void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput, uint64_t absPos);
+
+
+// class Teloscope {
+// private:
+//     Trie trie;
+//     std::vector<std::tuple<uint64_t, float>> GCData, entropyData;
+//     std::vector<std::tuple<uint64_t, std::string>> patternBEDData;
+//     std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t>>> patternCountData;
+//     std::map<std::string, std::vector<std::tuple<uint64_t, float>>> patternDensityData;
+//     std::map<char, uint64_t> nucleotideCounts;
+//     std::unordered_map<std::string, uint32_t> patternCounts;
+//     std::string window;
+//     uint64_t windowStart;
+//     uint32_t currentWindowSize;
+
+// public:
+//     Teloscope() : windowStart(0) {}
+
+//     void findTelomeres(std::string header, std::string &sequence, UserInputTeloscope userInput, uint64_t absPos);
+// };
 
 #endif // TELOSCOPE_H
