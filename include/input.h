@@ -26,7 +26,6 @@ public:
 
     void load(UserInputTeloscope userInput);
     void read(InSequences &inSequence);
-    // bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
 
 };
 

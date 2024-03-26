@@ -28,38 +28,34 @@ void Input::load(UserInputTeloscope userInput) {
 }
 
 
-void Input::read(InSequences &inSequences) { 
+void Input::read(InSequences &inSequences) {
+
     loadGenome(userInput, inSequences); // load from FA/FQ/GFA to templated object
 
     std::vector<InPath> inPaths = inSequences.getInPaths(); 
     std::vector<InSegment*> *inSegments = inSequences.getInSegments(); 
     std::vector<InGap> *inGaps = inSequences.getInGaps();
+
     Teloscope teloscope(userInput);
 
     for (InPath& inPath : inPaths)
-        // threadPool.queueJob([&inPath, this, inSegments, inGaps]() {
+    
         threadPool.queueJob([&inPath, this, inSegments, inGaps, &teloscope]() {
-            return teloscope.walkPath(&inPath, *inSegments, *inGaps); // add counter to track job order submission to be collected next, create shared object e.g. std:vector accessible to all threads. How? 
+            return teloscope.walkPath(&inPath, *inSegments, *inGaps);
         }); 
 
-    std::cout << "Waiting for jobs to complete" << std::endl;
+    std::cout << "Waiting for jobs to complete" << "\n";
     jobWait(threadPool); // Wait for all jobs to complete
-    std::cout << "All jobs completed" << std::endl;
+    std::cout << "All jobs completed" << "\n";
     
-    // teloscope.sortWindowsBySeqPos();
+    teloscope.sortWindowsBySeqPos();
     teloscope.printAllWindows();
-
-    // Giulio: create an instance of the object to store the output. At the end of the loop, add the object to the shared vector.
-    // Jack: We need a container for storing and a method for sorting the objects.
-    // protect the push_back?      std::unique_lock<std::mutex> lck (mtx); std::lock_guard<std::mutex> guard(pathAbsPosMutex);
-    // here put the push_back to the vector, or the shared object, to keep track of the order of jobs submitted.
 }
 
 
 bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps) {
 
-    // unsigned int cUId = 0, gapLen = 0, seqPos = path->getSeqPos();
-    unsigned int cUId = 0, gapLen = 0;
+    unsigned int cUId = 0, gapLen = 0, seqPos = path->getSeqPos();
     std::vector<PathComponent> pathComponents = path->getComponents();
     uint64_t absPos = 0;
     std::vector<WindowData> pathWindows;
@@ -98,8 +94,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     }
 
     std::unique_lock<std::mutex> lck (mtx);
-    insertWindowData(pathWindows);
-    // insertWindowData(seqPos, pathWindows);
+    insertWindowData(seqPos, pathWindows);
 
     return true;
 }
