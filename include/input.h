@@ -16,12 +16,9 @@ struct UserInputTeloscope : UserInput {
 
 
 class Input {
-    
+
     UserInputTeloscope userInput;
     std::shared_ptr<std::istream> stream;
-
-    std::map<unsigned int, uint64_t> pathAbsPos; // Maps path ID to its absPos
-    std::mutex pathAbsPosMutex; // Mutex for thread-safe access to pathAbsPos
     
 public:
 
@@ -29,7 +26,7 @@ public:
 
     void load(UserInputTeloscope userInput);
     void read(InSequences &inSequence);
-    bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
+    // bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
 
 };
 
