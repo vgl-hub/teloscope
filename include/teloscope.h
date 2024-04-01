@@ -2,6 +2,7 @@
 #define TELOSCOPE_H
 
 #include "input.h" // not in Mac's code
+#include <iostream>
 #include <map>
 #include <vector>
 #include <string>
@@ -62,21 +63,38 @@ public:
 };
 
 
+struct PatternData {
+    std::vector<uint64_t> positions; // Match indexes in window
+    uint32_t count = 0; // Total pattern count
+    float density = 0.0f; // Density of the pattern
+};
+
 struct WindowData {
     uint64_t windowStart;
     float gcContent;
     float shannonEntropy;
     std::unordered_map<char, uint64_t> nucleotideCounts;
-    std::unordered_map<std::string, uint32_t> patternCounts;
-    std::vector<std::tuple<uint64_t, std::string>> patternBEDData;
-    std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t>>> patternCountData;
-    std::map<std::string, std::vector<std::tuple<uint64_t, float>>> patternDensityData;
+    std::unordered_map<std::string, PatternData> patternMap; // Condensed pattern data
+    
+    WindowData() : windowStart(0), gcContent(0.0f), shannonEntropy(0.0f), nucleotideCounts{{'A', 0}, {'C', 0}, {'G', 0}, {'T', 0}} {}
+};
+
+
+// struct WindowData {
+//     uint64_t windowStart;
+//     float gcContent;
+//     float shannonEntropy;
+//     std::unordered_map<char, uint64_t> nucleotideCounts;
+//     std::unordered_map<std::string, uint32_t> patternCounts;
+//     std::vector<std::tuple<uint64_t, std::string>> patternBEDData;
+//     std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t>>> patternCountData;
+//     std::map<std::string, std::vector<std::tuple<uint64_t, float>>> patternDensityData;
 
     
-    WindowData() : windowStart(0), gcContent(0.0f), shannonEntropy(0.0f) {
-        nucleotideCounts = {{'A', 0}, {'C', 0}, {'G', 0}, {'T', 0}};
-    }
-};
+//     WindowData() : windowStart(0), gcContent(0.0f), shannonEntropy(0.0f) {
+//         nucleotideCounts = {{'A', 0}, {'C', 0}, {'G', 0}, {'T', 0}};
+//     }
+// };
 
 class Teloscope {
 
@@ -114,24 +132,26 @@ public:
     }
 
     void printAllWindows() {
+        
+        std::cout << "Printing all windows finished!\n";
 
-        for (const auto& [seqPos, windows] : allWindows) {
-            std::cout << "Sequence position: " << seqPos << "\n";
+        // for (const auto& [seqPos, windows] : allWindows) {
+        //     std::cout << "Sequence position: " << seqPos << "\n";
 
-            for (const auto& window : windows) {
-                std::cout << "Window start: " << window.windowStart << "\n";
-                std::cout << "GC content: " << window.gcContent << "\n";
-                std::cout << "Shannon entropy: " << window.shannonEntropy << "\n";
+        //     for (const auto& window : windows) {
+        //         std::cout << "Window start: " << window.windowStart << "\n";
+        //         std::cout << "GC content: " << window.gcContent << "\n";
+        //         std::cout << "Shannon entropy: " << window.shannonEntropy << "\n";
 
-                for (const auto& [nucleotide, count] : window.nucleotideCounts) {
-                    std::cout << nucleotide << ": " << count << "\n";
+        //         for (const auto& [nucleotide, count] : window.nucleotideCounts) {
+        //             std::cout << nucleotide << ": " << count << "\n";
 
-                }
-                for (const auto& [pattern, count] : window.patternCounts) {
-                    std::cout << pattern << ": " << count << "\n";
-                }
-            }
-        }
+        //         }
+        //         for (const auto& [pattern, count] : window.patternCounts) {
+        //             std::cout << pattern << ": " << count << "\n";
+        //         }
+        //     }
+        // }
     }
 
     // void generateBEDFile(std::string outRoute) {
