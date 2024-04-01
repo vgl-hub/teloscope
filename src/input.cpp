@@ -74,7 +74,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
                 // Jack: header = cleanString(path->getHeader()); 
                 // std::vector<WindowData> segmentWindows = teloscope.analyzeSegment(path->getHeader(), sequence, userInput, absPos, pathId);
                 std::vector<WindowData> segmentWindows = analyzeSegment(sequence, userInput, absPos);
-                pathWindows.insert(pathWindows.end(), segmentWindows.begin(), segmentWindows.end());
+                pathWindows.insert(pathWindows.end(), segmentWindows.begin(), segmentWindows.end()); // Jack: we need to also add the path header
 
             } else {
             }
