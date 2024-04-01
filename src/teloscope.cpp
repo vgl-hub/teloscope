@@ -71,39 +71,6 @@ float Teloscope::getGCContent(const std::unordered_map<char, uint64_t>& nucleoti
 }
 
 
-// void Teloscope::analyzeWindow(const std::string &window, uint64_t windowStart, WindowData& windowData) {
-
-//     windowData.windowStart = windowStart;
-//     unsigned short int longestPatternSize = this->trie.getLongestPatternSize(); // to implement
-
-//     for (uint64_t i = 0; i < window.size(); ++i) { // For each nucleotide in the window
-//         windowData.nucleotideCounts[window[i]]++; // For GC/entropy
-
-//         auto current = trie.getRoot();
-//         uint64_t scanLimit = std::min(i + longestPatternSize, window.size());
-        
-//         for (uint64_t j = i; j < scanLimit; ++j) { // Only scan positions in range of patterns
-            
-//             if (!trie.hasChild(current, window[j])) break;  
-//             current = trie.getChild(current, window[j]);
-
-//             if (current->isEndOfWord) {
-//                 std::string pattern = window.substr(i, j - i + 1);
-//                 windowData.patternCounts[pattern]++; // Count all matches
-
-//                 if (userInput.windowSize == userInput.step || windowStart == 0 || j >= userInput.windowSize - userInput.step) {
-//                     windowData.patternBEDData.emplace_back(windowStart + i, pattern); // Correct by absPos here?
-//                 }
-
-
-//             }
-//         }
-//     }
-
-//     windowData.gcContent = getGCContent(windowData.nucleotideCounts, window.size());
-//     windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, window.size());
-// }
-
 void Teloscope::analyzeWindow(const std::string &window, uint64_t windowStart, WindowData& windowData) {
 
     windowData.windowStart = windowStart;
@@ -179,34 +146,3 @@ std::vector<WindowData> Teloscope::analyzeSegment(std::string &sequence, UserInp
     
     return windows;
 }
-
-// // std::vector<WindowData> Teloscope::analyzeSegment(std::string header, std::string &sequence, UserInputTeloscope userInput, uint64_t absPos, unsigned int pathId) {
-// std::vector<WindowData> Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos) {
-
-//     uint64_t windowStart = 0;
-//     uint32_t currentWindowSize;
-//     std::string window = sequence.substr(0, userInput.windowSize);
-//     std::vector<WindowData> windows;
-
-//     while (windowStart < sequence.size()) {
-//         currentWindowSize = std::min(userInput.windowSize, static_cast<uint32_t>(sequence.size() - windowStart));
-        
-//         WindowData windowData; // create instance per window
-//         windowData.patternCounts.clear(); // otherwise it accumulates? 
-//         // analyzeWindow(window, windowStart + absPos, windowData);
-//         analyzeWindow(window, windowStart, windowData);
-//         windowData.windowStart = windowStart + absPos;
-
-//         windows.push_back(windowData);
-
-//         windowStart += userInput.step;
-//         if (currentWindowSize == userInput.windowSize) { // recycle overlapping sequence
-//             window = window.substr(userInput.step) + sequence.substr(windowStart + userInput.windowSize - userInput.step, userInput.step);
-//         } else {
-//             break;
-//         }
-//     }
-    
-//     return windows;
-    
-// }

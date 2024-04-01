@@ -50,6 +50,7 @@ void Input::read(InSequences &inSequences) {
     
     teloscope.sortWindowsBySeqPos();
     teloscope.printAllWindows();
+    teloscope.generateBEDFile();
 }
 
 

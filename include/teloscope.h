@@ -44,17 +44,9 @@ public:
     // std::shared_ptr<TrieNode> getChildIfExists(const std::shared_ptr<TrieNode>& node, char ch) const {
     //     auto it = node->children.find(ch); // Jack: Test behavior with breaks.
     //     if (it != node->children.end()) {
-    //         return it->second;
+    //         return it->second; // Return shared_ptr to the TrieNode if found
     //     }
-    //     return nullptr;
-    // }
-
-    // std::shared_ptr<Trie::TrieNode> Trie::getChildIfExists(const std::shared_ptr<TrieNode>& node, char ch) const {
-    //     auto it = node->children.find(ch);
-    //     if (it != node->children.end()) {
-    //         return it->second; // Directly returns the shared_ptr to the TrieNode if found
-    //     }
-    //     return nullptr; // Returns nullptr if the character is not a child of the given node
+    //     return nullptr; // If character is not a child of the given node
     // }
 
     unsigned short int getLongestPatternSize() const {
@@ -79,22 +71,6 @@ struct WindowData {
     WindowData() : windowStart(0), gcContent(0.0f), shannonEntropy(0.0f), nucleotideCounts{{'A', 0}, {'C', 0}, {'G', 0}, {'T', 0}} {}
 };
 
-
-// struct WindowData {
-//     uint64_t windowStart;
-//     float gcContent;
-//     float shannonEntropy;
-//     std::unordered_map<char, uint64_t> nucleotideCounts;
-//     std::unordered_map<std::string, uint32_t> patternCounts;
-//     std::vector<std::tuple<uint64_t, std::string>> patternBEDData;
-//     std::map<std::string, std::vector<std::tuple<uint64_t, uint64_t>>> patternCountData;
-//     std::map<std::string, std::vector<std::tuple<uint64_t, float>>> patternDensityData;
-
-    
-//     WindowData() : windowStart(0), gcContent(0.0f), shannonEntropy(0.0f) {
-//         nucleotideCounts = {{'A', 0}, {'C', 0}, {'G', 0}, {'T', 0}};
-//     }
-// };
 
 class Teloscope {
 
@@ -133,7 +109,7 @@ public:
 
     void printAllWindows() {
         
-        std::cout << "Printing all windows finished!\n";
+        std::cout << "Printing all windows works!\n";
 
         // for (const auto& [seqPos, windows] : allWindows) {
         //     std::cout << "Sequence position: " << seqPos << "\n";
@@ -154,26 +130,72 @@ public:
         // }
     }
 
-    // void generateBEDFile(std::string outRoute) {
-    //     std::string bedFileName = outRoute + "/teloscope.bed"; // Suffix and format change by data
-    //     std::ofstream bedFile(bedFileName, std::ios::out);
+    void generateBEDFile() {
+        // Open files
+        std::ofstream shannonFile(outRoute + "/shannonEntropy.bedgraph");
+        std::ofstream gcContentFile(outRoute + "/gcContent.bedgraph");
 
-    //     if (!bedFile.is_open()) {
-    //         std::cerr << "Failed to open file: " << bedFileName << '\n';
-    //         return;
-    //     }
+        // Hold file streams for pattern data
+        std::unordered_map<std::string, std::ofstream> patternMatchFiles;
+        std::unordered_map<std::string, std::ofstream> patternCountFiles;
+        std::unordered_map<std::string, std::ofstream> patternDensityFiles;
 
-    //     for (const auto& [seqPos, windows] : allWindows) {
-    //         for (const auto& window : windows) {
-    //             for (const auto& [start, pattern] : window.patternBEDData) {
-    //                 uint64_t end = start + pattern.size() - 1;
-    //                 bedFile << cleanedHeader << "\t" << start << "\t" << end << "\t" << pattern << "\n";
-    //             }
-    //         }
-    //     }
+        // Open files for all patterns
+        for (const auto& pattern : userInput.patterns) {
+            patternMatchFiles[pattern].open(outRoute + "/" + pattern + "_matches.bed");
+            patternCountFiles[pattern].open(outRoute + "/" + pattern + "_count.bedgraph");
+            patternDensityFiles[pattern].open(outRoute + "/" + pattern + "_density.bedgraph");
+        }
 
-    //     bedFile.close();
-    // }
+        // Write data for each window
+        for (const auto& [seqPos, windows] : allWindows) {
+            for (const auto& window : windows) {
+
+                // std::string cleanHeader = cleanString(header); // Jack: header = cleanString(path->getHeader());
+                std::string cleanHeader = "header";
+
+                uint64_t windowEnd = window.windowStart + userInput.windowSize - 1;
+
+                // Write Shannon entropy and GC content
+                shannonFile << cleanHeader << "\t" << window.windowStart << "\t"
+                            << windowEnd << "\t"
+                            << window.shannonEntropy << "\n";
+                gcContentFile << cleanHeader << "\t" << window.windowStart << "\t"
+                            << windowEnd << "\t"
+                            << window.gcContent << "\n";
+
+                // Write pattern data
+                for (const auto& [pattern, data] : window.patternMap) {
+                    for (auto pos : data.positions) {
+                        patternMatchFiles[pattern] << cleanHeader << "\t"
+                                                << window.windowStart + pos << "\t"
+                                                << window.windowStart + pos + pattern.length() - 1 << "\t"
+                                                << pattern << "\n";
+                    }
+                    patternCountFiles[pattern] << cleanHeader << "\t" << window.windowStart << "\t"
+                                            << windowEnd << "\t"
+                                            << data.count << "\n";
+                    patternDensityFiles[pattern] << cleanHeader << "\t" << window.windowStart << "\t"
+                                                << windowEnd << "\t"
+                                                << data.density << "\n";
+                }
+            }
+        }
+
+        // Close all files
+        shannonFile.close();
+        gcContentFile.close();
+        for (auto& [pattern, file] : patternMatchFiles) {
+            file.close();
+        }
+        for (auto& [pattern, file] : patternCountFiles) {
+            file.close();
+        }
+        for (auto& [pattern, file] : patternDensityFiles) {
+            file.close();
+        }
+    }
+
 };
 
 #endif // TELOSCOPE_H/
