@@ -60,6 +60,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     std::vector<PathComponent> pathComponents = path->getComponents();
     uint64_t absPos = 0;
     std::vector<WindowData> pathWindows;
+    std::string header = cleanString(path->getHeader());
 
     for (std::vector<PathComponent>::iterator component = pathComponents.begin(); component != pathComponents.end(); component++) {
             
@@ -72,10 +73,9 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
             unmaskSequence(sequence);
             
             if (component->orientation == '+') {
-                // Jack: header = cleanString(path->getHeader()); 
-                // std::vector<WindowData> segmentWindows = teloscope.analyzeSegment(path->getHeader(), sequence, userInput, absPos, pathId);
+
                 std::vector<WindowData> segmentWindows = analyzeSegment(sequence, userInput, absPos);
-                pathWindows.insert(pathWindows.end(), segmentWindows.begin(), segmentWindows.end()); // Jack: we need to also add the path header
+                pathWindows.insert(pathWindows.end(), segmentWindows.begin(), segmentWindows.end());
 
             } else {
             }
@@ -95,7 +95,8 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     }
 
     std::unique_lock<std::mutex> lck (mtx);
-    insertWindowData(seqPos, pathWindows);
+    // insertWindowData(seqPos, pathWindows);
+    insertWindowData(seqPos, header, pathWindows); 
 
     return true;
 }
