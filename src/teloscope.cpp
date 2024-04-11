@@ -71,10 +71,10 @@ float Teloscope::getGCContent(const std::unordered_map<char, uint64_t>& nucleoti
 }
 
 
-void Teloscope::analyzeWindow(const std::string &window, uint64_t windowStart, WindowData& windowData) {
+void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData) {
 
     windowData.windowStart = windowStart;
-    unsigned short int longestPatternSize = this->trie.getLongestPatternSize(); // to implement
+    unsigned short int longestPatternSize = this->trie.getLongestPatternSize();
 
     for (uint64_t i = 0; i < window.size(); ++i) { // For each nucleotide in the window
         windowData.nucleotideCounts[window[i]]++; // For GC/entropy
@@ -110,10 +110,11 @@ void Teloscope::analyzeWindow(const std::string &window, uint64_t windowStart, W
     }
 }
 
+
 std::vector<WindowData> Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos) {
     
     std::vector<WindowData> windows;
-    uint64_t windowStart = 0;
+    uint32_t windowStart = 0;
     uint32_t currentWindowSize = std::min(userInput.windowSize, static_cast<uint32_t>(sequence.size())); // In case segment is short
     std::string window = sequence.substr(0, currentWindowSize);
     
@@ -125,6 +126,7 @@ std::vector<WindowData> Teloscope::analyzeSegment(std::string &sequence, UserInp
         analyzeWindow(window, windowStart, windowData);
 
         windowData.windowStart = windowStart + absPos;
+        windowData.currentWindowSize = currentWindowSize;
         windows.push_back(windowData); // Add to the vector of windows
 
         // Prepare next window

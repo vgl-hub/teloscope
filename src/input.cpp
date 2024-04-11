@@ -95,7 +95,6 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     }
 
     std::unique_lock<std::mutex> lck (mtx);
-    // insertWindowData(seqPos, pathWindows);
     insertWindowData(seqPos, header, pathWindows); 
 
     return true;
