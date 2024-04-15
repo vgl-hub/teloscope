@@ -11,7 +11,7 @@ struct UserInputTeloscope : UserInput {
     uint32_t step = 500;
     double maxMem = 0;
     std::string prefix = ".", outFile = "";
-    std::vector<std::string> mode;
+    bool modeMatch = true, modeEntropy = true, modeGC = true;
 };
 
 

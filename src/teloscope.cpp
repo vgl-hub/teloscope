@@ -77,36 +77,46 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
     unsigned short int longestPatternSize = this->trie.getLongestPatternSize();
 
     for (uint64_t i = 0; i < window.size(); ++i) { // For each nucleotide in the window
-        windowData.nucleotideCounts[window[i]]++; // For GC/entropy
-
-        auto current = trie.getRoot();
-        uint64_t scanLimit = std::min(i + longestPatternSize, window.size());
+        if (userInput.modeGC || userInput.modeEntropy) {
+            windowData.nucleotideCounts[window[i]]++; // For GC/entropy
+        }
         
-        for (uint64_t j = i; j < scanLimit; ++j) { // Only scan positions in range of patterns
+
+        if (userInput.modeMatch) {
+            auto current = trie.getRoot();
+            uint64_t scanLimit = std::min(i + longestPatternSize, window.size());
             
-            if (!trie.hasChild(current, window[j])) break;  
-            current = trie.getChild(current, window[j]);
+            for (uint64_t j = i; j < scanLimit; ++j) { // Only scan positions in range of patterns
+                
+                if (!trie.hasChild(current, window[j])) break;  
+                current = trie.getChild(current, window[j]);
 
-            if (current->isEndOfWord) {
-                std::string pattern = window.substr(i, j - i + 1);
-                windowData.patternMap[pattern].count++; // Count all matches
+                if (current->isEndOfWord) {
+                    std::string pattern = window.substr(i, j - i + 1);
+                    windowData.patternMap[pattern].count++; // Count all matches
 
-                if (userInput.windowSize == userInput.step || windowStart == 0 || j >= userInput.windowSize - userInput.step) {
-                    windowData.patternMap[pattern].positions.push_back(i);
+                    if (userInput.windowSize == userInput.step || windowStart == 0 || j >= userInput.windowSize - userInput.step) {
+                        windowData.patternMap[pattern].positions.push_back(i);
+                    }
                 }
-
-
             }
         }
     }
+    
+    if (userInput.modeGC) {
+        windowData.gcContent = getGCContent(windowData.nucleotideCounts, window.size());
+    }
 
-    windowData.gcContent = getGCContent(windowData.nucleotideCounts, window.size());
-    windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, window.size());
+    if (userInput.modeEntropy) {
+        windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, window.size());
+    }
 
-    for (auto &entry : windowData.patternMap) {
-        auto &pattern = entry.first;
-        auto &data = entry.second;
-        data.density = static_cast<float>(data.count * pattern.size()) / window.size();
+    if (userInput.modeMatch) {
+        for (auto &entry : windowData.patternMap) {
+            auto &pattern = entry.first;
+            auto &data = entry.second;
+            data.density = static_cast<float>(data.count * pattern.size()) / window.size();
+        }
     }
 }
 

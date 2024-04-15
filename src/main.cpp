@@ -4,8 +4,9 @@
 #include <sstream>
 #include <stdlib.h>
 #include <string>
+#include <set>
 
-std::string version = "0.1.3";
+std::string version = "0.0.1";
 std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
 
 short int tabular_flag;
@@ -77,11 +78,11 @@ int main(int argc, char **argv) {
                 }
                 break;
             default: // handle positional arguments
-                                
-            case 0: // case for long options without short options
+
+            case 0: // case for long options without short options, none yet
                 
-//                if (strcmp(long_options[option_index].name,"line-length") == 0)
-//                  splitLength = atoi(optarg);
+                // if (strcmp(long_options[option_index].name,"line-length") == 0)
+                //     splitLength = atoi(optarg);
                 
                 break;
 
@@ -105,22 +106,65 @@ int main(int argc, char **argv) {
                 userInput.stats_flag = 1;
                 break;
 
+            // case 'm': {
+            //     std::istringstream modeStream(optarg);
+            //     std::string mode;
+            //     bool allModes = false;
+
+            //     while (std::getline(modeStream, mode, ',')) {
+            //         if (mode.empty()) continue;
+
+            //         if (std::any_of(mode.begin(), mode.end(), ::isdigit)) {
+            //             std::cerr << "Error: Mode '" << mode << "' contains numerical characters.\n";
+            //             exit(EXIT_FAILURE);
+            //         }
+
+            //         if (mode == "all") {
+            //             allModes = true;
+            //             break;
+            //         }
+            //         if (mode == "match") userInput.modeMatch = true;
+            //         else if (mode == "entropy") userInput.modeEntropy = true;
+            //         else if (mode == "gc") userInput.modeGC = true;
+            //     }
+            //     // Set all modes to true if none is specified as a default behavior
+            //     if (allModes || !(userInput.modeMatch || userInput.modeEntropy || userInput.modeGC)) {
+            //         userInput.modeMatch = userInput.modeEntropy = userInput.modeGC = true;
+            //     }
+            //     break;
+            // }
+
             case 'm': {
                 std::istringstream modeStream(optarg);
                 std::string mode;
-                bool allModeSelected = false;
+                std::set<std::string> providedModes;
+
                 while (std::getline(modeStream, mode, ',')) {
-                    if (mode == "all") {
-                        allModeSelected = true;
-                        break;
+                    if (mode.empty()) continue;
+
+                    if (std::any_of(mode.begin(), mode.end(), ::isdigit)) {
+                        std::cerr << "Error: Mode '" << mode << "' contains numerical characters.\n";
+                        exit(EXIT_FAILURE);
                     }
-                    userInput.mode.push_back(mode);
+
+                    std::transform(mode.begin(), mode.end(), mode.begin(), ::tolower);
+
+                    if (mode == "all") {
+                        providedModes = {"match", "entropy", "gc"};
+                        break;
+                    } else {
+                        providedModes.insert(mode);
+                    }
                 }
-                if (allModeSelected || userInput.mode.empty()) {
-                    userInput.mode = {"match", "count", "density", "entropy", "gc"};
-                }
+
+                // Only disable modes that were not provided
+                if (providedModes.find("match") == providedModes.end()) userInput.modeMatch = false;
+                if (providedModes.find("entropy") == providedModes.end()) userInput.modeEntropy = false;
+                if (providedModes.find("gc") == providedModes.end()) userInput.modeGC = false;
+
                 break;
             }
+
 
             case 'o':
             {
@@ -137,14 +181,27 @@ int main(int argc, char **argv) {
             {
                 std::istringstream patternStream(optarg);
                 std::string pattern;
+                
                 while (std::getline(patternStream, pattern, ',')) {
-                    std::cout << "Adding pattern: " << pattern << std::endl;
+                    if (pattern.empty()) continue;
+
+                    if (std::any_of(pattern.begin(), pattern.end(), ::isdigit)) {
+                        std::cerr << "Error: Pattern '" << pattern << "' contains numerical characters.\n";
+                        exit(EXIT_FAILURE);
+                    }
+                    
+                    unmaskSequence(pattern);
+                    
+                    std::cout << "Adding pattern: " << pattern << " and its reverse complement" <<  "\n";
                     userInput.patterns.emplace_back(pattern);
+                    userInput.patterns.emplace_back(revCom(pattern));
                 }
-                // if (userInput.patterns.empty()) {
-                //     userInput.patterns = {"TTAGGG", "CCCTAA"};
-                //     std::cout << "No patterns selected: Using canonical TTAAGGG and CCCTAA" << std::endl;
-                // }
+                
+                std::unique(userInput.patterns.begin(), userInput.patterns.end());
+                if (userInput.patterns.empty()) {
+                    userInput.patterns = {"TTAGGG", "CCCTAA"};
+                    std::cout << "No patterns provided. Using canonical patterns: TTAAGGG, CCCTAA" << "\n";
+                }
             }
                 break;
 
@@ -161,11 +218,12 @@ int main(int argc, char **argv) {
                     exit(EXIT_FAILURE);
 
                 } else if (userInput.step == userInput.windowSize) {
-                    fprintf(stderr, "Warning: Equal step and window sizes will bin the sequence. Large window/step sizes are recommended to avoid missing matches.\n");
+                    fprintf(stderr, "Warning: Equal step and window sizes will bin the sequence.\n");
+                    fprintf(stderr, "Tip: Large sizes are recommended to avoid missing matches between windows.\n");
                     
                 } else {
                     fprintf(stderr, "Sliding windows with step size (%d) and window size (%d). \n", userInput.step, userInput.windowSize);
-                    fprintf(stderr, "Note: A step value close the window size results in fast runs.\n");
+                    fprintf(stderr, "Tip: A step value close the window size results in faster runs.\n");
                 }
                 break;
 
