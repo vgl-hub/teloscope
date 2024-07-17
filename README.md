@@ -1,13 +1,30 @@
 # Teloscope
+A telomere annotation tool.
 
-**Tool Use**
+Teloscope is a fast and comprehensive tool for matching, counting and reporting telomeric pattens from genome assemblies (.fa) or (.fa.gz). Teloscope allows the calculation of other metrics such as: 
 
-This tool uses a sliding window to detect the occurrences of a given string in a sequence. The teloscope can be used to find certain chains of base pairs such as the 'TTAGGG' often found in the telomeres of vertebrates. Given the input of a DNA sequence, the sequence being detected, and specifications for the window, the teloscope will produce a vector that contains the number of times a sequences is in the following window. The best steps to use (from personal experience) would be a step with a quantity of 1 or 3.
+* GC
+* Shannon Entropy
 
-**Installation**
+Teloscope reports all these metrics and the final telomere coordinates in BED/BEDgraph files and produces a summary report.
+
+## Installation
 
 Either download one of the releases or `git clone https://github.com/vgl-hub/teloscope.git --recursive` and `make -j` in `teloscope` folder.
 
-**Quick Start**
+## Usage
 
-**Command Line**
+`teloscope -f input.[fasta][.gz] -p TTAGGG,TTAGGGG -w [window size] -s [step size]`
+
+To check out all options and flags, please use:
+`teloscope -h`
+
+**Note:** Teloscope automatically explores for the input patterns and their reverse complements. If none are provided, it will scan for the canonical CCCTAA/TTAGGG repeats. 
+
+## Description
+
+Briefly, **Teloscope** reads any assembly and decompose its parts. It uses prefix trees and sliding windows to match and count telomeric patterns efficiently. It also analyzes the informational properties of the assembly to distinguish canonical and non-canonical telomere repeats.
+
+## How to cite
+
+If you use **Teloscope**, please cite the current repository. 
