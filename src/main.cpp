@@ -200,7 +200,7 @@ int main(int argc, char **argv) {
                 std::unique(userInput.patterns.begin(), userInput.patterns.end());
                 if (userInput.patterns.empty()) {
                     userInput.patterns = {"TTAGGG", "CCCTAA"};
-                    std::cout << "No patterns provided. Using canonical patterns: TTAAGGG, CCCTAA" << "\n";
+                    std::cout << "No patterns provided. Using canonical patterns: TTAGGG, CCCTAA" << "\n";
                 }
             }
                 break;

@@ -90,7 +90,6 @@ public:
     
     std::vector<WindowData> analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos);
 
-
     void insertWindowData(unsigned int seqPos, const std::string& header, std::vector<WindowData>& pathWindows) {
         allWindows.push_back(std::make_tuple(seqPos, header, pathWindows)); // Giulio: cleaner with struct
     }
@@ -105,74 +104,6 @@ public:
     void printAllWindows() {
         std::cout << "Printing all windows in BEDs!\n";
     }
-
-
-    // void generateBEDFile() {
-    //     // Open GC/entropy files
-    //     std::ofstream shannonFile(outRoute + "/shannonEntropy.bedgraph");
-    //     std::ofstream gcContentFile(outRoute + "/gcContent.bedgraph");
-
-    //     // Hold file streams for pattern data
-    //     std::unordered_map<std::string, std::ofstream> patternMatchFiles;
-    //     std::unordered_map<std::string, std::ofstream> patternCountFiles;
-    //     std::unordered_map<std::string, std::ofstream> patternDensityFiles;
-
-    //     // Open pattern-related files
-    //     for (const auto& pattern : userInput.patterns) {
-    //         patternMatchFiles[pattern].open(outRoute + "/" + pattern + "_matches.bed");
-    //         patternCountFiles[pattern].open(outRoute + "/" + pattern + "_count.bedgraph");
-    //         patternDensityFiles[pattern].open(outRoute + "/" + pattern + "_density.bedgraph");
-    //     }
-
-    //     // Write data for each window
-    //     for (const auto& windowData : allWindows) {
-    //         unsigned int seqPos;
-    //         std::string header;
-    //         std::vector<WindowData> windows;
-    //         std::tie(seqPos, header, windows) = windowData; // Unpack the tuple
-
-    //         for (const auto& window : windows) {
-    //             uint32_t windowEnd = window.windowStart + window.currentWindowSize - 1;
-
-    //             // Write window Shannon entropy and GC
-    //             shannonFile << header << "\t" << window.windowStart << "\t"
-    //                         << windowEnd << "\t"
-    //                         << window.shannonEntropy << "\n";
-    //             gcContentFile << header << "\t" << window.windowStart << "\t"
-    //                         << windowEnd << "\t"
-    //                         << window.gcContent << "\n";
-
-    //             // Write pattern data
-    //             for (const auto& [pattern, data] : window.patternMap) {
-    //                 for (auto pos : data.positions) {
-    //                     patternMatchFiles[pattern] << header << "\t"
-    //                                             << window.windowStart + pos << "\t"
-    //                                             << window.windowStart + pos + pattern.length() - 1 << "\t"
-    //                                             << pattern << "\n";
-    //                 }
-    //                 patternCountFiles[pattern] << header << "\t" << window.windowStart << "\t"
-    //                                         << windowEnd << "\t"
-    //                                         << data.count << "\n";
-    //                 patternDensityFiles[pattern] << header << "\t" << window.windowStart << "\t"
-    //                                             << windowEnd << "\t"
-    //                                             << data.density << "\n";
-    //             }
-    //         }
-    //     }
-
-    //     // Close all files
-    //     shannonFile.close();
-    //     gcContentFile.close();
-    //     for (auto& [pattern, file] : patternMatchFiles) {
-    //         file.close();
-    //     }
-    //     for (auto& [pattern, file] : patternCountFiles) {
-    //         file.close();
-    //     }
-    //     for (auto& [pattern, file] : patternDensityFiles) {
-    //         file.close();
-    //     }
-    // }
 
     void generateBEDFile() {
         std::ofstream shannonFile; // Declare file streams
