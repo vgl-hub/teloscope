@@ -8,10 +8,10 @@ CTTAGGGCTTAGGGC
 CCCTAACCTTAGGGC
 
 >Header4_initial_gap_1_pattern
-NNNTCCCTAAcgCtC
+NNNNNCCCTAAcgCt
 
 >Header5_terminal_gap_1_pattern
-ATCTTAGGGACGNNN
+ATCTTAGGGANNNNN
 
 >Header6_multiple_gaps_1_pattern
 TTAGGgNNCTTAGGGACNNTTaggg
