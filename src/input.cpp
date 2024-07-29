@@ -49,8 +49,8 @@ void Input::read(InSequences &inSequences) {
     std::cout << "All jobs completed" << "\n";
     
     teloscope.sortWindowsBySeqPos();
-    teloscope.printAllWindows();
     teloscope.generateBEDFile();
+    teloscope.printSummary();
 }
 
 
@@ -60,7 +60,9 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     std::vector<PathComponent> pathComponents = path->getComponents();
     uint64_t absPos = 0;
     std::vector<WindowData> pathWindows;
-    std::string header = cleanString(path->getHeader());
+    std::string header = removeCarriageReturns(path->getHeader());
+    // std::string header = path->getHeader();
+    // eraseChar(header, '\r');
 
     for (std::vector<PathComponent>::iterator component = pathComponents.begin(); component != pathComponents.end(); component++) {
             

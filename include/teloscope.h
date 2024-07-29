@@ -9,7 +9,7 @@
 #include <memory>
 #include <unordered_map>
 
-std::string cleanString(const std::string& input);
+std::string removeCarriageReturns(const std::string& input);
 
 class Trie {
     struct TrieNode {
@@ -41,6 +41,14 @@ public:
         return nullptr;
     }
 
+    // std::shared_ptr<TrieNode> getChild(const std::shared_ptr<TrieNode>& node, char ch) const {
+    //     auto it = node->children.find(ch);
+    //     if (it != node->children.end()) {
+    //         return it->second;
+    //     }
+    //     return nullptr;
+    // }
+
     unsigned short int getLongestPatternSize() const {
         return longestPatternSize;
     }
@@ -70,7 +78,8 @@ class Teloscope {
     Trie trie; // Declare trie instance
     UserInputTeloscope userInput; // Declare user input instance
     std::vector<std::tuple<unsigned int, std::string, std::vector<WindowData>>> allWindows; // Assembly windows
-
+    int totalNWindows = 0; // Total windows analyzed
+    std::map<std::string, int> patternCounts; // Total counts
 
     float getShannonEntropy(const std::unordered_map<char, uint64_t>& nucleotideCounts, uint32_t windowSize);
     float getGCContent(const std::unordered_map<char, uint64_t>& nucleotideCounts, uint32_t windowSize);
@@ -80,7 +89,7 @@ public:
 
     Teloscope(UserInputTeloscope userInput) : userInput(userInput) {
         for (const auto& pattern : userInput.patterns) {
-        trie.insertPattern(pattern);
+            trie.insertPattern(pattern);
         }
     }
 
@@ -101,10 +110,6 @@ public:
         });
     }
 
-    void printAllWindows() {
-        std::cout << "Printing all windows in BEDs!\n";
-    }
-
     void generateBEDFile() {
         std::ofstream shannonFile; // Declare file streams
         std::ofstream gcContentFile;
@@ -112,6 +117,7 @@ public:
         std::unordered_map<std::string, std::ofstream> patternMatchFiles; // Hold file streams for pattern data
         std::unordered_map<std::string, std::ofstream> patternCountFiles;
         std::unordered_map<std::string, std::ofstream> patternDensityFiles;
+        std::cout << "Reporting window matches and metrics in BED/BEDgraphs...\n";
 
         // Only create and write to files if their modes are enabled
         if (userInput.modeEntropy) {
@@ -138,6 +144,7 @@ public:
             std::tie(seqPos, header, windows) = windowData; // Unpack the tuple
 
             for (const auto& window : windows) {
+                totalNWindows++; // Update total window count
                 uint32_t windowEnd = window.windowStart + window.currentWindowSize - 1;
 
                 // Write window Shannon entropy if enabled
@@ -169,6 +176,8 @@ public:
                         patternDensityFiles[pattern] << header << "\t" << window.windowStart << "\t"
                                                     << windowEnd << "\t"
                                                     << data.density << "\n";
+                        
+                        patternCounts[pattern] += data.count; // Update total pattern counts
                     }
                 }
             }
@@ -192,7 +201,14 @@ public:
                 file.close();
             }
         }
+    }
 
+    void printSummary() {
+        std::cout << "Total windows analyzed: " << totalNWindows << "\n";
+        std::cout << "Total input patterns found: " << std::endl;
+        for (const auto& [pattern, count] : patternCounts) {
+            std::cout << "Pattern: " << pattern << " Count: " << count << std::endl;
+        }
     }
 };
 

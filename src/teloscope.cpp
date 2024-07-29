@@ -3,7 +3,7 @@
 #include <sstream> // check
 #include <stdint.h> // what's this for?
 #include <vector>
-#include <algorithm> // cleanString
+#include <algorithm> // removeCarriageReturns
 #include <array> // check
 #include <cmath>
 #include <type_traits> // generateBEDFile
@@ -46,12 +46,15 @@ void Trie::insertPattern(const std::string& pattern) {
 }
 
 
-std::string cleanString(const std::string& input) {
+std::string removeCarriageReturns(const std::string& input) {
     std::string output = input;
     output.erase(std::remove(output.begin(), output.end(), '\r'), output.end());
     return output;
 }
 
+// void eraseChar(std::string& input, char rmChar) {
+//     input.erase(std::remove(input.begin(), input.end(), rmChar), input.end());
+// }
 
 float Teloscope::getShannonEntropy(const std::unordered_map<char, uint64_t>& nucleotideCounts, uint32_t windowSize) {
     float entropy = 0.0;

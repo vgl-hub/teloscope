@@ -106,34 +106,6 @@ int main(int argc, char **argv) {
                 userInput.stats_flag = 1;
                 break;
 
-            // case 'm': {
-            //     std::istringstream modeStream(optarg);
-            //     std::string mode;
-            //     bool allModes = false;
-
-            //     while (std::getline(modeStream, mode, ',')) {
-            //         if (mode.empty()) continue;
-
-            //         if (std::any_of(mode.begin(), mode.end(), ::isdigit)) {
-            //             std::cerr << "Error: Mode '" << mode << "' contains numerical characters.\n";
-            //             exit(EXIT_FAILURE);
-            //         }
-
-            //         if (mode == "all") {
-            //             allModes = true;
-            //             break;
-            //         }
-            //         if (mode == "match") userInput.modeMatch = true;
-            //         else if (mode == "entropy") userInput.modeEntropy = true;
-            //         else if (mode == "gc") userInput.modeGC = true;
-            //     }
-            //     // Set all modes to true if none is specified as a default behavior
-            //     if (allModes || !(userInput.modeMatch || userInput.modeEntropy || userInput.modeGC)) {
-            //         userInput.modeMatch = userInput.modeEntropy = userInput.modeGC = true;
-            //     }
-            //     break;
-            // }
-
             case 'm': {
                 std::istringstream modeStream(optarg);
                 std::string mode;
