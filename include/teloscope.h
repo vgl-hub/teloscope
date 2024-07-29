@@ -103,7 +103,6 @@ public:
         allWindows.push_back(std::make_tuple(seqPos, header, pathWindows)); // Giulio: cleaner with struct
     }
 
-
     void sortWindowsBySeqPos() {
         std::sort(allWindows.begin(), allWindows.end(), [](const auto& one, const auto& two) {
             return std::get<0>(one) < std::get<0>(two);
@@ -204,10 +203,11 @@ public:
     }
 
     void printSummary() {
-        std::cout << "Total windows analyzed: " << totalNWindows << "\n";
-        std::cout << "Total input patterns found: " << std::endl;
+        std::cout << "\n" << "+++Summary Report+++" << "\n";
+        std::cout << "Total windows analyzed:" << "\t" << totalNWindows << "\n";
+        std::cout << "Total input patterns found:" << "\n";
         for (const auto& [pattern, count] : patternCounts) {
-            std::cout << "Pattern: " << pattern << " Count: " << count << std::endl;
+            std::cout << "Pattern:" << "\t" << pattern << "\t" << count << "\n";
         }
     }
 };
