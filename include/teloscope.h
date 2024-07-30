@@ -78,12 +78,19 @@ class Teloscope {
     Trie trie; // Declare trie instance
     UserInputTeloscope userInput; // Declare user input instance
     std::vector<std::tuple<unsigned int, std::string, std::vector<WindowData>>> allWindows; // Assembly windows
+
     int totalNWindows = 0; // Total windows analyzed
     std::map<std::string, int> patternCounts; // Total counts
+    std::vector<float> entropyValues; // Total entropy values
+    std::vector<float> gcContentValues; // Total GC content values
 
     float getShannonEntropy(const std::unordered_map<char, uint64_t>& nucleotideCounts, uint32_t windowSize);
     float getGCContent(const std::unordered_map<char, uint64_t>& nucleotideCounts, uint32_t windowSize);
 
+    float getMean(const std::vector<float>& values);
+    float getMedian(std::vector<float> values);
+    float getMin(std::vector<float> values);
+    float getMax(std::vector<float> values);
 
 public:
 
@@ -151,6 +158,7 @@ public:
                     shannonFile << header << "\t" << window.windowStart << "\t"
                                 << windowEnd << "\t"
                                 << window.shannonEntropy << "\n";
+                    entropyValues.push_back(window.shannonEntropy); // Update entropy values
                 }
 
                 // Write window GC content if enabled
@@ -158,6 +166,7 @@ public:
                     gcContentFile << header << "\t" << window.windowStart << "\t"
                                 << windowEnd << "\t"
                                 << window.gcContent << "\n";
+                    gcContentValues.push_back(window.gcContent);
                 }
 
                 // Write pattern data if enabled
@@ -168,6 +177,7 @@ public:
                                                     << window.windowStart + pos << "\t"
                                                     << window.windowStart + pos + pattern.length() - 1 << "\t"
                                                     << pattern << "\n";
+                            patternCounts[pattern]++; // Update total pattern counts
                         }
                         patternCountFiles[pattern] << header << "\t" << window.windowStart << "\t"
                                                 << windowEnd << "\t"
@@ -175,8 +185,6 @@ public:
                         patternDensityFiles[pattern] << header << "\t" << window.windowStart << "\t"
                                                     << windowEnd << "\t"
                                                     << data.density << "\n";
-                        
-                        patternCounts[pattern] += data.count; // Update total pattern counts
                     }
                 }
             }
@@ -203,13 +211,34 @@ public:
     }
 
     void printSummary() {
-        std::cout << "\n" << "+++Summary Report+++" << "\n";
-        std::cout << "Total windows analyzed:" << "\t" << totalNWindows << "\n";
-        std::cout << "Total input patterns found:" << "\n";
+        std::cout << "\n+++Summary Report+++\n";
+        std::cout << "Total windows analyzed:\t" << totalNWindows << "\n";
+        std::cout << "Total input patterns found:\n";
         for (const auto& [pattern, count] : patternCounts) {
-            std::cout << "Pattern:" << "\t" << pattern << "\t" << count << "\n";
+            std::cout << "Pattern:\t" << pattern << "\t" << count << "\n";
         }
+
+        // For each pattern, print the path header with the highest number of matches - PENDING
+        // For each pattern, print the path header with the lowest number of matches - PENDING
+
+        std::cout << "Max Shannon Entropy:\t" << getMax(entropyValues) << "\n";
+        std::cout << "Mean Shannon Entropy:\t" << getMean(entropyValues) << "\n";
+        std::cout << "Median Shannon Entropy:\t" << getMedian(entropyValues) << "\n";
+        std::cout << "Min Shannon Entropy:\t" << getMin(entropyValues) << "\n";
+
+        std::cout << "Max GC Content:\t" << getMax(gcContentValues) << "\n";
+        std::cout << "Mean GC Content:\t" << getMean(gcContentValues) << "\n";
+        std::cout << "Median GC Content:\t" << getMedian(gcContentValues) << "\n";
+        std::cout << "Min GC Content:\t" << getMin(gcContentValues) << "\n";
     }
+
+    void teloAnnotation() {
+        /// For each path we need two telomeric coordinates: p (start) and q (end)
+        /// For p telomere: Start to last semi-continous repeat
+        /// For q telomere: First semi-continous repeat to end
+        /// Semi-continous repeat: 2 or more repeats of the same pattern
+    }
+
 };
 
 #endif // TELOSCOPE_H/
