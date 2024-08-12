@@ -31,6 +31,7 @@ void Input::load(UserInputTeloscope userInput) {
 void Input::read(InSequences &inSequences) {
 
     loadGenome(userInput, inSequences); // load from FA/FQ/GFA to templated object
+    lg.verbose("Finished loading genome assembly");
 
     std::vector<InPath> inPaths = inSequences.getInPaths(); 
     std::vector<InSegment*> *inSegments = inSequences.getInSegments(); 
@@ -39,33 +40,44 @@ void Input::read(InSequences &inSequences) {
     Teloscope teloscope(userInput);
 
     for (InPath& inPath : inPaths)
-    
         threadPool.queueJob([&inPath, this, inSegments, inGaps, &teloscope]() {
             return teloscope.walkPath(&inPath, *inSegments, *inGaps);
         }); 
 
-    std::cout << "Waiting for jobs to complete" << "\n";
+    lg.verbose("Waiting for jobs to complete");
+    std::cout << "Waiting for jobs to complete" << std::endl;
+
     jobWait(threadPool); // Wait for all jobs to complete
-    std::cout << "All jobs completed" << "\n";
+    lg.verbose("All jobs completed");
+    std::cout << "All jobs completed" << std::endl;
     
     teloscope.sortWindowsBySeqPos();
+    lg.verbose("\nPaths sorted by original position");  
+
     teloscope.generateBEDFile();
+    lg.verbose("\nBED/BEDgraph files generated");
+
     teloscope.printSummary();
+    lg.verbose("\nSummary printed");
 }
 
 
 bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps) {
+
+    Log threadLog;
 
     unsigned int cUId = 0, gapLen = 0, seqPos = path->getSeqPos();
     std::vector<PathComponent> pathComponents = path->getComponents();
     uint64_t absPos = 0;
     std::vector<WindowData> pathWindows;
     std::string header = removeCarriageReturns(path->getHeader());
+    threadLog.add("\n\tWalking path:\t" + path->getHeader());
+
     // std::string header = path->getHeader();
     // eraseChar(header, '\r');
 
     for (std::vector<PathComponent>::iterator component = pathComponents.begin(); component != pathComponents.end(); component++) {
-            
+        
         cUId = component->id;
     
         if (component->componentType == SEGMENT) {
@@ -96,8 +108,13 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
         
     }
 
-    std::unique_lock<std::mutex> lck (mtx);
-    insertWindowData(seqPos, header, pathWindows); 
+    // std::unique_lock<std::mutex> lck (mtx);
+    std::lock_guard<std::mutex> lck(mtx);
+    insertWindowData(seqPos, header, pathWindows);
+
+    threadLog.add("\tCompleted walking path:\t" + path->getHeader());
+    // std::lock_guard<std::mutex> lck(mtx); // Jack: does the first lock_guard protect both?
+    logs.push_back(threadLog);
 
     return true;
 }

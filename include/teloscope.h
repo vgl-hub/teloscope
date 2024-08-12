@@ -232,7 +232,7 @@ public:
         std::cout << "Min GC Content:\t" << getMin(gcContentValues) << "\n";
     }
 
-    void teloAnnotation() {
+    void annotateTelomeres() {
         /// For each path we need two telomeric coordinates: p (start) and q (end)
         /// For p telomere: Start to last semi-continous repeat
         /// For q telomere: First semi-continous repeat to end
