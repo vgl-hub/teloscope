@@ -175,7 +175,7 @@ public:
                         for (auto pos : data.positions) {
                             patternMatchFiles[pattern] << header << "\t"
                                                     << window.windowStart + pos << "\t"
-                                                    << window.windowStart + pos + pattern.length() - 1 << "\t"
+                                                    << window.windowStart + pos + pattern.length() << "\t" // Start is already 0-based
                                                     << pattern << "\n";
                             patternCounts[pattern]++; // Update total pattern counts
                         }
