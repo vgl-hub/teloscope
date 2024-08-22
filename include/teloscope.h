@@ -151,7 +151,7 @@ public:
 
             for (const auto& window : windows) {
                 totalNWindows++; // Update total window count
-                uint32_t windowEnd = window.windowStart + window.currentWindowSize - 1;
+                uint32_t windowEnd = window.windowStart + window.currentWindowSize; // Start is already 0-based
 
                 // Write window Shannon entropy if enabled
                 if (userInput.modeEntropy) {
