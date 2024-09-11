@@ -175,7 +175,7 @@ std::vector<WindowData> Teloscope::analyzeSegment(std::string &sequence, UserInp
         }
 
         // Recycle the overlapping string sequence
-        currentWindowSize = std::min(userInput.windowSize, static_cast<uint32_t>(sequence.size() - windowStart));
+        currentWindowSize = std::min(userInput.windowSize, static_cast<uint32_t>(sequence.size() - windowStart)); // CHECK
 
         if (currentWindowSize == userInput.windowSize) {
             window = window.substr(userInput.step) + sequence.substr(windowStart + userInput.windowSize - userInput.step, userInput.step);

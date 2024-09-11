@@ -99,7 +99,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
         }else if (component->componentType == GAP){
             
             auto inGap = find_if(inGaps.begin(), inGaps.end(), [cUId](InGap& obj) {return obj.getuId() == cUId;}); // given a node Uid, find it
-            gapLen += inGap->getDist(component->start - component->end);
+            gapLen = inGap->getDist(component->start - component->end);
 
             absPos += gapLen;
             
