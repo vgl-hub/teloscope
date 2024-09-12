@@ -6,7 +6,7 @@
 #include <algorithm> // removeCarriageReturns
 #include <array> // check
 #include <cmath>
-#include <type_traits> // generateBEDFile
+#include <type_traits> // handlesBEDFile
 #include <chrono> // check
 
 #include "log.h"
@@ -56,6 +56,7 @@ std::string removeCarriageReturns(const std::string& input) {
 //     input.erase(std::remove(input.begin(), input.end(), rmChar), input.end());
 // }
 
+
 float Teloscope::getShannonEntropy(const std::unordered_map<char, uint64_t>& nucleotideCounts, uint32_t windowSize) {
     float entropy = 0.0;
     for (auto &[nucleotide, count] : nucleotideCounts) {
@@ -79,6 +80,7 @@ float Teloscope::getMean(const std::vector<float>& values) {
     return sum / values.size();
 }
 
+
 float Teloscope::getMedian(std::vector<float> values) {
     if (values.empty()) return 0.0;
     std::sort(values.begin(), values.end());
@@ -89,15 +91,19 @@ float Teloscope::getMedian(std::vector<float> values) {
         return values[size / 2];
     }
 }
+
+
 float Teloscope::getMin(const std::vector<float> values) {
     if (values.empty()) return 0.0;
     return *std::min_element(values.begin(), values.end());
 }
 
+
 float Teloscope::getMax(const std::vector<float> values) {
     if (values.empty()) return 0.0;
     return *std::max_element(values.begin(), values.end());
 }
+
 
 void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData) {
 

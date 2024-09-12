@@ -54,7 +54,7 @@ void Input::read(InSequences &inSequences) {
     teloscope.sortWindowsBySeqPos();
     lg.verbose("\nPaths sorted by original position");  
 
-    teloscope.generateBEDFile();
+    teloscope.handleBEDFile();
     lg.verbose("\nBED/BEDgraph files generated");
 
     teloscope.printSummary();
@@ -108,12 +108,10 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
         
     }
 
-    // std::unique_lock<std::mutex> lck (mtx);
     std::lock_guard<std::mutex> lck(mtx);
     insertWindowData(seqPos, header, pathWindows);
 
     threadLog.add("\tCompleted walking path:\t" + path->getHeader());
-    // std::lock_guard<std::mutex> lck(mtx); // Jack: does the first lock_guard protect both?
     logs.push_back(threadLog);
 
     return true;

@@ -80,12 +80,13 @@ class Teloscope {
     std::vector<std::tuple<unsigned int, std::string, std::vector<WindowData>>> allWindows; // Assembly windows
 
     int totalNWindows = 0; // Total windows analyzed
-    std::map<std::string, int> patternCounts; // Total counts
+    std::unordered_map<std::string, int> patternCounts; // Total counts
     std::vector<float> entropyValues; // Total entropy values
     std::vector<float> gcContentValues; // Total GC content values
 
     float getShannonEntropy(const std::unordered_map<char, uint64_t>& nucleotideCounts, uint32_t windowSize);
     float getGCContent(const std::unordered_map<char, uint64_t>& nucleotideCounts, uint32_t windowSize);
+
 
     float getMean(const std::vector<float>& values);
     float getMedian(std::vector<float> values);
@@ -100,15 +101,20 @@ public:
         }
     }
 
+
     bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
+
 
     void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData);
     
+
     std::vector<WindowData> analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos);
+
 
     void insertWindowData(unsigned int seqPos, const std::string& header, std::vector<WindowData>& pathWindows) {
         allWindows.push_back(std::make_tuple(seqPos, header, pathWindows)); // Giulio: cleaner with struct
     }
+
 
     void sortWindowsBySeqPos() {
         std::sort(allWindows.begin(), allWindows.end(), [](const auto& one, const auto& two) {
@@ -116,33 +122,12 @@ public:
         });
     }
 
-    void generateBEDFile() {
-        std::ofstream shannonFile; // Declare file streams
-        std::ofstream gcContentFile;
-        
-        std::unordered_map<std::string, std::ofstream> patternMatchFiles; // Hold file streams for pattern data
-        std::unordered_map<std::string, std::ofstream> patternCountFiles;
-        std::unordered_map<std::string, std::ofstream> patternDensityFiles;
-        std::cout << "Reporting window matches and metrics in BED/BEDgraphs...\n";
 
-        // Only create and write to files if their modes are enabled
-        if (userInput.modeEntropy) {
-            shannonFile.open(outRoute + "/shannonEntropy.bedgraph");
-        }
+    void writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
+                    std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
+                    std::unordered_map<std::string, std::ofstream>& patternCountFiles,
+                    std::unordered_map<std::string, std::ofstream>& patternDensityFiles) {
 
-        if (userInput.modeGC) {
-            gcContentFile.open(outRoute + "/gcContent.bedgraph");
-        }
-
-        if (userInput.modeMatch) {
-            for (const auto& pattern : userInput.patterns) {
-                patternMatchFiles[pattern].open(outRoute + "/" + pattern + "_matches.bed");
-                patternCountFiles[pattern].open(outRoute + "/" + pattern + "_count.bedgraph");
-                patternDensityFiles[pattern].open(outRoute + "/" + pattern + "_density.bedgraph");
-            }
-        }
-
-        // Write data for each window
         for (const auto& windowData : allWindows) {
             unsigned int seqPos;
             std::string header;
@@ -179,9 +164,11 @@ public:
                                                     << pattern << "\n";
                             patternCounts[pattern]++; // Update total pattern counts
                         }
+
                         patternCountFiles[pattern] << header << "\t" << window.windowStart << "\t"
                                                 << windowEnd << "\t"
                                                 << data.count << "\n";
+                                                
                         patternDensityFiles[pattern] << header << "\t" << window.windowStart << "\t"
                                                     << windowEnd << "\t"
                                                     << data.density << "\n";
@@ -189,8 +176,38 @@ public:
                 }
             }
         }
+    }
 
-        // Close all files that were opened
+
+    void handleBEDFile() {
+        std::ofstream shannonFile;
+        std::ofstream gcContentFile;
+        std::unordered_map<std::string, std::ofstream> patternMatchFiles; // Jack: replace with vector to reduce cache locality?
+        std::unordered_map<std::string, std::ofstream> patternCountFiles;
+        std::unordered_map<std::string, std::ofstream> patternDensityFiles;
+        std::cout << "Reporting window matches and metrics in BED/BEDgraphs...\n";
+
+        // Open files once if their modes are enabled
+        if (userInput.modeEntropy) {
+            shannonFile.open(outRoute + "/shannonEntropy.bedgraph");
+        }
+
+        if (userInput.modeGC) {
+            gcContentFile.open(outRoute + "/gcContent.bedgraph");
+        }
+
+        if (userInput.modeMatch) {
+            for (const auto& pattern : userInput.patterns) {
+                patternMatchFiles[pattern].open(outRoute + "/" + pattern + "_matches.bed");
+                patternCountFiles[pattern].open(outRoute + "/" + pattern + "_count.bedgraph");
+                patternDensityFiles[pattern].open(outRoute + "/" + pattern + "_density.bedgraph");
+            }
+        }
+
+        // Write data for each window
+        writeBEDFile(shannonFile, gcContentFile, patternMatchFiles, patternCountFiles, patternDensityFiles);
+
+        // Close all files once
         if (userInput.modeEntropy) {
             shannonFile.close();
         }
@@ -209,6 +226,7 @@ public:
             }
         }
     }
+
 
     void printSummary() {
         std::cout << "\n+++Summary Report+++\n";
@@ -231,6 +249,7 @@ public:
         std::cout << "Median GC Content:\t" << getMedian(gcContentValues) << "\n";
         std::cout << "Min GC Content:\t" << getMin(gcContentValues) << "\n";
     }
+
 
     void annotateTelomeres() {
         /// For each path we need two telomeric coordinates: p (start) and q (end)
