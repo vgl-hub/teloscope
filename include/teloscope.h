@@ -56,7 +56,7 @@ public:
 
 
 struct PatternData {
-    std::vector<uint64_t> positions; // Match indexes in window
+    std::vector<uint32_t> wMatches; // Match indexes in window
     uint32_t count = 0; // Total pattern count
     float density = 0.0f; // Density of the pattern
 };
@@ -66,7 +66,7 @@ struct WindowData {
     uint32_t currentWindowSize;
     float gcContent;
     float shannonEntropy;
-    std::unordered_map<char, uint64_t> nucleotideCounts;
+    std::unordered_map<char, uint32_t> nucleotideCounts;
     std::unordered_map<std::string, PatternData> patternMap; // Condensed pattern data
     
     WindowData() : windowStart(0), gcContent(0.0f), shannonEntropy(0.0f), nucleotideCounts{{'A', 0}, {'C', 0}, {'G', 0}, {'T', 0}} {}
@@ -84,9 +84,8 @@ class Teloscope {
     std::vector<float> entropyValues; // Total entropy values
     std::vector<float> gcContentValues; // Total GC content values
 
-    float getShannonEntropy(const std::unordered_map<char, uint64_t>& nucleotideCounts, uint32_t windowSize);
-    float getGCContent(const std::unordered_map<char, uint64_t>& nucleotideCounts, uint32_t windowSize);
-
+    float getShannonEntropy(const std::unordered_map<char, uint32_t>& nucleotideCounts, uint32_t windowSize);
+    float getGCContent(const std::unordered_map<char, uint32_t>& nucleotideCounts, uint32_t windowSize);
 
     float getMean(const std::vector<float>& values);
     float getMedian(std::vector<float> values);
@@ -123,7 +122,11 @@ public:
     }
 
 
+    void annotateTelomeres(); // CHECK
+
+
     void writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
+                    // std::ofstream& telomereBEDFile, std::ofstream& telomereCountFile, // CHECK
                     std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
                     std::unordered_map<std::string, std::ofstream>& patternCountFiles,
                     std::unordered_map<std::string, std::ofstream>& patternDensityFiles) {
@@ -157,7 +160,7 @@ public:
                 // Write pattern data if enabled
                 if (userInput.modeMatch) {
                     for (const auto& [pattern, data] : window.patternMap) {
-                        for (auto pos : data.positions) {
+                        for (auto pos : data.wMatches) {
                             patternMatchFiles[pattern] << header << "\t"
                                                     << window.windowStart + pos << "\t"
                                                     << window.windowStart + pos + pattern.length() << "\t" // Start is already 0-based
@@ -175,6 +178,9 @@ public:
                     }
                 }
             }
+
+            annotateTelomeres(); // CHECK
+
         }
     }
 
@@ -182,6 +188,8 @@ public:
     void handleBEDFile() {
         std::ofstream shannonFile;
         std::ofstream gcContentFile;
+        std::ofstream telomereBEDFile; // CHECK
+        std::ofstream telomereCountFile; // CHECK
         std::unordered_map<std::string, std::ofstream> patternMatchFiles; // Jack: replace with vector to reduce cache locality?
         std::unordered_map<std::string, std::ofstream> patternCountFiles;
         std::unordered_map<std::string, std::ofstream> patternDensityFiles;
@@ -197,6 +205,9 @@ public:
         }
 
         if (userInput.modeMatch) {
+            telomereBEDFile.open(outRoute + "/telomere_blocks.bed"); // CHECK
+            telomereCountFile.open(outRoute + "/telomere_block_counts.txt"); // CHECK
+
             for (const auto& pattern : userInput.patterns) {
                 patternMatchFiles[pattern].open(outRoute + "/" + pattern + "_matches.bed");
                 patternCountFiles[pattern].open(outRoute + "/" + pattern + "_count.bedgraph");
@@ -205,7 +216,9 @@ public:
         }
 
         // Write data for each window
-        writeBEDFile(shannonFile, gcContentFile, patternMatchFiles, patternCountFiles, patternDensityFiles);
+        writeBEDFile(shannonFile, gcContentFile, 
+                    // telomereBEDFile, telomereCountFile, // CHECK
+                    patternMatchFiles, patternCountFiles, patternDensityFiles);
 
         // Close all files once
         if (userInput.modeEntropy) {
@@ -215,6 +228,9 @@ public:
             gcContentFile.close();
         }
         if (userInput.modeMatch) {
+            telomereBEDFile.close(); // CHECK
+            telomereCountFile.close(); // CHECK
+
             for (auto& [pattern, file] : patternMatchFiles) {
                 file.close();
             }
@@ -249,15 +265,6 @@ public:
         std::cout << "Median GC Content:\t" << getMedian(gcContentValues) << "\n";
         std::cout << "Min GC Content:\t" << getMin(gcContentValues) << "\n";
     }
-
-
-    void annotateTelomeres() {
-        /// For each path we need two telomeric coordinates: p (start) and q (end)
-        /// For p telomere: Start to last semi-continous repeat
-        /// For q telomere: First semi-continous repeat to end
-        /// Semi-continous repeat: 2 or more repeats of the same pattern
-    }
-
 };
 
 #endif // TELOSCOPE_H/

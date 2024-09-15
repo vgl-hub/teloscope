@@ -12,6 +12,7 @@ struct UserInputTeloscope : UserInput {
     double maxMem = 0;
     std::string prefix = ".", outFile = "";
     bool modeMatch = true, modeEntropy = true, modeGC = true; // Change to: de novo, user-defined 
+    // uint8_t blockDistance = 6;
 };
 
 

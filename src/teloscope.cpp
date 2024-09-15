@@ -57,7 +57,7 @@ std::string removeCarriageReturns(const std::string& input) {
 // }
 
 
-float Teloscope::getShannonEntropy(const std::unordered_map<char, uint64_t>& nucleotideCounts, uint32_t windowSize) {
+float Teloscope::getShannonEntropy(const std::unordered_map<char, uint32_t>& nucleotideCounts, uint32_t windowSize) {
     float entropy = 0.0;
     for (auto &[nucleotide, count] : nucleotideCounts) {
         if (count > 0) {
@@ -69,10 +69,11 @@ float Teloscope::getShannonEntropy(const std::unordered_map<char, uint64_t>& nuc
 }
 
 
-float Teloscope::getGCContent(const std::unordered_map<char, uint64_t>& nucleotideCounts, uint32_t windowSize) {
-    uint64_t gcCount = nucleotideCounts.at('G') + nucleotideCounts.at('C');
+float Teloscope::getGCContent(const std::unordered_map<char, uint32_t>& nucleotideCounts, uint32_t windowSize) {
+    uint32_t gcCount = nucleotideCounts.at('G') + nucleotideCounts.at('C');
     return float(gcCount) / windowSize * 100.0;
 }
+
 
 float Teloscope::getMean(const std::vector<float>& values) {
     if (values.empty()) return 0.0;
@@ -130,7 +131,7 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
                     windowData.patternMap[pattern].count++; // Count all matches
 
                     if (userInput.windowSize == userInput.step || windowStart == 0 || j >= userInput.windowSize - userInput.step) {
-                        windowData.patternMap[pattern].positions.push_back(i);
+                        windowData.patternMap[pattern].wMatches.push_back(i);
                     }
                 }
             }
@@ -162,7 +163,6 @@ std::vector<WindowData> Teloscope::analyzeSegment(std::string &sequence, UserInp
     uint32_t currentWindowSize = std::min(userInput.windowSize, static_cast<uint32_t>(sequence.size())); // In case segment is short
     std::string window = sequence.substr(0, currentWindowSize);
     
-
     while (windowStart < sequence.size()) {
 
         // Analyze current window
@@ -171,7 +171,7 @@ std::vector<WindowData> Teloscope::analyzeSegment(std::string &sequence, UserInp
 
         windowData.windowStart = windowStart + absPos;
         windowData.currentWindowSize = currentWindowSize;
-        windows.push_back(windowData); // Add to the vector of windows
+        windows.emplace_back(windowData); // Add to the vector of windows
 
         // Prepare next window
         windowStart += userInput.step;
@@ -192,3 +192,8 @@ std::vector<WindowData> Teloscope::analyzeSegment(std::string &sequence, UserInp
     
     return windows;
 }
+
+void Teloscope::annotateTelomeres() {
+    // uint8_t d = userInput.blockDistance;
+}
+
