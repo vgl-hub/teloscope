@@ -106,8 +106,41 @@ float Teloscope::getMax(const std::vector<float> values) {
 }
 
 
-void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData) {
+void Teloscope::insertWindowData(unsigned int seqPos, const std::string& header, std::vector<WindowData>& pathWindows) {
+    if (userInput.storeWindowData) {
+        allWindows.push_back(std::make_tuple(seqPos, header, pathWindows));
+    }
+}
 
+
+void Teloscope::sortWindowsBySeqPos() {
+    std::sort(allWindows.begin(), allWindows.end(), [](const auto& one, const auto& two) {
+        return std::get<0>(one) < std::get<0>(two);
+    });
+}
+
+
+// JACK: TO IMPLEMENT!
+// void Teloscope::mergeTelomereBlocks(std::vector<TelomereBlock>& blocks, uint8_t mergeDistance) {
+//     if (blocks.empty()) return;
+
+//     std::vector<TelomereBlock> mergedBlocks;
+//     TelomereBlock currentBlock = blocks[0];
+
+//     for (size_t i = 1; i < blocks.size(); ++i) {
+//         if (blocks[i].start - currentBlock.end <= mergeDistance) {
+//             currentBlock.end = blocks[i].end;
+//         } else {
+//             mergedBlocks.push_back(currentBlock);
+//             currentBlock = blocks[i];
+//         }
+//     }
+//     mergedBlocks.push_back(currentBlock);
+//     blocks = mergedBlocks;
+// }
+
+
+void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData) {
     windowData.windowStart = windowStart;
     unsigned short int longestPatternSize = this->trie.getLongestPatternSize();
 
@@ -157,7 +190,6 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
 
 
 std::vector<WindowData> Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos) {
-    
     std::vector<WindowData> windows;
     uint32_t windowStart = 0;
     uint32_t currentWindowSize = std::min(userInput.windowSize, static_cast<uint32_t>(sequence.size())); // In case segment is short

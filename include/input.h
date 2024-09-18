@@ -11,10 +11,14 @@ struct UserInputTeloscope : UserInput {
     uint32_t step = 500;
     double maxMem = 0;
     std::string prefix = ".", outFile = "";
-    bool modeMatch = true, modeEntropy = true, modeGC = true; // Change to: de novo, user-defined 
-    // uint8_t blockDistance = 6;
-};
+    bool keepWindowData = false;
+    bool modeMatch = true, modeEntropy = true, modeGC = true; // Change to: de novo, user-defined
+    bool storeWindowData = false; // Memory intensive
+    float densityThreshold = 0.5f; // Threshold for telomere detection
+    uint32_t maxGaps = 2;   // Allowed gaps in telomere blocks
+    uint8_t mergeDistance = 6;
 
+};
 
 class Input {
 

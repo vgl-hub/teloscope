@@ -34,19 +34,20 @@ int main(int argc, char **argv) {
     
     if (argc == 1) { // case: with no arguments
             
-        printf("teloscope -f input.[fa/fa.gz] \n-h for additional help. Use -f to initiate the tool.\n");
+        printf("teloscope -f input.[fa/fa.gz] \nUse-h for additional help. \nUse -f to initiate the tool.");
         exit(0);
         
     }
     
     static struct option long_options[] = { // struct mapping long options
         {"input-sequence", required_argument, 0, 'f'},
+        {"output", required_argument, 0, 'o'},
         {"patterns", required_argument, 0, 'p'},
         {"window", required_argument, 0, 'w'},
         {"step", required_argument, 0, 's'},
         {"mode", required_argument, 0, 'm'},
-        {"output", required_argument, 0, 'o'},
         {"threads", required_argument, 0, 'j'},
+        {"keep-window-data", no_argument, 0, 'k'},
         
         {"verbose", no_argument, &verbose_flag, 1},
         {"cmd", no_argument, &cmd_flag, 1},
@@ -213,7 +214,7 @@ int main(int argc, char **argv) {
 
             case 'v': // software version
                 printf("/// Teloscope v%s\n", version.c_str());
-                printf("Giulio Formenti giulio.formenti@gmail.com\n");
+                printf("\nDeveloped by:\nGiulio Formenti giulio.formenti@gmail.com\n");
                 printf("Jack A. Medico amedico@rockefeller.edu\n");
                 exit(0);
                 
@@ -221,14 +222,23 @@ int main(int argc, char **argv) {
                 printf("teloscope [commands]\n");
                 printf("\nRequired Parameters:\n");
                 printf("\t'-f'\t--input-sequence\tInitiate tool with fasta file.\n");
-                printf("\t'-p'\t--patterns\tSet patterns to explore.\n");
-                printf("\t'-w'\t--window\tSet sliding window size.\n");
-                printf("\t'-s'\t--step\tSet sliding window step.\n");
+                printf("\t'-o'\t--output\tSet output route.\n");
+                printf("\t'-p'\t--patterns\tSet patterns to explore, separate them by commas [Default: TTAGGG]\n");
+                printf("\t'-w'\t--window\tSet sliding window size. [Default: 1000]\n");
+                printf("\t'-s'\t--step\tSet sliding window step. [Default: 500]\n");
+                printf("\t'-j'\t--threads\tSet maximum number of threads. [Default: max. available]\n");
+
                 printf("\nOptional Parameters:\n");
+                printf("\t'-m'\t--mode\tSet analysis modes, separate them by commas. [Options: all,match,gc,entropy]\n");
+                printf("\t'-k'\t--keep-window-data\tKeep window data for analysis, memory-intensive. [Default: false]\n");
                 printf("\t'-v'\t--version\tPrint current software version.\n");
                 printf("\t'-h'\t--help\tPrint current software options.\n");
                 printf("\t--verbose\tverbose output.\n");
                 exit(0);
+
+            case 'k':
+                userInput.keepWindowData = true;
+                break;
         }
         
         if  (argc == 2 || // handle various cases in which the output should include summary stats

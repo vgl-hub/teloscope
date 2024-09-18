@@ -65,13 +65,15 @@ void Input::read(InSequences &inSequences) {
 bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps) {
 
     Log threadLog;
-
+    uint64_t absPos = 0;
     unsigned int cUId = 0, gapLen = 0, seqPos = path->getSeqPos();
     std::vector<PathComponent> pathComponents = path->getComponents();
-    uint64_t absPos = 0;
-    std::vector<WindowData> pathWindows;
+    
     std::string header = removeCarriageReturns(path->getHeader());
     threadLog.add("\n\tWalking path:\t" + path->getHeader());
+
+    std::vector<WindowData> pathWindows;
+    std::vector<TelomereBlock> pathTelomereBlocks;
 
     // std::string header = path->getHeader();
     // eraseChar(header, '\r');
@@ -90,6 +92,10 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
 
                 std::vector<WindowData> segmentWindows = analyzeSegment(sequence, userInput, absPos);
                 pathWindows.insert(pathWindows.end(), segmentWindows.begin(), segmentWindows.end());
+
+                // std::vector<TelomereBlock> segmentTelomereBlocks = analyzeSegment(sequence, userInput, absPos);
+                // pathTelomereBlocks.insert(pathTelomereBlocks.end(), segmentTelomereBlocks.begin(), segmentTelomereBlocks.end());
+
 
             } else {
             }
@@ -110,6 +116,12 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
 
     std::lock_guard<std::mutex> lck(mtx);
     insertWindowData(seqPos, header, pathWindows);
+
+    allTelomereBlocks.push_back({seqPos, header, pathTelomereBlocks});
+
+    // uint8_t mergeDistance = userInput.mergeDistance;
+    // mergeTelomereBlocks(pathTelomereBlocks, mergeDistance);
+
 
     threadLog.add("\tCompleted walking path:\t" + path->getHeader());
     logs.push_back(threadLog);

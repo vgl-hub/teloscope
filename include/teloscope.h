@@ -72,12 +72,17 @@ struct WindowData {
     WindowData() : windowStart(0), gcContent(0.0f), shannonEntropy(0.0f), nucleotideCounts{{'A', 0}, {'C', 0}, {'G', 0}, {'T', 0}} {}
 };
 
+struct TelomereBlock {
+    uint64_t start;
+    uint64_t end;
+};
 
 class Teloscope {
 
     Trie trie; // Declare trie instance
     UserInputTeloscope userInput; // Declare user input instance
     std::vector<std::tuple<unsigned int, std::string, std::vector<WindowData>>> allWindows; // Assembly windows
+    std::vector<std::tuple<unsigned int, std::string, std::vector<TelomereBlock>>> allTelomereBlocks; // Assembly elomere blocks
 
     int totalNWindows = 0; // Total windows analyzed
     std::unordered_map<std::string, int> patternCounts; // Total counts
@@ -103,33 +108,25 @@ public:
 
     bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
 
-
-    void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData);
-    
+    void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData);    
 
     std::vector<WindowData> analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos);
 
+    void insertWindowData(unsigned int seqPos, const std::string& header, std::vector<WindowData>& pathWindows);
 
-    void insertWindowData(unsigned int seqPos, const std::string& header, std::vector<WindowData>& pathWindows) {
-        allWindows.push_back(std::make_tuple(seqPos, header, pathWindows)); // Giulio: cleaner with struct
-    }
-
-
-    void sortWindowsBySeqPos() {
-        std::sort(allWindows.begin(), allWindows.end(), [](const auto& one, const auto& two) {
-            return std::get<0>(one) < std::get<0>(two);
-        });
-    }
-
+    void sortWindowsBySeqPos();
 
     void annotateTelomeres(); // CHECK
-
 
     void writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
                     // std::ofstream& telomereBEDFile, std::ofstream& telomereCountFile, // CHECK
                     std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
                     std::unordered_map<std::string, std::ofstream>& patternCountFiles,
                     std::unordered_map<std::string, std::ofstream>& patternDensityFiles) {
+        
+        if (!userInput.storeWindowData) { // If windowData is not stored, return
+            return;
+        }
 
         for (const auto& windowData : allWindows) {
             unsigned int seqPos;
@@ -254,16 +251,17 @@ public:
 
         // For each pattern, print the path header with the highest number of matches - PENDING
         // For each pattern, print the path header with the lowest number of matches - PENDING
+        if (userInput.storeWindowData) {
+            std::cout << "Max Shannon Entropy:\t" << getMax(entropyValues) << "\n";
+            std::cout << "Mean Shannon Entropy:\t" << getMean(entropyValues) << "\n";
+            std::cout << "Median Shannon Entropy:\t" << getMedian(entropyValues) << "\n";
+            std::cout << "Min Shannon Entropy:\t" << getMin(entropyValues) << "\n";
 
-        std::cout << "Max Shannon Entropy:\t" << getMax(entropyValues) << "\n";
-        std::cout << "Mean Shannon Entropy:\t" << getMean(entropyValues) << "\n";
-        std::cout << "Median Shannon Entropy:\t" << getMedian(entropyValues) << "\n";
-        std::cout << "Min Shannon Entropy:\t" << getMin(entropyValues) << "\n";
-
-        std::cout << "Max GC Content:\t" << getMax(gcContentValues) << "\n";
-        std::cout << "Mean GC Content:\t" << getMean(gcContentValues) << "\n";
-        std::cout << "Median GC Content:\t" << getMedian(gcContentValues) << "\n";
-        std::cout << "Min GC Content:\t" << getMin(gcContentValues) << "\n";
+            std::cout << "Max GC Content:\t" << getMax(gcContentValues) << "\n";
+            std::cout << "Mean GC Content:\t" << getMean(gcContentValues) << "\n";
+            std::cout << "Median GC Content:\t" << getMedian(gcContentValues) << "\n";
+            std::cout << "Min GC Content:\t" << getMin(gcContentValues) << "\n";
+        }
     }
 };
 
