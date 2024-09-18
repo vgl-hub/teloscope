@@ -69,14 +69,15 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     unsigned int cUId = 0, gapLen = 0, seqPos = path->getSeqPos();
     std::vector<PathComponent> pathComponents = path->getComponents();
     
-    std::string header = removeCarriageReturns(path->getHeader());
+    // std::string header = removeCarriageReturns(path->getHeader());
+    std::string header = path->getHeader();
+    std::cout << "header_before: " << header << std::endl;
+    eraseChar(header, '\r');
+    std::cout << "header_after: " << header << std::endl;
     threadLog.add("\n\tWalking path:\t" + path->getHeader());
 
     std::vector<WindowData> pathWindows;
     std::vector<TelomereBlock> pathTelomereBlocks;
-
-    // std::string header = path->getHeader();
-    // eraseChar(header, '\r');
 
     for (std::vector<PathComponent>::iterator component = pathComponents.begin(); component != pathComponents.end(); component++) {
         

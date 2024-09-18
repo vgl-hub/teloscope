@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
         
         int option_index = 0;
         
-        c = getopt_long(argc, argv, "-:f:j:m:o:p:s:w:vh", long_options, &option_index);
+        c = getopt_long(argc, argv, "-:f:j:m:o:p:s:w:kvh", long_options, &option_index);
 
         // if (optind < argc && !isPipe) { // if pipe wasn't assigned already
             

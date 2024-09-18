@@ -6,7 +6,7 @@ Teloscope is a fast and comprehensive tool for matching, counting and reporting 
 * GC
 * Shannon Entropy
 
-Teloscope reports all these metrics and the final telomere coordinates in BED/BEDgraph files and produces a summary report.
+Teloscope reports all these metrics in BED/BEDgraph files and produces a summary report.
 
 ## Installation
 
@@ -14,7 +14,7 @@ Either download one of the releases or `git clone https://github.com/vgl-hub/tel
 
 ## Usage
 
-`teloscope -f input.[fasta][.gz] -p TTAGGG,TTAGGGG -w [window size] -s [step size]`
+`teloscope -f input.[fasta][.gz] -o [output/dir] -p TTAGGG,TTAGGGG -w [window size] -s [step size] -k`
 
 To check out all options and flags, please use:
 `teloscope -h`

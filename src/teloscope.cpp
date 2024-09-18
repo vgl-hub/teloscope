@@ -12,21 +12,16 @@
 #include "log.h"
 #include "global.h"
 #include "uid-generator.h"
-
 #include "bed.h"
 #include "struct.h"
 #include "functions.h"
-
 #include "gfa-lines.h"
 #include "gfa.h"
 #include "sak.h"
-
 #include "stream-obj.h"
-
 #include "input-agp.h"
 #include "input-filters.h"
 #include "input-gfa.h"
-
 #include "teloscope.h"
 #include "input.h"
 
@@ -44,17 +39,6 @@ void Trie::insertPattern(const std::string& pattern) {
         longestPatternSize = pattern.size();
     }
 }
-
-
-std::string removeCarriageReturns(const std::string& input) {
-    std::string output = input;
-    output.erase(std::remove(output.begin(), output.end(), '\r'), output.end());
-    return output;
-}
-
-// void eraseChar(std::string& input, char rmChar) {
-//     input.erase(std::remove(input.begin(), input.end(), rmChar), input.end());
-// }
 
 
 float Teloscope::getShannonEntropy(const std::unordered_map<char, uint32_t>& nucleotideCounts, uint32_t windowSize) {
@@ -107,7 +91,7 @@ float Teloscope::getMax(const std::vector<float> values) {
 
 
 void Teloscope::insertWindowData(unsigned int seqPos, const std::string& header, std::vector<WindowData>& pathWindows) {
-    if (userInput.storeWindowData) {
+    if (userInput.keepWindowData) {
         allWindows.push_back(std::make_tuple(seqPos, header, pathWindows));
     }
 }

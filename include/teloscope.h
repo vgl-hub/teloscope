@@ -9,7 +9,7 @@
 #include <memory>
 #include <unordered_map>
 
-std::string removeCarriageReturns(const std::string& input);
+// std::string removeCarriageReturns(const std::string& input);
 
 class Trie {
     struct TrieNode {
@@ -60,6 +60,7 @@ struct PatternData {
     uint32_t count = 0; // Total pattern count
     float density = 0.0f; // Density of the pattern
 };
+
 
 struct WindowData {
     uint32_t windowStart;
@@ -124,7 +125,7 @@ public:
                     std::unordered_map<std::string, std::ofstream>& patternCountFiles,
                     std::unordered_map<std::string, std::ofstream>& patternDensityFiles) {
         
-        if (!userInput.storeWindowData) { // If windowData is not stored, return
+        if (!userInput.keepWindowData) { // If windowData is not stored, return
             return;
         }
 
@@ -202,8 +203,8 @@ public:
         }
 
         if (userInput.modeMatch) {
-            telomereBEDFile.open(outRoute + "/telomere_blocks.bed"); // CHECK
-            telomereCountFile.open(outRoute + "/telomere_block_counts.txt"); // CHECK
+            // telomereBEDFile.open(outRoute + "/telomere_blocks.bed"); // CHECK
+            // telomereCountFile.open(outRoute + "/telomere_block_counts.txt"); // CHECK
 
             for (const auto& pattern : userInput.patterns) {
                 patternMatchFiles[pattern].open(outRoute + "/" + pattern + "_matches.bed");
@@ -225,8 +226,8 @@ public:
             gcContentFile.close();
         }
         if (userInput.modeMatch) {
-            telomereBEDFile.close(); // CHECK
-            telomereCountFile.close(); // CHECK
+            // telomereBEDFile.close(); // CHECK
+            // telomereCountFile.close(); // CHECK
 
             for (auto& [pattern, file] : patternMatchFiles) {
                 file.close();
@@ -251,7 +252,7 @@ public:
 
         // For each pattern, print the path header with the highest number of matches - PENDING
         // For each pattern, print the path header with the lowest number of matches - PENDING
-        if (userInput.storeWindowData) {
+        if (userInput.keepWindowData) {
             std::cout << "Max Shannon Entropy:\t" << getMax(entropyValues) << "\n";
             std::cout << "Mean Shannon Entropy:\t" << getMean(entropyValues) << "\n";
             std::cout << "Median Shannon Entropy:\t" << getMedian(entropyValues) << "\n";
