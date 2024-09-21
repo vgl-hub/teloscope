@@ -6,17 +6,14 @@
 #include "log.h"
 #include "global.h"
 #include "uid-generator.h"
-
 #include "bed.h"
 #include "struct.h"
 #include "functions.h"
 #include "stream-obj.h"
 #include "fastx.h"
-
 #include "gfa-lines.h"
 #include "gfa.h"
 #include "input-gfa.h"
-
 #include "threadpool.h"
 #include "teloscope.h"
 #include "input.h"
@@ -91,10 +88,6 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
                 std::vector<WindowData> segmentWindows = analyzeSegment(sequence, userInput, absPos);
                 pathWindows.insert(pathWindows.end(), segmentWindows.begin(), segmentWindows.end());
 
-                // std::vector<TelomereBlock> segmentTelomereBlocks = analyzeSegment(sequence, userInput, absPos);
-                // pathTelomereBlocks.insert(pathTelomereBlocks.end(), segmentTelomereBlocks.begin(), segmentTelomereBlocks.end());
-
-
             } else {
             }
             
@@ -116,10 +109,6 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     insertWindowData(seqPos, header, pathWindows);
 
     allTelomereBlocks.push_back({seqPos, header, pathTelomereBlocks});
-
-    // uint8_t mergeDistance = userInput.mergeDistance;
-    // mergeTelomereBlocks(pathTelomereBlocks, mergeDistance);
-
 
     threadLog.add("\tCompleted walking path:\t" + path->getHeader());
     logs.push_back(threadLog);

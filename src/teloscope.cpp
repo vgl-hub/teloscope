@@ -59,6 +59,15 @@ float Teloscope::getGCContent(const std::unordered_map<char, uint32_t>& nucleoti
 }
 
 
+void Teloscope::getPatternDensities(WindowData& windowData, uint32_t windowSize) {
+    for (auto &entry : windowData.patternMap) {
+        auto &pattern = entry.first;
+        auto &data = entry.second;
+        data.density = static_cast<float>(data.count * pattern.size()) / windowSize;
+    }
+}
+
+
 float Teloscope::getMean(const std::vector<float>& values) {
     if (values.empty()) return 0.0;
     float sum = std::accumulate(values.begin(), values.end(), 0.0);
@@ -104,26 +113,6 @@ void Teloscope::sortWindowsBySeqPos() {
 }
 
 
-// JACK: TO IMPLEMENT!
-// void Teloscope::mergeTelomereBlocks(std::vector<TelomereBlock>& blocks, uint8_t mergeDistance) {
-//     if (blocks.empty()) return;
-
-//     std::vector<TelomereBlock> mergedBlocks;
-//     TelomereBlock currentBlock = blocks[0];
-
-//     for (size_t i = 1; i < blocks.size(); ++i) {
-//         if (blocks[i].start - currentBlock.end <= mergeDistance) {
-//             currentBlock.end = blocks[i].end;
-//         } else {
-//             mergedBlocks.push_back(currentBlock);
-//             currentBlock = blocks[i];
-//         }
-//     }
-//     mergedBlocks.push_back(currentBlock);
-//     blocks = mergedBlocks;
-// }
-
-
 void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData) {
     windowData.windowStart = windowStart;
     unsigned short int longestPatternSize = this->trie.getLongestPatternSize();
@@ -141,7 +130,7 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
             for (uint64_t j = i; j < scanLimit; ++j) { // Only scan positions in range of patterns
                 
                 if (!trie.hasChild(current, window[j])) break;  
-                current = trie.getChild(current, window[j]);
+                current = trie.getChild(current, window[j]); // Jack: The Trie scan all nucleotides, even in window overlap
 
                 if (current->isEndOfWord) {
                     std::string pattern = window.substr(i, j - i + 1);
@@ -164,11 +153,7 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
     }
 
     if (userInput.modeMatch) {
-        for (auto &entry : windowData.patternMap) {
-            auto &pattern = entry.first;
-            auto &data = entry.second;
-            data.density = static_cast<float>(data.count * pattern.size()) / window.size();
-        }
+        getPatternDensities(windowData, window.size());
     }
 }
 

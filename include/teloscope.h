@@ -39,14 +39,6 @@ public:
         return nullptr;
     }
 
-    // std::shared_ptr<TrieNode> getChild(const std::shared_ptr<TrieNode>& node, char ch) const {
-    //     auto it = node->children.find(ch);
-    //     if (it != node->children.end()) {
-    //         return it->second;
-    //     }
-    //     return nullptr;
-    // }
-
     unsigned short int getLongestPatternSize() const {
         return longestPatternSize;
     }
@@ -90,6 +82,7 @@ class Teloscope {
 
     float getShannonEntropy(const std::unordered_map<char, uint32_t>& nucleotideCounts, uint32_t windowSize);
     float getGCContent(const std::unordered_map<char, uint32_t>& nucleotideCounts, uint32_t windowSize);
+    void getPatternDensities(WindowData& windowData, uint32_t windowSize);
 
     float getMean(const std::vector<float>& values);
     float getMedian(std::vector<float> values);
