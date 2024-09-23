@@ -99,7 +99,8 @@ public:
 
     bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
 
-    void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData);    
+    // void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData);  
+    void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData, WindowData& nextOverlapData); 
 
     std::vector<WindowData> analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos);
 
