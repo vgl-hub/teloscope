@@ -123,21 +123,22 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
     if (windowStart == 0) {
         startIndex = 0;
     } else if (userInput.step < overlapSize) {
-        startIndex = userInput.step;
+        startIndex = userInput.step - longestPatternSize; // To capture patterns missed in the previous window
     } else {
-        startIndex = overlapSize;
+        startIndex = overlapSize - longestPatternSize; // To capture patterns missed in the previous window
     }
-
     // uint32_t startIndex = (windowStart == 0) ? 0 : std::min(userInput.step, overlapSize); // CHECK: Test whether this is faster
 
     for (uint32_t i = startIndex; i < window.size(); ++i) { // Nucleotide iterations
 
         if (userInput.modeGC || userInput.modeEntropy) {
-            windowData.nucleotideCounts[window[i]]++; // For whole window
-        }
+            if (i >= overlapSize || userInput.windowSize == userInput.step || windowStart == 0) {
+                windowData.nucleotideCounts[window[i]]++; // For whole window
+            }
             if (i >= userInput.step && userInput.windowSize != userInput.step) {
                 nextOverlapData.nucleotideCounts[window[i]]++; // For next overlap
             }
+        }
 
         if (userInput.modeMatch) { // Pattern matching using Trie
             auto current = trie.getRoot();
@@ -160,7 +161,6 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
                     // Update nextOverlapData from steps
                     if (i >= userInput.step && userInput.windowSize != userInput.step ) {
                         nextOverlapData.patternMap[pattern].count++;
-                        nextOverlapData.patternMap[pattern].wMatches.push_back(i - overlapSize); // Adjust position relative to overlap start
                     }
                 }
             }
@@ -180,51 +180,6 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
     }
 }
 
-
-
-// void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData) {
-//     windowData.windowStart = windowStart; // CHECK: Why is this here?
-//     unsigned short int longestPatternSize = this->trie.getLongestPatternSize();
-
-//     for (uint64_t i = 0; i < window.size(); ++i) { // For each nucleotide in the window
-//         if (userInput.modeGC || userInput.modeEntropy) {
-//             windowData.nucleotideCounts[window[i]]++; // For GC/entropy
-//         }
-        
-
-//         if (userInput.modeMatch) {
-//             auto current = trie.getRoot();
-//             uint64_t scanLimit = std::min(i + longestPatternSize, window.size());
-            
-//             for (uint64_t j = i; j < scanLimit; ++j) { // Only scan positions in range of patterns
-                
-//                 if (!trie.hasChild(current, window[j])) break;  
-//                 current = trie.getChild(current, window[j]); // Jack: The Trie scan all nucleotides, even in window overlap
-
-//                 if (current->isEndOfWord) {
-//                     std::string pattern = window.substr(i, j - i + 1);
-//                     windowData.patternMap[pattern].count++; // Count all matches
-
-//                     if (userInput.windowSize == userInput.step || windowStart == 0 || j >= userInput.windowSize - userInput.step) {
-//                         windowData.patternMap[pattern].wMatches.push_back(i);
-//                     }
-//                 }
-//             }
-//         }
-//     }
-    
-//     if (userInput.modeGC) {
-//         windowData.gcContent = getGCContent(windowData.nucleotideCounts, window.size());
-//     }
-
-//     if (userInput.modeEntropy) {
-//         windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, window.size());
-//     }
-
-//     if (userInput.modeMatch) {
-//         getPatternDensities(windowData, window.size());
-//     }
-// }
 
 std::vector<WindowData> Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos) {
     uint32_t windowSize = userInput.windowSize;
@@ -272,44 +227,6 @@ std::vector<WindowData> Teloscope::analyzeSegment(std::string &sequence, UserInp
 
     return windows;
 }
-
-
-
-// std::vector<WindowData> Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos) {
-//     std::vector<WindowData> windows;
-//     uint32_t windowStart = 0;
-//     uint32_t currentWindowSize = std::min(userInput.windowSize, static_cast<uint32_t>(sequence.size())); // In case segment is short
-//     std::string window = sequence.substr(0, currentWindowSize);
-    
-//     while (windowStart < sequence.size()) {
-
-//         // Analyze current window
-//         WindowData windowData;
-//         analyzeWindow(window, windowStart, windowData);
-
-//         windowData.windowStart = windowStart + absPos;
-//         windowData.currentWindowSize = currentWindowSize;
-//         windows.emplace_back(windowData); // Add to the vector of windows
-
-//         // Prepare next window
-//         windowStart += userInput.step;
-
-//         if (windowStart >= sequence.size()) {
-//             break;
-//         }
-
-//         // Recycle the overlapping string sequence
-//         currentWindowSize = std::min(userInput.windowSize, static_cast<uint32_t>(sequence.size() - windowStart)); // CHECK
-
-//         if (currentWindowSize == userInput.windowSize) {
-//             window = window.substr(userInput.step) + sequence.substr(windowStart + userInput.windowSize - userInput.step, userInput.step);
-//         } else {
-//             window = sequence.substr(windowStart, currentWindowSize); // Last window has a shorter size
-//         }
-//     }
-    
-//     return windows;
-// }
 
 
 void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
