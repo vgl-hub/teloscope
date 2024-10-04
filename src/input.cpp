@@ -71,7 +71,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     eraseChar(header, '\r');
 
     std::vector<WindowData> pathWindows;
-    std::vector<TelomereBlock> pathTelomereBlocks;
+    std::vector<TelomereBlock> pathTelomereBlocks; // CHECK: To implement
 
     for (std::vector<PathComponent>::iterator component = pathComponents.begin(); component != pathComponents.end(); component++) {
         
@@ -108,7 +108,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     std::lock_guard<std::mutex> lck(mtx);
     insertWindowData(seqPos, header, pathWindows);
 
-    allTelomereBlocks.push_back({seqPos, header, pathTelomereBlocks});
+    allTelomereBlocks.push_back({seqPos, header, pathTelomereBlocks}); // CHECK: To implement
 
     threadLog.add("\tCompleted walking path:\t" + path->getHeader());
     logs.push_back(threadLog);

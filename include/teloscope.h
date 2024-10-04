@@ -4,6 +4,7 @@
 #include "input.h" // not in Mac's code
 #include <iostream>
 #include <map>
+#include <stdint.h>
 #include <vector>
 #include <string>
 #include <memory>
@@ -46,11 +47,16 @@ public:
 
 
 struct PatternData {
-    std::vector<uint32_t> wMatches; // Match indexes in window
+    std::vector<uint32_t> patMatches; // Match indexes in window
     uint32_t count = 0; // Total pattern count
     float density = 0.0f; // Density of the pattern
 };
 
+
+struct TelomereBlock {
+    uint64_t start;
+    uint16_t length;
+};
 
 struct WindowData {
     uint32_t windowStart;
@@ -59,21 +65,24 @@ struct WindowData {
     float shannonEntropy;
     std::unordered_map<char, uint32_t> nucleotideCounts;
     std::unordered_map<std::string, PatternData> patternMap; // Condensed pattern data
+    std::vector<TelomereBlock> telomereBlocks;
+
+    std::vector<uint32_t> canonicalMatches;
+    std::vector<uint32_t> nonCanonicalMatches;
+    std::vector<uint32_t> windowMatches;
+
+    uint16_t canonicalCounts = 0;
+    uint16_t nonCanonicalCounts = 0;
+    uint16_t windowCounts = 0;
     
     WindowData() : windowStart(0), gcContent(0.0f), shannonEntropy(0.0f), nucleotideCounts{{'A', 0}, {'C', 0}, {'G', 0}, {'T', 0}} {}
 };
 
-struct TelomereBlock {
-    uint64_t start;
-    uint64_t end;
-};
 
 class Teloscope {
-
     Trie trie; // Declare trie instance
     UserInputTeloscope userInput; // Declare user input instance
     std::vector<std::tuple<unsigned int, std::string, std::vector<WindowData>>> allWindows; // Assembly windows
-    std::vector<std::tuple<unsigned int, std::string, std::vector<TelomereBlock>>> allTelomereBlocks; // Assembly elomere blocks
 
     int totalNWindows = 0; // Total windows analyzed
     std::unordered_map<std::string, int> patternCounts; // Total counts
@@ -99,7 +108,6 @@ public:
 
     bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
 
-    // void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData);  
     void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData, WindowData& nextOverlapData); 
 
     std::vector<WindowData> analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos);

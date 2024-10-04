@@ -15,7 +15,7 @@ struct UserInputTeloscope : UserInput {
     bool modeMatch = true, modeEntropy = true, modeGC = true; // Change to: de novo, user-defined
     float densityThreshold = 0.5f; // Threshold for telomere detection
     uint32_t maxGaps = 2;   // Allowed gaps in telomere blocks
-    uint8_t mergeDistance = 6;
+    uint8_t blockDistance = 6;
 
 };
 

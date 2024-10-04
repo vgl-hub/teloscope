@@ -86,7 +86,7 @@ float Teloscope::getMedian(std::vector<float> values) {
     }
 }
 
-
+.
 float Teloscope::getMin(const std::vector<float> values) {
     if (values.empty()) return 0.0;
     return *std::min_element(values.begin(), values.end());
@@ -116,23 +116,15 @@ void Teloscope::sortWindowsBySeqPos() {
 void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData, WindowData& nextOverlapData) {
     windowData.windowStart = windowStart; // CHECK: Why is this here?
     unsigned short int longestPatternSize = this->trie.getLongestPatternSize();
-    uint32_t overlapSize = userInput.windowSize - userInput.step; // Overlap starts at this index
+    uint32_t overlapSize = userInput.windowSize - userInput.step;
 
-    // Determine starting index for Trie scan
-    uint32_t startIndex = 0;
-    if (windowStart == 0) {
-        startIndex = 0;
-    } else if (userInput.step < overlapSize) {
-        startIndex = userInput.step - longestPatternSize; // To capture patterns missed in the previous window
-    } else {
-        startIndex = overlapSize - longestPatternSize; // To capture patterns missed in the previous window
-    }
-    // uint32_t startIndex = (windowStart == 0) ? 0 : std::min(userInput.step, overlapSize); // CHECK: Test whether this is faster
+    // Determine starting index for Trie scanning
+    uint32_t startIndex = (windowStart == 0 || overlapSize == 0) ? 0 : std::min(userInput.step - longestPatternSize, overlapSize - longestPatternSize);
 
     for (uint32_t i = startIndex; i < window.size(); ++i) { // Nucleotide iterations
 
         if (userInput.modeGC || userInput.modeEntropy) {
-            if (i >= overlapSize || userInput.windowSize == userInput.step || windowStart == 0) {
+            if (i >= overlapSize || overlapSize == 0 || windowStart == 0) {
                 windowData.nucleotideCounts[window[i]]++; // For whole window
             }
             if (i >= userInput.step && userInput.windowSize != userInput.step) {
@@ -151,32 +143,27 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
 
                 if (current->isEndOfWord) {
                     std::string pattern = window.substr(i, j - i + 1);
+                    bool isCanonical = (pattern == "TTAGGG" || pattern == "CCCTAA"); // Check canonical patterns
 
                     // Update windowData from prevOverlapData
-                    if (j >= overlapSize || userInput.windowSize == userInput.step || windowStart == 0 ) {
+                    if (j >= overlapSize || overlapSize == 0 || windowStart == 0 ) {
                         windowData.patternMap[pattern].count++;
-                        windowData.patternMap[pattern].wMatches.push_back(i);
+                        isCanonical ? windowData.canonicalCounts++ : windowData.nonCanonicalCounts++;
+                        windowData.windowCounts++;
+
+                        windowData.patternMap[pattern].patMatches.push_back(i);
+                        isCanonical ? windowData.canonicalMatches.push_back(i) : windowData.nonCanonicalMatches.push_back(i);
+                        windowData.windowMatches.push_back(i); // Ordered by design
                     }
 
-                    // Update nextOverlapData from steps
-                    if (i >= userInput.step && userInput.windowSize != userInput.step ) {
+                    // Update nextOverlapData
+                    if (i >= userInput.step && overlapSize != 0 ) {
                         nextOverlapData.patternMap[pattern].count++;
+                        isCanonical ? nextOverlapData.canonicalCounts++ : nextOverlapData.nonCanonicalCounts++;
                     }
                 }
             }
         }
-    }
-
-    if (userInput.modeGC) {
-        windowData.gcContent = getGCContent(windowData.nucleotideCounts, window.size());
-    }
-
-    if (userInput.modeEntropy) {
-        windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, window.size());
-    }
-
-    if (userInput.modeMatch) {
-        getPatternDensities(windowData, window.size());
     }
 }
 
@@ -199,6 +186,17 @@ std::vector<WindowData> Teloscope::analyzeSegment(std::string &sequence, UserInp
         // Prepare and analyze current window
         WindowData windowData = prevOverlapData;
         analyzeWindow(window, windowStart, windowData, nextOverlapData);
+        if (userInput.modeGC) {
+            windowData.gcContent = getGCContent(windowData.nucleotideCounts, window.size());
+        }
+
+        if (userInput.modeEntropy) {
+            windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, window.size());
+        }
+
+        if (userInput.modeMatch) {
+            getPatternDensities(windowData, window.size());
+        }
 
         // Update windowData
         windowData.windowStart = windowStart + absPos;
@@ -267,7 +265,7 @@ void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcConten
             // Write pattern data if enabled
             if (userInput.modeMatch) {
                 for (const auto& [pattern, data] : window.patternMap) {
-                    for (auto pos : data.wMatches) {
+                    for (auto pos : data.patMatches) {
                         patternMatchFiles[pattern] << header << "\t"
                                                 << window.windowStart + pos << "\t"
                                                 << window.windowStart + pos + pattern.length() << "\t" // Start is already 0-based
@@ -291,8 +289,6 @@ void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcConten
 void Teloscope::handleBEDFile() {
     std::ofstream shannonFile;
     std::ofstream gcContentFile;
-    std::ofstream telomereBEDFile; // CHECK
-    std::ofstream telomereCountFile; // CHECK
     std::unordered_map<std::string, std::ofstream> patternMatchFiles; // Jack: replace with vector to reduce cache locality?
     std::unordered_map<std::string, std::ofstream> patternCountFiles;
     std::unordered_map<std::string, std::ofstream> patternDensityFiles;
@@ -308,8 +304,6 @@ void Teloscope::handleBEDFile() {
     }
 
     if (userInput.modeMatch) {
-        // telomereBEDFile.open(outRoute + "/telomere_blocks.bed"); // CHECK
-        // telomereCountFile.open(outRoute + "/telomere_block_counts.txt"); // CHECK
 
         for (const auto& pattern : userInput.patterns) {
             patternMatchFiles[pattern].open(outRoute + "/" + pattern + "_matches.bed");
@@ -319,9 +313,7 @@ void Teloscope::handleBEDFile() {
     }
 
     // Write data for each window
-    writeBEDFile(shannonFile, gcContentFile, 
-                // telomereBEDFile, telomereCountFile, // CHECK
-                patternMatchFiles, patternCountFiles, patternDensityFiles);
+    writeBEDFile(shannonFile, gcContentFile, patternMatchFiles, patternCountFiles, patternDensityFiles);
 
     // Close all files once
     if (userInput.modeEntropy) {
@@ -331,9 +323,6 @@ void Teloscope::handleBEDFile() {
         gcContentFile.close();
     }
     if (userInput.modeMatch) {
-        // telomereBEDFile.close(); // CHECK
-        // telomereCountFile.close(); // CHECK
-
         for (auto& [pattern, file] : patternMatchFiles) {
             file.close();
         }
