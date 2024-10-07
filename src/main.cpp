@@ -45,9 +45,10 @@ int main(int argc, char **argv) {
         {"patterns", required_argument, 0, 'p'},
         {"window", required_argument, 0, 'w'},
         {"step", required_argument, 0, 's'},
-        {"mode", required_argument, 0, 'm'},
+        {"canonical", required_argument, 0, 'c'},
         {"threads", required_argument, 0, 'j'},
         {"keep-window-data", no_argument, 0, 'k'},
+        {"mode", required_argument, 0, 'm'},
         
         {"verbose", no_argument, &verbose_flag, 1},
         {"cmd", no_argument, &cmd_flag, 1},
@@ -61,7 +62,7 @@ int main(int argc, char **argv) {
         
         int option_index = 0;
         
-        c = getopt_long(argc, argv, "-:f:j:m:o:p:s:w:kvh", long_options, &option_index);
+        c = getopt_long(argc, argv, "-:f:j:m:o:p:s:w:c:kvh", long_options, &option_index);
 
         // if (optind < argc && !isPipe) { // if pipe wasn't assigned already
             
@@ -92,12 +93,14 @@ int main(int argc, char **argv) {
                 break;
             default: // handle positional arguments
 
+
             case 0: // case for long options without short options, none yet
                 
                 // if (strcmp(long_options[option_index].name,"line-length") == 0)
                 //     splitLength = atoi(optarg);
                 
                 break;
+
 
             case 'f': // input sequence
                 
@@ -114,10 +117,17 @@ int main(int argc, char **argv) {
                     
                 break;
 
+
             case 'j': // max threads
                 maxThreads = atoi(optarg);
                 userInput.stats_flag = 1;
                 break;
+
+
+            // case 'c': // canonical pattern
+            //     userInput.canPatterns = optarg;
+            //     break;
+
 
             case 'm': {
                 std::istringstream modeStream(optarg);
@@ -162,6 +172,7 @@ int main(int argc, char **argv) {
             }
                 break;
 
+
             case 'p':
             {
                 std::istringstream patternStream(optarg);
@@ -169,7 +180,7 @@ int main(int argc, char **argv) {
                 
                 while (std::getline(patternStream, pattern, ',')) {
                     if (pattern.empty()) continue;
-
+                    
                     if (std::any_of(pattern.begin(), pattern.end(), ::isdigit)) {
                         std::cerr << "Error: Pattern '" << pattern << "' contains numerical characters.\n";
                         exit(EXIT_FAILURE);
@@ -182,17 +193,23 @@ int main(int argc, char **argv) {
                     userInput.patterns.emplace_back(revCom(pattern));
                 }
                 
-                std::unique(userInput.patterns.begin(), userInput.patterns.end());
                 if (userInput.patterns.empty()) {
                     userInput.patterns = {"TTAGGG", "CCCTAA"};
                     std::cout << "No patterns provided. Using canonical patterns: TTAGGG, CCCTAA" << "\n";
+                } else {
+                    // Remove duplicates
+                    std::sort(userInput.patterns.begin(), userInput.patterns.end());
+                    auto last = std::unique(userInput.patterns.begin(), userInput.patterns.end());
+                    userInput.patterns.erase(last, userInput.patterns.end());
                 }
             }
                 break;
 
+
             case 'w':
                 userInput.windowSize = std::stoi(optarg);
                 break;
+
 
             case 's':
                 userInput.step = std::stoi(optarg);
@@ -212,12 +229,14 @@ int main(int argc, char **argv) {
                 }
                 break;
 
+
             case 'v': // software version
                 printf("/// Teloscope v%s\n", version.c_str());
                 printf("\nDeveloped by:\nGiulio Formenti giulio.formenti@gmail.com\n");
                 printf("Jack A. Medico amedico@rockefeller.edu\n");
                 exit(0);
-                
+
+
             case 'h': // help
                 printf("teloscope [commands]\n");
                 printf("\nRequired Parameters:\n");
@@ -235,6 +254,7 @@ int main(int argc, char **argv) {
                 printf("\t'-h'\t--help\tPrint current software options.\n");
                 printf("\t--verbose\tverbose output.\n");
                 exit(0);
+
 
             case 'k':
                 userInput.keepWindowData = true;
@@ -259,7 +279,7 @@ int main(int argc, char **argv) {
         
     }
 
-    threadPool.init(maxThreads); // initialize threadpool, giulio?
+    threadPool.init(maxThreads);
 
     Input in;
     in.load(userInput); // load user input
