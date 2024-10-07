@@ -16,7 +16,7 @@ LDFLAGS = -pthread
 
 GFALIBS_DIR := $(CURDIR)/gfalibs
 
-OBJS := main teloscope input 
+OBJS := main teloscope input tools
 BINS := $(addprefix $(BINDIR)/, $(OBJS))
 
 head: $(BINS) gfalibs | $(BUILD)

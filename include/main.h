@@ -47,6 +47,6 @@
 #include "input-gfa.h"
 
 #include "input.h" // was in Mac's code
-#include "functions.h"
+#include "tools.h"
 
 #endif /* MAIN_H */

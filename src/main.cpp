@@ -241,7 +241,7 @@ int main(int argc, char **argv) {
                 printf("/// Teloscope v%s\n", version.c_str());
 
                 if (userInput.step > userInput.windowSize) {
-                    fprintf(stderr, "Error: Step size (%d) larger than window size (%d) is not allowed.\n", userInput.step, userInput.windowSize);
+                    fprintf(stderr, "Error: Step size (%d) cannot be larger than window size (%d)!\n", userInput.step, userInput.windowSize);
                     exit(EXIT_FAILURE);
 
                 } else if (userInput.step == userInput.windowSize) {
@@ -356,4 +356,3 @@ int main(int argc, char **argv) {
     exit(EXIT_SUCCESS);
     
 }
-
