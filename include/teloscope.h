@@ -29,7 +29,7 @@ public:
         return root;
     }
 
-    bool hasChild(const std::shared_ptr<TrieNode>& node, char ch) const { // Giulio: merge with the following method
+    bool hasChild(const std::shared_ptr<TrieNode>& node, char ch) const { // Merge with the following method
         return node->children.find(ch) != node->children.end();
     }
 
@@ -55,7 +55,7 @@ struct PatternData {
 
 struct TelomereBlock {
     uint64_t start;
-    uint16_t length;
+    uint16_t blockLen; // End = start + blockLen
 };
 
 struct WindowData {
@@ -65,7 +65,7 @@ struct WindowData {
     float shannonEntropy;
     std::unordered_map<char, uint32_t> nucleotideCounts;
     std::unordered_map<std::string, PatternData> patternMap; // Condensed pattern data
-    std::vector<TelomereBlock> telomereBlocks;
+    std::vector<TelomereBlock> winBlocks;
 
     std::vector<uint32_t> canonicalMatches;
     std::vector<uint32_t> nonCanonicalMatches;
@@ -78,11 +78,24 @@ struct WindowData {
     WindowData() : windowStart(0), gcContent(0.0f), shannonEntropy(0.0f), nucleotideCounts{{'A', 0}, {'C', 0}, {'G', 0}, {'T', 0}} {}
 };
 
+struct SegmentData {
+    std::vector<WindowData> windows;
+    std::unordered_map<std::string, std::vector<TelomereBlock>> mergedBlocks;
+};
+
+
+struct PathData {
+    unsigned int seqPos;
+    std::string header;
+    std::vector<WindowData> windows; // Empty unless specified by user
+    std::unordered_map<std::string, std::vector<TelomereBlock>> mergedBlocks;
+};
+
 
 class Teloscope {
     Trie trie; // Declare trie instance
     UserInputTeloscope userInput; // Declare user input instance
-    std::vector<std::tuple<unsigned int, std::string, std::vector<WindowData>>> allWindows; // Assembly windows
+    std::vector<PathData> allPathData; // Assembly data
 
     int totalNWindows = 0; // Total windows analyzed
     std::unordered_map<std::string, int> patternCounts; // Total counts
@@ -110,16 +123,21 @@ public:
 
     void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData, WindowData& nextOverlapData); 
 
-    std::vector<WindowData> analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos);
+    SegmentData analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos);
 
     void insertWindowData(unsigned int seqPos, const std::string& header, std::vector<WindowData>& pathWindows);
 
-    void sortWindowsBySeqPos();
+    void sortBySeqPos();
+
+    std::vector<TelomereBlock> getTelomereBlocks(const std::vector<uint32_t>& inputMatches, uint64_t windowStart);
+
+    std::vector<TelomereBlock> mergeTelomereBlocks(const std::vector<TelomereBlock>& winBlocks);
 
     void writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
                     std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
                     std::unordered_map<std::string, std::ofstream>& patternCountFiles,
-                    std::unordered_map<std::string, std::ofstream>& patternDensityFiles);
+                    std::unordered_map<std::string, std::ofstream>& patternDensityFiles,
+                    std::ofstream& telomereBlocksFile);
 
     void handleBEDFile();
 

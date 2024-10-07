@@ -48,7 +48,7 @@ void Input::read(InSequences &inSequences) {
     lg.verbose("All jobs completed");
     std::cout << "All jobs completed" << std::endl;
     
-    teloscope.sortWindowsBySeqPos();
+    teloscope.sortBySeqPos();
     lg.verbose("\nPaths sorted by original position");  
 
     teloscope.handleBEDFile();
@@ -60,7 +60,6 @@ void Input::read(InSequences &inSequences) {
 
 
 bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps) {
-
     Log threadLog;
     uint64_t absPos = 0;
     unsigned int cUId = 0, gapLen = 0, seqPos = path->getSeqPos();
@@ -70,8 +69,10 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     std::string header = path->getHeader();
     eraseChar(header, '\r');
 
-    std::vector<WindowData> pathWindows;
-    std::vector<TelomereBlock> pathTelomereBlocks; // CHECK: To implement
+    // Initialize PathData for this path
+    PathData pathData;
+    pathData.seqPos = seqPos;
+    pathData.header = header;
 
     for (std::vector<PathComponent>::iterator component = pathComponents.begin(); component != pathComponents.end(); component++) {
         
@@ -84,10 +85,19 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
             unmaskSequence(sequence);
             
             if (component->orientation == '+') {
+                SegmentData segmentData = analyzeSegment(sequence, userInput, absPos);
 
-                std::vector<WindowData> segmentWindows = analyzeSegment(sequence, userInput, absPos);
-                pathWindows.insert(pathWindows.end(), segmentWindows.begin(), segmentWindows.end());
+                if (userInput.keepWindowData) {
+                    pathData.windows.insert(pathData.windows.end(), segmentData.windows.begin(), segmentData.windows.end());
+                }
 
+                for (const auto& [groupName, blocks] : segmentData.mergedBlocks) {
+                    pathData.mergedBlocks[groupName].insert(
+                        pathData.mergedBlocks[groupName].end(),
+                        blocks.begin(),
+                        blocks.end()
+                    );
+                }
             } else {
             }
             
@@ -106,9 +116,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     }
 
     std::lock_guard<std::mutex> lck(mtx);
-    insertWindowData(seqPos, header, pathWindows);
-
-    allTelomereBlocks.push_back({seqPos, header, pathTelomereBlocks}); // CHECK: To implement
+    allPathData.push_back(std::move(pathData));
 
     threadLog.add("\tCompleted walking path:\t" + path->getHeader());
     logs.push_back(threadLog);
