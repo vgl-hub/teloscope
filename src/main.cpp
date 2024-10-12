@@ -17,7 +17,6 @@ ThreadPool<std::function<bool()>> threadPool;
 
 Log lg;
 std::vector<Log> logs;
-std::string outRoute;
 
 UserInputTeloscope userInput; // init input object
 
@@ -120,9 +119,9 @@ int main(int argc, char **argv) {
 
             case 'o':
             {
-                outRoute = optarg;
+                userInput.outRoute = optarg;
                 
-                if (outRoute.empty()) {
+                if (userInput.outRoute.empty()) {
                     fprintf(stderr, "Error: Output route is required. Use --output or -o to specify it.\n"); // Jack: we have to define output as default
                     exit(EXIT_FAILURE);
                 }

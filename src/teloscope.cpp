@@ -418,23 +418,23 @@ void Teloscope::handleBEDFile() {
 
     // Open files once if their modes are enabled
     if (userInput.modeEntropy) {
-        shannonFile.open(outRoute + "/shannonEntropy.bedgraph");
+        shannonFile.open(userInput.outRoute + "/shannonEntropy.bedgraph");
     }
 
     if (userInput.modeGC) {
-        gcContentFile.open(outRoute + "/gcContent.bedgraph");
+        gcContentFile.open(userInput.outRoute + "/gcContent.bedgraph");
     }
 
     if (userInput.modeMatch) {
 
         for (const auto& pattern : userInput.patterns) {
-            patternMatchFiles[pattern].open(outRoute + "/" + pattern + "_matches.bed");
-            patternCountFiles[pattern].open(outRoute + "/" + pattern + "_count.bedgraph");
-            patternDensityFiles[pattern].open(outRoute + "/" + pattern + "_density.bedgraph");
+            patternMatchFiles[pattern].open(userInput.outRoute + "/" + pattern + "_matches.bed");
+            patternCountFiles[pattern].open(userInput.outRoute + "/" + pattern + "_count.bedgraph");
+            patternDensityFiles[pattern].open(userInput.outRoute + "/" + pattern + "_density.bedgraph");
         }
     }
 
-    telomereBlocksFile.open(outRoute + "/telomere_blocks.bed");
+    telomereBlocksFile.open(userInput.outRoute + "/telomere_blocks.bed");
 
     // Write data for each window
     writeBEDFile(shannonFile, gcContentFile, patternMatchFiles, patternCountFiles, patternDensityFiles, telomereBlocksFile);

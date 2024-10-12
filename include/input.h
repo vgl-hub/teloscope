@@ -4,7 +4,8 @@
 #include "main.h" // not in Mac's code
 
 struct UserInputTeloscope : UserInput {
-
+    
+    std::string outRoute;
     std::vector<std::string> patterns;
     uint32_t windowSize = 1000;
     uint8_t kmerLen = 21;
