@@ -9,6 +9,8 @@ struct UserInputTeloscope : UserInput {
     uint32_t windowSize = 1000;
     uint8_t kmerLen = 21;
     uint32_t step = 500;
+    std::pair<std::string, std::string> canonicalPatterns;
+
     double maxMem = 0;
     std::string prefix = ".", outFile = "";
     bool keepWindowData = false; // Memory intensive

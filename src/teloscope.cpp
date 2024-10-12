@@ -175,7 +175,7 @@ std::vector<TelomereBlock> Teloscope::mergeTelomereBlocks(const std::vector<Telo
         uint64_t currentEnd = currentBlock.start + currentBlock.blockLen;
         uint64_t distance = nextBlock.start - currentEnd;
 
-        if (distance <= D) {
+        if (distance <= 2 * D) {
             // Merge the blocks by extending the current block
             uint64_t newEnd = nextBlock.start + nextBlock.blockLen;
             currentBlock.blockLen = newEnd - currentBlock.start;
@@ -225,7 +225,8 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
 
                 if (current->isEndOfWord) {
                     std::string pattern = window.substr(i, j - i + 1);
-                    bool isCanonical = (pattern == "TTAGGG" || pattern == "CCCTAA"); // Check canonical patterns
+                    // bool isCanonical = (pattern == "TTAGGG" || pattern == "CCCTAA"); // Check canonical patterns
+                    bool isCanonical = (pattern == userInput.canonicalPatterns.first || pattern == userInput.canonicalPatterns.second); // Check canonical patterns
 
                     // Update windowData from prevOverlapData
                     if (j >= overlapSize || overlapSize == 0 || windowStart == 0 ) {
@@ -343,16 +344,25 @@ void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcConten
                 std::unordered_map<std::string, std::ofstream>& patternCountFiles,
                 std::unordered_map<std::string, std::ofstream>& patternDensityFiles,
                 std::ofstream& telomereBlocksFile) {
-    
-    if (!userInput.keepWindowData) { // If windowData is not stored, return
-        return;
-    }
 
     for (const auto& pathData : allPathData) {
         // const auto& seqPos = pathData.seqPos;
         const auto& header = pathData.header;
         const auto& windows = pathData.windows;
 
+        // Process telomere blocks
+        for (const auto& [groupName, blocks] : pathData.mergedBlocks) {
+            for (const auto& block : blocks) {
+                uint64_t blockEnd = block.start + block.blockLen;
+                telomereBlocksFile << header << "\t" << block.start << "\t" << blockEnd << "\t" << groupName << "\n";
+            }
+        }
+
+        if (!userInput.keepWindowData) { // If windowData is not stored, return
+            continue;
+        }
+
+        // Process window data
         for (const auto& window : windows) {
             totalNWindows++; // Update total window count
             uint32_t windowEnd = window.windowStart + window.currentWindowSize; // Start is already 0-based
@@ -392,14 +402,6 @@ void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcConten
                                                 << windowEnd << "\t"
                                                 << data.density << "\n";
                 }
-            }
-        }
-
-        // Handle telomere blocks
-        for (const auto& [groupName, blocks] : pathData.mergedBlocks) {
-            for (const auto& block : blocks) {
-                uint64_t blockEnd = block.start + block.blockLen;
-                telomereBlocksFile << header << "\t" << block.start << "\t" << blockEnd << "\t" << groupName << "\n";
             }
         }
     }

@@ -118,15 +118,142 @@ int main(int argc, char **argv) {
                 break;
 
 
+            case 'o':
+            {
+                outRoute = optarg;
+                
+                if (outRoute.empty()) {
+                    fprintf(stderr, "Error: Output route is required. Use --output or -o to specify it.\n"); // Jack: we have to define output as default
+                    exit(EXIT_FAILURE);
+                }
+            }
+                break;
+
+
             case 'j': // max threads
                 maxThreads = atoi(optarg);
                 userInput.stats_flag = 1;
                 break;
 
 
-            // case 'c': // canonical pattern
-            //     userInput.canPatterns = optarg;
+            case 'c': { // Handle canonical pattern
+                std::string canonicalPattern = optarg;
+                unmaskSequence(canonicalPattern);
+
+                if (canonicalPattern.empty()) {
+                    canonicalPattern = "TTAGGG";
+                }
+
+                // Check for numerical characters
+                if (std::any_of(canonicalPattern.begin(), canonicalPattern.end(), ::isdigit)) {
+                    std::cerr << "Error: Canonical pattern '" << canonicalPattern << "' contains numerical characters.\n";
+                    exit(EXIT_FAILURE);
+                }
+
+                // Store canonical pattern and its reverse complement
+                userInput.canonicalPatterns.first = canonicalPattern;
+                userInput.canonicalPatterns.second = revCom(canonicalPattern);
+
+                std::cout << "Setting canonical pattern: " << canonicalPattern << " and its reverse complement: " << userInput.canonicalPatterns.second << "\n";
+            }
+                break;
+
+
+            // case 'p':
+            // {
+            //     std::istringstream patternStream(optarg);
+            //     std::string pattern;
+                
+            //     while (std::getline(patternStream, pattern, ',')) {
+            //         if (pattern.empty()) continue;
+                    
+            //         if (std::any_of(pattern.begin(), pattern.end(), ::isdigit)) {
+            //             std::cerr << "Error: Pattern '" << pattern << "' contains numerical characters.\n";
+            //             exit(EXIT_FAILURE);
+            //         }
+                    
+            //         unmaskSequence(pattern);
+                    
+            //         std::cout << "Adding pattern: " << pattern << " and its reverse complement" <<  "\n";
+            //         userInput.patterns.emplace_back(pattern);
+            //         userInput.patterns.emplace_back(revCom(pattern));
+            //     }
+                
+            //     if (userInput.patterns.empty()) {
+            //         userInput.patterns = {"TTAGGG", "CCCTAA"};
+            //         std::cout << "No patterns provided. Only scanning for canonical patterns: TTAGGG, CCCTAA" << "\n";
+            //     } else {
+            //         // Remove duplicates
+            //         std::sort(userInput.patterns.begin(), userInput.patterns.end());
+            //         auto last = std::unique(userInput.patterns.begin(), userInput.patterns.end());
+            //         userInput.patterns.erase(last, userInput.patterns.end());
+            //     }
+            // }
             //     break;
+
+            case 'p':
+            {
+                std::istringstream patternStream(optarg);
+                std::string pattern;
+
+                while (std::getline(patternStream, pattern, ',')) {
+                    if (pattern.empty()) continue;
+
+                    if (std::any_of(pattern.begin(), pattern.end(), ::isdigit)) {
+                        std::cerr << "Error: Pattern '" << pattern << "' contains numerical characters.\n";
+                        exit(EXIT_FAILURE);
+                    }
+
+                    unmaskSequence(pattern);
+
+                    // Generate all combinations for the pattern based on IUPAC codes
+                    std::vector<std::string> combinations;
+                    std::string current_pattern = pattern;
+                    generate_combinations(pattern, current_pattern, 0, combinations);
+
+                    // Add each combination and its reverse complement to userInput.patterns
+                    for (const std::string &comb : combinations) {
+                        std::cout << "Adding pattern: " << comb << " and its reverse complement" << "\n";
+                        userInput.patterns.emplace_back(comb);
+                        userInput.patterns.emplace_back(revCom(comb));
+                    }
+                }
+
+                if (userInput.patterns.empty()) {
+                    userInput.patterns = {"TTAGGG", "CCCTAA"};
+                    std::cout << "No patterns provided. Only scanning for canonical patterns: TTAGGG, CCCTAA" << "\n";
+                } else {
+                    // Remove duplicates
+                    std::sort(userInput.patterns.begin(), userInput.patterns.end());
+                    auto last = std::unique(userInput.patterns.begin(), userInput.patterns.end());
+                    userInput.patterns.erase(last, userInput.patterns.end());
+                }
+            }
+            break;
+
+
+            case 'w':
+                userInput.windowSize = std::stoi(optarg);
+                break;
+
+
+            case 's':
+                userInput.step = std::stoi(optarg);
+                printf("/// Teloscope v%s\n", version.c_str());
+
+                if (userInput.step > userInput.windowSize) {
+                    fprintf(stderr, "Error: Step size (%d) larger than window size (%d) is not allowed.\n", userInput.step, userInput.windowSize);
+                    exit(EXIT_FAILURE);
+
+                } else if (userInput.step == userInput.windowSize) {
+                    fprintf(stderr, "Warning: Equal step and window sizes will bin the sequence.\n");
+                    fprintf(stderr, "Tip: Large sizes are recommended to avoid missing matches between windows.\n");
+                    
+                } else {
+                    fprintf(stderr, "Sliding windows with step size (%d) and window size (%d). \n", userInput.step, userInput.windowSize);
+                    fprintf(stderr, "Tip: A step value close the window size results in faster runs.\n");
+                }
+                break;
 
 
             case 'm': {
@@ -159,75 +286,6 @@ int main(int argc, char **argv) {
 
                 break;
             }
-
-
-            case 'o':
-            {
-                outRoute = optarg;
-                
-                if (outRoute.empty()) {
-                    fprintf(stderr, "Error: Output route is required. Use --output or -o to specify it.\n"); // Jack: we have to define output as default
-                    exit(EXIT_FAILURE);
-                }
-            }
-                break;
-
-
-            case 'p':
-            {
-                std::istringstream patternStream(optarg);
-                std::string pattern;
-                
-                while (std::getline(patternStream, pattern, ',')) {
-                    if (pattern.empty()) continue;
-                    
-                    if (std::any_of(pattern.begin(), pattern.end(), ::isdigit)) {
-                        std::cerr << "Error: Pattern '" << pattern << "' contains numerical characters.\n";
-                        exit(EXIT_FAILURE);
-                    }
-                    
-                    unmaskSequence(pattern);
-                    
-                    std::cout << "Adding pattern: " << pattern << " and its reverse complement" <<  "\n";
-                    userInput.patterns.emplace_back(pattern);
-                    userInput.patterns.emplace_back(revCom(pattern));
-                }
-                
-                if (userInput.patterns.empty()) {
-                    userInput.patterns = {"TTAGGG", "CCCTAA"};
-                    std::cout << "No patterns provided. Using canonical patterns: TTAGGG, CCCTAA" << "\n";
-                } else {
-                    // Remove duplicates
-                    std::sort(userInput.patterns.begin(), userInput.patterns.end());
-                    auto last = std::unique(userInput.patterns.begin(), userInput.patterns.end());
-                    userInput.patterns.erase(last, userInput.patterns.end());
-                }
-            }
-                break;
-
-
-            case 'w':
-                userInput.windowSize = std::stoi(optarg);
-                break;
-
-
-            case 's':
-                userInput.step = std::stoi(optarg);
-                printf("/// Teloscope v%s\n", version.c_str());
-
-                if (userInput.step > userInput.windowSize) {
-                    fprintf(stderr, "Error: Step size (%d) larger than window size (%d) is not allowed.\n", userInput.step, userInput.windowSize);
-                    exit(EXIT_FAILURE);
-
-                } else if (userInput.step == userInput.windowSize) {
-                    fprintf(stderr, "Warning: Equal step and window sizes will bin the sequence.\n");
-                    fprintf(stderr, "Tip: Large sizes are recommended to avoid missing matches between windows.\n");
-                    
-                } else {
-                    fprintf(stderr, "Sliding windows with step size (%d) and window size (%d). \n", userInput.step, userInput.windowSize);
-                    fprintf(stderr, "Tip: A step value close the window size results in faster runs.\n");
-                }
-                break;
 
 
             case 'v': // software version
