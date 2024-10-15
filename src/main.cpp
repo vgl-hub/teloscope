@@ -48,7 +48,9 @@ int main(int argc, char **argv) {
         {"threads", required_argument, 0, 'j'},
         {"keep-window-data", no_argument, 0, 'k'},
         {"mode", required_argument, 0, 'm'},
-        
+        {"min-block-length", required_argument, 0, 'l'},
+        {"max-block-distance", required_argument, 0, 'd'},
+
         {"verbose", no_argument, &verbose_flag, 1},
         {"cmd", no_argument, &cmd_flag, 1},
         {"version", no_argument, 0, 'v'},
@@ -61,7 +63,7 @@ int main(int argc, char **argv) {
         
         int option_index = 0;
         
-        c = getopt_long(argc, argv, "-:f:j:m:o:p:s:w:c:kvh", long_options, &option_index);
+        c = getopt_long(argc, argv, "-:f:j:m:o:p:s:w:c:l:d:kvh", long_options, &option_index);
 
         // if (optind < argc && !isPipe) { // if pipe wasn't assigned already
             
@@ -180,7 +182,7 @@ int main(int argc, char **argv) {
 
                     // Add each combination and its reverse complement to userInput.patterns
                     for (const std::string &comb : combinations) {
-                        std::cout << "Adding pattern: " << comb << " and its reverse complement" << "\n";
+                        std::cout << "Adding pattern: " << comb << " and its reverse complement: " << revCom(comb) << "\n";
                         userInput.patterns.emplace_back(comb);
                         userInput.patterns.emplace_back(revCom(comb));
                     }
@@ -283,6 +285,14 @@ int main(int argc, char **argv) {
 
             case 'k':
                 userInput.keepWindowData = true;
+                break;
+
+            case 'l':
+                userInput.minBlockLen = std::stoi(optarg);
+                break;
+
+            case 'd':
+                userInput.maxBlockDist = std::stoi(optarg);
                 break;
         }
         

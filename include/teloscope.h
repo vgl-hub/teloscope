@@ -134,10 +134,12 @@ public:
     std::vector<TelomereBlock> mergeTelomereBlocks(const std::vector<TelomereBlock>& winBlocks);
 
     void writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
-                    std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
-                    std::unordered_map<std::string, std::ofstream>& patternCountFiles,
-                    std::unordered_map<std::string, std::ofstream>& patternDensityFiles,
-                    std::ofstream& telomereBlocksFile);
+                        std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
+                        std::unordered_map<std::string, std::ofstream>& patternCountFiles,
+                        std::unordered_map<std::string, std::ofstream>& patternDensityFiles,
+                        std::ofstream& allBlocksFile,
+                        std::ofstream& canonicalBlocksFile,
+                        std::ofstream& noncanonicalBlocksFile);
 
     // void writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
     //                         std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
