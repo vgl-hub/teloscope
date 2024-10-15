@@ -158,38 +158,6 @@ int main(int argc, char **argv) {
                 break;
 
 
-            // case 'p':
-            // {
-            //     std::istringstream patternStream(optarg);
-            //     std::string pattern;
-                
-            //     while (std::getline(patternStream, pattern, ',')) {
-            //         if (pattern.empty()) continue;
-                    
-            //         if (std::any_of(pattern.begin(), pattern.end(), ::isdigit)) {
-            //             std::cerr << "Error: Pattern '" << pattern << "' contains numerical characters.\n";
-            //             exit(EXIT_FAILURE);
-            //         }
-                    
-            //         unmaskSequence(pattern);
-                    
-            //         std::cout << "Adding pattern: " << pattern << " and its reverse complement" <<  "\n";
-            //         userInput.patterns.emplace_back(pattern);
-            //         userInput.patterns.emplace_back(revCom(pattern));
-            //     }
-                
-            //     if (userInput.patterns.empty()) {
-            //         userInput.patterns = {"TTAGGG", "CCCTAA"};
-            //         std::cout << "No patterns provided. Only scanning for canonical patterns: TTAGGG, CCCTAA" << "\n";
-            //     } else {
-            //         // Remove duplicates
-            //         std::sort(userInput.patterns.begin(), userInput.patterns.end());
-            //         auto last = std::unique(userInput.patterns.begin(), userInput.patterns.end());
-            //         userInput.patterns.erase(last, userInput.patterns.end());
-            //     }
-            // }
-            //     break;
-
             case 'p':
             {
                 std::istringstream patternStream(optarg);
