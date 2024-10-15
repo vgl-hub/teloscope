@@ -133,19 +133,19 @@ public:
 
     std::vector<TelomereBlock> mergeTelomereBlocks(const std::vector<TelomereBlock>& winBlocks);
 
-    // void writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
-    //                 std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
-    //                 std::unordered_map<std::string, std::ofstream>& patternCountFiles,
-    //                 std::unordered_map<std::string, std::ofstream>& patternDensityFiles,
-    //                 std::ofstream& telomereBlocksFile);
-
     void writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
-                            std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
-                            std::unordered_map<std::string, std::ofstream>& patternCountFiles,
-                            std::unordered_map<std::string, std::ofstream>& patternDensityFiles,
-                            std::ofstream& telomereBlocksAllFile,
-                            std::ofstream& telomereBlocksCanonicalFile,
-                            std::ofstream& telomereBlocksNonCanonicalFile);
+                    std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
+                    std::unordered_map<std::string, std::ofstream>& patternCountFiles,
+                    std::unordered_map<std::string, std::ofstream>& patternDensityFiles,
+                    std::ofstream& telomereBlocksFile);
+
+    // void writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
+    //                         std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
+    //                         std::unordered_map<std::string, std::ofstream>& patternCountFiles,
+    //                         std::unordered_map<std::string, std::ofstream>& patternDensityFiles,
+    //                         std::ofstream& telomereBlocksAllFile,
+    //                         std::ofstream& telomereBlocksCanonicalFile,
+    //                         std::ofstream& telomereBlocksNonCanonicalFile);
 
     void handleBEDFile();
 

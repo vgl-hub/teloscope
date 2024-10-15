@@ -175,7 +175,7 @@ std::vector<TelomereBlock> Teloscope::mergeTelomereBlocks(const std::vector<Telo
         uint64_t currentEnd = currentBlock.start + currentBlock.blockLen;
         uint64_t distance = nextBlock.start - currentEnd;
 
-        if (distance <= 10 * D || distance > 5) {
+        if (distance <= 25 * D || distance > 5) {
             uint64_t newEnd = nextBlock.start + nextBlock.blockLen;
             currentBlock.blockLen = newEnd - currentBlock.start;
             
@@ -336,56 +336,22 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
 }
 
 
-// void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
-//                 std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
-//                 std::unordered_map<std::string, std::ofstream>& patternCountFiles,
-//                 std::unordered_map<std::string, std::ofstream>& patternDensityFiles,
-//                 std::ofstream& telomereBlocksFile) {
-
-    // for (const auto& pathData : allPathData) {
-    //     // const auto& seqPos = pathData.seqPos;
-    //     const auto& header = pathData.header;
-    //     const auto& windows = pathData.windows;
-
-    //     // Process telomere blocks
-    //     for (const auto& [groupName, blocks] : pathData.mergedBlocks) {
-    //         for (const auto& block : blocks) {
-    //             uint64_t blockEnd = block.start + block.blockLen;
-    //             telomereBlocksFile << header << "\t" << block.start << "\t" << blockEnd << "\t" << groupName << "\n";
-    //         }
-    //     }
-
 void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
-                            std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
-                            std::unordered_map<std::string, std::ofstream>& patternCountFiles,
-                            std::unordered_map<std::string, std::ofstream>& patternDensityFiles,
-                            std::ofstream& telomereBlocksAllFile,
-                            std::ofstream& telomereBlocksCanonicalFile,
-                            std::ofstream& telomereBlocksNonCanonicalFile) {
-
+                std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
+                std::unordered_map<std::string, std::ofstream>& patternCountFiles,
+                std::unordered_map<std::string, std::ofstream>& patternDensityFiles,
+                std::ofstream& telomereBlocksFile) {
 
     for (const auto& pathData : allPathData) {
+        // const auto& seqPos = pathData.seqPos;
         const auto& header = pathData.header;
         const auto& windows = pathData.windows;
 
         // Process telomere blocks
         for (const auto& [groupName, blocks] : pathData.mergedBlocks) {
-            std::ofstream* outputFile = nullptr;
-
-            // By group
-            if (groupName == "all") {
-                outputFile = &telomereBlocksAllFile;
-            } else if (groupName == "canonical") {
-                outputFile = &telomereBlocksCanonicalFile;
-            } else if (groupName == "non-canonical") {
-                outputFile = &telomereBlocksNonCanonicalFile;
-            }
-
-            if (outputFile) {
-                for (const auto& block : blocks) {
-                    uint64_t blockEnd = block.start + block.blockLen;
-                    *outputFile << header << "\t" << block.start << "\t" << blockEnd << "\t" << groupName << "\n";
-                }
+            for (const auto& block : blocks) {
+                uint64_t blockEnd = block.start + block.blockLen;
+                telomereBlocksFile << header << "\t" << block.start << "\t" << blockEnd << "\t" << groupName << "\n";
             }
         }
 
@@ -444,21 +410,20 @@ void Teloscope::handleBEDFile() {
     std::unordered_map<std::string, std::ofstream> patternMatchFiles; // Jack: replace with vector to reduce cache locality?
     std::unordered_map<std::string, std::ofstream> patternCountFiles;
     std::unordered_map<std::string, std::ofstream> patternDensityFiles;
-    std::ofstream telomereBlocksAllFile;
-    std::ofstream telomereBlocksCanonicalFile;
-    std::ofstream telomereBlocksNonCanonicalFile;
+    std::ofstream telomereBlocksFile;
     std::cout << "Reporting window matches and metrics in BED/BEDgraphs...\n";
 
     // Open files for writing
-    if (userInput.modeEntropy) {
+    
+    if (userInput.keepWindowData && userInput.modeEntropy) {
         shannonFile.open(userInput.outRoute + "/shannonEntropy.bedgraph");
     }
 
-    if (userInput.modeGC) {
+    if (userInput.keepWindowData && userInput.modeGC) {
         gcContentFile.open(userInput.outRoute + "/gcContent.bedgraph");
     }
 
-    if (userInput.modeMatch) {
+    if (userInput.keepWindowData && userInput.modeMatch) {
 
         for (const auto& pattern : userInput.patterns) {
             patternMatchFiles[pattern].open(userInput.outRoute + "/" + pattern + "_matches.bed");
@@ -467,13 +432,10 @@ void Teloscope::handleBEDFile() {
         }
     }
 
-    telomereBlocksAllFile.open(userInput.outRoute + "/telomere_blocks_all.bed");
-    telomereBlocksCanonicalFile.open(userInput.outRoute + "/telomere_blocks_canonical.bed");
-    telomereBlocksNonCanonicalFile.open(userInput.outRoute + "/telomere_blocks_noncanonical.bed");
+    telomereBlocksFile.open(userInput.outRoute + "/telomere_blocks.bed");
 
-    // Pass the files to writeBEDFile
-    writeBEDFile(shannonFile, gcContentFile, patternMatchFiles, patternCountFiles, patternDensityFiles,
-                telomereBlocksAllFile, telomereBlocksCanonicalFile, telomereBlocksNonCanonicalFile);
+    // Write data for each window
+    writeBEDFile(shannonFile, gcContentFile, patternMatchFiles, patternCountFiles, patternDensityFiles, telomereBlocksFile);
 
     // Close all files once
     if (userInput.modeEntropy) {
@@ -494,9 +456,7 @@ void Teloscope::handleBEDFile() {
         }
     }
 
-    telomereBlocksAllFile.close();
-    telomereBlocksCanonicalFile.close();
-    telomereBlocksNonCanonicalFile.close();
+    telomereBlocksFile.close();
 }
 
 void Teloscope::printSummary() {
