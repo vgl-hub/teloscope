@@ -281,9 +281,9 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
         WindowData windowData = prevOverlapData;
         analyzeWindow(window, windowStart, windowData, nextOverlapData);
 
-        if (userInput.modeGC) {windowData.gcContent = getGCContent(windowData.nucleotideCounts, window.size());}
-        if (userInput.modeEntropy) {windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, window.size());}
-        if (userInput.modeMatch) {getPatternDensities(windowData, window.size());}
+        if (userInput.modeGC) { windowData.gcContent = getGCContent(windowData.nucleotideCounts, window.size()); }
+        if (userInput.modeEntropy) { windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, window.size()); }
+        if (userInput.modeMatch) { getPatternDensities(windowData, window.size()); }
 
         // Update windowData
         windowData.windowStart = windowStart + absPos;
@@ -301,20 +301,15 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
             if (windowData.canonicalCounts >= 2 || windowData.nonCanonicalCounts >= 4) { // JACK: Add to user cutoffs
                 auto winBlocks = getTelomereBlocks(matches, windowData.windowStart);
                 segmentBlocks[groupName].insert(segmentBlocks[groupName].end(), winBlocks.begin(), winBlocks.end());
-            if (windowData.canonicalCounts >= 2 || windowData.nonCanonicalCounts >= 4) { // JACK: Add to user cutoffs
-                auto winBlocks = getTelomereBlocks(matches, windowData.windowStart);
-                segmentBlocks[groupName].insert(segmentBlocks[groupName].end(), winBlocks.begin(), winBlocks.end());
             }
         }
 
         // Pass and reset overlap data
         prevOverlapData = nextOverlapData;
         nextOverlapData = WindowData(); // Reset for next iteration
-        nextOverlapData = WindowData(); // Reset for next iteration
 
         // Prepare next window
         windowStart += step;
-        if (windowStart >= sequenceSize) {
         if (windowStart >= sequenceSize) {
             break;
         }
@@ -444,11 +439,9 @@ void Teloscope::handleBEDFile() {
     }
 
     if (userInput.keepWindowData && userInput.modeGC) {
-    if (userInput.keepWindowData && userInput.modeGC) {
         gcContentFile.open(userInput.outRoute + "/gcContent.bedgraph");
     }
 
-    if (userInput.keepWindowData && userInput.modeMatch) {
     if (userInput.keepWindowData && userInput.modeMatch) {
 
         for (const auto& pattern : userInput.patterns) {
