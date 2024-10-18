@@ -122,7 +122,7 @@ std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<uint32
     
     // Helper function
     auto finalizeBlock = [&](uint64_t endPosition) {
-        if (blockCounts >= 2) {
+        if (blockCounts >= 2) { // Jack: CHECK
             TelomereBlock block;
             block.start = blockStart;
             block.blockLen = (endPosition - blockStart) + patternSize;
@@ -130,7 +130,7 @@ std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<uint32
         }
     };
 
-    for (size_t i = 1; i <= inputMatches.size(); ++i) {
+    for (size_t i = 1; i <= inputMatches.size(); ++i) { // Iterate from second match
         uint64_t currentPosition;
         uint64_t distance;
 
@@ -162,7 +162,6 @@ std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<uint32
 std::vector<TelomereBlock> Teloscope::mergeTelomereBlocks(const std::vector<TelomereBlock>& winBlocks) {
     std::vector<TelomereBlock> mergedBlocks;
     unsigned short int minBlockLen = userInput.minBlockLen;
-    unsigned short int minBlockDist = userInput.minBlockDist;
     unsigned short int maxBlockDist = userInput.maxBlockDist;
 
     if (winBlocks.empty()) {
@@ -170,14 +169,13 @@ std::vector<TelomereBlock> Teloscope::mergeTelomereBlocks(const std::vector<Telo
     }
 
     TelomereBlock currentBlock = winBlocks[0]; // Initialize the first block as the current block
-    // uint16_t D = this->trie.getLongestPatternSize(); // Use D as the merging distance threshold
 
     for (size_t i = 1; i < winBlocks.size(); ++i) {
         const TelomereBlock& nextBlock = winBlocks[i];
         uint64_t currentEnd = currentBlock.start + currentBlock.blockLen;
         uint64_t distance = nextBlock.start - currentEnd;
 
-        if ((distance <= maxBlockDist && distance > minBlockDist) || distance == 0) {
+        if (distance <= maxBlockDist) {
             uint64_t newEnd = nextBlock.start + nextBlock.blockLen;
             currentBlock.blockLen = newEnd - currentBlock.start;
             
@@ -190,7 +188,9 @@ std::vector<TelomereBlock> Teloscope::mergeTelomereBlocks(const std::vector<Telo
         }
     }
 
-    mergedBlocks.push_back(currentBlock);
+    if (currentBlock.blockLen >= minBlockLen) {
+        mergedBlocks.push_back(currentBlock);
+    }
 
     return mergedBlocks;
 }
@@ -484,6 +484,10 @@ void Teloscope::handleBEDFile() {
 }
 
 void Teloscope::printSummary() {
+    if (!userInput.keepWindowData) { // If windowData is not stored, skip
+        return;
+    }
+
     std::cout << "\n+++Summary Report+++\n";
     std::cout << "Total windows analyzed:\t" << totalNWindows << "\n";
     std::cout << "Total input patterns found:\n";
@@ -493,15 +497,13 @@ void Teloscope::printSummary() {
 
     // For each pattern, print the path header with the highest number of matches - PENDING
     // For each pattern, print the path header with the lowest number of matches - PENDING
-    if (userInput.keepWindowData) {
-        std::cout << "Max Shannon Entropy:\t" << getMax(entropyValues) << "\n";
-        std::cout << "Mean Shannon Entropy:\t" << getMean(entropyValues) << "\n";
-        std::cout << "Median Shannon Entropy:\t" << getMedian(entropyValues) << "\n";
-        std::cout << "Min Shannon Entropy:\t" << getMin(entropyValues) << "\n";
+    std::cout << "Max Shannon Entropy:\t" << getMax(entropyValues) << "\n";
+    std::cout << "Mean Shannon Entropy:\t" << getMean(entropyValues) << "\n";
+    std::cout << "Median Shannon Entropy:\t" << getMedian(entropyValues) << "\n";
+    std::cout << "Min Shannon Entropy:\t" << getMin(entropyValues) << "\n";
 
-        std::cout << "Max GC Content:\t" << getMax(gcContentValues) << "\n";
-        std::cout << "Mean GC Content:\t" << getMean(gcContentValues) << "\n";
-        std::cout << "Median GC Content:\t" << getMedian(gcContentValues) << "\n";
-        std::cout << "Min GC Content:\t" << getMin(gcContentValues) << "\n";
-    }
+    std::cout << "Max GC Content:\t" << getMax(gcContentValues) << "\n";
+    std::cout << "Mean GC Content:\t" << getMean(gcContentValues) << "\n";
+    std::cout << "Median GC Content:\t" << getMedian(gcContentValues) << "\n";
+    std::cout << "Min GC Content:\t" << getMin(gcContentValues) << "\n";
 }

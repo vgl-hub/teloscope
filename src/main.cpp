@@ -269,10 +269,13 @@ int main(int argc, char **argv) {
                 printf("\nRequired Parameters:\n");
                 printf("\t'-f'\t--input-sequence\tInitiate tool with fasta file.\n");
                 printf("\t'-o'\t--output\tSet output route.\n");
+                printf("\t'-c'\t--canonical\tSet canonical pattern. [Default: TTAGGG]\n");
                 printf("\t'-p'\t--patterns\tSet patterns to explore, separate them by commas [Default: TTAGGG]\n");
                 printf("\t'-w'\t--window\tSet sliding window size. [Default: 1000]\n");
                 printf("\t'-s'\t--step\tSet sliding window step. [Default: 500]\n");
                 printf("\t'-j'\t--threads\tSet maximum number of threads. [Default: max. available]\n");
+                printf("\t'-l'\t--min-block-length\tSet minimum block length for merging. [Default: 500]\n");
+                printf("\t'-d'\t--max-block-distance\tSet maximum block distance for merging. [Default: 50]\n");
 
                 printf("\nOptional Parameters:\n");
                 printf("\t'-m'\t--mode\tSet analysis modes, separate them by commas. [Options: all,match,gc,entropy]\n");
