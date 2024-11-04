@@ -14,7 +14,9 @@ Either download one of the releases or `git clone https://github.com/vgl-hub/tel
 
 ## Usage
 
-`teloscope -f input.[fasta][.gz] -o [output/dir] -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG -w [window size] -s [step size] -k`
+`teloscope -f input.[fasta][.gz] -o [output/dir] \
+            -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG \
+            -w [window size] -s [step size] -d 100 -l 50 -k`
 
 To check out all options and flags, please use:
 `teloscope -h`
@@ -27,4 +29,4 @@ Briefly, **Teloscope** reads an assembly and decomposes its parts. It uses prefi
 
 ## How to cite
 
-If you use **Teloscope**, please, cite the current repository. 
+If you use **Teloscope**, please, cite this repository. 
