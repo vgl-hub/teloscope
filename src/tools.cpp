@@ -1,7 +1,6 @@
 #include "tools.h"
-#include <unordered_map>
 
-std::unordered_map<char, std::vector<char>> IUPAC_DNA_map = {
+std::unordered_map<char, std::vector<char>> IUPAC = {
     {'A', {'A'}},
     {'C', {'C'}},
     {'G', {'G'}},
@@ -20,17 +19,46 @@ std::unordered_map<char, std::vector<char>> IUPAC_DNA_map = {
 };
 
 
-void generate_combinations(const std::string &pattern, std::string &current, size_t index, std::vector<std::string> &combinations) {
+void getCombinations(const std::string &pattern, std::string &current, size_t index, std::vector<std::string> &combinations) {
     if (index == pattern.size()) {
         combinations.push_back(current);
         return;
     }
 
     char base = pattern[index];
-    for (char c : IUPAC_DNA_map[base]) {
+    for (char c : IUPAC[base]) {
         current[index] = c;
-        generate_combinations(pattern, current, index + 1, combinations);
+        getCombinations(pattern, current, index + 1, combinations);
     }
 }
 
 
+std::unordered_map<std::string, uint8_t> getHammingDistances(
+    const std::vector<std::string> &patterns,
+    const std::pair<std::string, std::string> &canonicalPatterns
+) {
+    // Helper lambda to get hDist
+    auto hDist = [](const std::string &str1, const std::string &str2) -> uint8_t {
+        if (str1.length() != str2.length()) {
+            throw std::invalid_argument("Strings must be of equal length to compute Hamming distance.");
+        }
+
+        uint8_t distance = 0;
+        for (size_t i = 0; i < str1.length(); ++i) {
+            if (str1[i] != str2[i]) {
+                ++distance;
+            }
+        }
+        return distance;
+    };
+
+    std::unordered_map<std::string, uint8_t> hammingDistances;
+
+    for (const auto &pattern : patterns) {
+        uint8_t minDistance = std::min(hDist(pattern, canonicalPatterns.first), hDist(pattern, canonicalPatterns.second));
+        hammingDistances[pattern] = minDistance;
+        std::cout << "Pattern: " << pattern << ", Hamming distance to canonical: " << minDistance << std::endl;
+    }
+
+    return hammingDistances;
+}

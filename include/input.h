@@ -8,6 +8,8 @@ struct UserInputTeloscope : UserInput {
     std::string outRoute;
     std::pair<std::string, std::string> canonicalPatterns;
     std::vector<std::string> patterns;
+    std::unordered_map<std::string, uint8_t> hammingDistances;
+
     uint32_t windowSize = 1000;
     uint8_t kmerLen = 21;
     uint32_t step = 500;

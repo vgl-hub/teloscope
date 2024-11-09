@@ -178,7 +178,7 @@ int main(int argc, char **argv) {
                     // Generate all combinations for the pattern based on IUPAC codes
                     std::vector<std::string> combinations;
                     std::string current_pattern = pattern;
-                    generate_combinations(pattern, current_pattern, 0, combinations);
+                    getCombinations(pattern, current_pattern, 0, combinations);
 
                     // Add each combination and its reverse complement to userInput.patterns
                     for (const std::string &comb : combinations) {
@@ -190,13 +190,17 @@ int main(int argc, char **argv) {
 
                 if (userInput.patterns.empty()) {
                     userInput.patterns = {"TTAGGG", "CCCTAA"};
-                    std::cout << "No patterns provided. Only scanning for canonical patterns: TTAGGG, CCCTAA" << "\n";
+                    std::cout << "No patterns provided. Only scanning for: TTAGGG, CCCTAA" << "\n";
+                
                 } else {
                     // Remove duplicates
                     std::sort(userInput.patterns.begin(), userInput.patterns.end());
                     auto last = std::unique(userInput.patterns.begin(), userInput.patterns.end());
                     userInput.patterns.erase(last, userInput.patterns.end());
                 }
+
+                userInput.hammingDistances = getHammingDistances(userInput.patterns, userInput.canonicalPatterns);
+                std::cout << "Hamming distances precomputed for all input patterns." << std::endl;
             }
             break;
 

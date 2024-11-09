@@ -63,15 +63,17 @@ struct WindowData {
     uint32_t currentWindowSize;
     float gcContent;
     float shannonEntropy;
+    
     std::unordered_map<char, uint32_t> nucleotideCounts;
     std::unordered_map<std::string, PatternData> patternMap; // Condensed pattern data
     std::vector<TelomereBlock> winBlocks;
+    std::vector<uint8_t> hDistances; 
 
     std::vector<uint32_t> canonicalMatches;
     std::vector<uint32_t> nonCanonicalMatches;
     std::vector<uint32_t> windowMatches;
 
-    uint16_t canonicalCounts = 0;
+    uint16_t canonicalCounts = 0; // JACK: For density
     uint16_t nonCanonicalCounts = 0;
     uint16_t windowCounts = 0;
     
@@ -129,7 +131,8 @@ public:
 
     void sortBySeqPos();
 
-    std::vector<TelomereBlock> getTelomereBlocks(const std::vector<uint32_t>& inputMatches, uint64_t windowStart);
+    // std::vector<TelomereBlock> getTelomereBlocks(const std::vector<uint32_t>& inputMatches, uint64_t windowStart);
+    std::vector<TelomereBlock> getTelomereBlocks(const std::vector<uint32_t>& inputMatches, uint64_t windowStart, uint32_t currentWindowSize);
 
     std::vector<TelomereBlock> mergeTelomereBlocks(const std::vector<TelomereBlock>& winBlocks);
 

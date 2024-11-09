@@ -106,7 +106,60 @@ void Teloscope::sortBySeqPos() {
 }
 
 
-std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<uint32_t>& inputMatches, uint64_t windowStart) {
+// std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<uint32_t>& inputMatches, uint64_t windowStart) {
+//     std::vector<TelomereBlock> winBlocks;
+//     uint16_t patternSize = 6;
+//     uint16_t D = this->trie.getLongestPatternSize(); // D is set to longestPatternSize
+
+//     if (inputMatches.empty()) {
+//         return winBlocks; // No matches to process
+//     }
+
+//     // Initialize the first block
+//     uint64_t blockStart = windowStart + inputMatches[0];
+//     uint64_t prevPosition = blockStart;
+//     uint16_t blockCounts = 1;
+    
+//     // Helper function
+//     auto finalizeBlock = [&](uint64_t endPosition) {
+//         if (blockCounts >= 2) { // Jack: CHECK
+//             TelomereBlock block;
+//             block.start = blockStart;
+//             block.blockLen = (endPosition - blockStart) + patternSize;
+//             winBlocks.push_back(block);
+//         }
+//     };
+
+//     for (size_t i = 1; i <= inputMatches.size(); ++i) { // Iterate from second match
+//         uint64_t currentPosition;
+//         uint64_t distance;
+
+//         if (i < inputMatches.size()) {
+//             currentPosition = windowStart + inputMatches[i];
+//             distance = currentPosition - prevPosition;
+//         } else {
+//             currentPosition = 0;
+//             distance = D + 1;    // Finalize last block
+//         }
+
+//         if (distance <= D) {
+//             blockCounts++; // Extend the block
+//         } else {
+//             finalizeBlock(prevPosition); // Finalize the current block
+
+//             if (i < inputMatches.size()) {
+//                 blockStart = currentPosition; // Start a new block
+//                 blockCounts = 1;
+//             }
+//         }
+//         prevPosition = currentPosition;
+//     }
+
+//     return winBlocks;
+// }
+
+
+std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<uint32_t>& inputMatches, uint64_t windowStart, uint32_t currentWindowSize) {
     std::vector<TelomereBlock> winBlocks;
     uint16_t patternSize = 6;
     uint16_t D = this->trie.getLongestPatternSize(); // D is set to longestPatternSize
@@ -119,10 +172,10 @@ std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<uint32
     uint64_t blockStart = windowStart + inputMatches[0];
     uint64_t prevPosition = blockStart;
     uint16_t blockCounts = 1;
-    
-    // Helper function
-    auto finalizeBlock = [&](uint64_t endPosition) {
-        if (blockCounts >= 2) { // Jack: CHECK
+
+    // Helper function to finalize blocks
+    auto finalizeBlock = [&](uint64_t endPosition, bool allowSingleMatch) {
+        if (blockCounts >= 2 || (allowSingleMatch && blockCounts == 1)) {
             TelomereBlock block;
             block.start = blockStart;
             block.blockLen = (endPosition - blockStart) + patternSize;
@@ -130,7 +183,7 @@ std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<uint32
         }
     };
 
-    for (size_t i = 1; i <= inputMatches.size(); ++i) { // Iterate from second match
+    for (size_t i = 1; i <= inputMatches.size(); ++i) { // Iterate from the second match
         uint64_t currentPosition;
         uint64_t distance;
 
@@ -145,7 +198,8 @@ std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<uint32
         if (distance <= D) {
             blockCounts++; // Extend the block
         } else {
-            finalizeBlock(prevPosition); // Finalize the current block
+            bool allowSingleMatch = (prevPosition + patternSize + userInput.maxBlockDist >= windowStart + currentWindowSize);
+            finalizeBlock(prevPosition, allowSingleMatch); // Finalize the block
 
             if (i < inputMatches.size()) {
                 blockStart = currentPosition; // Start a new block
@@ -237,6 +291,8 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
                         windowData.patternMap[pattern].patMatches.push_back(i);
                         isCanonical ? windowData.canonicalMatches.push_back(i) : windowData.nonCanonicalMatches.push_back(i);
                         windowData.windowMatches.push_back(i); // Ordered by design
+
+                        windowData.hDistances.push_back(userInput.hammingDistances[pattern]);
                     }
 
                     // Update nextOverlapData
@@ -298,8 +354,8 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
         };
 
         for (const auto& [groupName, matches] : patternMatches) {
-            if (windowData.canonicalCounts >= 2 || windowData.nonCanonicalCounts >= 4) { // JACK: Add to user cutoffs
-                auto winBlocks = getTelomereBlocks(matches, windowData.windowStart);
+            if (windowData.windowCounts >= 1) {
+                auto winBlocks = getTelomereBlocks(matches, windowData.windowStart, windowData.currentWindowSize);
                 segmentBlocks[groupName].insert(segmentBlocks[groupName].end(), winBlocks.begin(), winBlocks.end());
             }
         }
