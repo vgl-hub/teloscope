@@ -41,32 +41,6 @@ void Trie::insertPattern(const std::string& pattern) {
 }
 
 
-float Teloscope::getShannonEntropy(const uint32_t nucleotideCounts[4], uint32_t windowSize) {
-    float entropy = 0.0;
-    for (int i = 0; i < 4; ++i) {
-        if (nucleotideCounts[i] > 0) {
-            float probability = static_cast<float>(nucleotideCounts[i]) / windowSize;
-            entropy -= probability * std::log2(probability);
-        }
-    }
-    return entropy;
-}
-
-float Teloscope::getGCContent(const uint32_t nucleotideCounts[4], uint32_t windowSize) {
-    uint32_t gcCount = nucleotideCounts[1] + nucleotideCounts[2]; // Index 1 = C, Index 2 = G
-    return float(gcCount) / windowSize * 100.0;
-}
-
-
-void Teloscope::getPatternDensities(WindowData& windowData, uint32_t windowSize) {
-    for (auto &entry : windowData.patternMap) {
-        auto &pattern = entry.first;
-        auto &data = entry.second;
-        data.density = static_cast<float>(data.count * pattern.size()) / windowSize;
-    }
-}
-
-
 float Teloscope::getMean(const std::vector<float>& values) {
     if (values.empty()) return 0.0;
     float sum = std::accumulate(values.begin(), values.end(), 0.0);
@@ -344,6 +318,14 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
 
         // Prepare and analyze current window
         WindowData windowData = prevOverlapData;
+
+        // Reserve space for vectors
+        windowData.winBlocks.reserve(windowSize / 13 + 1);
+        windowData.hDistances.reserve(windowSize / 6);
+        windowData.canonicalMatches.reserve(windowSize / 6);
+        windowData.nonCanonicalMatches.reserve(windowSize / 6);
+        windowData.windowMatches.reserve(windowSize / 6);
+
         analyzeWindow(window, windowStart, windowData, nextOverlapData);
 
         if (userInput.modeGC) { windowData.gcContent = getGCContent(windowData.nucleotideCounts, window.size()); }
