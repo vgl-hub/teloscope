@@ -41,20 +41,19 @@ void Trie::insertPattern(const std::string& pattern) {
 }
 
 
-float Teloscope::getShannonEntropy(const std::unordered_map<char, uint32_t>& nucleotideCounts, uint32_t windowSize) {
+float Teloscope::getShannonEntropy(const uint32_t nucleotideCounts[4], uint32_t windowSize) {
     float entropy = 0.0;
-    for (auto &[nucleotide, count] : nucleotideCounts) {
-        if (count > 0) {
-            float probability = static_cast<float>(count) / windowSize;
+    for (int i = 0; i < 4; ++i) {
+        if (nucleotideCounts[i] > 0) {
+            float probability = static_cast<float>(nucleotideCounts[i]) / windowSize;
             entropy -= probability * std::log2(probability);
         }
     }
     return entropy;
 }
 
-
-float Teloscope::getGCContent(const std::unordered_map<char, uint32_t>& nucleotideCounts, uint32_t windowSize) {
-    uint32_t gcCount = nucleotideCounts.at('G') + nucleotideCounts.at('C');
+float Teloscope::getGCContent(const uint32_t nucleotideCounts[4], uint32_t windowSize) {
+    uint32_t gcCount = nucleotideCounts[1] + nucleotideCounts[2]; // Index 1 = C, Index 2 = G
     return float(gcCount) / windowSize * 100.0;
 }
 
@@ -262,10 +261,20 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
 
         if (userInput.modeGC || userInput.modeEntropy) {
             if (i >= overlapSize || overlapSize == 0 || windowStart == 0) {
-                windowData.nucleotideCounts[window[i]]++; // For whole window
+                switch (window[i]) {
+                    case 'A': windowData.nucleotideCounts[0]++; break;
+                    case 'C': windowData.nucleotideCounts[1]++; break;
+                    case 'G': windowData.nucleotideCounts[2]++; break;
+                    case 'T': windowData.nucleotideCounts[3]++; break;
+                }
             }
             if (i >= userInput.step && userInput.windowSize != userInput.step) {
-                nextOverlapData.nucleotideCounts[window[i]]++; // For next overlap
+                switch (window[i]) {
+                    case 'A': nextOverlapData.nucleotideCounts[0]++; break;
+                    case 'C': nextOverlapData.nucleotideCounts[1]++; break;
+                    case 'G': nextOverlapData.nucleotideCounts[2]++; break;
+                    case 'T': nextOverlapData.nucleotideCounts[3]++; break;
+                }
             }
         }
 

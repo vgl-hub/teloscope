@@ -64,7 +64,7 @@ struct WindowData {
     float gcContent;
     float shannonEntropy;
     
-    std::unordered_map<char, uint32_t> nucleotideCounts;
+    uint32_t nucleotideCounts[4] = {0, 0, 0, 0};
     std::unordered_map<std::string, PatternData> patternMap; // Condensed pattern data
     std::vector<TelomereBlock> winBlocks;
     std::vector<uint8_t> hDistances; 
@@ -77,7 +77,7 @@ struct WindowData {
     uint16_t nonCanonicalCounts = 0;
     uint16_t windowCounts = 0;
     
-    WindowData() : windowStart(0), gcContent(0.0f), shannonEntropy(0.0f), nucleotideCounts{{'A', 0}, {'C', 0}, {'G', 0}, {'T', 0}} {}
+    WindowData() : windowStart(0), currentWindowSize(0), gcContent(0.0f), shannonEntropy(0.0f) {}
 };
 
 struct SegmentData {
@@ -104,8 +104,8 @@ class Teloscope {
     std::vector<float> entropyValues; // Total entropy values
     std::vector<float> gcContentValues; // Total GC content values
 
-    float getShannonEntropy(const std::unordered_map<char, uint32_t>& nucleotideCounts, uint32_t windowSize);
-    float getGCContent(const std::unordered_map<char, uint32_t>& nucleotideCounts, uint32_t windowSize);
+    float getShannonEntropy(const uint32_t nucleotideCounts[4], uint32_t windowSize);
+    float getGCContent(const uint32_t nucleotideCounts[4], uint32_t windowSize);
     void getPatternDensities(WindowData& windowData, uint32_t windowSize);
 
     float getMean(const std::vector<float>& values);
