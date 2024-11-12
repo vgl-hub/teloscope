@@ -46,11 +46,11 @@ public:
 };
 
 
-struct PatternData {
-    std::vector<uint32_t> patMatches; // Match indexes in window
-    uint32_t count = 0; // Total pattern count
-    float density = 0.0f; // Density of the pattern
-};
+// struct PatternData {
+//     std::vector<uint32_t> patMatches; // Match indexes in window
+//     uint32_t count = 0; // Total pattern count
+//     float density = 0.0f; // Density of the pattern
+// };
 
 
 struct TelomereBlock {
@@ -61,21 +61,23 @@ struct TelomereBlock {
 struct WindowData {
     uint32_t windowStart;
     uint32_t currentWindowSize;
+    uint32_t nucleotideCounts[4] = {0, 0, 0, 0};
     float gcContent;
     float shannonEntropy;
+    // uint32_t winHDistance = 0;
     
-    uint32_t nucleotideCounts[4] = {0, 0, 0, 0};
-    std::unordered_map<std::string, PatternData> patternMap; // Condensed pattern data
+    // std::unordered_map<std::string, PatternData> patternMap; // Condensed pattern data
     std::vector<TelomereBlock> winBlocks;
     std::vector<uint8_t> hDistances; 
 
     std::vector<uint32_t> canonicalMatches;
     std::vector<uint32_t> nonCanonicalMatches;
     std::vector<uint32_t> windowMatches;
-
-    uint16_t canonicalCounts = 0; // JACK: For density
+    uint16_t canonicalCounts = 0;
     uint16_t nonCanonicalCounts = 0;
     uint16_t windowCounts = 0;
+    float canonicalDensity = 0.0f;
+    float nonCanonicalDensity = 0.0f;
     
     WindowData() : windowStart(0), currentWindowSize(0), gcContent(0.0f), shannonEntropy(0.0f) {}
 };
@@ -123,19 +125,19 @@ class Teloscope {
     }
 
 
-    inline void getPatternDensities(WindowData& windowData, uint32_t windowSize) {
-        for (auto &entry : windowData.patternMap) {
-            auto &pattern = entry.first;
-            auto &data = entry.second;
-            data.density = static_cast<float>(data.count * pattern.size()) / windowSize;
-        }
-    }
+    // inline void getPatternDensities(WindowData& windowData, uint32_t windowSize) {
+    //     for (auto &entry : windowData.patternMap) {
+    //         auto &pattern = entry.first;
+    //         auto &data = entry.second;
+    //         data.density = static_cast<float>(data.count * pattern.size()) / windowSize;
+    //     }
+    // }
 
 
     float getMean(const std::vector<float>& values);
     float getMedian(std::vector<float> values);
-    float getMin(std::vector<float> values);
-    float getMax(std::vector<float> values);
+    float getMin(const std::vector<float> values);
+    float getMax(const std::vector<float> values);
 
 public:
 
@@ -160,13 +162,20 @@ public:
 
     std::vector<TelomereBlock> mergeTelomereBlocks(const std::vector<TelomereBlock>& winBlocks);
 
+    // void writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
+    //                     std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
+    //                     std::unordered_map<std::string, std::ofstream>& patternCountFiles,
+    //                     std::unordered_map<std::string, std::ofstream>& patternDensityFiles,
+    //                     std::ofstream& allBlocksFile,
+    //                     std::ofstream& canonicalBlocksFile,
+    //                     std::ofstream& noncanonicalBlocksFile);
+
     void writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
-                        std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
-                        std::unordered_map<std::string, std::ofstream>& patternCountFiles,
-                        std::unordered_map<std::string, std::ofstream>& patternDensityFiles,
-                        std::ofstream& allBlocksFile,
-                        std::ofstream& canonicalBlocksFile,
-                        std::ofstream& noncanonicalBlocksFile);
+                             std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
+                             std::ofstream& canonicalCountFile, std::ofstream& noncanonicalCountFile,
+                             std::ofstream& canonicalDensityFile, std::ofstream& noncanonicalDensityFile,
+                             std::ofstream& allBlocksFile, std::ofstream& canonicalBlocksFile, std::ofstream& noncanonicalBlocksFile);
+
 
     void handleBEDFile();
 
