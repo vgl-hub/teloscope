@@ -13,7 +13,7 @@ struct UserInputTeloscope : UserInput {
     uint32_t windowSize = 1000;
     uint8_t kmerLen = 21;
     uint32_t step = 500;
-    unsigned short int minBlockLen = 500;
+    unsigned short int minBlockLen = 50;
     unsigned short int maxBlockDist = 50;
 
     bool keepWindowData = false; // Memory intensive

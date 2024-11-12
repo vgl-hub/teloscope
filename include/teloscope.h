@@ -46,13 +46,6 @@ public:
 };
 
 
-// struct PatternData {
-//     std::vector<uint32_t> patMatches; // Match indexes in window
-//     uint32_t count = 0; // Total pattern count
-//     float density = 0.0f; // Density of the pattern
-// };
-
-
 struct TelomereBlock {
     uint64_t start;
     uint16_t blockLen; // End = start + blockLen
@@ -66,7 +59,6 @@ struct WindowData {
     float shannonEntropy;
     // uint32_t winHDistance = 0;
     
-    // std::unordered_map<std::string, PatternData> patternMap; // Condensed pattern data
     std::vector<TelomereBlock> winBlocks;
     std::vector<uint8_t> hDistances; 
 
@@ -124,16 +116,6 @@ class Teloscope {
         return static_cast<float>(gcCount) / windowSize * 100.0;
     }
 
-
-    // inline void getPatternDensities(WindowData& windowData, uint32_t windowSize) {
-    //     for (auto &entry : windowData.patternMap) {
-    //         auto &pattern = entry.first;
-    //         auto &data = entry.second;
-    //         data.density = static_cast<float>(data.count * pattern.size()) / windowSize;
-    //     }
-    // }
-
-
     float getMean(const std::vector<float>& values);
     float getMedian(std::vector<float> values);
     float getMin(const std::vector<float> values);
@@ -161,14 +143,6 @@ public:
     std::vector<TelomereBlock> getTelomereBlocks(const std::vector<uint32_t>& inputMatches, uint64_t windowStart, uint32_t currentWindowSize);
 
     std::vector<TelomereBlock> mergeTelomereBlocks(const std::vector<TelomereBlock>& winBlocks);
-
-    // void writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
-    //                     std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
-    //                     std::unordered_map<std::string, std::ofstream>& patternCountFiles,
-    //                     std::unordered_map<std::string, std::ofstream>& patternDensityFiles,
-    //                     std::ofstream& allBlocksFile,
-    //                     std::ofstream& canonicalBlocksFile,
-    //                     std::ofstream& noncanonicalBlocksFile);
 
     void writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
                              std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,

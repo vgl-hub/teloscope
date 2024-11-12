@@ -279,7 +279,7 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
 
         if (userInput.modeGC) { windowData.gcContent = getGCContent(windowData.nucleotideCounts, window.size()); }
         if (userInput.modeEntropy) { windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, window.size()); }
-        // if (userInput.modeMatch) { getPatternDensities(windowData, window.size()); }
+
         windowData.canonicalDensity = static_cast<float>(windowData.canonicalCounts) / window.size();
         windowData.nonCanonicalDensity = static_cast<float>(windowData.nonCanonicalCounts) / window.size();
 
@@ -339,10 +339,10 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
 
 
 void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
-                             std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
-                             std::ofstream& canonicalCountFile, std::ofstream& noncanonicalCountFile,
-                             std::ofstream& canonicalDensityFile, std::ofstream& noncanonicalDensityFile,
-                             std::ofstream& allBlocksFile, std::ofstream& canonicalBlocksFile, std::ofstream& noncanonicalBlocksFile) {
+                            std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
+                            std::ofstream& canonicalCountFile, std::ofstream& noncanonicalCountFile,
+                            std::ofstream& canonicalDensityFile, std::ofstream& noncanonicalDensityFile,
+                            std::ofstream& allBlocksFile, std::ofstream& canonicalBlocksFile, std::ofstream& noncanonicalBlocksFile) {
 
     for (const auto& pathData : allPathData) {
         const auto& header = pathData.header;
@@ -389,8 +389,8 @@ void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcConten
             // Write window GC content if enabled
             if (userInput.modeGC) {
                 gcContentFile << header << "\t" << window.windowStart << "\t"
-                              << windowEnd << "\t"
-                              << window.gcContent << "\n";
+                                << windowEnd << "\t"
+                                << window.gcContent << "\n";
                 gcContentValues.push_back(window.gcContent);
             }
 
@@ -399,32 +399,32 @@ void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcConten
                 // Write canonical matches
                 for (auto pos : window.canonicalMatches) {
                     canonicalMatchFile << header << "\t"
-                                       << window.windowStart + pos << "\t"
-                                       << window.windowStart + pos + 1 << "\t"
-                                       << "canonical" << "\n";
+                                        << window.windowStart + pos << "\t"
+                                        << window.windowStart + pos + 1 << "\t"
+                                        << "canonical" << "\n";
                 }
 
                 // Write non-canonical matches
                 for (auto pos : window.nonCanonicalMatches) {
                     noncanonicalMatchFile << header << "\t"
-                                          << window.windowStart + pos << "\t"
-                                          << window.windowStart + pos + 1 << "\t"
-                                          << "non-canonical" << "\n";
+                                        << window.windowStart + pos << "\t"
+                                        << window.windowStart + pos + 1 << "\t"
+                                        << "non-canonical" << "\n";
                 }
 
                 // Write count data
                 canonicalCountFile << header << "\t" << window.windowStart << "\t"
-                                   << windowEnd << "\t"
-                                   << window.canonicalCounts << "\n";
+                                    << windowEnd << "\t"
+                                    << window.canonicalCounts << "\n";
 
                 noncanonicalCountFile << header << "\t" << window.windowStart << "\t"
-                                      << windowEnd << "\t"
-                                      << window.nonCanonicalCounts << "\n";
+                                    << windowEnd << "\t"
+                                    << window.nonCanonicalCounts << "\n";
 
                 // Write density data
                 canonicalDensityFile << header << "\t" << window.windowStart << "\t"
-                                     << windowEnd << "\t"
-                                     << window.canonicalDensity << "\n";
+                                    << windowEnd << "\t"
+                                    << window.canonicalDensity << "\n";
 
                 noncanonicalDensityFile << header << "\t" << window.windowStart << "\t"
                                         << windowEnd << "\t"
@@ -473,8 +473,8 @@ void Teloscope::handleBEDFile() {
 
     // Pass the files to writeBEDFile
     writeBEDFile(shannonFile, gcContentFile, canonicalMatchFile, noncanonicalMatchFile,
-                 canonicalCountFile, noncanonicalCountFile, canonicalDensityFile,
-                 noncanonicalDensityFile, allBlocksFile, canonicalBlocksFile, noncanonicalBlocksFile);
+                canonicalCountFile, noncanonicalCountFile, canonicalDensityFile,
+                noncanonicalDensityFile, allBlocksFile, canonicalBlocksFile, noncanonicalBlocksFile);
 
     // Close all files once
     if (userInput.modeEntropy) {
@@ -497,150 +497,6 @@ void Teloscope::handleBEDFile() {
     noncanonicalBlocksFile.close();
 }
 
-
-
-// void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
-//                             std::unordered_map<std::string, std::ofstream>& patternMatchFiles,
-//                             std::unordered_map<std::string, std::ofstream>& patternCountFiles,
-//                             std::unordered_map<std::string, std::ofstream>& patternDensityFiles,
-//                             std::ofstream& allBlocksFile,
-//                             std::ofstream& canonicalBlocksFile,
-//                             std::ofstream& noncanonicalBlocksFile) {
-
-//     for (const auto& pathData : allPathData) {
-//         const auto& header = pathData.header;
-//         const auto& windows = pathData.windows;
-
-//         // Process telomere blocks
-//         for (const auto& [groupName, blocks] : pathData.mergedBlocks) {
-//             std::ofstream* outputFile = nullptr;
-
-//             // By group
-//             if (groupName == "all") {
-//                 outputFile = &allBlocksFile;
-//             } else if (groupName == "canonical") {
-//                 outputFile = &canonicalBlocksFile;
-//             } else if (groupName == "non-canonical") {
-//                 outputFile = &noncanonicalBlocksFile;
-//             }
-
-//             if (outputFile) {
-//                 for (const auto& block : blocks) {
-//                     uint64_t blockEnd = block.start + block.blockLen;
-//                     *outputFile << header << "\t" << block.start << "\t" << blockEnd << "\t" << groupName << "\n";
-//                 }
-//             }
-//         }
-
-//         if (!userInput.keepWindowData) { // If windowData is not stored, return
-//             continue;
-//         }
-
-//         // Process window data
-//         for (const auto& window : windows) {
-//             totalNWindows++; // Update total window count
-//             uint32_t windowEnd = window.windowStart + window.currentWindowSize; // Start is already 0-based
-
-//             // Write window Shannon entropy if enabled
-//             if (userInput.modeEntropy) {
-//                 shannonFile << header << "\t" << window.windowStart << "\t"
-//                             << windowEnd << "\t"
-//                             << window.shannonEntropy << "\n";
-//                 entropyValues.push_back(window.shannonEntropy); // Update entropy values
-//             }
-
-//             // Write window GC content if enabled
-//             if (userInput.modeGC) {
-//                 gcContentFile << header << "\t" << window.windowStart << "\t"
-//                             << windowEnd << "\t"
-//                             << window.gcContent << "\n";
-//                 gcContentValues.push_back(window.gcContent);
-//             }
-
-//             // Write pattern data if enabled
-//             if (userInput.modeMatch) {
-//                 for (const auto& [pattern, data] : window.patternMap) {
-//                     for (auto pos : data.patMatches) {
-//                         patternMatchFiles[pattern] << header << "\t"
-//                                                 << window.windowStart + pos << "\t"
-//                                                 << window.windowStart + pos + pattern.length() << "\t" // Start is already 0-based
-//                                                 << pattern << "\n";
-//                         patternCounts[pattern]++; // Update total pattern counts
-//                     }
-
-//                     patternCountFiles[pattern] << header << "\t" << window.windowStart << "\t"
-//                                             << windowEnd << "\t"
-//                                             << data.count << "\n";
-                                            
-//                     patternDensityFiles[pattern] << header << "\t" << window.windowStart << "\t"
-//                                                 << windowEnd << "\t"
-//                                                 << data.density << "\n";
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// void Teloscope::handleBEDFile() {
-//     std::ofstream shannonFile;
-//     std::ofstream gcContentFile;
-//     std::unordered_map<std::string, std::ofstream> patternMatchFiles; // Jack: replace with vector to reduce cache locality?
-//     std::unordered_map<std::string, std::ofstream> patternCountFiles;
-//     std::unordered_map<std::string, std::ofstream> patternDensityFiles;
-//     std::ofstream allBlocksFile;
-//     std::ofstream canonicalBlocksFile;
-//     std::ofstream noncanonicalBlocksFile;
-//     std::cout << "Reporting window matches and metrics in BED/BEDgraphs...\n";
-
-//     // Open files for writing
-//     if (userInput.keepWindowData && userInput.modeEntropy) {
-//         shannonFile.open(userInput.outRoute + "/shannonEntropy.bedgraph");
-//     }
-
-//     if (userInput.keepWindowData && userInput.modeGC) {
-//         gcContentFile.open(userInput.outRoute + "/gcContent.bedgraph");
-//     }
-
-//     if (userInput.keepWindowData && userInput.modeMatch) {
-
-//         for (const auto& pattern : userInput.patterns) {
-//             patternMatchFiles[pattern].open(userInput.outRoute + "/" + pattern + "_matches.bed");
-//             patternCountFiles[pattern].open(userInput.outRoute + "/" + pattern + "_count.bedgraph");
-//             patternDensityFiles[pattern].open(userInput.outRoute + "/" + pattern + "_density.bedgraph");
-//         }
-//     }
-
-//     allBlocksFile.open(userInput.outRoute + "/telomere_blocks_all.bed");
-//     canonicalBlocksFile.open(userInput.outRoute + "/telomere_blocks_canonical.bed");
-//     noncanonicalBlocksFile.open(userInput.outRoute + "/telomere_blocks_noncanonical.bed");
-
-//     // Pass the files to writeBEDFile
-//     writeBEDFile(shannonFile, gcContentFile, patternMatchFiles, patternCountFiles, patternDensityFiles,
-//                 allBlocksFile, canonicalBlocksFile, noncanonicalBlocksFile);
-
-//     // Close all files once
-//     if (userInput.modeEntropy) {
-//         shannonFile.close();
-//     }
-//     if (userInput.modeGC) {
-//         gcContentFile.close();
-//     }
-//     if (userInput.modeMatch) {
-//         for (auto& [pattern, file] : patternMatchFiles) {
-//             file.close();
-//         }
-//         for (auto& [pattern, file] : patternCountFiles) {
-//             file.close();
-//         }
-//         for (auto& [pattern, file] : patternDensityFiles) {
-//             file.close();
-//         }
-//     }
-
-//     allBlocksFile.close();
-//     canonicalBlocksFile.close();
-//     noncanonicalBlocksFile.close();
-// }
 
 void Teloscope::printSummary() {
     if (!userInput.keepWindowData) { // If windowData is not stored, skip
