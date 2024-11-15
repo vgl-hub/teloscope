@@ -67,7 +67,6 @@ struct WindowData {
     std::vector<uint32_t> windowMatches;
     uint16_t canonicalCounts = 0;
     uint16_t nonCanonicalCounts = 0;
-    uint16_t windowCounts = 0;
     float canonicalDensity = 0.0f;
     float nonCanonicalDensity = 0.0f;
     

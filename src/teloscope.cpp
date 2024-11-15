@@ -204,7 +204,7 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
             auto current = trie.getRoot();
             uint32_t scanLimit = std::min(i + longestPatternSize, static_cast<uint32_t>(window.size()));
 
-            for (uint32_t j = i; j < scanLimit; ++j) { // Only scan positions in range of patterns
+            for (uint32_t j = i; j < scanLimit; ++j) { // Scan positions until longest pattern
 
                 if (!trie.hasChild(current, window[j])) break;  
                 current = trie.getChild(current, window[j]); // window[j] is a character
@@ -212,17 +212,21 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
                 if (current->isEndOfWord) {
                     std::string pattern = window.substr(i, j - i + 1);
                     bool isCanonical = (pattern == userInput.canonicalPatterns.first || pattern == userInput.canonicalPatterns.second); // Check canonical patterns
+                    uint8_t patternSize = pattern.size();
 
                     // Update windowData from prevOverlapData
-                    if (j >= overlapSize || overlapSize == 0 || windowStart == 0 ) {
-                        // windowData.patternMap[pattern].count++;
-                        isCanonical ? windowData.canonicalCounts++ : windowData.nonCanonicalCounts++;
-                        windowData.windowCounts++;
+                    if (j >= overlapSize || overlapSize == 0 || windowStart == 0) {
+                        if (isCanonical) {
+                            windowData.canonicalCounts++;
+                            windowData.canonicalDensity += patternSize / window.size();
+                            windowData.canonicalMatches.push_back(i);
+                        } else {
+                            windowData.nonCanonicalCounts++;
+                            windowData.nonCanonicalDensity += patternSize / window.size();
+                            windowData.nonCanonicalMatches.push_back(i);
+                        }
 
-                        // windowData.patternMap[pattern].patMatches.push_back(i);
-                        isCanonical ? windowData.canonicalMatches.push_back(i) : windowData.nonCanonicalMatches.push_back(i);
-                        windowData.windowMatches.push_back(i); // Ordered by design
-
+                        windowData.windowMatches.push_back(i);
                         windowData.hDistances.push_back(userInput.hammingDistances[pattern]);
                         // windowData.winHDistance += userInput.hammingDistances[pattern];
                     }
@@ -279,9 +283,6 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
 
         if (userInput.modeGC) { windowData.gcContent = getGCContent(windowData.nucleotideCounts, window.size()); }
         if (userInput.modeEntropy) { windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, window.size()); }
-
-        windowData.canonicalDensity = static_cast<float>(windowData.canonicalCounts) / window.size();
-        windowData.nonCanonicalDensity = static_cast<float>(windowData.nonCanonicalCounts) / window.size();
 
         // Update windowData
         windowData.windowStart = windowStart + absPos;
@@ -505,11 +506,7 @@ void Teloscope::printSummary() {
 
     std::cout << "\n+++Summary Report+++\n";
     std::cout << "Total windows analyzed:\t" << totalNWindows << "\n";
-    std::cout << "Total input patterns found:\n";
-    for (const auto& [pattern, count] : patternCounts) {
-        std::cout << "Pattern:\t" << pattern << "\t" << count << "\n";
-    }
-
+    // Print the total canonical and non-canonical matches per path - PENDING
     // For each pattern, print the path header with the highest number of matches - PENDING
     // For each pattern, print the path header with the lowest number of matches - PENDING
     std::cout << "Max Shannon Entropy:\t" << getMax(entropyValues) << "\n";

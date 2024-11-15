@@ -71,3 +71,44 @@ int main(int, char **argv) {
 
 
 
+
+// // JACK: New functions
+// void cleanOldTests() {
+//     std::vector<std::string> oldTests = {"validateFiles/random1.fasta.1.tst", "validateFiles/random2.fasta.1.tst"};
+//     for (const auto& testFile : oldTests) {
+//         if (remove(testFile.c_str()) != 0) {
+//             std::cerr << "Error deleting " << testFile << std::endl;
+//         }
+//     }
+// }
+// void generateTest(const std::string& exePath, const std::string& inputFile, const std::string& args) {
+//     std::string tstFile = "validateFiles/" + inputFile + ".tst";
+//     std::ofstream out(tstFile);
+//     if (!out) {
+//         std::cerr << "Failed to create test file: " << tstFile << std::endl;
+//         return;
+//     }
+//     out << exePath << " testFiles/" << inputFile << " " << args << " > embedded\n";
+//     out.close();
+//     std::cout << "Generated test file: " << tstFile << std::endl;
+// }
+// int main(int argc, char** argv) {
+//     if (argc < 2) {
+//         std::cerr << "Usage: " << argv[0] << " <path_to_teloscope_executable>" << std::endl;
+//         return EXIT_FAILURE;
+//     }
+//     std::string exePath = argv[1];
+//     std::cout << "WARNING: Previous validate files will be deleted. Continue? (Y/N) ";
+//     std::string input;
+//     std::cin >> input;
+//     if (input != "Y" && input != "y") {
+//         std::cout << "Validate generation cancelled." << std::endl;
+//         return EXIT_FAILURE;
+//     }
+//     cleanOldTests();
+//     std::cout << "Generating new validate files..." << std::endl;
+//     // Generate tests based on specific command line arguments
+//     generateTest(exePath, "random1.fasta", "-w 3 -s 1");
+//     generateTest(exePath, "random2.fasta", "-p TTAGGG,CCCTAA -w 10 -s 5");
+//     return EXIT_SUCCESS;
+// }
