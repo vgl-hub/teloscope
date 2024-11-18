@@ -218,11 +218,11 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
                     if (j >= overlapSize || overlapSize == 0 || windowStart == 0) {
                         if (isCanonical) {
                             windowData.canonicalCounts++;
-                            windowData.canonicalDensity += patternSize / window.size();
+                            windowData.canonicalDensity += static_cast<float>(patternSize) / window.size();
                             windowData.canonicalMatches.push_back(i);
                         } else {
                             windowData.nonCanonicalCounts++;
-                            windowData.nonCanonicalDensity += patternSize / window.size();
+                            windowData.nonCanonicalDensity += static_cast<float>(patternSize) / window.size();
                             windowData.nonCanonicalMatches.push_back(i);
                         }
 
@@ -233,8 +233,13 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart, W
 
                     // Update nextOverlapData
                     if (i >= userInput.step && overlapSize != 0 ) {
-                        // nextOverlapData.patternMap[pattern].count++;
-                        isCanonical ? nextOverlapData.canonicalCounts++ : nextOverlapData.nonCanonicalCounts++;
+                        if (isCanonical) {
+                            nextOverlapData.canonicalCounts++;
+                            nextOverlapData.canonicalDensity += static_cast<float>(patternSize) / window.size();
+                        } else {
+                            nextOverlapData.nonCanonicalCounts++;
+                            nextOverlapData.nonCanonicalDensity += static_cast<float>(patternSize) / window.size();
+                        }
                     }
                 }
             }
@@ -341,8 +346,7 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
 
 void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
                             std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
-                            std::ofstream& canonicalCountFile, std::ofstream& noncanonicalCountFile,
-                            std::ofstream& canonicalDensityFile, std::ofstream& noncanonicalDensityFile,
+                            std::ofstream& windowRepeatsFile,
                             std::ofstream& allBlocksFile, std::ofstream& canonicalBlocksFile, std::ofstream& noncanonicalBlocksFile) {
 
     for (const auto& pathData : allPathData) {
@@ -395,13 +399,28 @@ void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcConten
                 gcContentValues.push_back(window.gcContent);
             }
 
+            // // Write window metrics if enabled
+            // if (userInput.modeEntropy || userInput.modeGC) {
+            //     windowMetricsFile << header << "\t" << window.windowStart << "\t"
+            //                     << windowEnd << "\t";
+            //     if (userInput.modeEntropy) {
+            //         windowMetricsFile << window.shannonEntropy << "\t";
+            //         entropyValues.push_back(window.shannonEntropy); // For summary
+            //     }
+            //     if (userInput.modeGC) {
+            //         windowMetricsFile << window.gcContent << "\t";
+            //         gcContentValues.push_back(window.gcContent); // For summary
+            //     }
+            //     windowMetricsFile << "\n";
+            // }
+
             // Write canonical and non-canonical match data if enabled
             if (userInput.modeMatch) {
                 // Write canonical matches
                 for (auto pos : window.canonicalMatches) {
                     canonicalMatchFile << header << "\t"
                                         << window.windowStart + pos << "\t"
-                                        << window.windowStart + pos + 1 << "\t"
+                                        << window.windowStart + pos + 6 << "\t"
                                         << "canonical" << "\n";
                 }
 
@@ -409,27 +428,19 @@ void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcConten
                 for (auto pos : window.nonCanonicalMatches) {
                     noncanonicalMatchFile << header << "\t"
                                         << window.windowStart + pos << "\t"
-                                        << window.windowStart + pos + 1 << "\t"
+                                        << window.windowStart + pos + 6 << "\t"
                                         << "non-canonical" << "\n";
                 }
 
-                // Write count data
-                canonicalCountFile << header << "\t" << window.windowStart << "\t"
+                if (window.canonicalCounts >= 2) {
+                    windowRepeatsFile << header << "\t" << window.windowStart << "\t"
                                     << windowEnd << "\t"
-                                    << window.canonicalCounts << "\n";
+                                    << window.canonicalCounts << "\t"
+                                    << window.nonCanonicalCounts << "\t"
+                                    << window.canonicalDensity << "\t"
+                                    << window.nonCanonicalDensity << "\n";
+                }
 
-                noncanonicalCountFile << header << "\t" << window.windowStart << "\t"
-                                    << windowEnd << "\t"
-                                    << window.nonCanonicalCounts << "\n";
-
-                // Write density data
-                canonicalDensityFile << header << "\t" << window.windowStart << "\t"
-                                    << windowEnd << "\t"
-                                    << window.canonicalDensity << "\n";
-
-                noncanonicalDensityFile << header << "\t" << window.windowStart << "\t"
-                                        << windowEnd << "\t"
-                                        << window.nonCanonicalDensity << "\n";
             }
         }
     }
@@ -440,10 +451,7 @@ void Teloscope::handleBEDFile() {
     std::ofstream gcContentFile;
     std::ofstream canonicalMatchFile;
     std::ofstream noncanonicalMatchFile;
-    std::ofstream canonicalCountFile;
-    std::ofstream noncanonicalCountFile;
-    std::ofstream canonicalDensityFile;
-    std::ofstream noncanonicalDensityFile;
+    std::ofstream windowRepeatsFile;
     std::ofstream allBlocksFile;
     std::ofstream canonicalBlocksFile;
     std::ofstream noncanonicalBlocksFile;
@@ -462,10 +470,7 @@ void Teloscope::handleBEDFile() {
     if (userInput.keepWindowData && userInput.modeMatch) {
         canonicalMatchFile.open(userInput.outRoute + "/canonical_matches.bed");
         noncanonicalMatchFile.open(userInput.outRoute + "/noncanonical_matches.bed");
-        canonicalCountFile.open(userInput.outRoute + "/canonical_count.bedgraph");
-        noncanonicalCountFile.open(userInput.outRoute + "/noncanonical_count.bedgraph");
-        canonicalDensityFile.open(userInput.outRoute + "/canonical_density.bedgraph");
-        noncanonicalDensityFile.open(userInput.outRoute + "/noncanonical_density.bedgraph");
+        windowRepeatsFile.open(userInput.outRoute + "/window_repeats.bedgraph");
     }
 
     allBlocksFile.open(userInput.outRoute + "/telomere_blocks_all.bed");
@@ -474,8 +479,7 @@ void Teloscope::handleBEDFile() {
 
     // Pass the files to writeBEDFile
     writeBEDFile(shannonFile, gcContentFile, canonicalMatchFile, noncanonicalMatchFile,
-                canonicalCountFile, noncanonicalCountFile, canonicalDensityFile,
-                noncanonicalDensityFile, allBlocksFile, canonicalBlocksFile, noncanonicalBlocksFile);
+                windowRepeatsFile, allBlocksFile, canonicalBlocksFile, noncanonicalBlocksFile);
 
     // Close all files once
     if (userInput.modeEntropy) {
@@ -487,16 +491,14 @@ void Teloscope::handleBEDFile() {
     if (userInput.modeMatch) {
         canonicalMatchFile.close();
         noncanonicalMatchFile.close();
-        canonicalCountFile.close();
-        noncanonicalCountFile.close();
-        canonicalDensityFile.close();
-        noncanonicalDensityFile.close();
+        windowRepeatsFile.close();
     }
 
     allBlocksFile.close();
     canonicalBlocksFile.close();
     noncanonicalBlocksFile.close();
 }
+
 
 
 void Teloscope::printSummary() {

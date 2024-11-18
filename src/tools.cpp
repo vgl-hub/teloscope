@@ -57,7 +57,6 @@ std::unordered_map<std::string, uint8_t> getHammingDistances(
     for (const auto &pattern : patterns) {
         uint8_t minDistance = std::min(hDist(pattern, canonicalPatterns.first), hDist(pattern, canonicalPatterns.second));
         hammingDistances[pattern] = minDistance;
-        std::cout << "Pattern: " << pattern << ", Hamming distance to canonical: " << minDistance << std::endl;
     }
 
     return hammingDistances;
