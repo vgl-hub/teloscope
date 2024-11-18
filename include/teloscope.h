@@ -143,11 +143,9 @@ public:
 
     std::vector<TelomereBlock> mergeTelomereBlocks(const std::vector<TelomereBlock>& winBlocks);
 
-    void writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
+    void writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& windowRepeatsFile,
                                 std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
-                                std::ofstream& windowRepeatsFile,
                                 std::ofstream& allBlocksFile, std::ofstream& canonicalBlocksFile, std::ofstream& noncanonicalBlocksFile);
-
 
     void handleBEDFile();
 

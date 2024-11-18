@@ -302,7 +302,7 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
         };
 
         for (const auto& [groupName, matches] : patternMatches) {
-            if (windowData.canonicalCounts >= 1 || windowData.nonCanonicalCounts >= 2) {
+            if (windowData.canonicalCounts >= 1) {
                 auto winBlocks = getTelomereBlocks(matches, windowData.windowStart, windowData.currentWindowSize);
                 segmentBlocks[groupName].insert(segmentBlocks[groupName].end(), winBlocks.begin(), winBlocks.end());
             }
@@ -344,16 +344,27 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
 }
 
 
-void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcContentFile,
+void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& windowRepeatsFile,
                             std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
-                            std::ofstream& windowRepeatsFile,
                             std::ofstream& allBlocksFile, std::ofstream& canonicalBlocksFile, std::ofstream& noncanonicalBlocksFile) {
+
+    // Write header for window_metrics.tsv
+    if (userInput.keepWindowData && (userInput.modeEntropy || userInput.modeGC)) {
+        windowMetricsFile << "Header\tStart\tEnd";
+        if (userInput.modeEntropy) {
+            windowMetricsFile << "\tShannonEntropy";
+        }
+        if (userInput.modeGC) {
+            windowMetricsFile << "\tGCContent";
+        }
+        windowMetricsFile << "\n";
+    }
 
     for (const auto& pathData : allPathData) {
         const auto& header = pathData.header;
         const auto& windows = pathData.windows;
 
-        // Process telomere blocks
+        // Process telomere blocks (unchanged)
         for (const auto& [groupName, blocks] : pathData.mergedBlocks) {
             std::ofstream* outputFile = nullptr;
 
@@ -383,48 +394,30 @@ void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcConten
             totalNWindows++; // Update total window count
             uint32_t windowEnd = window.windowStart + window.currentWindowSize; // Start is already 0-based
 
-            // Write window Shannon entropy if enabled
-            if (userInput.modeEntropy) {
-                shannonFile << header << "\t" << window.windowStart << "\t"
-                            << windowEnd << "\t"
-                            << window.shannonEntropy << "\n";
-                entropyValues.push_back(window.shannonEntropy); // Update entropy values
+            // Write window metrics if enabled
+            if (userInput.modeEntropy || userInput.modeGC) {
+                windowMetricsFile << header << "\t" << window.windowStart << "\t" << windowEnd;
+
+                if (userInput.modeEntropy) {
+                    windowMetricsFile << "\t" << window.shannonEntropy;
+                    entropyValues.push_back(window.shannonEntropy); // For summary
+                }
+                if (userInput.modeGC) {
+                    windowMetricsFile << "\t" << window.gcContent;
+                    gcContentValues.push_back(window.gcContent); // For summary
+                }
+                windowMetricsFile << "\n";
             }
 
-            // Write window GC content if enabled
-            if (userInput.modeGC) {
-                gcContentFile << header << "\t" << window.windowStart << "\t"
-                                << windowEnd << "\t"
-                                << window.gcContent << "\n";
-                gcContentValues.push_back(window.gcContent);
-            }
-
-            // // Write window metrics if enabled
-            // if (userInput.modeEntropy || userInput.modeGC) {
-            //     windowMetricsFile << header << "\t" << window.windowStart << "\t"
-            //                     << windowEnd << "\t";
-            //     if (userInput.modeEntropy) {
-            //         windowMetricsFile << window.shannonEntropy << "\t";
-            //         entropyValues.push_back(window.shannonEntropy); // For summary
-            //     }
-            //     if (userInput.modeGC) {
-            //         windowMetricsFile << window.gcContent << "\t";
-            //         gcContentValues.push_back(window.gcContent); // For summary
-            //     }
-            //     windowMetricsFile << "\n";
-            // }
-
-            // Write canonical and non-canonical match data if enabled
+            // Write repeats data if enabled
             if (userInput.modeMatch) {
-                // Write canonical matches
                 for (auto pos : window.canonicalMatches) {
                     canonicalMatchFile << header << "\t"
-                                        << window.windowStart + pos << "\t"
-                                        << window.windowStart + pos + 6 << "\t"
-                                        << "canonical" << "\n";
+                                    << window.windowStart + pos << "\t"
+                                    << window.windowStart + pos + 6 << "\t"
+                                    << "canonical" << "\n";
                 }
 
-                // Write non-canonical matches
                 for (auto pos : window.nonCanonicalMatches) {
                     noncanonicalMatchFile << header << "\t"
                                         << window.windowStart + pos << "\t"
@@ -432,7 +425,7 @@ void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcConten
                                         << "non-canonical" << "\n";
                 }
 
-                if (window.canonicalCounts >= 2) {
+                if (window.canonicalCounts > 1) {
                     windowRepeatsFile << header << "\t" << window.windowStart << "\t"
                                     << windowEnd << "\t"
                                     << window.canonicalCounts << "\t"
@@ -440,18 +433,17 @@ void Teloscope::writeBEDFile(std::ofstream& shannonFile, std::ofstream& gcConten
                                     << window.canonicalDensity << "\t"
                                     << window.nonCanonicalDensity << "\n";
                 }
-
             }
         }
     }
 }
 
+
 void Teloscope::handleBEDFile() {
-    std::ofstream shannonFile;
-    std::ofstream gcContentFile;
+    std::ofstream windowMetricsFile;
+    std::ofstream windowRepeatsFile;
     std::ofstream canonicalMatchFile;
     std::ofstream noncanonicalMatchFile;
-    std::ofstream windowRepeatsFile;
     std::ofstream allBlocksFile;
     std::ofstream canonicalBlocksFile;
     std::ofstream noncanonicalBlocksFile;
@@ -459,12 +451,8 @@ void Teloscope::handleBEDFile() {
     std::cout << "Reporting window matches and metrics in BED/BEDgraphs...\n";
 
     // Open files for writing
-    if (userInput.keepWindowData && userInput.modeEntropy) {
-        shannonFile.open(userInput.outRoute + "/shannonEntropy.bedgraph");
-    }
-
-    if (userInput.keepWindowData && userInput.modeGC) {
-        gcContentFile.open(userInput.outRoute + "/gcContent.bedgraph");
+    if (userInput.keepWindowData && (userInput.modeEntropy || userInput.modeGC)) {
+        windowMetricsFile.open(userInput.outRoute + "/window_metrics.tsv");
     }
 
     if (userInput.keepWindowData && userInput.modeMatch) {
@@ -477,16 +465,12 @@ void Teloscope::handleBEDFile() {
     canonicalBlocksFile.open(userInput.outRoute + "/telomere_blocks_canonical.bed");
     noncanonicalBlocksFile.open(userInput.outRoute + "/telomere_blocks_noncanonical.bed");
 
-    // Pass the files to writeBEDFile
-    writeBEDFile(shannonFile, gcContentFile, canonicalMatchFile, noncanonicalMatchFile,
-                windowRepeatsFile, allBlocksFile, canonicalBlocksFile, noncanonicalBlocksFile);
+    writeBEDFile(windowMetricsFile, windowRepeatsFile, canonicalMatchFile, noncanonicalMatchFile,
+                allBlocksFile, canonicalBlocksFile, noncanonicalBlocksFile);
 
     // Close all files once
-    if (userInput.modeEntropy) {
-        shannonFile.close();
-    }
-    if (userInput.modeGC) {
-        gcContentFile.close();
+    if (userInput.modeEntropy || userInput.modeGC) {
+        windowMetricsFile.close();
     }
     if (userInput.modeMatch) {
         canonicalMatchFile.close();
@@ -498,7 +482,6 @@ void Teloscope::handleBEDFile() {
     canonicalBlocksFile.close();
     noncanonicalBlocksFile.close();
 }
-
 
 
 void Teloscope::printSummary() {
