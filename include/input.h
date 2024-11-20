@@ -18,6 +18,14 @@ struct UserInputTeloscope : UserInput {
 
     bool keepWindowData = false; // Memory intensive
     bool modeMatch = true, modeEntropy = true, modeGC = true; // Change to: de novo, user-defined
+
+    bool outGC = true;
+    bool outEntropy = true;
+    bool outDistance = true;
+    bool outFasta = true;
+    bool outMatches = true;
+    bool outITS = true;
+
     
     double maxMem = 0;
     std::string prefix = ".", outFile = "";

@@ -1,6 +1,6 @@
 testFiles/random1.fasta -w 3 -s 1 -c TT -p TT -k
 embedded
-/// Teloscope v0.0.2b
+/// Teloscope v0.0.3
 Sliding windows with step size (1) and window size (3). 
 Tip: A step value close the window size results in faster runs.
 Setting canonical pattern: TT and its reverse complement: AA
