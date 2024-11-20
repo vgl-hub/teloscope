@@ -58,13 +58,13 @@ struct WindowData {
     float gcContent;
     float shannonEntropy;
     // uint32_t winHDistance = 0;
-    
-    std::vector<TelomereBlock> winBlocks;
-    std::vector<uint8_t> hDistances; 
 
-    std::vector<uint32_t> canonicalMatches;
-    std::vector<uint32_t> nonCanonicalMatches;
-    std::vector<uint32_t> windowMatches;
+    std::vector<uint8_t> hDistances; 
+    // std::vector<TelomereBlock> winBlocks;
+
+    // std::vector<uint32_t> canonicalMatches;
+    // std::vector<uint32_t> nonCanonicalMatches;
+    // std::vector<uint32_t> windowMatches;
     uint16_t canonicalCounts = 0;
     uint16_t nonCanonicalCounts = 0;
     float canonicalDensity = 0.0f;
@@ -76,6 +76,10 @@ struct WindowData {
 struct SegmentData {
     std::vector<WindowData> windows;
     std::unordered_map<std::string, std::vector<TelomereBlock>> mergedBlocks;
+    std::vector<uint32_t> canonicalMatches;
+    std::vector<uint32_t> nonCanonicalMatches;
+    std::vector<uint32_t> segMatches;
+    std::vector<TelomereBlock> segBlocks;
 };
 
 
@@ -130,7 +134,8 @@ public:
 
     bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
 
-    void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData, WindowData& nextOverlapData); 
+    // void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData, WindowData& nextOverlapData);
+    void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData, WindowData& nextOverlapData, SegmentData& segmentData);
 
     SegmentData analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos);
 
