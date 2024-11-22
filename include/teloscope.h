@@ -49,6 +49,8 @@ public:
 struct TelomereBlock {
     uint64_t start;
     uint16_t blockLen; // End = start + blockLen
+    uint32_t blockDistance;
+    uint16_t blockCounts;
 };
 
 struct WindowData {
@@ -60,11 +62,6 @@ struct WindowData {
     // uint32_t winHDistance = 0;
 
     std::vector<uint8_t> hDistances; 
-    // std::vector<TelomereBlock> winBlocks;
-
-    // std::vector<uint32_t> canonicalMatches;
-    // std::vector<uint32_t> nonCanonicalMatches;
-    // std::vector<uint32_t> windowMatches;
     uint16_t canonicalCounts = 0;
     uint16_t nonCanonicalCounts = 0;
     float canonicalDensity = 0.0f;
@@ -88,6 +85,8 @@ struct PathData {
     std::string header;
     std::vector<WindowData> windows; // Empty unless specified by user
     std::unordered_map<std::string, std::vector<TelomereBlock>> mergedBlocks;
+    std::vector<uint32_t> canonicalMatches;
+    std::vector<uint32_t> nonCanonicalMatches;
 };
 
 
@@ -134,7 +133,6 @@ public:
 
     bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
 
-    // void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData, WindowData& nextOverlapData);
     void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData, WindowData& nextOverlapData, SegmentData& segmentData);
 
     SegmentData analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos);
@@ -143,14 +141,11 @@ public:
 
     void sortBySeqPos();
 
-    // std::vector<TelomereBlock> getTelomereBlocks(const std::vector<uint32_t>& inputMatches, uint64_t windowStart);
-    std::vector<TelomereBlock> getTelomereBlocks(const std::vector<uint32_t>& inputMatches, uint64_t windowStart, uint32_t currentWindowSize);
-
-    std::vector<TelomereBlock> mergeTelomereBlocks(const std::vector<TelomereBlock>& winBlocks);
+    std::vector<TelomereBlock> getTelomereBlocks(const std::vector<uint32_t>& inputMatches, uint16_t mergeDist);
 
     void writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& windowRepeatsFile,
                                 std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
-                                std::ofstream& allBlocksFile, std::ofstream& canonicalBlocksFile, std::ofstream& noncanonicalBlocksFile);
+                                std::ofstream& allBlocksFile, std::ofstream& canonicalBlocksFile);
 
     void handleBEDFile();
 

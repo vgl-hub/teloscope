@@ -1,4 +1,5 @@
 #include <iostream>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string>
 #include <stdexcept> // jack: std::runtime_error
@@ -64,16 +65,18 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     uint64_t absPos = 0;
     unsigned int cUId = 0, gapLen = 0, seqPos = path->getSeqPos();
     std::vector<PathComponent> pathComponents = path->getComponents();
-    // uint64_t pathLen = path->getLen(); // PENDING
+    uint64_t pathSize = path->getLen();
 
     threadLog.add("\n\tWalking path:\t" + path->getHeader());
     std::string header = path->getHeader();
     eraseChar(header, '\r');
+    uint32_t numSegments = (pathComponents.size() + 1) / 2;
 
     // Initialize PathData for this path
     PathData pathData;
     pathData.seqPos = seqPos;
     pathData.header = header;
+    pathData.windows.reserve((pathSize - (userInput.windowSize + 2 * userInput.step) * (numSegments)) / userInput.step);
 
     for (std::vector<PathComponent>::iterator component = pathComponents.begin(); component != pathComponents.end(); component++) {
         
@@ -88,17 +91,35 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
             if (component->orientation == '+') {
                 SegmentData segmentData = analyzeSegment(sequence, userInput, absPos);
 
-                if (userInput.keepWindowData) {
-                    pathData.windows.insert(pathData.windows.end(), segmentData.windows.begin(), segmentData.windows.end());
-                }
+                // Collect window data
+                pathData.windows.insert(
+                    pathData.windows.end(),
+                    std::make_move_iterator(segmentData.windows.begin()),
+                    std::make_move_iterator(segmentData.windows.end())
+                );
 
-                for (const auto& [groupName, blocks] : segmentData.mergedBlocks) {
+                // Collect blocks
+                for (auto& [groupName, blocks] : segmentData.mergedBlocks) {
                     pathData.mergedBlocks[groupName].insert(
                         pathData.mergedBlocks[groupName].end(),
-                        blocks.begin(),
-                        blocks.end()
+                        std::make_move_iterator(blocks.begin()),
+                        std::make_move_iterator(blocks.end())
                     );
                 }
+
+                // Collect matches
+                pathData.canonicalMatches.insert(
+                    pathData.canonicalMatches.end(),
+                    std::make_move_iterator(segmentData.canonicalMatches.begin()),
+                    std::make_move_iterator(segmentData.canonicalMatches.end())
+                );
+
+                pathData.nonCanonicalMatches.insert(
+                    pathData.nonCanonicalMatches.end(),
+                    std::make_move_iterator(segmentData.nonCanonicalMatches.begin()),
+                    std::make_move_iterator(segmentData.nonCanonicalMatches.end())
+                );
+
             } else {
             }
             
