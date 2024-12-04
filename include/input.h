@@ -17,16 +17,17 @@ struct UserInputTeloscope : UserInput {
     unsigned short int maxBlockDist = 200;
     unsigned short int minBlockCounts = 2;
 
-    bool keepWindowData = false; // Memory intensive
-    bool modeMatch = true, modeEntropy = true, modeGC = true; // Change to: de novo, user-defined
+    bool keepWindowData = false; // JACK: GET RID OF THIS
+    bool modeMatch = true, modeEntropy = true, modeGC = true; // JACK: GET RID OF THIS
 
     bool outGC = true;
     bool outEntropy = true;
-    bool outDistance = true;
-    bool outFasta = true;
-    bool outMatches = true;
+    bool outCanMatches = true;
+    bool outNonCanMatches = true;
     bool outITS = true;
 
+    // bool outDistance = true;
+    // bool outFasta = true;
     
     double maxMem = 0;
     std::string prefix = ".", outFile = "";

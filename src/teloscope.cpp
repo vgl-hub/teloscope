@@ -286,11 +286,23 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
                             std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
                             std::ofstream& allBlocksFile, std::ofstream& canonicalBlocksFile) {
 
+    // Write header for window_metrics.tsv
+    if (userInput.keepWindowData && (userInput.modeEntropy || userInput.modeGC)) {
+        windowMetricsFile << "Header\tStart\tEnd";
+        if (userInput.modeEntropy) {
+            windowMetricsFile << "\tShannonEntropy";
+        }
+        if (userInput.modeGC) {
+            windowMetricsFile << "\tGCContent";
+        }
+        windowMetricsFile << "\n";
+    }
+
     for (const auto& pathData : allPathData) {
         const auto& header = pathData.header;
         const auto& windows = pathData.windows;
 
-        // Process telomere blocks (unchanged)
+        // Write telomere blocks
         for (const auto& [groupName, blocks] : pathData.mergedBlocks) {
             std::ofstream* outputFile = nullptr;
 
@@ -309,7 +321,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
             }
         }
 
-        // Write matches to separate files
+        // Write matches to separate files.
         for (const auto& pos : pathData.canonicalMatches) {
             canonicalMatchFile << header << "\t"
                                 << pos << "\t"
@@ -327,18 +339,6 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
         if (!userInput.keepWindowData) { // If windowData is not stored, return
             continue;
         }
-
-    // Write header for window_metrics.tsv
-    if (userInput.keepWindowData && (userInput.modeEntropy || userInput.modeGC)) {
-        windowMetricsFile << "Header\tStart\tEnd";
-        if (userInput.modeEntropy) {
-            windowMetricsFile << "\tShannonEntropy";
-        }
-        if (userInput.modeGC) {
-            windowMetricsFile << "\tGCContent";
-        }
-        windowMetricsFile << "\n";
-    }
 
         // Process window data
         for (const auto& window : windows) {
