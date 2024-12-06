@@ -72,6 +72,8 @@ struct WindowData {
 
 struct SegmentData {
     std::vector<WindowData> windows;
+    std::vector<TelomereBlock> terminalBlocks;
+    std::vector<TelomereBlock> interstitialBlocks;
     std::unordered_map<std::string, std::vector<TelomereBlock>> mergedBlocks;
     std::vector<uint32_t> canonicalMatches;
     std::vector<uint32_t> nonCanonicalMatches;
@@ -133,7 +135,10 @@ public:
 
     bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
 
-    void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData, WindowData& nextOverlapData, SegmentData& segmentData);
+    // void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData, WindowData& nextOverlapData, SegmentData& segmentData);
+    void analyzeWindow(const std::string &window, uint32_t windowStart,
+                        WindowData& windowData, WindowData& nextOverlapData,
+                        SegmentData& segmentData, uint32_t segmentSize);
 
     SegmentData analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos);
 

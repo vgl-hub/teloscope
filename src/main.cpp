@@ -152,9 +152,9 @@ int main(int argc, char **argv) {
                 }
 
                 // Store canonical pattern and its reverse complement
+                userInput.canonicalSize = canonicalPattern.size();
                 userInput.canonicalPatterns.first = canonicalPattern;
                 userInput.canonicalPatterns.second = revCom(canonicalPattern);
-
                 std::cout << "Setting canonical pattern: " << canonicalPattern << " and its reverse complement: " << userInput.canonicalPatterns.second << "\n";
             }
                 break;

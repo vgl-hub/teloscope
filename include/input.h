@@ -2,11 +2,13 @@
 #define INPUT_H
 
 #include "main.h" // not in Mac's code
+#include <stdint.h>
 
 struct UserInputTeloscope : UserInput {
     
     std::string outRoute;
     std::pair<std::string, std::string> canonicalPatterns;
+    unsigned short int canonicalSize;
     std::vector<std::string> patterns;
     std::unordered_map<std::string, uint8_t> hammingDistances;
 
@@ -16,6 +18,7 @@ struct UserInputTeloscope : UserInput {
     unsigned short int minBlockLen = 100; // Not used anymore
     unsigned short int maxBlockDist = 200;
     unsigned short int minBlockCounts = 2;
+    uint32_t terminalLimit = 50000;
 
     bool keepWindowData = false; // JACK: GET RID OF THIS
     bool modeMatch = true, modeEntropy = true, modeGC = true; // JACK: GET RID OF THIS
