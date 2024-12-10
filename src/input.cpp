@@ -137,6 +137,11 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
         
     }
 
+    // Filter "all" blocks at the path level
+    if (pathData.mergedBlocks.find("all") != pathData.mergedBlocks.end()) {
+        pathData.mergedBlocks["all"] = filterBlocks(pathData.mergedBlocks["all"]);
+    }
+
     std::lock_guard<std::mutex> lck(mtx);
     allPathData.push_back(std::move(pathData));
 

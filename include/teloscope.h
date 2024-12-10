@@ -60,20 +60,22 @@ struct WindowData {
     float gcContent;
     float shannonEntropy;
     // uint32_t winHDistance = 0;
-
+    
+    std::vector<uint32_t> winMatches;
     std::vector<uint8_t> hDistances; 
     uint16_t canonicalCounts = 0;
     uint16_t nonCanonicalCounts = 0;
     float canonicalDensity = 0.0f;
     float nonCanonicalDensity = 0.0f;
+    bool hasCanDimer = false; 
     
-    WindowData() : windowStart(0), currentWindowSize(0), gcContent(0.0f), shannonEntropy(0.0f) {}
+    WindowData() : windowStart(0), currentWindowSize(0), gcContent(0.0f), shannonEntropy(0.0f), hasCanDimer(false) {}
 };
 
 struct SegmentData {
     std::vector<WindowData> windows;
-    std::vector<TelomereBlock> terminalBlocks;
-    std::vector<TelomereBlock> interstitialBlocks;
+    // std::vector<TelomereBlock> terminalBlocks;
+    // std::vector<TelomereBlock> interstitialBlocks;
     std::unordered_map<std::string, std::vector<TelomereBlock>> mergedBlocks;
     std::vector<uint32_t> canonicalMatches;
     std::vector<uint32_t> nonCanonicalMatches;
@@ -135,7 +137,6 @@ public:
 
     bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
 
-    // void analyzeWindow(const std::string &window, uint32_t windowStart, WindowData& windowData, WindowData& nextOverlapData, SegmentData& segmentData);
     void analyzeWindow(const std::string &window, uint32_t windowStart,
                         WindowData& windowData, WindowData& nextOverlapData,
                         SegmentData& segmentData, uint32_t segmentSize);
@@ -147,6 +148,8 @@ public:
     void sortBySeqPos();
 
     std::vector<TelomereBlock> getTelomereBlocks(const std::vector<uint32_t>& inputMatches, uint16_t mergeDist);
+
+    std::vector<TelomereBlock> filterBlocks(const std::vector<TelomereBlock>& blocks);
 
     void writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& windowRepeatsFile,
                                 std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
