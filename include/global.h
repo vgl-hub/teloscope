@@ -21,7 +21,7 @@ extern int outSequence_flag;
 extern int nstarReport_flag;
 extern int outSize_flag;
 extern int outCoord_flag;
-extern int outFile_flag;
+extern int outFile_flag; // JACK: CHECK
 extern int outBubbles_flag;
 extern int stats_flag;
 extern int cmd_flag;

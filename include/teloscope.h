@@ -94,6 +94,14 @@ struct PathData {
 };
 
 
+struct Stats {
+    float min;
+    float max;
+    float mean;
+    float median;
+};
+
+
 class Teloscope {
     Trie trie; // Declare trie instance
     UserInputTeloscope userInput; // Declare user input instance
@@ -122,10 +130,8 @@ class Teloscope {
         return static_cast<float>(gcCount) / windowSize * 100.0;
     }
 
-    float getMean(const std::vector<float>& values);
-    float getMedian(std::vector<float> values);
-    float getMin(const std::vector<float> values);
-    float getMax(const std::vector<float> values);
+
+    Stats getStats(std::vector<float>& values);
 
 public:
 

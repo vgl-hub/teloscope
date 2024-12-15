@@ -3,7 +3,7 @@
 #include <sstream> // check
 #include <stdint.h> // what's this for?
 #include <vector>
-#include <algorithm> // removeCarriageReturns
+#include <algorithm>
 #include <array> // check
 #include <cmath>
 #include <type_traits> // handlesBEDFile
@@ -40,35 +40,35 @@ void Trie::insertPattern(const std::string& pattern) {
     }
 }
 
-
-float Teloscope::getMean(const std::vector<float>& values) {
-    if (values.empty()) return 0.0;
-    float sum = std::accumulate(values.begin(), values.end(), 0.0);
-    return sum / values.size();
-}
-
-
-float Teloscope::getMedian(std::vector<float> values) {
-    if (values.empty()) return 0.0;
-    std::sort(values.begin(), values.end());
-    size_t size = values.size();
-    if (size % 2 == 0) {
-        return (values[size / 2 - 1] + values[size / 2]) / 2;
-    } else {
-        return values[size / 2];
+Stats Teloscope::getStats(std::vector<float>& values) {
+    Stats stats;
+    if (values.empty()) {
+        return stats;
     }
-}
 
+    float sum = 0.0f;
+    stats.min = values[0];
+    stats.max = values[0];
+    for (float val : values) {
+        sum += val;
+        if (val < stats.min) stats.min = val;
+        if (val > stats.max) stats.max = val;
+    }
+    stats.mean = sum / values.size();
 
-float Teloscope::getMin(const std::vector<float> values) {
-    if (values.empty()) return 0.0;
-    return *std::min_element(values.begin(), values.end());
-}
+    size_t size = values.size(); // Nth element O(n)
+    if (size % 2 == 0) {
+        std::nth_element(values.begin(), values.begin() + size / 2 - 1, values.end());
+        float median1 = values[size / 2 - 1];
+        std::nth_element(values.begin(), values.begin() + size / 2, values.end());
+        float median2 = values[size / 2];
+        stats.median = (median1 + median2) / 2;
+    } else {
+        std::nth_element(values.begin(), values.begin() + size / 2, values.end());
+        stats.median = values[size / 2];
+    }
 
-
-float Teloscope::getMax(const std::vector<float> values) {
-    if (values.empty()) return 0.0;
-    return *std::max_element(values.begin(), values.end());
+    return stats;
 }
 
 
@@ -160,16 +160,18 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart,
 
     windowData.windowStart = windowStart; // CHECK: Why is this here?
     unsigned short int longestPatternSize = this->trie.getLongestPatternSize();
-    uint32_t overlapSize = userInput.windowSize - userInput.step;
+    uint32_t step = userInput.step;
+    uint32_t overlapSize = userInput.windowSize - step;
     uint32_t terminalLimit = userInput.terminalLimit;
+    bool computeGC = userInput.outGC;
+    bool computeEntropy = userInput.outEntropy;
 
     // Determine starting index for Trie scanning
-    uint32_t startIndex = (windowStart == 0 || overlapSize == 0) ? 0 : std::min(userInput.step - longestPatternSize, overlapSize - longestPatternSize);
+    uint32_t startIndex = (windowStart == 0 || overlapSize == 0) ? 0 : std::min(step - longestPatternSize, overlapSize - longestPatternSize);
     int lastCanonicalPos = -1;
 
-    for (uint32_t i = startIndex; i < window.size(); ++i) { // Nucleotide iterations
-
-        if (userInput.modeGC || userInput.modeEntropy) {
+    for (uint32_t i = startIndex; i < window.size(); ++i) { 
+        if (computeGC || computeEntropy) {
             if (i >= overlapSize || overlapSize == 0 || windowStart == 0) {
                 switch (window[i]) {
                     case 'A': windowData.nucleotideCounts[0]++; break;
@@ -178,7 +180,7 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart,
                     case 'T': windowData.nucleotideCounts[3]++; break;
                 }
             }
-            if (i >= userInput.step && userInput.windowSize != userInput.step) {
+            if (i >= step && overlapSize != 0) {
                 switch (window[i]) {
                     case 'A': nextOverlapData.nucleotideCounts[0]++; break;
                     case 'C': nextOverlapData.nucleotideCounts[1]++; break;
@@ -188,56 +190,54 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart,
             }
         }
 
-        if (userInput.modeMatch) { // Pattern matching using Trie
-            auto current = trie.getRoot();
-            uint32_t scanLimit = std::min(i + longestPatternSize, static_cast<uint32_t>(window.size()));
+        // Pattern matching using Trie
+        auto current = trie.getRoot();
+        uint32_t scanLimit = std::min(i + longestPatternSize, static_cast<uint32_t>(window.size()));
 
-            for (uint32_t j = i; j < scanLimit; ++j) { // Scan positions until longest pattern
+        for (uint32_t j = i; j < scanLimit; ++j) { // Scan positions until longest pattern
+            if (!trie.hasChild(current, window[j])) break;  
+            current = trie.getChild(current, window[j]); // window[j] is a character
 
-                if (!trie.hasChild(current, window[j])) break;  
-                current = trie.getChild(current, window[j]); // window[j] is a character
+            if (current->isEndOfWord) {
+                std::string pattern = window.substr(i, j - i + 1);
+                bool isCanonical = (pattern == userInput.canonicalPatterns.first || pattern == userInput.canonicalPatterns.second); // Check canonical patterns
+                bool isTerminal = (windowStart + i <= terminalLimit || windowStart + i >= segmentSize - terminalLimit);
+                float densityGain = static_cast<float>(pattern.size()) / window.size();
+                uint32_t matchPos = windowStart + i;
 
-                if (current->isEndOfWord) {
-                    std::string pattern = window.substr(i, j - i + 1);
-                    bool isCanonical = (pattern == userInput.canonicalPatterns.first || pattern == userInput.canonicalPatterns.second); // Check canonical patterns
-                    bool isTerminal = (windowStart + i <= terminalLimit || windowStart + i >= segmentSize - terminalLimit);
-                    float densityGain = static_cast<float>(pattern.size()) / window.size();
-                    uint32_t matchPos = windowStart + i;
+                // Update windowData from prevOverlapData
+                if (j >= overlapSize || overlapSize == 0 || windowStart == 0) {
+                    if (isCanonical) {
+                        windowData.canonicalCounts++;
+                        windowData.canonicalDensity += densityGain;
+                        segmentData.canonicalMatches.push_back(matchPos);
 
-                    // Update windowData from prevOverlapData
-                    if (j >= overlapSize || overlapSize == 0 || windowStart == 0) {
-                        if (isCanonical) {
-                            windowData.canonicalCounts++;
-                            windowData.canonicalDensity += densityGain;
-                            segmentData.canonicalMatches.push_back(matchPos);
-
-                            // Check for canonical dimer
-                            if (!windowData.hasCanDimer && lastCanonicalPos >= 0 && (matchPos - lastCanonicalPos) <= userInput.canonicalSize) {
-                                windowData.hasCanDimer = true;
-                            }
-                            lastCanonicalPos = matchPos;  // Update last canonical position
-
-                        } else {
-                            windowData.nonCanonicalCounts++;
-                            windowData.nonCanonicalDensity += densityGain;
+                        // Check for canonical dimer
+                        if (!windowData.hasCanDimer && lastCanonicalPos >= 0 && (matchPos - lastCanonicalPos) <= userInput.canonicalSize) {
+                            windowData.hasCanDimer = true;
                         }
-                        if (isTerminal) {
-                            windowData.winMatches.push_back(matchPos);
-                            if (!isCanonical) {
-                                segmentData.nonCanonicalMatches.push_back(matchPos);
-                            }
+                        lastCanonicalPos = matchPos;  // Update last canonical position
+
+                    } else {
+                        windowData.nonCanonicalCounts++;
+                        windowData.nonCanonicalDensity += densityGain;
+                    }
+                    if (isTerminal) {
+                        windowData.winMatches.push_back(matchPos);
+                        if (!isCanonical) {
+                            segmentData.nonCanonicalMatches.push_back(matchPos);
                         }
                     }
+                }
 
-                    // Update nextOverlapData
-                    if (i >= userInput.step && overlapSize != 0 ) {
-                        if (isCanonical) {
-                            nextOverlapData.canonicalCounts++;
-                            nextOverlapData.canonicalDensity += densityGain;
-                        } else {
-                            nextOverlapData.nonCanonicalCounts++;
-                            nextOverlapData.nonCanonicalDensity += densityGain;
-                        }
+                // Update nextOverlapData
+                if (i >= step && overlapSize != 0) {
+                    if (isCanonical) {
+                        nextOverlapData.canonicalCounts++;
+                        nextOverlapData.canonicalDensity += densityGain;
+                    } else {
+                        nextOverlapData.nonCanonicalCounts++;
+                        nextOverlapData.nonCanonicalDensity += densityGain;
                     }
                 }
             }
@@ -272,13 +272,13 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
         WindowData windowData = prevOverlapData;
         analyzeWindow(window, windowStart, windowData, nextOverlapData, segmentData, segmentSize);
 
-        if (userInput.modeGC) { windowData.gcContent = getGCContent(windowData.nucleotideCounts, window.size()); }
-        if (userInput.modeEntropy) { windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, window.size()); }
+        if (userInput.outGC) { windowData.gcContent = getGCContent(windowData.nucleotideCounts, window.size()); }
+        if (userInput.outEntropy) { windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, window.size()); }
 
         // Update windowData
         windowData.windowStart = windowStart + absPos;
         windowData.currentWindowSize = currentWindowSize;
-        if (userInput.keepWindowData) { windows.emplace_back(windowData); } // User defines if windowData is stored
+        windows.emplace_back(windowData);
 
         prevOverlapData = nextOverlapData; // Pass and reset overlap data
         nextOverlapData = WindowData(); // Reset for next iteration
@@ -328,12 +328,12 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
                             std::ofstream& allBlocksFile, std::ofstream& canonicalBlocksFile) {
 
     // Write header for window_metrics.tsv
-    if (userInput.keepWindowData && (userInput.modeEntropy || userInput.modeGC)) {
+    if (userInput.outEntropy || userInput.outGC) {
         windowMetricsFile << "Header\tStart\tEnd";
-        if (userInput.modeEntropy) {
+        if (userInput.outEntropy) {
             windowMetricsFile << "\tShannonEntropy";
         }
-        if (userInput.modeGC) {
+        if (userInput.outGC) {
             windowMetricsFile << "\tGCContent";
         }
         windowMetricsFile << "\n";
@@ -377,24 +377,20 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
                                     << "non-canonical" << "\n";
         }
 
-        if (!userInput.keepWindowData) { // If windowData is not stored, return
-            continue;
-        }
-
         // Process window data
         for (const auto& window : windows) {
             totalNWindows++; // Update total window count
             uint32_t windowEnd = window.windowStart + window.currentWindowSize; // Start is already 0-based
 
             // Write window metrics if enabled
-            if (userInput.modeEntropy || userInput.modeGC) {
+            if (userInput.outEntropy || userInput.outGC) {
                 windowMetricsFile << header << "\t" << window.windowStart << "\t" << windowEnd;
 
-                if (userInput.modeEntropy) {
+                if (userInput.outEntropy) {
                     windowMetricsFile << "\t" << window.shannonEntropy;
                     entropyValues.push_back(window.shannonEntropy); // For summary
                 }
-                if (userInput.modeGC) {
+                if (userInput.outGC) {
                     windowMetricsFile << "\t" << window.gcContent;
                     gcContentValues.push_back(window.gcContent); // For summary
                 }
@@ -402,7 +398,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
             }
 
             // Write repeats data if enabled
-            if (userInput.modeMatch && window.canonicalCounts > 1) {
+            if (window.canonicalCounts > 1) {
                 windowRepeatsFile << header << "\t" << window.windowStart << "\t"
                                 << windowEnd << "\t"
                                 << window.canonicalCounts << "\t"
@@ -426,16 +422,17 @@ void Teloscope::handleBEDFile() {
     std::cout << "Reporting window matches and metrics in BED/BEDgraphs...\n";
 
     // Open files for writing
-    if (userInput.keepWindowData && (userInput.modeEntropy || userInput.modeGC)) {
+    if (userInput.outEntropy || userInput.outGC) {
         windowMetricsFile.open(userInput.outRoute + "/window_metrics.tsv");
     }
 
-    if (userInput.keepWindowData && userInput.modeMatch) {
+    if (userInput.outMatches) {
         canonicalMatchFile.open(userInput.outRoute + "/canonical_matches.bed");
         noncanonicalMatchFile.open(userInput.outRoute + "/noncanonical_matches.bed");
-        windowRepeatsFile.open(userInput.outRoute + "/window_repeats.bedgraph");
     }
 
+
+    windowRepeatsFile.open(userInput.outRoute + "/window_repeats.bedgraph");
     allBlocksFile.open(userInput.outRoute + "/telomere_blocks_all.bed");
     canonicalBlocksFile.open(userInput.outRoute + "/telomere_blocks_canonical.bed");
 
@@ -443,37 +440,33 @@ void Teloscope::handleBEDFile() {
                 noncanonicalMatchFile, allBlocksFile, canonicalBlocksFile);
 
     // Close all files once
-    if (userInput.modeEntropy || userInput.modeGC) {
+    if (userInput.outEntropy || userInput.outGC) {
         windowMetricsFile.close();
     }
-    if (userInput.modeMatch) {
+    
+    if (userInput.outMatches) {
         canonicalMatchFile.close();
         noncanonicalMatchFile.close();
-        windowRepeatsFile.close();
     }
-
+    
+    windowRepeatsFile.close();
     allBlocksFile.close();
     canonicalBlocksFile.close();
 }
 
-
 void Teloscope::printSummary() {
-    if (!userInput.keepWindowData) { // If windowData is not stored, skip
-        return;
-    }
-
     std::cout << "\n+++Summary Report+++\n";
     std::cout << "Total windows analyzed:\t" << totalNWindows << "\n";
-    // Print the total canonical and non-canonical matches per path - PENDING
-    // For each pattern, print the path header with the highest number of matches - PENDING
-    // For each pattern, print the path header with the lowest number of matches - PENDING
-    std::cout << "Max Shannon Entropy:\t" << getMax(entropyValues) << "\n";
-    std::cout << "Mean Shannon Entropy:\t" << getMean(entropyValues) << "\n";
-    std::cout << "Median Shannon Entropy:\t" << getMedian(entropyValues) << "\n";
-    std::cout << "Min Shannon Entropy:\t" << getMin(entropyValues) << "\n";
 
-    std::cout << "Max GC Content:\t" << getMax(gcContentValues) << "\n";
-    std::cout << "Mean GC Content:\t" << getMean(gcContentValues) << "\n";
-    std::cout << "Median GC Content:\t" << getMedian(gcContentValues) << "\n";
-    std::cout << "Min GC Content:\t" << getMin(gcContentValues) << "\n";
+    Stats entropyStats = getStats(entropyValues);
+    std::cout << "Max Shannon Entropy:\t" << entropyStats.max << "\n";
+    std::cout << "Mean Shannon Entropy:\t" << entropyStats.mean << "\n";
+    std::cout << "Median Shannon Entropy:\t" << entropyStats.median << "\n";
+    std::cout << "Min Shannon Entropy:\t" << entropyStats.min << "\n";
+
+    Stats gcContentStats = getStats(gcContentValues);
+    std::cout << "Max GC Content:\t" << gcContentStats.max << "\n";
+    std::cout << "Mean GC Content:\t" << gcContentStats.mean << "\n";
+    std::cout << "Median GC Content:\t" << gcContentStats.median << "\n";
+    std::cout << "Min GC Content:\t" << gcContentStats.min << "\n";
 }

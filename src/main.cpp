@@ -46,11 +46,13 @@ int main(int argc, char **argv) {
         {"step", required_argument, 0, 's'},
         {"canonical", required_argument, 0, 'c'},
         {"threads", required_argument, 0, 'j'},
-        {"keep-window-data", no_argument, 0, 'k'},
-        {"mode", required_argument, 0, 'm'},
         {"min-block-length", required_argument, 0, 'l'},
         {"max-block-distance", required_argument, 0, 'd'},
 
+        {"out-gc", no_argument, 0, 'g'},
+        {"out-entropy", no_argument, 0, 'e'},
+        {"out-matches", no_argument, 0, 'm'},
+        {"out-its", no_argument, 0, 'i'},
         {"verbose", no_argument, &verbose_flag, 1},
         {"cmd", no_argument, &cmd_flag, 1},
         {"version", no_argument, 0, 'v'},
@@ -63,7 +65,7 @@ int main(int argc, char **argv) {
         
         int option_index = 0;
         
-        c = getopt_long(argc, argv, "-:f:j:m:o:p:s:w:c:l:d:kvh", long_options, &option_index);
+        c = getopt_long(argc, argv, "-:f:j:o:p:s:w:c:l:d:gemivh", long_options, &option_index);
 
         // if (optind < argc && !isPipe) { // if pipe wasn't assigned already
             
@@ -223,48 +225,16 @@ int main(int argc, char **argv) {
                     fprintf(stderr, "Tip: Large sizes are recommended to avoid missing matches between windows.\n");
                     
                 } else {
-                    fprintf(stderr, "Sliding windows with step size (%d) and window size (%d). \n", userInput.step, userInput.windowSize);
-                    fprintf(stderr, "Tip: A step value close the window size results in faster runs.\n");
+                    fprintf(stderr, "Sliding windows with window size (%d) and step size (%d). \n", userInput.step, userInput.windowSize);
                 }
                 break;
-
-
-            case 'm': {
-                std::istringstream modeStream(optarg);
-                std::string mode;
-                std::set<std::string> providedModes;
-
-                while (std::getline(modeStream, mode, ',')) {
-                    if (mode.empty()) continue;
-
-                    if (std::any_of(mode.begin(), mode.end(), ::isdigit)) {
-                        std::cerr << "Error: Mode '" << mode << "' contains numerical characters.\n";
-                        exit(EXIT_FAILURE);
-                    }
-
-                    std::transform(mode.begin(), mode.end(), mode.begin(), ::tolower);
-
-                    if (mode == "all") {
-                        providedModes = {"match", "entropy", "gc"};
-                        break;
-                    } else {
-                        providedModes.insert(mode);
-                    }
-                }
-
-                // Only disable modes that were not provided
-                if (providedModes.find("match") == providedModes.end()) userInput.modeMatch = false;
-                if (providedModes.find("entropy") == providedModes.end()) userInput.modeEntropy = false;
-                if (providedModes.find("gc") == providedModes.end()) userInput.modeGC = false;
-
-                break;
-            }
 
 
             case 'v': // software version
                 printf("/// Teloscope v%s\n", version.c_str());
-                printf("\nDeveloped by:\nGiulio Formenti giulio.formenti@gmail.com\n");
-                printf("Jack A. Medico amedico@rockefeller.edu\n");
+                printf("\nDeveloped by:\nJack A. Medico amedico@rockefeller.edu\n");
+                printf("\nDirected by:\nGiulio Formenti giulio.formenti@gmail.com\n");
+                printf("\nhttps://www.vertebrategenomelab.org/home");
                 exit(0);
 
 
@@ -282,16 +252,31 @@ int main(int argc, char **argv) {
                 printf("\t'-d'\t--max-block-distance\tSet maximum block distance for merging. [Default: 50]\n");
 
                 printf("\nOptional Parameters:\n");
-                printf("\t'-m'\t--mode\tSet analysis modes, separate them by commas. [Options: all,match,gc,entropy]\n");
                 printf("\t'-k'\t--keep-window-data\tKeep window data for analysis, memory-intensive. [Default: false]\n");
+                printf("\t'-g'\t--out-gc\tOutput GC content for each window. [Default: false]\n");
+                printf("\t'-e'\t--out-entropy\tOutput Shannon entropy for each window. [Default: false]\n");
+                printf("\t'-n'\t--out-noncan-matches\tOutput terminal non-canonical matches from all contigs. [Default: false]\n");
+                printf("\t'-i'\t--out-its\tOutput assembly interstitial telomere (ITSs) regions.[Default: false] \n");
                 printf("\t'-v'\t--version\tPrint current software version.\n");
                 printf("\t'-h'\t--help\tPrint current software options.\n");
-                printf("\t--verbose\tverbose output.\n");
+                printf("\t--verbose\tVerbose output.\n");
                 exit(0);
 
 
-            case 'k':
-                userInput.keepWindowData = true;
+            case 'g':
+                userInput.outGC = true;
+                break;
+
+            case 'e':
+                userInput.outEntropy = true;
+                break;
+
+            case 'm':
+                userInput.outMatches = true;
+                break;
+
+            case 'i':
+                userInput.outITS = true;
                 break;
 
             case 'l':

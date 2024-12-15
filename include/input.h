@@ -19,22 +19,18 @@ struct UserInputTeloscope : UserInput {
     unsigned short int maxBlockDist = 200;
     unsigned short int minBlockCounts = 2;
     uint32_t terminalLimit = 50000;
-
-    bool keepWindowData = false; // JACK: GET RID OF THIS
-    bool modeMatch = true, modeEntropy = true, modeGC = true; // JACK: GET RID OF THIS
-
-    bool outGC = true;
-    bool outEntropy = true;
-    bool outCanMatches = true;
-    bool outNonCanMatches = true;
-    bool outITS = true;
-
+    
+    bool outGC = false;
+    bool outEntropy = false;
+    bool outITS = false;
+    bool outMatches = false;
+    // bool outCanMatches = true; // Jack: Always true for now
     // bool outPQonly = true;
     // bool outDistance = true;
     // bool outFasta = true;
     
     double maxMem = 0;
-    std::string prefix = ".", outFile = "";
+    std::string prefix = ".", outFile = ""; // JACK: CHECK
 };
 
 class Input {
