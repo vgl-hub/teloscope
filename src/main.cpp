@@ -49,6 +49,7 @@ int main(int argc, char **argv) {
         {"min-block-length", required_argument, 0, 'l'},
         {"max-block-distance", required_argument, 0, 'd'},
 
+        {"out-win-repeats", no_argument, 0, 'r'},
         {"out-gc", no_argument, 0, 'g'},
         {"out-entropy", no_argument, 0, 'e'},
         {"out-matches", no_argument, 0, 'm'},
@@ -65,7 +66,7 @@ int main(int argc, char **argv) {
         
         int option_index = 0;
         
-        c = getopt_long(argc, argv, "-:f:j:o:p:s:w:c:l:d:gemivh", long_options, &option_index);
+        c = getopt_long(argc, argv, "-:f:j:o:p:s:w:c:l:d:rgemivh", long_options, &option_index);
 
         // if (optind < argc && !isPipe) { // if pipe wasn't assigned already
             
@@ -122,14 +123,19 @@ int main(int argc, char **argv) {
 
 
             case 'o':
-            {
-                userInput.outRoute = optarg;
-                
-                if (userInput.outRoute.empty()) {
-                    fprintf(stderr, "Error: Output route is required. Use --output or -o to specify it.\n"); // Jack: we have to define output as default
-                    exit(EXIT_FAILURE);
+                {
+                    userInput.outRoute = optarg;
+
+                    if (userInput.outRoute.empty()) {
+                        fprintf(stderr, "Error: Output route is required. Use --output or -o to specify it.\n");
+                        exit(EXIT_FAILURE);
+                    }
+
+                    // Create the directory if it does not exist
+                    if (!std::filesystem::exists(userInput.outRoute)) {
+                        std::filesystem::create_directories(userInput.outRoute); // create directory if it doesn't exist
+                    }
                 }
-            }
                 break;
 
 
@@ -252,16 +258,19 @@ int main(int argc, char **argv) {
                 printf("\t'-d'\t--max-block-distance\tSet maximum block distance for merging. [Default: 50]\n");
 
                 printf("\nOptional Parameters:\n");
-                printf("\t'-k'\t--keep-window-data\tKeep window data for analysis, memory-intensive. [Default: false]\n");
+                printf("\t'-r'\t--out-win-repeats\tOutput canonical/noncanonical repeats and density by window. [Default: false]\n");
                 printf("\t'-g'\t--out-gc\tOutput GC content for each window. [Default: false]\n");
                 printf("\t'-e'\t--out-entropy\tOutput Shannon entropy for each window. [Default: false]\n");
-                printf("\t'-n'\t--out-noncan-matches\tOutput terminal non-canonical matches from all contigs. [Default: false]\n");
+                printf("\t'-m'\t--out-matches\tOutput all canonical and terminal non-canonical matches. [Default: false]\n");
                 printf("\t'-i'\t--out-its\tOutput assembly interstitial telomere (ITSs) regions.[Default: false] \n");
                 printf("\t'-v'\t--version\tPrint current software version.\n");
                 printf("\t'-h'\t--help\tPrint current software options.\n");
                 printf("\t--verbose\tVerbose output.\n");
                 exit(0);
 
+            case 'r':
+                userInput.outWinRepeats = true;
+                break;
 
             case 'g':
                 userInput.outGC = true;

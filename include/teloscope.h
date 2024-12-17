@@ -29,13 +29,10 @@ public:
         return root;
     }
 
-    bool hasChild(const std::shared_ptr<TrieNode>& node, char ch) const { // Merge with the following method
-        return node->children.find(ch) != node->children.end();
-    }
-
     std::shared_ptr<TrieNode> getChild(const std::shared_ptr<TrieNode>& node, char ch) const {
-        if (hasChild(node, ch)) {
-            return node->children[ch];
+        auto it = node->children.find(ch);
+        if (it != node->children.end()) {
+            return it->second;
         }
         return nullptr;
     }

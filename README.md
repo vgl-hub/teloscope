@@ -40,22 +40,25 @@ To check out all options and flags, please use:
 
 ```
 Required Parameters:
-        '-f'    --input-sequence        Initiate tool with fasta/fasta.gz file.
+        '-f'    --input-sequence        Initiate tool with fasta file.
         '-o'    --output        Set output route.
         '-c'    --canonical     Set canonical pattern. [Default: TTAGGG]
         '-p'    --patterns      Set patterns to explore, separate them by commas [Default: TTAGGG]
         '-w'    --window        Set sliding window size. [Default: 1000]
         '-s'    --step  Set sliding window step. [Default: 500]
-        '-j'    --threads       Set the maximum number of threads. [Default: max. available]
-        '-l'    --min-block-length      Set minimum block length for evaluation. [Default: 2000]
+        '-j'    --threads       Set maximum number of threads. [Default: max. available]
+        '-l'    --min-block-length      Set minimum block length for merging. [Default: 1000]
         '-d'    --max-block-distance    Set maximum block distance for merging. [Default: 200]
 
 Optional Parameters:
-        '-m'    --mode  Set analysis modes, separate them by commas. [Options: all,match,gc,entropy]
-        '-k'    --keep-window-data      Keep window data for analysis, memory-intensive. [Default: false]
+        '-r'    --out-win-repeats       Output canonical/noncanonical repeats and density by window. [Default: false]
+        '-g'    --out-gc        Output GC content for each window. [Default: false]
+        '-e'    --out-entropy   Output Shannon entropy for each window. [Default: false]
+        '-m'    --out-matches   Output all canonical and terminal non-canonical matches. [Default: false]
+        '-i'    --out-its       Output assembly interstitial telomere (ITSs) regions.[Default: false]
         '-v'    --version       Print current software version.
         '-h'    --help  Print current software options.
-        --verbose       verbose output.
+        --verbose       Verbose output.
 ```
 
 Outputs
