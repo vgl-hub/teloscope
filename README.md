@@ -12,7 +12,7 @@ make -j
 
 Usage
 ------------
-    teloscope -f input.[fa][.gz] -o [output/dir] -j [threads] -c [canonical] -p [patterns] -w [window size] -s [step size] -d [max-block-dist] -l [min-block-len] -k
+    teloscope -f input.[fa][.gz] -o [output/dir] -j [threads] -c [canonical] -p [patterns] -w [window size] -s [step size] -d [max-block-dist] -l [min-block-len]
 
 **Note:** Teloscope automatically explores the input repeats and their reverse complements. If none are provided, it will scan for the canonical CCCTAA/TTAGGG repeats. 
 
@@ -20,15 +20,15 @@ Examples
 ------------
 * Example:
 
-        teloscope -f "${file}" -o "${out_path}" -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG -w 2000 -s 1000 -k
+        teloscope -f "${file}" -o "${out_path}" -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG -w 2000 -s 1000
 
 * Example:
 
-        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p NNNGGG -w 1000 -s 500 -d 200 -l 1000 -k --verbose
+        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p NNNGGG -w 1000 -s 500 -d 200 -l 1000 -g -e --verbose
 
 * Example:
 
-        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p TBAGGG,TTRGGG,YTAGGG  -w 2000 -s 1000 -d 200 -l 1000 -k --verbose
+        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p TBAGGG,TTRGGG,YTAGGG  -w 2000 -s 1000 -d 200 -l 1000 -m -i -g -e --verbose
   
 **Note:** Teloscope accepts nucleotides in IUPAC format and generates all possible pattern combinations. 
 
