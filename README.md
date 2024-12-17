@@ -24,11 +24,11 @@ Examples
 
 * Example:
 
-        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p NNNGGG -w 1000 -s 500 -d 200 -l 1000 -g -e --verbose
+        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p NNNGGG -w 1000 -s 500 -d 200 -l 1000 -g -e -r --verbose
 
 * Example:
 
-        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p TBAGGG,TTRGGG,YTAGGG  -w 2000 -s 1000 -d 200 -l 1000 -m -i -g -e --verbose
+        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p TBAGGG,TTRGGG,YTAGGG  -w 2000 -s 1000 -d 200 -l 1000 -r -g -e -m -i  --verbose
   
 **Note:** Teloscope accepts nucleotides in IUPAC format and generates all possible pattern combinations. 
 
