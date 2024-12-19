@@ -48,6 +48,7 @@ int main(int argc, char **argv) {
         {"threads", required_argument, 0, 'j'},
         {"min-block-length", required_argument, 0, 'l'},
         {"max-block-distance", required_argument, 0, 'd'},
+        {"terminal-limit", no_argument, 0, 't'},
 
         {"out-win-repeats", no_argument, 0, 'r'},
         {"out-gc", no_argument, 0, 'g'},
@@ -58,7 +59,6 @@ int main(int argc, char **argv) {
         {"cmd", no_argument, &cmd_flag, 1},
         {"version", no_argument, 0, 'v'},
         {"help", no_argument, 0, 'h'},
-        // {"taxid", no_argument, 0, 't'},
         {0, 0, 0, 0}
     };
     
@@ -66,7 +66,7 @@ int main(int argc, char **argv) {
         
         int option_index = 0;
         
-        c = getopt_long(argc, argv, "-:f:j:o:p:s:w:c:l:d:rgemivh", long_options, &option_index);
+        c = getopt_long(argc, argv, "-:f:j:o:p:s:w:c:l:d:t:rgemivh", long_options, &option_index);
 
         // if (optind < argc && !isPipe) { // if pipe wasn't assigned already
             
@@ -131,7 +131,6 @@ int main(int argc, char **argv) {
                         exit(EXIT_FAILURE);
                     }
 
-                    // Create the directory if it does not exist
                     if (!std::filesystem::exists(userInput.outRoute)) {
                         std::filesystem::create_directories(userInput.outRoute); // create directory if it doesn't exist
                     }
@@ -236,6 +235,46 @@ int main(int argc, char **argv) {
                 break;
 
 
+            case 'l':
+                userInput.minBlockLen = std::stoi(optarg);
+                break;
+
+
+            case 'd':
+                userInput.maxBlockDist = std::stoi(optarg);
+                break;
+
+
+            case 't':
+                userInput.terminalLimit = std::stoi(optarg);
+                break;
+
+
+            case 'r':
+                userInput.outWinRepeats = true;
+                break;
+
+
+            case 'g':
+                userInput.outGC = true;
+                break;
+
+
+            case 'e':
+                userInput.outEntropy = true;
+                break;
+
+
+            case 'm':
+                userInput.outMatches = true;
+                break;
+
+
+            case 'i':
+                userInput.outITS = true;
+                break;
+
+
             case 'v': // software version
                 printf("/// Teloscope v%s\n", version.c_str());
                 printf("\nDeveloped by:\nJack A. Medico amedico@rockefeller.edu\n");
@@ -256,6 +295,7 @@ int main(int argc, char **argv) {
                 printf("\t'-j'\t--threads\tSet maximum number of threads. [Default: max. available]\n");
                 printf("\t'-l'\t--min-block-length\tSet minimum block length for merging. [Default: 500]\n");
                 printf("\t'-d'\t--max-block-distance\tSet maximum block distance for merging. [Default: 50]\n");
+                printf("\t'-t'\t--terminal-limit\tSet terminal limit for exploring telomere variant regions (TVRs). [Default: 50000]\n");
 
                 printf("\nOptional Parameters:\n");
                 printf("\t'-r'\t--out-win-repeats\tOutput canonical/noncanonical repeats and density by window. [Default: false]\n");
@@ -267,34 +307,6 @@ int main(int argc, char **argv) {
                 printf("\t'-h'\t--help\tPrint current software options.\n");
                 printf("\t--verbose\tVerbose output.\n");
                 exit(0);
-
-            case 'r':
-                userInput.outWinRepeats = true;
-                break;
-
-            case 'g':
-                userInput.outGC = true;
-                break;
-
-            case 'e':
-                userInput.outEntropy = true;
-                break;
-
-            case 'm':
-                userInput.outMatches = true;
-                break;
-
-            case 'i':
-                userInput.outITS = true;
-                break;
-
-            case 'l':
-                userInput.minBlockLen = std::stoi(optarg);
-                break;
-
-            case 'd':
-                userInput.maxBlockDist = std::stoi(optarg);
-                break;
         }
         
         if  (argc == 2 || // handle various cases in which the output should include summary stats
