@@ -175,21 +175,21 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart,
 
     for (uint32_t i = startIndex; i < window.size(); ++i) {
         if (computeGC || computeEntropy) {
+            char nucleotide = window[i];
+            uint8_t index;
+            switch (nucleotide) {
+                case 'A': index = 0; break;
+                case 'C': index = 1; break;
+                case 'G': index = 2; break;
+                case 'T': index = 3; break;
+                default: continue;
+            }
+
             if (i >= overlapSize || overlapSize == 0 || windowStart == 0) {
-                switch (window[i]) {
-                    case 'A': windowData.nucleotideCounts[0]++; break;
-                    case 'C': windowData.nucleotideCounts[1]++; break;
-                    case 'G': windowData.nucleotideCounts[2]++; break;
-                    case 'T': windowData.nucleotideCounts[3]++; break;
-                }
+                windowData.nucleotideCounts[index]++;
             }
             if (i >= step && overlapSize != 0) {
-                switch (window[i]) {
-                    case 'A': nextOverlapData.nucleotideCounts[0]++; break;
-                    case 'C': nextOverlapData.nucleotideCounts[1]++; break;
-                    case 'G': nextOverlapData.nucleotideCounts[2]++; break;
-                    case 'T': nextOverlapData.nucleotideCounts[3]++; break;
-                }
+                nextOverlapData.nucleotideCounts[index]++;
             }
         }
 
