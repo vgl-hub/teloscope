@@ -99,13 +99,17 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
                 );
 
                 // Collect blocks
-                for (auto& [groupName, blocks] : segmentData.mergedBlocks) {
-                    pathData.mergedBlocks[groupName].insert(
-                        pathData.mergedBlocks[groupName].end(),
-                        std::make_move_iterator(blocks.begin()),
-                        std::make_move_iterator(blocks.end())
-                    );
-                }
+                pathData.terminalBlocks.insert(
+                    pathData.terminalBlocks.end(),
+                    std::make_move_iterator(segmentData.terminalBlocks.begin()),
+                    std::make_move_iterator(segmentData.terminalBlocks.end())
+                );
+
+                pathData.interstitialBlocks.insert(
+                    pathData.interstitialBlocks.end(),
+                    std::make_move_iterator(segmentData.interstitialBlocks.begin()),
+                    std::make_move_iterator(segmentData.interstitialBlocks.end())
+                );
 
                 // Collect matches
                 pathData.canonicalMatches.insert(
@@ -137,10 +141,9 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
         
     }
 
-    // Filter "all" blocks at the path level
-    if (pathData.mergedBlocks.find("all") != pathData.mergedBlocks.end()) {
-        pathData.mergedBlocks["all"] = filterBlocks(pathData.mergedBlocks["all"]);
-    }
+    // Filter blocks
+    pathData.terminalBlocks = filterTerminalBlocks(pathData.terminalBlocks);
+    pathData.interstitialBlocks = filterInterstitialBlocks(pathData.interstitialBlocks, pathData.terminalBlocks);
 
     std::lock_guard<std::mutex> lck(mtx);
     allPathData.push_back(std::move(pathData));

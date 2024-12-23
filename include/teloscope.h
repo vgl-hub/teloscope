@@ -43,11 +43,21 @@ public:
 };
 
 
+struct MatchInfo {
+    uint32_t position;
+    bool isCanonical;
+    bool isForward;
+
+    MatchInfo() : isCanonical(false), isForward(false) {}
+};
+
+
 struct TelomereBlock {
     uint64_t start;
     uint16_t blockLen; // End = start + blockLen
     uint32_t blockDistance;
     uint16_t blockCounts;
+    char blockLabel;
 };
 
 struct WindowData {
@@ -58,7 +68,7 @@ struct WindowData {
     float shannonEntropy;
     // uint32_t winHDistance = 0;
     
-    std::vector<uint32_t> winMatches;
+    std::vector<MatchInfo> winMatches;
     std::vector<uint8_t> hDistances; 
     uint16_t canonicalCounts = 0;
     uint16_t nonCanonicalCounts = 0;
@@ -71,12 +81,12 @@ struct WindowData {
 
 struct SegmentData {
     std::vector<WindowData> windows;
-    // std::vector<TelomereBlock> terminalBlocks;
-    // std::vector<TelomereBlock> interstitialBlocks;
+    std::vector<TelomereBlock> terminalBlocks;
+    std::vector<TelomereBlock> interstitialBlocks;
     std::unordered_map<std::string, std::vector<TelomereBlock>> mergedBlocks;
-    std::vector<uint32_t> canonicalMatches;
-    std::vector<uint32_t> nonCanonicalMatches;
-    std::vector<uint32_t> segMatches;
+    std::vector<MatchInfo> canonicalMatches;
+    std::vector<MatchInfo> nonCanonicalMatches;
+    std::vector<MatchInfo> segMatches;
     std::vector<TelomereBlock> segBlocks;
 };
 
@@ -84,10 +94,11 @@ struct SegmentData {
 struct PathData {
     unsigned int seqPos;
     std::string header;
-    std::vector<WindowData> windows; // Empty unless specified by user
-    std::unordered_map<std::string, std::vector<TelomereBlock>> mergedBlocks;
-    std::vector<uint32_t> canonicalMatches;
-    std::vector<uint32_t> nonCanonicalMatches;
+    std::vector<WindowData> windows;
+    std::vector<TelomereBlock> terminalBlocks;
+    std::vector<TelomereBlock> interstitialBlocks;
+    std::vector<MatchInfo> canonicalMatches;
+    std::vector<MatchInfo> nonCanonicalMatches;
 };
 
 
@@ -150,13 +161,18 @@ public:
 
     void sortBySeqPos();
 
-    std::vector<TelomereBlock> getTelomereBlocks(const std::vector<uint32_t>& inputMatches, uint16_t mergeDist);
+    std::vector<TelomereBlock> getTelomereBlocks(const std::vector<MatchInfo>& inputMatches, uint16_t mergeDist);
 
-    std::vector<TelomereBlock> filterBlocks(const std::vector<TelomereBlock>& blocks);
+    std::vector<TelomereBlock> filterTerminalBlocks(const std::vector<TelomereBlock>& blocks);
+
+    std::vector<TelomereBlock> filterInterstitialBlocks(
+                const std::vector<TelomereBlock>& interstitialBlocks,
+                const std::vector<TelomereBlock>& terminalBlocks);
 
     void writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& windowRepeatsFile,
-                                std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
-                                std::ofstream& allBlocksFile, std::ofstream& canonicalBlocksFile);
+                            std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
+                            std::ofstream& terminalBlocksFile, std::ofstream& interstitialBlocksFile);
+
 
     void handleBEDFile();
 

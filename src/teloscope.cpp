@@ -79,19 +79,17 @@ void Teloscope::sortBySeqPos() {
 }
 
 
-std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<uint32_t>& inputMatches, uint16_t mergeDist) {
+std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<MatchInfo>& inputMatches, uint16_t mergeDist) {
     std::vector<TelomereBlock> telomereBlocks;
     uint16_t patternSize = userInput.canonicalSize;
     uint16_t minBlockCounts = userInput.minBlockCounts;
 
-    if (inputMatches.empty()) {
-        return telomereBlocks;
-    }
-
     // Initialize the first block
-    uint64_t blockStart = inputMatches[0];
+    uint64_t blockStart = inputMatches[0].position;
     uint64_t prevPosition = blockStart;
     uint16_t blockCounts = 1;
+    uint16_t forwardCount = inputMatches[0].isForward ? 1 : 0;
+    uint16_t reverseCount = inputMatches[0].isForward ? 0 : 1;
 
     auto finalizeBlock = [&](uint64_t endPosition) {
         if (blockCounts >= minBlockCounts) {
@@ -99,37 +97,53 @@ std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<uint32
             block.start = blockStart;
             block.blockLen = (endPosition - blockStart) + patternSize;
             block.blockCounts = blockCounts;
+
+            // p/q assignment
+            float forwardRatio = (forwardCount * 100.0f) / blockCounts;
+            float reverseRatio = (reverseCount * 100.0f) / blockCounts;
+            if (forwardRatio > 60.0f) {
+                block.blockLabel = 'p';
+            } else if (reverseRatio > 60.0f) {
+                block.blockLabel = 'q';
+            } else {
+                block.blockLabel = 'u';
+            }
+
             telomereBlocks.push_back(block);
         }
     };
 
-    for (size_t i = 1; i <= inputMatches.size(); ++i) {
-        uint64_t currentPosition;
-        uint64_t distance;
-
-        if (i < inputMatches.size()) {
-            currentPosition = inputMatches[i];
-            distance = currentPosition - prevPosition;
-        } else {
-            finalizeBlock(prevPosition);
-            break;
-        }
-
+    for (size_t i = 1; i < inputMatches.size(); ++i) {
+        uint32_t distance = inputMatches[i].position - prevPosition;
+        
         if (distance <= mergeDist) {
-            blockCounts++; // Extend the block
+            // Continue current block
+            blockCounts++;
+            forwardCount += (inputMatches[i].isForward ? 1 : 0);
+            reverseCount += (inputMatches[i].isForward ? 0 : 1);
+            prevPosition = inputMatches[i].position;
+
         } else {
+            // Finalize current block
             finalizeBlock(prevPosition);
-            blockStart = currentPosition; // Start a new block
+
+            // Start new block
+            blockStart = inputMatches[i].position;
+            prevPosition = blockStart;
             blockCounts = 1;
+            forwardCount = (inputMatches[i].isForward ? 1 : 0);
+            reverseCount = (inputMatches[i].isForward ? 0 : 1);
         }
-        prevPosition = currentPosition;
     }
+
+    // Finalize the last block
+    finalizeBlock(prevPosition);
 
     return telomereBlocks;
 }
 
 
-std::vector<TelomereBlock> Teloscope::filterBlocks(const std::vector<TelomereBlock>& blocks) {
+std::vector<TelomereBlock> Teloscope::filterTerminalBlocks(const std::vector<TelomereBlock>& blocks) {
     std::vector<TelomereBlock> filteredBlocks;
 
     for (const auto& block : blocks) {
@@ -154,6 +168,43 @@ std::vector<TelomereBlock> Teloscope::filterBlocks(const std::vector<TelomereBlo
     return filteredBlocks;
 }
 
+std::vector<TelomereBlock> Teloscope::filterInterstitialBlocks(
+            const std::vector<TelomereBlock>& interstitialBlocks,
+            const std::vector<TelomereBlock>& terminalBlocks) {
+    // If there are no terminal blocks, everything is interstitial
+    if (terminalBlocks.empty()) {
+        return interstitialBlocks;
+    }
+
+    std::vector<TelomereBlock> filteredBlocks;
+    filteredBlocks.reserve(interstitialBlocks.size());
+
+    // Helper lambda to check overlap
+    auto overlapsWith = [&](const TelomereBlock &intr, const TelomereBlock &term) {
+        uint64_t intrEnd = intr.start + intr.blockLen;
+        uint64_t termEnd = term.start + term.blockLen;
+        return (intr.start < termEnd) && (intrEnd > term.start);
+    };
+
+    // Trim interstitial blocks from the start
+    size_t startIdx = 0;
+    while (startIdx < interstitialBlocks.size() && overlapsWith(interstitialBlocks[startIdx], terminalBlocks.front())) {
+        ++startIdx;
+    }
+
+    // Trim interstitial blocks from the end
+    size_t endIdx = interstitialBlocks.size();
+    while (endIdx > startIdx && overlapsWith(interstitialBlocks[endIdx - 1], terminalBlocks.back())) {
+        --endIdx;
+    }
+
+    // Collect the remaining interstitial blocks
+    for (size_t i = startIdx; i < endIdx; ++i) {
+        filteredBlocks.push_back(interstitialBlocks[i]);
+    }
+
+    return filteredBlocks;
+}
 
 void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart,
                             WindowData& windowData, WindowData& nextOverlapData,
@@ -201,21 +252,27 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart,
             current = trie.getChild(current, window[j]); // window[j] is a character
             if (!current) break;
 
-            if (current->isEndOfWord) {
-                std::string pattern = window.substr(i, j - i + 1);
-                bool isCanonical = (pattern == userInput.canonicalPatterns.first || 
-                                    pattern == userInput.canonicalPatterns.second); // Check canonical patterns
-                bool isTerminal = (windowStart + i <= terminalLimit || 
-                                    windowStart + i >= segmentSize - terminalLimit);
-                float densityGain = static_cast<float>(pattern.size()) / window.size();
+            if (current->isEndOfWord) {                
                 uint32_t matchPos = windowStart + i;
+                std::string_view pattern(window.data() + i, (j - i + 1));
+                float densityGain = static_cast<float>(pattern.size()) / window.size();
+
+                bool isForward = (pattern.size() >= 3 && pattern.compare(0, 3, "CCC") == 0);
+                bool isCanonical = (pattern == std::string_view(userInput.canonicalPatterns.first) || 
+                                    pattern == std::string_view(userInput.canonicalPatterns.second));
+                bool isTerminal = (matchPos <= terminalLimit || matchPos >= segmentSize - terminalLimit);
+
+                MatchInfo matchInfo;
+                matchInfo.position = matchPos;
+                matchInfo.isCanonical = isCanonical;
+                matchInfo.isForward = isForward;
 
                 // Update windowData
                 if (j >= overlapSize || overlapSize == 0 || windowStart == 0) {
                     if (isCanonical) {
                         windowData.canonicalCounts++;
                         windowData.canonicalDensity += densityGain;
-                        segmentData.canonicalMatches.push_back(matchPos);
+                        segmentData.canonicalMatches.push_back(matchInfo);
 
                         // Check for canonical dimer
                         if (!windowData.hasCanDimer && lastCanonicalPos >= 0 &&
@@ -229,9 +286,9 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart,
                         windowData.nonCanonicalDensity += densityGain;
                     }
                     if (isTerminal) {
-                        windowData.winMatches.push_back(matchPos);
+                        windowData.winMatches.push_back(matchInfo);
                         if (!isCanonical) {
-                            segmentData.nonCanonicalMatches.push_back(matchPos);
+                            segmentData.nonCanonicalMatches.push_back(matchInfo);
                         }
                     }
                 }
@@ -314,14 +371,12 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
     // Process "all" and "canonical" matches
     if (segmentData.segMatches.size() >= 2) {
         uint16_t mergeDist = userInput.maxBlockDist;
-        auto segBlocks = getTelomereBlocks(segmentData.segMatches, mergeDist);
-        segmentData.mergedBlocks["all"] = segBlocks;
+        segmentData.terminalBlocks = getTelomereBlocks(segmentData.segMatches, mergeDist);
     }
 
     if (segmentData.canonicalMatches.size() >= 2) {
         uint16_t mergeDist = this->trie.getLongestPatternSize();
-        auto canonicalBlocks = getTelomereBlocks(segmentData.canonicalMatches, mergeDist);
-        segmentData.mergedBlocks["canonical"] = canonicalBlocks;
+        segmentData.interstitialBlocks = getTelomereBlocks(segmentData.canonicalMatches, mergeDist);
     }
 
     segmentData.windows = windows;
@@ -331,7 +386,7 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
 
 void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& windowRepeatsFile,
                             std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
-                            std::ofstream& allBlocksFile, std::ofstream& canonicalBlocksFile) {
+                            std::ofstream& terminalBlocksFile, std::ofstream& interstitialBlocksFile) {
 
     // Write header for window_metrics.tsv
     if (userInput.outEntropy || userInput.outGC) {
@@ -349,39 +404,40 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
         const auto& header = pathData.header;
         const auto& windows = pathData.windows;
 
-        // Write telomere blocks
-        for (const auto& [groupName, blocks] : pathData.mergedBlocks) {
-            std::ofstream* outputFile = nullptr;
-
-            // By group
-            if (groupName == "all") {
-                outputFile = &allBlocksFile;
-            } else if (groupName == "canonical") {
-                outputFile = &canonicalBlocksFile;
-            }
-
-            if (outputFile) {
-                for (const auto& block : blocks) {
-                    uint64_t blockEnd = block.start + block.blockLen;
-                    *outputFile << header << "\t" << block.start << "\t" << blockEnd << "\t" << block.blockLen << "\n";
-                }
-            }
+        // Write terminal and interstitial blocks
+        for (const auto& block : pathData.terminalBlocks) {
+            uint64_t blockEnd = block.start + block.blockLen;
+            terminalBlocksFile << header << "\t"
+                            << block.start << "\t"
+                            << blockEnd << "\t"
+                            << block.blockLen << "\t"
+                            << block.blockLabel << "\n";
         }
 
-        // Write matches to separate files.
-        for (const auto& pos : pathData.canonicalMatches) {
+        for (const auto& block : pathData.interstitialBlocks) {
+            uint64_t blockEnd = block.start + block.blockLen;
+            interstitialBlocksFile << header << "\t"
+                        << block.start << "\t"
+                        << blockEnd << "\t"
+                        << block.blockLen << "\t"
+                        << block.blockLabel << "\n";
+        }
+
+        // Write matches to separate files
+        for (const auto& match : pathData.canonicalMatches) {
             canonicalMatchFile << header << "\t"
-                                << pos << "\t"
-                                << pos + 6 << "\t"
-                                << "canonical" << "\n";
+                            << match.position << "\t"
+                            << (match.position + 6) << "\t"
+                            << "canonical" << "\n";
         }
 
-        for (const auto& pos : pathData.nonCanonicalMatches) {
+        for (const auto& match : pathData.nonCanonicalMatches) {
             noncanonicalMatchFile << header << "\t"
-                                    << pos << "\t"
-                                    << pos + 6 << "\t"
-                                    << "non-canonical" << "\n";
+                                << match.position << "\t"
+                                << (match.position + 6) << "\t"
+                                << "non-canonical" << "\n";
         }
+
 
         // Process window data
         for (const auto& window : windows) {
@@ -422,8 +478,8 @@ void Teloscope::handleBEDFile() {
     std::ofstream windowRepeatsFile;
     std::ofstream canonicalMatchFile;
     std::ofstream noncanonicalMatchFile;
-    std::ofstream allBlocksFile;
-    std::ofstream canonicalBlocksFile;
+    std::ofstream terminalBlocksFile;
+    std::ofstream interstitialBlocksFile;
 
     std::cout << "Reporting window matches and metrics in BED/BEDgraphs...\n";
 
@@ -443,11 +499,11 @@ void Teloscope::handleBEDFile() {
 
 
 
-    allBlocksFile.open(userInput.outRoute + "/telomere_blocks_all.bed");
-    canonicalBlocksFile.open(userInput.outRoute + "/telomere_blocks_canonical.bed");
+    terminalBlocksFile.open(userInput.outRoute + "/terminal_telomeres.bed");
+    interstitialBlocksFile.open(userInput.outRoute + "/interstitial_telomeres.bed");
 
     writeBEDFile(windowMetricsFile, windowRepeatsFile, canonicalMatchFile, 
-                noncanonicalMatchFile, allBlocksFile, canonicalBlocksFile);
+                noncanonicalMatchFile, terminalBlocksFile, interstitialBlocksFile);
 
     // Close all files once
     if (userInput.outWinRepeats) {
@@ -463,10 +519,8 @@ void Teloscope::handleBEDFile() {
         noncanonicalMatchFile.close();
     }
 
-
-
-    allBlocksFile.close();
-    canonicalBlocksFile.close();
+    terminalBlocksFile.close();
+    interstitialBlocksFile.close();
 }
 
 void Teloscope::printSummary() {
