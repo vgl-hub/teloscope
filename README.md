@@ -28,7 +28,7 @@ Examples
 
 * Example:
 
-        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p TBAGGG,TTRGGG,YTAGGG  -w 2000 -s 1000 -d 200 -l 1000 -r -g -e -m -i  --verbose
+        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p TBAGGG,TTRGGG,YTAGGG  -w 2000 -s 1000 -d 200 -l 1000 -r -g -e -m -i -t 50000 --verbose
   
 **Note:** Teloscope accepts nucleotides in IUPAC format and generates all possible pattern combinations. 
 
@@ -47,8 +47,9 @@ Required Parameters:
         '-w'    --window        Set sliding window size. [Default: 1000]
         '-s'    --step  Set sliding window step. [Default: 500]
         '-j'    --threads       Set maximum number of threads. [Default: max. available]
-        '-l'    --min-block-length      Set minimum block length for merging. [Default: 1000]
-        '-d'    --max-block-distance    Set maximum block distance for merging. [Default: 200]
+        '-l'    --min-block-length      Set minimum block length for merging. [Default: 500]
+        '-d'    --max-block-distance    Set maximum block distance for merging. [Default: 50]
+        '-t'    --terminal-limit        Set terminal limit for exploring telomere variant regions (TVRs). [Default: 50000]
 
 Optional Parameters:
         '-r'    --out-win-repeats       Output canonical/noncanonical repeats and density by window. [Default: false]
