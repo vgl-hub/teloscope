@@ -146,27 +146,74 @@ std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<MatchI
 std::vector<TelomereBlock> Teloscope::filterTerminalBlocks(const std::vector<TelomereBlock>& blocks) {
     std::vector<TelomereBlock> filteredBlocks;
 
+    // Track 'p' blocks
+    TelomereBlock best_p;
+    bool has_p1 = false;
+    TelomereBlock second_best_p;
+    bool has_p2 = false;
+
+    // Track 'q' blocks
+    TelomereBlock best_q;
+    bool has_q1 = false;
+    TelomereBlock second_best_q;
+    bool has_q2 = false;
+
     for (const auto& block : blocks) {
-        if (block.blockLen >= userInput.minBlockLen) { // Filter by length
-            filteredBlocks.push_back(block);
+        if (block.blockLen < userInput.minBlockLen || block.blockLabel == 'u') {
+            continue; // Exclude spurious blocks
+        }
+
+        if (block.blockLabel == 'p') {
+            // Update best_p and second_best_p
+            if (!has_p1 || block.blockLen > best_p.blockLen) {
+                second_best_p = best_p;
+                has_p2 = has_p1;
+                best_p = block;
+                has_p1 = true;
+            }
+            else if (!has_p2 || block.blockLen > second_best_p.blockLen) {
+                second_best_p = block;
+                has_p2 = true;
+            }
+        }
+        else if (block.blockLabel == 'q') {
+            // Update best_q and second_best_q
+            if (!has_q1 || block.blockLen > best_q.blockLen) {
+                second_best_q = best_q;
+                has_q2 = has_q1;
+                best_q = block;
+                has_q1 = true;
+            }
+            else if (!has_q2 || block.blockLen > second_best_q.blockLen) {
+                second_best_q = block;
+                has_q2 = true;
+            }
         }
     }
 
-    if (filteredBlocks.size() > 2) {  // Keep the two largest blocks
-        std::nth_element(filteredBlocks.begin(), filteredBlocks.begin() + 2, filteredBlocks.end(),
-            [](const TelomereBlock& a, const TelomereBlock& b) {
-                return a.blockLen > b.blockLen;
-            });
-        filteredBlocks.resize(2);
+    // Assign best 'p' and 'q' blocks per path
+    if (has_p1 && has_q1) {
+        filteredBlocks.push_back(best_p);
+        filteredBlocks.push_back(best_q);
     }
-
-    // Ensure the blocks are ordered by their start positions
-    std::sort(filteredBlocks.begin(), filteredBlocks.end(), [](const TelomereBlock& a, const TelomereBlock& b) {
-        return a.start < b.start;
-    });
+    else {
+        if (has_p1) {
+            filteredBlocks.push_back(best_p);
+            if (has_p2) {
+                filteredBlocks.push_back(second_best_p);
+            }
+        }
+        if (has_q1) {
+            filteredBlocks.push_back(best_q);
+            if (has_q2) {
+                filteredBlocks.push_back(second_best_q);
+            }
+        }
+    }
 
     return filteredBlocks;
 }
+
 
 std::vector<TelomereBlock> Teloscope::filterInterstitialBlocks(
             const std::vector<TelomereBlock>& interstitialBlocks,
@@ -404,7 +451,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
         const auto& header = pathData.header;
         const auto& windows = pathData.windows;
 
-        // Write terminal and interstitial blocks
+        // Write blocks
         for (const auto& block : pathData.terminalBlocks) {
             uint64_t blockEnd = block.start + block.blockLen;
             terminalBlocksFile << header << "\t"
@@ -414,28 +461,32 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
                             << block.blockLabel << "\n";
         }
 
-        for (const auto& block : pathData.interstitialBlocks) {
-            uint64_t blockEnd = block.start + block.blockLen;
-            interstitialBlocksFile << header << "\t"
-                        << block.start << "\t"
-                        << blockEnd << "\t"
-                        << block.blockLen << "\t"
-                        << block.blockLabel << "\n";
+        if (userInput.outITS) {
+            for (const auto& block : pathData.interstitialBlocks) {
+                uint64_t blockEnd = block.start + block.blockLen;
+                interstitialBlocksFile << header << "\t"
+                            << block.start << "\t"
+                            << blockEnd << "\t"
+                            << block.blockLen << "\t"
+                            << block.blockLabel << "\n";
+            }
         }
 
         // Write matches to separate files
-        for (const auto& match : pathData.canonicalMatches) {
-            canonicalMatchFile << header << "\t"
-                            << match.position << "\t"
-                            << (match.position + 6) << "\t"
-                            << "canonical" << "\n";
-        }
-
-        for (const auto& match : pathData.nonCanonicalMatches) {
-            noncanonicalMatchFile << header << "\t"
+        if (userInput.outMatches) {
+            for (const auto& match : pathData.canonicalMatches) {
+                canonicalMatchFile << header << "\t"
                                 << match.position << "\t"
                                 << (match.position + 6) << "\t"
-                                << "non-canonical" << "\n";
+                                << "canonical" << "\n";
+            }
+
+            for (const auto& match : pathData.nonCanonicalMatches) {
+                noncanonicalMatchFile << header << "\t"
+                                    << match.position << "\t"
+                                    << (match.position + 6) << "\t"
+                                    << "non-canonical" << "\n";
+            }
         }
 
 
@@ -460,7 +511,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
             }
 
             // Write repeats data if enabled
-            if (window.canonicalCounts > 1) {
+            if (userInput.outWinRepeats && window.canonicalCounts > 1) {
                 windowRepeatsFile << header << "\t" << window.windowStart << "\t"
                                 << windowEnd << "\t"
                                 << window.canonicalCounts << "\t"
@@ -497,10 +548,11 @@ void Teloscope::handleBEDFile() {
         noncanonicalMatchFile.open(userInput.outRoute + "/noncanonical_matches.bed");
     }
 
-
+    if (userInput.outITS) {
+        interstitialBlocksFile.open(userInput.outRoute + "/interstitial_telomeres.bed");
+    }
 
     terminalBlocksFile.open(userInput.outRoute + "/terminal_telomeres.bed");
-    interstitialBlocksFile.open(userInput.outRoute + "/interstitial_telomeres.bed");
 
     writeBEDFile(windowMetricsFile, windowRepeatsFile, canonicalMatchFile, 
                 noncanonicalMatchFile, terminalBlocksFile, interstitialBlocksFile);
@@ -519,8 +571,11 @@ void Teloscope::handleBEDFile() {
         noncanonicalMatchFile.close();
     }
 
+    if (userInput.outITS) {
+        interstitialBlocksFile.close();
+    }
+
     terminalBlocksFile.close();
-    interstitialBlocksFile.close();
 }
 
 void Teloscope::printSummary() {
