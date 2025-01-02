@@ -18,15 +18,19 @@ Usage
 
 Examples
 ------------
-* Example:
+* Example: Minimal case to run Teloscope.
+
+        teloscope -f "${file}" -o "${out_path}" -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG
+
+* Example: Set window and step sizes.
 
         teloscope -f "${file}" -o "${out_path}" -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG -w 2000 -s 1000
 
-* Example:
+* Example: Allowing the calculation of window metrics.
 
-        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p NNNGGG -w 1000 -s 500 -d 200 -l 1000 -g -e -r --verbose
+        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p NNNGGG -w 1000 -s 500 -g -e -r --verbose
 
-* Example:
+* Example: Allowing all outputs and using all flags.
 
         teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p TBAGGG,TTRGGG,YTAGGG  -w 2000 -s 1000 -d 200 -l 1000 -r -g -e -m -i -t 50000 --verbose
   
@@ -64,9 +68,13 @@ Optional Parameters:
 
 Outputs
 ------------
-Teloscope outputs telomere annotations in BED files. All the outputs are: 
-* `telomere_blocks_all.bed` Annotation of the full telomere in the assembly. This is made of canonical and non-canonical repeats. 
-* `telomere_blocks_canonical.bed` Blocks of adjacent canonical repeat matches. Outside of the ends, it represents interstitial telomeres (ITSs).
+Teloscope outputs telomere annotations in BED format:
+
+* `terminal_telomeres.bed` Annotation of the full telomere in the assembly. This is made of canonical and non-canonical repeats. 
+
+Additional optional outputs:
+
+* `interstitial_telomeres.bed` Blocks of adjacent canonical repeat matches. Outside of the ends, it represents interstitial telomeres (ITSs).
 * `window_metrics.tsv` Tabulated file with calculated window metrics such as GC% and Shannon Entropy
 * `window_repeats.bedgraph` File with canonical repeats, non-canonical repeats, canonical densities, and non-canonical densities by window. 
 * `canonical_matches.bed` Coordinates of canonical repeats throughout the assembly. 
