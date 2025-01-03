@@ -86,5 +86,10 @@ Briefly, **Teloscope** reads an assembly and decomposes its parts. It uses prefi
 
 How to cite
 ------------
-If you use **Teloscope** in your research, please, cite this repository. 
-https://github.com/vgl-hub/teloscope/
+
+**Teloscope** is part of the gfastar tool suite. If you use **Teloscope** in your research, please cite:
+
+Gfastats: conversion, evaluation and manipulation of genome sequences using assembly graphs.
+Giulio Formenti, Linelle Abueg, Angelo Brajuka, Nadolina Brajuka, Cristo Gallardo, Alice Giani, Olivier Fedrigo, Erich D. Jarvis
+
+doi: https://doi.org/10.1093/bioinformatics/btac460
