@@ -20,16 +20,14 @@ struct UserInputTeloscope : UserInput {
     unsigned short int minBlockCounts = 2;
     uint32_t terminalLimit = 50000;
 
+    bool outFasta = false;
     bool outWinRepeats = false;
     bool outGC = false;
     bool outEntropy = false;
     bool outMatches = false;
     bool outITS = false;
     
-    // bool outCanMatches = true; // Jack: Always true for now
-    // bool outPQonly = true;
     // bool outDistance = true;
-    // bool outFasta = true;
     
     double maxMem = 0;
     std::string prefix = ".", outFile = ""; // JACK: CHECK

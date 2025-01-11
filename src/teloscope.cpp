@@ -255,7 +255,7 @@ std::vector<TelomereBlock> Teloscope::filterInterstitialBlocks(
 
 void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart,
                             WindowData& windowData, WindowData& nextOverlapData,
-                            SegmentData& segmentData, uint32_t segmentSize) {
+                            SegmentData& segmentData, uint32_t segmentSize, uint32_t absPos) {
 
     windowData.windowStart = windowStart; // CHECK: Why is this here?
     unsigned short int longestPatternSize = this->trie.getLongestPatternSize();
@@ -300,14 +300,14 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart,
             if (!current) break;
 
             if (current->isEndOfWord) {                
-                uint32_t matchPos = windowStart + i;
                 std::string_view pattern(window.data() + i, (j - i + 1));
-                float densityGain = static_cast<float>(pattern.size()) / window.size();
-
                 bool isForward = (pattern.size() >= 3 && pattern.compare(0, 3, "CCC") == 0);
                 bool isCanonical = (pattern == std::string_view(userInput.canonicalPatterns.first) || 
                                     pattern == std::string_view(userInput.canonicalPatterns.second));
-                bool isTerminal = (matchPos <= terminalLimit || matchPos >= segmentSize - terminalLimit);
+                bool isTerminal = (windowStart + i <= terminalLimit || 
+                                    windowStart + i >= segmentSize - terminalLimit);
+                float densityGain = static_cast<float>(pattern.size()) / window.size();
+                uint32_t matchPos = absPos + windowStart + i; // Keep absolute positions only
 
                 MatchInfo matchInfo;
                 matchInfo.position = matchPos;
@@ -356,7 +356,7 @@ void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart,
 }
 
 
-SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint64_t absPos) {
+SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint32_t absPos) {
     uint32_t windowSize = userInput.windowSize;
     uint32_t step = userInput.step;
     uint32_t segmentSize = sequence.size();
@@ -372,7 +372,6 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
     WindowData nextOverlapData; // Data for next overlap
 
     std::vector<WindowData> windows;
-    std::unordered_map<std::string, std::vector<TelomereBlock>> mergedBlocks;
     uint32_t windowStart = 0;
     uint32_t currentWindowSize = std::min(windowSize, segmentSize); // In case first segment is short
     std::string window = sequence.substr(0, currentWindowSize);
@@ -380,7 +379,7 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
     while (windowStart < segmentSize) {
         // Prepare and analyze current window
         WindowData windowData = prevOverlapData;
-        analyzeWindow(window, windowStart, windowData, nextOverlapData, segmentData, segmentSize);
+        analyzeWindow(window, windowStart, windowData, nextOverlapData, segmentData, segmentSize, absPos);
 
         if (userInput.outGC) { windowData.gcContent = getGCContent(windowData.nucleotideCounts, window.size()); }
         if (userInput.outEntropy) { windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, window.size()); }

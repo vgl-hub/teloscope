@@ -50,6 +50,7 @@ int main(int argc, char **argv) {
         {"max-block-distance", required_argument, 0, 'd'},
         {"terminal-limit", no_argument, 0, 't'},
 
+        {"out-fasta", no_argument, 0, 'a'},
         {"out-win-repeats", no_argument, 0, 'r'},
         {"out-gc", no_argument, 0, 'g'},
         {"out-entropy", no_argument, 0, 'e'},
@@ -66,7 +67,7 @@ int main(int argc, char **argv) {
         
         int option_index = 0;
         
-        c = getopt_long(argc, argv, "-:f:j:o:p:s:w:c:l:d:t:rgemivh", long_options, &option_index);
+        c = getopt_long(argc, argv, "-:f:j:o:p:s:w:c:l:d:t:argemivh", long_options, &option_index);
 
         // if (optind < argc && !isPipe) { // if pipe wasn't assigned already
             
@@ -249,6 +250,9 @@ int main(int argc, char **argv) {
                 userInput.terminalLimit = std::stoi(optarg);
                 break;
 
+            case 'a':
+                userInput.outFasta = true;
+                break;
 
             case 'r':
                 userInput.outWinRepeats = true;

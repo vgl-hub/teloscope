@@ -62,7 +62,7 @@ void Input::read(InSequences &inSequences) {
 
 bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps) {
     Log threadLog;
-    uint64_t absPos = 0;
+    uint32_t absPos = 0;
     unsigned int cUId = 0, gapLen = 0, seqPos = path->getSeqPos();
     std::vector<PathComponent> pathComponents = path->getComponents();
     // uint64_t pathSize = path->getLen();
