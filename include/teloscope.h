@@ -150,7 +150,7 @@ public:
 
     bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
 
-    void analyzeWindow(const std::string &window, uint32_t windowStart,
+    void analyzeWindow(const std::string_view &window, uint32_t windowStart,
                         WindowData& windowData, WindowData& nextOverlapData,
                         SegmentData& segmentData, uint32_t segmentSize, uint32_t absPos);
 

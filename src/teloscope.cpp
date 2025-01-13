@@ -258,7 +258,7 @@ std::vector<TelomereBlock> Teloscope::filterInterstitialBlocks(
     return filteredBlocks;
 }
 
-void Teloscope::analyzeWindow(const std::string &window, uint32_t windowStart,
+void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowStart,
                             WindowData& windowData, WindowData& nextOverlapData,
                             SegmentData& segmentData, uint32_t segmentSize, uint32_t absPos) {
 
@@ -379,15 +379,18 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
     std::vector<WindowData> windows;
     uint32_t windowStart = 0;
     uint32_t currentWindowSize = std::min(windowSize, segmentSize); // In case first segment is short
-    std::string window = sequence.substr(0, currentWindowSize);
+    std::string_view windowView(sequence.data(), currentWindowSize);
 
     while (windowStart < segmentSize) {
         // Prepare and analyze current window
         WindowData windowData = prevOverlapData;
-        analyzeWindow(window, windowStart, windowData, nextOverlapData, segmentData, segmentSize, absPos);
 
-        if (userInput.outGC) { windowData.gcContent = getGCContent(windowData.nucleotideCounts, window.size()); }
-        if (userInput.outEntropy) { windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, window.size()); }
+        analyzeWindow(windowView, windowStart, 
+                    windowData, nextOverlapData, 
+                    segmentData, segmentSize, absPos);
+
+        if (userInput.outGC) { windowData.gcContent = getGCContent(windowData.nucleotideCounts, windowView.size()); }
+        if (userInput.outEntropy) { windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, windowView.size()); }
 
         // Update windowData
         windowData.windowStart = windowStart + absPos;
@@ -404,19 +407,15 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
                                         windowData.winMatches.end());
         }
 
-        // Prepare next window
+        // Check if we reached the end
         windowStart += step;
         if (windowStart >= segmentSize) {
             break;
         }
 
-        // Recycle the overlapping string sequence
+        // Prepare next window
         currentWindowSize = std::min(windowSize, segmentSize - windowStart);
-        if (currentWindowSize == windowSize) {
-            window = window.substr(step) + sequence.substr(windowStart + windowSize - step, step);
-        } else {
-            window = sequence.substr(windowStart, currentWindowSize); // Last window has a shorter size
-        }
+        windowView = std::string_view(sequence.data() + windowStart, currentWindowSize);
     }
 
     // Process "all" and "canonical" matches
