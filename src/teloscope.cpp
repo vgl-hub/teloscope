@@ -407,9 +407,11 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
                                         windowData.winMatches.end());
         }
 
-        // Check if we reached the end
+        // Advance to the next window
         windowStart += step;
-        if (windowStart >= segmentSize) {
+
+        // Check if the remaining sequence is a meaningful window
+        if (windowStart + step >= segmentSize) {
             break;
         }
 
