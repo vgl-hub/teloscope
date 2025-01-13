@@ -64,6 +64,7 @@ Optional Parameters:
         '-v'    --version       Print current software version.
         '-h'    --help  Print current software options.
         --verbose       Verbose output.
+        --cmd   Print command line.
 ```
 
 Outputs

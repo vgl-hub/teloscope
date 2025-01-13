@@ -310,6 +310,7 @@ int main(int argc, char **argv) {
                 printf("\t'-v'\t--version\tPrint current software version.\n");
                 printf("\t'-h'\t--help\tPrint current software options.\n");
                 printf("\t--verbose\tVerbose output.\n");
+                printf("\t--cmd\tPrint command line.\n");
                 exit(0);
         }
         
