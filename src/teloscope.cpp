@@ -192,11 +192,11 @@ std::vector<TelomereBlock> Teloscope::filterTerminalBlocks(const std::vector<Tel
     }
 
     // Assign best 'p' and 'q' blocks per path
-    if (has_p1 && has_q1) {
+    if (has_p1 && has_q1) { 
         filteredBlocks.push_back(best_p);
         filteredBlocks.push_back(best_q);
     }
-    else {
+    else { 
         if (has_p1) {
             filteredBlocks.push_back(best_p);
             if (has_p2) {
@@ -211,9 +211,14 @@ std::vector<TelomereBlock> Teloscope::filterTerminalBlocks(const std::vector<Tel
         }
     }
 
+    // Sort by coords
+    std::sort(filteredBlocks.begin(), filteredBlocks.end(),
+            [](const TelomereBlock &a, const TelomereBlock &b) {
+                return a.start < b.start;
+            });
+
     return filteredBlocks;
 }
-
 
 std::vector<TelomereBlock> Teloscope::filterInterstitialBlocks(
             const std::vector<TelomereBlock>& interstitialBlocks,
