@@ -119,7 +119,6 @@ class Teloscope {
     int totalTelomeres = 0; // Total telomeres found 
     int totalITS = 0; // Total ITS found 
     int totalCanMatches = 0; // Total canonical matches found
-    std::unordered_map<std::string, int> patternCounts; // Total counts
     std::vector<float> entropyValues; // Total entropy values
     std::vector<float> gcContentValues; // Total GC content values
 
