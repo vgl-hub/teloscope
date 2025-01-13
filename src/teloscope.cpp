@@ -455,6 +455,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
     for (const auto& pathData : allPathData) {
         const auto& header = pathData.header;
         const auto& windows = pathData.windows;
+        totalPaths++;
 
         // Write blocks
         for (const auto& block : pathData.terminalBlocks) {
@@ -585,6 +586,7 @@ void Teloscope::handleBEDFile() {
 
 void Teloscope::printSummary() {
     std::cout << "\n+++Summary Report+++\n";
+    std::cout << "Total paths analyzed:\t" << totalPaths << "\n";
     std::cout << "Total windows analyzed:\t" << totalNWindows << "\n";
 
     if (userInput.outEntropy) {
