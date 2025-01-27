@@ -362,6 +362,7 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
 
 
 SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint32_t absPos) {
+// SegmentData analyzeSegment(std::string &sequence, UserInputTeloscope &userInput, uint32_t absPos) {
     uint32_t windowSize = userInput.windowSize;
     uint32_t step = userInput.step;
     uint32_t segmentSize = sequence.size();
@@ -452,12 +453,18 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
         windowMetricsFile << "\n";
     }
 
+    // Report header
+    std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tits\tcanonical\twindows\n";
+
+    // BED and reports
     for (const auto& pathData : allPathData) {
         const auto& header = pathData.header;
         const auto& windows = pathData.windows;
-        totalPaths++;
+        const auto& pos = pathData.seqPos;
+        const auto& gaps = pathData.gaps;
 
         // Write blocks
+        std::string labels;
         for (const auto& block : pathData.terminalBlocks) {
             uint64_t blockEnd = block.start + block.blockLen;
             terminalBlocksFile << header << "\t"
@@ -465,6 +472,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
                             << blockEnd << "\t"
                             << block.blockLen << "\t"
                             << block.blockLabel << "\n";
+            labels += block.blockLabel;
         }
 
         if (userInput.outITS) {
@@ -495,10 +503,8 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
             }
         }
 
-
         // Process window data
         for (const auto& window : windows) {
-            totalNWindows++; // Update total window count
             uint32_t windowEnd = window.windowStart + window.currentWindowSize; // Start is already 0-based
 
             // Write window metrics if enabled
@@ -507,11 +513,9 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
 
                 if (userInput.outEntropy) {
                     windowMetricsFile << "\t" << window.shannonEntropy;
-                    entropyValues.push_back(window.shannonEntropy); // For summary
                 }
                 if (userInput.outGC) {
                     windowMetricsFile << "\t" << window.gcContent;
-                    gcContentValues.push_back(window.gcContent); // For summary
                 }
                 windowMetricsFile << "\n";
             }
@@ -526,7 +530,29 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
                                 << window.nonCanonicalDensity << "\n";
             }
         }
+
+        // Output path summary
+        std::cout << pos << "\t"
+                << header << "\t"
+                << pathData.terminalBlocks.size() << "\t"
+                << (labels.empty() ? "none" : labels) << "\t"
+                << gaps << "\t"
+                << (labels == "pq" && gaps == 0 ? "t2t" :
+                    labels == "pq" && gaps > 0 ? "gapped_t2t" :
+                    (labels == "qp" || labels == "pp" || labels == "qq") ? "missasembly" :
+                    (labels == "p" || labels == "q") ? "incomplete" : "na") << "\t"
+                << pathData.interstitialBlocks.size() << "\t"
+                << pathData.canonicalMatches.size() << "\t"
+                << windows.size() << "\n";
+
+        // Update assembly summary
+        totalNWindows += windows.size();
+        totalTelomeres += pathData.terminalBlocks.size();
+        totalITS += pathData.interstitialBlocks.size();
+        totalCanMatches += pathData.canonicalMatches.size();
+        totalGaps += gaps;
     }
+    totalPaths = allPathData.size();
 }
 
 
@@ -585,23 +611,11 @@ void Teloscope::handleBEDFile() {
 }
 
 void Teloscope::printSummary() {
-    std::cout << "\n+++Summary Report+++\n";
+    std::cout << "\n+++ Assembly Summary Report+++\n";
     std::cout << "Total paths analyzed:\t" << totalPaths << "\n";
     std::cout << "Total windows analyzed:\t" << totalNWindows << "\n";
-
-    if (userInput.outEntropy) {
-        Stats entropyStats = getStats(entropyValues);
-        std::cout << "Max Shannon Entropy:\t" << entropyStats.max << "\n";
-        std::cout << "Mean Shannon Entropy:\t" << entropyStats.mean << "\n";
-        std::cout << "Median Shannon Entropy:\t" << entropyStats.median << "\n";
-        std::cout << "Min Shannon Entropy:\t" << entropyStats.min << "\n";
-    }
-    
-    if (userInput.outGC) {
-        Stats gcContentStats = getStats(gcContentValues);
-        std::cout << "Max GC Content:\t" << gcContentStats.max << "\n";
-        std::cout << "Mean GC Content:\t" << gcContentStats.mean << "\n";
-        std::cout << "Median GC Content:\t" << gcContentStats.median << "\n";
-        std::cout << "Min GC Content:\t" << gcContentStats.min << "\n";
-    }
+    std::cout << "Total telomeres found:\t" << totalTelomeres << "\n";
+    std::cout << "Total ITS found:\t" << totalITS << "\n";
+    std::cout << "Total canonical matches found:\t" << totalCanMatches << "\n";
+    std::cout << "Total gaps found:\t" << totalGaps << "\n";
 }

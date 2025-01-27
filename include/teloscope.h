@@ -93,6 +93,7 @@ struct SegmentData {
 struct PathData {
     unsigned int seqPos;
     std::string header;
+    uint16_t gaps = 0;
     std::vector<WindowData> windows;
     std::vector<TelomereBlock> terminalBlocks;
     std::vector<TelomereBlock> interstitialBlocks;
@@ -114,13 +115,12 @@ class Teloscope {
     UserInputTeloscope userInput; // Declare user input instance
     std::vector<PathData> allPathData; // Assembly data
 
-    int totalPaths = 0; // Total paths analyzed
-    int totalNWindows = 0; // Total windows analyzed
-    int totalTelomeres = 0; // Total telomeres found 
-    int totalITS = 0; // Total ITS found 
-    int totalCanMatches = 0; // Total canonical matches found
-    std::vector<float> entropyValues; // Total entropy values
-    std::vector<float> gcContentValues; // Total GC content values
+    uint32_t totalPaths = 0; // Total paths analyzed
+    uint32_t totalNWindows = 0; // Total windows analyzed
+    uint32_t totalTelomeres = 0; // Total telomeres found 
+    uint32_t totalITS = 0; // Total ITS found 
+    uint32_t totalCanMatches = 0; // Total canonical matches found
+    uint32_t totalGaps = 0; // Total gaps found
 
 
     inline float getShannonEntropy(const uint32_t nucleotideCounts[4], uint32_t windowSize) {
@@ -158,8 +158,7 @@ public:
                         SegmentData& segmentData, uint32_t segmentSize, uint32_t absPos);
 
     SegmentData analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint32_t absPos);
-
-    void insertWindowData(unsigned int seqPos, const std::string& header, std::vector<WindowData>& pathWindows);
+    // SegmentData analyzeSegment(std::string &sequence, UserInputTeloscope &userInput, uint32_t absPos);
 
     void sortBySeqPos();
 

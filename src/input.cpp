@@ -135,6 +135,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
             gapLen = inGap->getDist(component->start - component->end);
 
             absPos += gapLen;
+            pathData.gaps++;
             
         } else {
         } // need to handle edges, cigars etc
