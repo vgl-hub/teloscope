@@ -115,13 +115,18 @@ class Teloscope {
     UserInputTeloscope userInput; // Declare user input instance
     std::vector<PathData> allPathData; // Assembly data
 
-    uint32_t totalPaths = 0; // Total paths analyzed
-    uint32_t totalNWindows = 0; // Total windows analyzed
-    uint32_t totalTelomeres = 0; // Total telomeres found 
-    uint32_t totalITS = 0; // Total ITS found 
-    uint32_t totalCanMatches = 0; // Total canonical matches found
-    uint32_t totalGaps = 0; // Total gaps found
-
+    // Assembly Summary 
+    uint32_t totalPaths = 0;
+    uint32_t totalNWindows = 0;
+    uint32_t totalTelomeres = 0;
+    uint32_t totalITS = 0;
+    uint32_t totalCanMatches = 0;
+    uint32_t totalGaps = 0;
+    uint32_t totalT2T = 0;
+    uint32_t totalGappedT2T = 0;
+    uint32_t totalMissassembly = 0;
+    uint32_t totalIncomplete = 0;
+    uint32_t totalNone = 0;
 
     inline float getShannonEntropy(const uint32_t nucleotideCounts[4], uint32_t windowSize) {
         float entropy = 0.0;

@@ -531,16 +531,40 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
             }
         }
 
+        // Get the chr/scaffold type
+        std::string type;
+        switch (labels.size()) {
+            case 0:
+                type = "na";
+                totalNone++;
+                break;
+            case 1:
+                type = "incomplete";
+                totalIncomplete++;
+                break;
+            case 2:
+                if (labels == "pq") {
+                    if (gaps == 0) {
+                        type = "t2t";
+                        totalT2T++;
+                    } else {
+                        type = "gapped_t2t";
+                        totalGappedT2T++;
+                    }
+                } else {
+                    type = "missasembly";
+                    totalMissassembly++;
+                }
+                break;
+        }
+
         // Output path summary
         std::cout << pos << "\t"
                 << header << "\t"
                 << pathData.terminalBlocks.size() << "\t"
                 << (labels.empty() ? "none" : labels) << "\t"
                 << gaps << "\t"
-                << (labels == "pq" && gaps == 0 ? "t2t" :
-                    labels == "pq" && gaps > 0 ? "gapped_t2t" :
-                    (labels == "qp" || labels == "pp" || labels == "qq") ? "missasembly" :
-                    (labels == "p" || labels == "q") ? "incomplete" : "na") << "\t"
+                << type << "\t"
                 << pathData.interstitialBlocks.size() << "\t"
                 << pathData.canonicalMatches.size() << "\t"
                 << windows.size() << "\n";
@@ -618,4 +642,9 @@ void Teloscope::printSummary() {
     std::cout << "Total ITS found:\t" << totalITS << "\n";
     std::cout << "Total canonical matches found:\t" << totalCanMatches << "\n";
     std::cout << "Total gaps found:\t" << totalGaps << "\n";
+    std::cout << "Total T2T:\t" << totalT2T << "\n";
+    std::cout << "Total gapped T2T:\t" << totalGappedT2T << "\n";
+    std::cout << "Total missassembly:\t" << totalMissassembly << "\n";
+    std::cout << "Total incomplete:\t" << totalIncomplete << "\n";
+    std::cout << "Total none:\t" << totalNone << "\n";
 }

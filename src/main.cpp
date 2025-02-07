@@ -189,7 +189,7 @@ int main(int argc, char **argv) {
                     std::vector<std::string> combinations;
                     std::string current_pattern = pattern;
                     getCombinations(pattern, current_pattern, 0, combinations);
-                    std::cout << "Adding " << combinations.size() << " telomeric patterns and their reverse complements" << "\n";
+                    std::cout << "Adding (" << combinations.size() << ") telomeric patterns and their reverse complements" << "\n";
 
                     // Add each combination and its reverse complement to userInput.patterns
                     for (const std::string &comb : combinations) {
