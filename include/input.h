@@ -27,8 +27,6 @@ struct UserInputTeloscope : UserInput {
     bool outMatches = false;
     bool outITS = false;
     
-    // bool outDistance = true;
-    
     double maxMem = 0;
     std::string prefix = ".", outFile = ""; // JACK: CHECK
 };

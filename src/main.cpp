@@ -1,5 +1,6 @@
 #include "main.h"
 #include <input.h> // check
+#include <iostream>
 
 
 std::string version = "0.0.7";
@@ -151,6 +152,7 @@ int main(int argc, char **argv) {
 
                 if (canonicalPattern.empty()) {
                     canonicalPattern = "TTAGGG";
+                    std::cout << "No canonical pattern provided. Setting vertebrate TTAGGG by default" << "\n";
                 }
 
                 // Check for numerical characters
@@ -187,10 +189,10 @@ int main(int argc, char **argv) {
                     std::vector<std::string> combinations;
                     std::string current_pattern = pattern;
                     getCombinations(pattern, current_pattern, 0, combinations);
+                    std::cout << "Adding " << combinations.size() << " telomeric patterns and their reverse complements" << "\n";
 
                     // Add each combination and its reverse complement to userInput.patterns
                     for (const std::string &comb : combinations) {
-                        std::cout << "Adding pattern: " << comb << " and its reverse complement: " << revCom(comb) << "\n";
                         userInput.patterns.emplace_back(comb);
                         userInput.patterns.emplace_back(revCom(comb));
                     }
@@ -198,7 +200,7 @@ int main(int argc, char **argv) {
 
                 if (userInput.patterns.empty()) {
                     userInput.patterns = {"TTAGGG", "CCCTAA"};
-                    std::cout << "No patterns provided. Only scanning for: TTAGGG, CCCTAA" << "\n";
+                    std::cout << "No search patterns provided. Only scanning for: TTAGGG, CCCTAA" << "\n";
                 
                 } else {
                     // Remove duplicates
@@ -207,8 +209,8 @@ int main(int argc, char **argv) {
                     userInput.patterns.erase(last, userInput.patterns.end());
                 }
 
-                userInput.hammingDistances = getHammingDistances(userInput.patterns, userInput.canonicalPatterns);
-                std::cout << "Hamming distances precomputed for all input patterns." << std::endl;
+                // userInput.hammingDistances = getHammingDistances(userInput.patterns, userInput.canonicalPatterns);
+                // std::cout << "Hamming distances precomputed for all input patterns." << std::endl;
             }
             break;
 

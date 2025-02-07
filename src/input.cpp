@@ -17,7 +17,9 @@
 #include "input-gfa.h"
 #include "threadpool.h"
 #include "teloscope.h"
+#include "output.h"
 #include "input.h"
+
 
 void Input::load(UserInputTeloscope userInput) {
     
@@ -30,6 +32,9 @@ void Input::read(InSequences &inSequences) {
 
     loadGenome(userInput, inSequences); // load from FA/FQ/GFA to templated object
     lg.verbose("Finished loading genome assembly");
+
+    // Report report;
+    // report.writeToStream(inSequences, "test.gfa", userInput); // write to output file, so far only gives the original GFA
 
     std::vector<InPath> inPaths = inSequences.getInPaths(); 
     std::vector<InSegment*> *inSegments = inSequences.getInSegments(); 
