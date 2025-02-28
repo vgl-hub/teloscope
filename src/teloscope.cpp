@@ -293,7 +293,7 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
             }
             if (i >= step && overlapSize != 0) {
                 nextOverlapData.nucleotideCounts[index]++;
-            }
+            } 
         }
 
         // Pattern matching using Trie
@@ -319,19 +319,25 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                 matchInfo.isCanonical = isCanonical;
                 matchInfo.isForward = isForward;
 
+                // Check dimers
+                if (isCanonical) {
+                    if (lastCanonicalPos >= 0 && (matchPos - lastCanonicalPos) <= userInput.canonicalSize) {
+                        if ((j >= overlapSize || overlapSize == 0 || windowStart == 0) && !windowData.hasCanDimer) {
+                            windowData.hasCanDimer = true;
+                        }
+                        if (i >= step && overlapSize != 0 && !nextOverlapData.hasCanDimer) {
+                            nextOverlapData.hasCanDimer = true;
+                        }
+                    }
+                    lastCanonicalPos = matchPos;
+                }
+
                 // Update windowData
                 if (j >= overlapSize || overlapSize == 0 || windowStart == 0) {
                     if (isCanonical) {
                         windowData.canonicalCounts++;
                         windowData.canonicalDensity += densityGain;
                         segmentData.canonicalMatches.push_back(matchInfo);
-
-                        // Check for canonical dimer
-                        if (!windowData.hasCanDimer && lastCanonicalPos >= 0 &&
-                            (matchPos - lastCanonicalPos) <= userInput.canonicalSize) {
-                            windowData.hasCanDimer = true;
-                        }
-                        lastCanonicalPos = matchPos;  // Update last pos
 
                     } else {
                         windowData.nonCanonicalCounts++;
@@ -350,10 +356,15 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                     if (isCanonical) {
                         nextOverlapData.canonicalCounts++;
                         nextOverlapData.canonicalDensity += densityGain;
+
                     } else {
                         nextOverlapData.nonCanonicalCounts++;
                         nextOverlapData.nonCanonicalDensity += densityGain;
                     }
+                }
+
+                if (isCanonical) {
+                    lastCanonicalPos = matchPos;
                 }
             }
         }
