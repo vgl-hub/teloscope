@@ -3,7 +3,7 @@
 #include <iostream>
 
 
-std::string version = "0.0.7";
+std::string version = "0.0.9";
 
 // global
 std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
@@ -24,7 +24,7 @@ UserInputTeloscope userInput; // init input object
 int main(int argc, char **argv) {
     
     short int c; // optarg
-    short unsigned int pos_op = 1; // optional arguments
+    // short unsigned int pos_op = 1; // optional arguments
     
     bool arguments = true;
     
@@ -49,7 +49,7 @@ int main(int argc, char **argv) {
         {"threads", required_argument, 0, 'j'},
         {"min-block-length", required_argument, 0, 'l'},
         {"max-block-distance", required_argument, 0, 'd'},
-        {"terminal-limit", no_argument, 0, 't'},
+        {"terminal-limit", required_argument, 0, 't'},
 
         {"out-fasta", no_argument, 0, 'a'},
         {"out-win-repeats", no_argument, 0, 'r'},
@@ -57,6 +57,7 @@ int main(int argc, char **argv) {
         {"out-entropy", no_argument, 0, 'e'},
         {"out-matches", no_argument, 0, 'm'},
         {"out-its", no_argument, 0, 'i'},
+        {"ultra-fast", no_argument, 0, 'u'},
         {"verbose", no_argument, &verbose_flag, 1},
         {"cmd", no_argument, &cmd_flag, 1},
         {"version", no_argument, 0, 'v'},
@@ -68,19 +69,7 @@ int main(int argc, char **argv) {
         
         int option_index = 0;
         
-        c = getopt_long(argc, argv, "-:f:j:o:p:s:w:c:l:d:t:argemivh", long_options, &option_index);
-
-        // if (optind < argc && !isPipe) { // if pipe wasn't assigned already
-            
-        //     isPipe = isDash(argv[optind]) ? true : false; // check if the argument to the option is a '-' and set it as pipe input
-            
-        // }
-        
-        // if (optarg != nullptr && !isPipe) { // case where pipe input is given as positional argument (input sequence file)
-        
-        //     isPipe = isDash(optarg) ? true : false;
-            
-        // }
+        c = getopt_long(argc, argv, "-:f:j:o:p:s:w:c:l:d:t:argemivhu", long_options, &option_index);
         
         if (c == -1) { // exit the loop if run out of options
             break;
@@ -109,18 +98,18 @@ int main(int argc, char **argv) {
 
 
             case 'f': // input sequence
-                
                 if (isPipe && userInput.pipeType == 'n') { // check whether input is from pipe and that pipe input was not already set
-                
                     userInput.pipeType = 'f'; // pipe input is a sequence
-                
-                }else{ // input is a regular file
                     
+                } else { // input is a regular file
                     ifFileExists(optarg);
                     userInput.inSequence = optarg;
-                    
                 }
-                    
+                
+                if (userInput.inSequence.empty()) {
+                    fprintf(stderr, "Error: Input sequence file is required. Use -f or --input-sequence.\n");
+                    exit(EXIT_FAILURE);
+                }
                 break;
 
 
@@ -129,7 +118,7 @@ int main(int argc, char **argv) {
                     userInput.outRoute = optarg;
 
                     if (userInput.outRoute.empty()) {
-                        fprintf(stderr, "Error: Output route is required. Use --output or -o to specify it.\n");
+                        fprintf(stderr, "Error: Output route is required. Use -o or --output.\n");
                         exit(EXIT_FAILURE);
                     }
 
@@ -152,12 +141,12 @@ int main(int argc, char **argv) {
 
                 if (canonicalPattern.empty()) {
                     canonicalPattern = "TTAGGG";
-                    std::cout << "No canonical pattern provided. Setting vertebrate TTAGGG by default" << "\n";
+                    fprintf(stderr, "Warning: No canonical pattern provided, using default vertebrate TTAGGG.\n");
                 }
 
                 // Check for numerical characters
                 if (std::any_of(canonicalPattern.begin(), canonicalPattern.end(), ::isdigit)) {
-                    std::cerr << "Error: Canonical pattern '" << canonicalPattern << "' contains numerical characters.\n";
+                    fprintf(stderr, "Error: Canonical pattern '%s' contains numerical characters.\n", canonicalPattern.c_str());
                     exit(EXIT_FAILURE);
                 }
 
@@ -165,96 +154,150 @@ int main(int argc, char **argv) {
                 userInput.canonicalSize = canonicalPattern.size();
                 userInput.canonicalPatterns.first = canonicalPattern;
                 userInput.canonicalPatterns.second = revCom(canonicalPattern);
-                std::cout << "Setting canonical pattern: " << canonicalPattern << " and its reverse complement: " << userInput.canonicalPatterns.second << "\n";
-            }
+                fprintf(stderr, "Setting canonical pattern: %s and its reverse complement: %s\n", canonicalPattern.c_str(), userInput.canonicalPatterns.second.c_str());
                 break;
+            }
 
 
-            case 'p':
-            {
-                std::istringstream patternStream(optarg);
-                std::string pattern;
+            case 'p': { // Handle search patterns
+                    std::istringstream patternStream(optarg);
+                    std::string pattern;
+                    
+                    while (std::getline(patternStream, pattern, ',')) {
+                        if (pattern.empty()) continue;
 
-                while (std::getline(patternStream, pattern, ',')) {
-                    if (pattern.empty()) continue;
+                        if (std::any_of(pattern.begin(), pattern.end(), ::isdigit)) {
+                            fprintf(stderr, "Error: Pattern '%s' contains numerical characters.\n", pattern.c_str());
+                            exit(EXIT_FAILURE);
+                        }
+                        
+                        unmaskSequence(pattern);
+                        
+                        // Generate all combinations for the pattern based on IUPAC codes
+                        std::vector<std::string> combinations;
+                        std::string current_pattern = pattern;
+                        getCombinations(pattern, current_pattern, 0, combinations);
+                        lg.verbose("Adding (" + std::to_string(combinations.size()) + ") telomeric patterns and their reverse complements");
 
-                    if (std::any_of(pattern.begin(), pattern.end(), ::isdigit)) {
-                        std::cerr << "Error: Pattern '" << pattern << "' contains numerical characters.\n";
+                        // Add each combination and its reverse complement to userInput.patterns
+                        for (const std::string &comb : combinations) {
+                            userInput.patterns.emplace_back(comb);
+                            userInput.patterns.emplace_back(revCom(comb));
+                        }
+                    }
+
+                    if (userInput.patterns.empty()) {
+                        userInput.patterns = {"TTAGGG", "CCCTAA"};
+                        fprintf(stderr, "No search patterns provided. Only scanning for: TTAGGG, CCCTAA\n");
+                    
+                    } else {
+                        // Remove duplicates
+                        std::sort(userInput.patterns.begin(), userInput.patterns.end());
+                        auto last = std::unique(userInput.patterns.begin(), userInput.patterns.end());
+                        userInput.patterns.erase(last, userInput.patterns.end());
+                    }
+
+                    userInput.hammingDistances = getHammingDistances(userInput.patterns, userInput.canonicalPatterns);
+                    lg.verbose("Hamming distances precomputed");
+                break;
+            }
+
+            case 'w': {
+                try {
+                    userInput.windowSize = std::stoi(optarg);
+                    
+                    if (userInput.windowSize <= 0) {
+                        fprintf(stderr, "Error: Window size (-w or --window) must be > 0.\n");
                         exit(EXIT_FAILURE);
                     }
-
-                    unmaskSequence(pattern);
-
-                    // Generate all combinations for the pattern based on IUPAC codes
-                    std::vector<std::string> combinations;
-                    std::string current_pattern = pattern;
-                    getCombinations(pattern, current_pattern, 0, combinations);
-                    std::cout << "Adding (" << combinations.size() << ") telomeric patterns and their reverse complements" << "\n";
-
-                    // Add each combination and its reverse complement to userInput.patterns
-                    for (const std::string &comb : combinations) {
-                        userInput.patterns.emplace_back(comb);
-                        userInput.patterns.emplace_back(revCom(comb));
-                    }
-                }
-
-                if (userInput.patterns.empty()) {
-                    userInput.patterns = {"TTAGGG", "CCCTAA"};
-                    std::cout << "No search patterns provided. Only scanning for: TTAGGG, CCCTAA" << "\n";
-                
-                } else {
-                    // Remove duplicates
-                    std::sort(userInput.patterns.begin(), userInput.patterns.end());
-                    auto last = std::unique(userInput.patterns.begin(), userInput.patterns.end());
-                    userInput.patterns.erase(last, userInput.patterns.end());
-                }
-
-                // userInput.hammingDistances = getHammingDistances(userInput.patterns, userInput.canonicalPatterns);
-                // std::cout << "Hamming distances precomputed for all input patterns." << std::endl;
-            }
-            break;
-
-
-            case 'w':
-                userInput.windowSize = std::stoi(optarg);
-                break;
-
-
-            case 's':
-                userInput.step = std::stoi(optarg);
-                printf("/// Teloscope v%s\n", version.c_str());
-
-                if (userInput.step > userInput.windowSize) {
-                    fprintf(stderr, "Error: Step size (%d) cannot be larger than window size (%d)!\n", userInput.step, userInput.windowSize);
+                } catch (const std::exception& e) {
+                    fprintf(stderr, "Error: Invalid window size '%s'. Must be a number.\n", optarg);
                     exit(EXIT_FAILURE);
-
-                } else if (userInput.step == userInput.windowSize) {
-                    fprintf(stderr, "Warning: Equal step and window sizes will bin the sequence.\n");
-                    fprintf(stderr, "Tip: Large sizes are recommended to avoid missing matches between windows.\n");
-                    
-                } else {
-                    fprintf(stderr, "Sliding windows with window size (%d) and step size (%d). \n", userInput.step, userInput.windowSize);
                 }
                 break;
+            }
 
 
-            case 'l':
-                userInput.minBlockLen = std::stoi(optarg);
+            case 's': {
+                try {
+                    userInput.step = std::stoi(optarg);
+                    
+                    if (userInput.step > userInput.windowSize) {
+                        fprintf(stderr, "Error: Step size (%d) cannot be larger than window size (%d)!\n", userInput.step, userInput.windowSize);
+                        exit(EXIT_FAILURE);
+                        
+                    } else if (userInput.step == userInput.windowSize) {
+                        fprintf(stderr, "Warning: Equal step and window sizes will bin the sequence.\n");
+                        fprintf(stderr, "Tip: Large sizes are recommended to avoid missing matches between windows.\n");
+                        
+                    } else {
+                        fprintf(stderr, "Sliding with window size (%d) and step size (%d). \n", userInput.windowSize, userInput.step);
+                    }
+                    
+                    if (userInput.step <= 0) {
+                        fprintf(stderr, "Error: Step size (-s or --step) must be > 0.\n");
+                        exit(EXIT_FAILURE);
+                    }
+                } catch (const std::exception& e) {
+                    fprintf(stderr, "Error: Invalid step size '%s'. Must be a number.\n", optarg);
+                    exit(EXIT_FAILURE);
+                }
                 break;
+            }
 
 
-            case 'd':
-                userInput.maxBlockDist = std::stoi(optarg);
+            case 'l': {
+                try {
+                    userInput.minBlockLen = std::stoi(optarg);
+                    
+                    if (userInput.minBlockLen <= 0) {
+                        fprintf(stderr, "Error: Min block length (-l or --min-block-length) must be > 0.\n");
+                        exit(EXIT_FAILURE);
+                    }
+                } catch (const std::exception& e) {
+                    fprintf(stderr, "Error: Invalid min block length '%s'. Must be a number.\n", optarg);
+                    exit(EXIT_FAILURE);
+                }
                 break;
+            }
 
 
-            case 't':
-                userInput.terminalLimit = std::stoi(optarg);
+            case 'd': {
+                try {
+                    userInput.maxBlockDist = std::stoi(optarg);
+                    
+                    if (userInput.maxBlockDist <= 0) {
+                        fprintf(stderr, "Error: Max block distance (-d or --max-block-distance) must be > 0.\n");
+                        exit(EXIT_FAILURE);
+                    }
+                } catch (const std::exception& e) {
+                    fprintf(stderr, "Error: Invalid max block distance '%s'. Must be a number.\n", optarg);
+                    exit(EXIT_FAILURE);
+                }
                 break;
+            }
+
+
+            case 't' : {
+                try {
+                    userInput.terminalLimit = std::stoi(optarg);
+                    
+                    if (userInput.terminalLimit <= 0) {
+                        fprintf(stderr, "Error: Terminal limit (-t or --terminal-limit) must be > 0.\n");
+                        exit(EXIT_FAILURE);
+                    }
+                } catch (const std::exception& e) {
+                    fprintf(stderr, "Error: Invalid terminal limit '%s'. Must be a number.\n", optarg);
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            }
+
 
             case 'a':
                 userInput.outFasta = true;
                 break;
+
 
             case 'r':
                 userInput.outWinRepeats = true;
@@ -281,13 +324,25 @@ int main(int argc, char **argv) {
                 break;
 
 
+            case 'u':
+                userInput.ultraFastMode = true;
+                userInput.outGC = false;
+                userInput.outEntropy = false;
+                userInput.outITS = false;
+                userInput.outWinRepeats = false;
+                userInput.outMatches = false;
+                fprintf(stderr, "Warning: Ultra-fast mode enabled. Only scanning terminal regions.\n");
+                fprintf(stderr, "Warning: Interstitial telomeres (ITS) scan and window-based metrics are disabled.\n");
+                break;
+
+
             case 'v': // software version
                 printf("/// Teloscope v%s\n", version.c_str());
                 printf("\nDeveloped by:\nJack A. Medico amedico@rockefeller.edu\n");
                 printf("\nDirected by:\nGiulio Formenti giulio.formenti@gmail.com\n");
                 printf("\nhttps://www.vertebrategenomelab.org/home");
                 exit(0);
-
+                break;
 
             case 'h': // help
                 printf("teloscope [commands]\n");
@@ -315,13 +370,6 @@ int main(int argc, char **argv) {
                 printf("\t--cmd\tPrint command line.\n");
                 exit(0);
         }
-        
-        if  (argc == 2 || // handle various cases in which the output should include summary stats
-            (argc == 3 && pos_op == 2) ||
-            (argc == 4 && pos_op == 3)) {
-            
-        }
-        
     }
 
     lg.verbose("Input variables assigned");
@@ -338,7 +386,7 @@ int main(int argc, char **argv) {
 
     Input in;
     in.load(userInput); // load user input
-    lg.verbose("Loaded user input"); // jack: log not defined yet
+    lg.verbose("Loaded user input");
     
     InSequences inSequences; // initialize sequence collection object
     lg.verbose("Sequence object generated");

@@ -48,20 +48,19 @@ void Input::read(InSequences &inSequences) {
         }); 
 
     lg.verbose("Waiting for jobs to complete");
-    std::cout << "Waiting for jobs to complete" << std::endl;
+    std::cout << "Waiting for jobs to complete..." << std::endl;
 
     jobWait(threadPool); // Wait for all jobs to complete
-    lg.verbose("All jobs completed");
-    std::cout << "All jobs completed" << std::endl;
+    lg.verbose("\nAll jobs completed.");
     
     teloscope.sortBySeqPos();
-    lg.verbose("\nPaths sorted by original position");  
+    lg.verbose("\nPaths sorted by original position.");  
 
     teloscope.handleBEDFile();
-    lg.verbose("\nBED/BEDgraph files generated");
+    lg.verbose("\nBED/BEDgraph files generated.");
 
     teloscope.printSummary();
-    lg.verbose("\nSummary printed");
+    lg.verbose("\nSummary printed.");
 }
 
 

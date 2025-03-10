@@ -220,6 +220,7 @@ std::vector<TelomereBlock> Teloscope::filterTerminalBlocks(const std::vector<Tel
     return filteredBlocks;
 }
 
+
 std::vector<TelomereBlock> Teloscope::filterInterstitialBlocks(
             const std::vector<TelomereBlock>& interstitialBlocks,
             const std::vector<TelomereBlock>& terminalBlocks) {
@@ -257,6 +258,7 @@ std::vector<TelomereBlock> Teloscope::filterInterstitialBlocks(
 
     return filteredBlocks;
 }
+
 
 void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowStart,
                             WindowData& windowData, WindowData& nextOverlapData,
@@ -322,10 +324,10 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                 // Check dimers
                 if (isCanonical) {
                     if (lastCanonicalPos >= 0 && (matchPos - lastCanonicalPos) <= userInput.canonicalSize) {
-                        if ((j >= overlapSize || overlapSize == 0 || windowStart == 0) && !windowData.hasCanDimer) {
+                        if (!windowData.hasCanDimer && (j >= overlapSize || overlapSize == 0 || windowStart == 0)) {
                             windowData.hasCanDimer = true;
                         }
-                        if (i >= step && overlapSize != 0 && !nextOverlapData.hasCanDimer) {
+                        if (!nextOverlapData.hasCanDimer && i >= step && overlapSize != 0) {
                             nextOverlapData.hasCanDimer = true;
                         }
                     }
