@@ -26,7 +26,7 @@ struct UserInputTeloscope : UserInput {
     bool outEntropy = false;
     bool outMatches = false;
     bool outITS = false;
-    bool ultraFastMode = true;
+    bool ultraFastMode = false;
     
     double maxMem = 0;
     std::string prefix = ".", outFile = ""; // JACK: CHECK

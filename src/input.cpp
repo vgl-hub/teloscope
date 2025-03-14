@@ -48,7 +48,6 @@ void Input::read(InSequences &inSequences) {
         }); 
 
     lg.verbose("Waiting for jobs to complete");
-    std::cout << "Waiting for jobs to complete..." << std::endl;
 
     jobWait(threadPool); // Wait for all jobs to complete
     lg.verbose("\nAll jobs completed.");
@@ -74,26 +73,28 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     threadLog.add("\n\tWalking path:\t" + path->getHeader());
     std::string header = path->getHeader();
     eraseChar(header, '\r');
-    // uint32_t numSegments = (pathComponents.size() + 1) / 2;
 
     // Initialize PathData for this path
     PathData pathData;
     pathData.seqPos = seqPos;
     pathData.header = header;
-    // pathData.windows.reserve((pathSize - (userInput.windowSize + 2 * userInput.step) * (numSegments)) / userInput.step);
+    // pathData.windows.reserve(inSegments.size()); NumWindows = ceil((L - W) / S) + 1
 
     for (std::vector<PathComponent>::iterator component = pathComponents.begin(); component != pathComponents.end(); component++) {
-        
         cUId = component->id;
     
         if (component->componentType == SEGMENT) {
-            
             auto inSegment = find_if(inSegments.begin(), inSegments.end(), [cUId](InSegment* obj) {return obj->getuId() == cUId;}); // given a node Uid, find it
             std::string sequence = (*inSegment)->getInSequence(component->start, component->end);
             unmaskSequence(sequence);
             
             if (component->orientation == '+') {
-                SegmentData segmentData = analyzeSegment(sequence, userInput, absPos);
+                SegmentData segmentData;
+                if (userInput.ultraFastMode) {
+                    segmentData = analyzeSegmentTips(sequence, userInput, absPos);
+                } else {
+                    segmentData = analyzeSegment(sequence, userInput, absPos);
+                }
 
                 // Collect window data
                 pathData.windows.insert(

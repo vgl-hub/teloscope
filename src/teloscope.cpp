@@ -90,13 +90,23 @@ std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<MatchI
     uint16_t blockCounts = 1;
     uint16_t forwardCount = inputMatches[0].isForward ? 1 : 0;
     uint16_t reverseCount = inputMatches[0].isForward ? 0 : 1;
+    uint16_t canonicalCount = inputMatches[0].isCanonical ? 1 : 0;
+    uint16_t nonCanonicalCount = inputMatches[0].isCanonical ? 0 : 1;
 
     auto finalizeBlock = [&](uint64_t endPosition) {
         if (blockCounts >= minBlockCounts) {
             TelomereBlock block;
             block.start = blockStart;
-            block.blockLen = (endPosition - blockStart) + patternSize;
+
             block.blockCounts = blockCounts;
+            block.forwardCount = forwardCount;
+            block.reverseCount = reverseCount;
+
+            block.canonicalCount = canonicalCount;
+            block.nonCanonicalCount = nonCanonicalCount;
+            
+            block.blockLen = (endPosition - blockStart) + patternSize;
+            block.blockDensity = static_cast<float>(blockCounts) / block.blockLen;
 
             // p/q assignment
             float forwardRatio = (forwardCount * 100.0f) / blockCounts;
@@ -121,6 +131,8 @@ std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<MatchI
             blockCounts++;
             forwardCount += (inputMatches[i].isForward ? 1 : 0);
             reverseCount += (inputMatches[i].isForward ? 0 : 1);
+            canonicalCount += (inputMatches[i].isCanonical ? 1 : 0);
+            nonCanonicalCount += (inputMatches[i].isCanonical ? 0 : 1);
             prevPosition = inputMatches[i].position;
 
         } else {
@@ -133,6 +145,8 @@ std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<MatchI
             blockCounts = 1;
             forwardCount = (inputMatches[i].isForward ? 1 : 0);
             reverseCount = (inputMatches[i].isForward ? 0 : 1);
+            canonicalCount = (inputMatches[i].isCanonical ? 1 : 0);
+            nonCanonicalCount = (inputMatches[i].isCanonical ? 0 : 1);
         }
     }
 
@@ -375,13 +389,11 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
 
 
 SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint32_t absPos) {
-// SegmentData analyzeSegment(std::string &sequence, UserInputTeloscope &userInput, uint32_t absPos) {
     uint32_t windowSize = userInput.windowSize;
     uint32_t step = userInput.step;
     uint32_t segmentSize = sequence.size();
 
     SegmentData segmentData;
-    segmentData.segBlocks.reserve(segmentSize / 13 + 1);
     segmentData.canonicalMatches.reserve(segmentSize / 6);
     segmentData.nonCanonicalMatches.reserve(segmentSize / 6);
     segmentData.segMatches.reserve(segmentSize / 6);
@@ -446,6 +458,82 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
     }
 
     segmentData.windows = windows;
+    return segmentData;
+}
+
+
+SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTeloscope &userInput, uint32_t absPos) {
+    SegmentData segmentData;
+    uint32_t seqLen = sequence.size();
+    uint32_t terminalLimit = userInput.terminalLimit;
+    unsigned short int longestPatternSize = this->trie.getLongestPatternSize();
+
+    // Use local vectors instead of segmentData members
+    std::vector<MatchInfo> fwdMatches;
+    std::vector<MatchInfo> revMatches;
+    
+    // Helper function to match in range
+    auto processRegion = [&](uint32_t start, uint32_t end) {
+        for (uint32_t i = start; i < end; ++i) {
+            auto node = trie.getRoot();
+            uint32_t scanLimit = std::min(i + longestPatternSize, end);
+
+            for (uint32_t j = i; j < scanLimit; ++j) { // Scan positions until longest pattern
+                node = trie.getChild(node, sequence[j]); // sequence[j] is a character
+                if (!node) break;
+                
+                if (node->isEndOfWord) {
+                    uint32_t len = j - i + 1;
+                    std::string_view pattern(&sequence[i], len);
+                    bool isForward = (len >= 3 && sequence[i] == 'C' && sequence[i+1] == 'C' && sequence[i+2] == 'C');
+                    bool isCanonical = (pattern == std::string_view(userInput.canonicalPatterns.first) || 
+                                        pattern == std::string_view(userInput.canonicalPatterns.second));
+
+                    MatchInfo matchInfo;
+                    matchInfo.position = absPos + i; // Keep absolute positions only
+                    matchInfo.isCanonical = isCanonical;
+                    matchInfo.isForward = isForward;
+
+                    if (isForward) {
+                        fwdMatches.push_back(matchInfo);
+                    } else {
+                        revMatches.push_back(matchInfo);
+                    }
+                }
+            }
+        }
+    };
+    
+    if (seqLen > 2 * terminalLimit) {
+        // Process terminal regions only
+        processRegion(0, terminalLimit);
+        processRegion(seqLen - terminalLimit, seqLen);
+    } else {
+        // Process entire sequence
+        processRegion(0, seqLen);
+    }
+    
+    // Create and add p/q blocks to segmentData.terminalBlocks
+    uint16_t mergeDist = userInput.maxBlockDist;
+    
+    if (fwdMatches.size() >= 2) {
+        std::vector<TelomereBlock> fwdBlocks = getTelomereBlocks(fwdMatches, mergeDist);
+        segmentData.terminalBlocks.insert(
+            segmentData.terminalBlocks.end(),
+            std::make_move_iterator(fwdBlocks.begin()),
+            std::make_move_iterator(fwdBlocks.end())
+        );
+    }
+    
+    if (revMatches.size() >= 2) {
+        std::vector<TelomereBlock> revBlocks = getTelomereBlocks(revMatches, mergeDist);
+        segmentData.terminalBlocks.insert(
+            segmentData.terminalBlocks.end(),
+            std::make_move_iterator(revBlocks.begin()),
+            std::make_move_iterator(revBlocks.end())
+        );
+    }
+    
     return segmentData;
 }
 

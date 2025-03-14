@@ -54,10 +54,14 @@ struct MatchInfo {
 
 struct TelomereBlock {
     uint64_t start;
-    uint16_t blockLen; // End = start + blockLen
-    uint32_t blockDistance;
+    uint32_t blockLen; // End = start + blockLen
     uint16_t blockCounts;
-    char blockLabel;
+    uint16_t forwardCount;
+    uint16_t reverseCount;
+    uint16_t canonicalCount;
+    uint16_t nonCanonicalCount;
+    float blockDensity;
+    char blockLabel; // 'p', 'q', 'u'
 };
 
 struct WindowData {
@@ -86,7 +90,6 @@ struct SegmentData {
     std::vector<MatchInfo> canonicalMatches;
     std::vector<MatchInfo> nonCanonicalMatches;
     std::vector<MatchInfo> segMatches;
-    std::vector<TelomereBlock> segBlocks;
 };
 
 
@@ -163,7 +166,8 @@ public:
                         SegmentData& segmentData, uint32_t segmentSize, uint32_t absPos);
 
     SegmentData analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint32_t absPos);
-    // SegmentData analyzeSegment(std::string &sequence, UserInputTeloscope &userInput, uint32_t absPos);
+
+    SegmentData analyzeSegmentTips(std::string &sequence, UserInputTeloscope &userInput, uint32_t absPos);
 
     void sortBySeqPos();
 
