@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
                     //     break;
                         
                     default:
-                        fprintf(stderr, "option -%c is missing a required argument\n", optopt);
+                        fprintf(stderr, "Error: Option -%c is missing a required argument\n", optopt);
                         return EXIT_FAILURE;
                 }
                 break;
@@ -136,36 +136,41 @@ int main(int argc, char **argv) {
 
 
             case 'c': { // Handle canonical pattern
-                std::string canonicalPattern = optarg;
-                unmaskSequence(canonicalPattern);
+                if (!optarg || strlen(optarg) == 0) {
+                    fprintf(stderr, "Warning: Empty canonical pattern provided, using default vertebrate TTAGGG.\n");
+                } else {
+                    std::string canonicalPattern = optarg;
+                    unmaskSequence(canonicalPattern);
 
-                if (canonicalPattern.empty()) {
-                    canonicalPattern = "TTAGGG";
-                    fprintf(stderr, "Warning: No canonical pattern provided, using default vertebrate TTAGGG.\n");
+                    // Check for numerical characters
+                    if (std::any_of(canonicalPattern.begin(), canonicalPattern.end(), ::isdigit)) {
+                        fprintf(stderr, "Error: Canonical pattern '%s' contains numerical characters.\n", canonicalPattern.c_str());
+                        exit(EXIT_FAILURE);
+                    }
+
+                    // Store canonical pattern and its reverse complement
+                    userInput.canonicalSize = canonicalPattern.size();
+                    userInput.canonicalFwd = canonicalPattern;
+                    userInput.canonicalRev = revCom(canonicalPattern);
+                    fprintf(stderr, "Setting canonical pattern: %s and its reverse complement: %s\n", userInput.canonicalFwd.c_str(), userInput.canonicalRev.c_str());
                 }
-
-                // Check for numerical characters
-                if (std::any_of(canonicalPattern.begin(), canonicalPattern.end(), ::isdigit)) {
-                    fprintf(stderr, "Error: Canonical pattern '%s' contains numerical characters.\n", canonicalPattern.c_str());
-                    exit(EXIT_FAILURE);
-                }
-
-                // Store canonical pattern and its reverse complement
-                userInput.canonicalSize = canonicalPattern.size();
-                userInput.canonicalPatterns.first = canonicalPattern;
-                userInput.canonicalPatterns.second = revCom(canonicalPattern);
-                fprintf(stderr, "Setting canonical pattern: %s and its reverse complement: %s\n", canonicalPattern.c_str(), userInput.canonicalPatterns.second.c_str());
                 break;
             }
 
-
+            
             case 'p': { // Handle search patterns
+                if (!optarg || strlen(optarg) == 0) {
+                    fprintf(stderr, "Warning: Empty pattern list provided, using default: TTAGGG, CCCTAA\n");
+                
+                } else {
+                    userInput.patterns.clear(); // Clear default patterns first
+                    
                     std::istringstream patternStream(optarg);
                     std::string pattern;
                     
                     while (std::getline(patternStream, pattern, ',')) {
                         if (pattern.empty()) continue;
-
+            
                         if (std::any_of(pattern.begin(), pattern.end(), ::isdigit)) {
                             fprintf(stderr, "Error: Pattern '%s' contains numerical characters.\n", pattern.c_str());
                             exit(EXIT_FAILURE);
@@ -178,29 +183,27 @@ int main(int argc, char **argv) {
                         std::string current_pattern = pattern;
                         getCombinations(pattern, current_pattern, 0, combinations);
                         lg.verbose("Adding (" + std::to_string(combinations.size()) + ") telomeric patterns and their reverse complements");
-
+            
                         // Add each combination and its reverse complement to userInput.patterns
                         for (const std::string &comb : combinations) {
                             userInput.patterns.emplace_back(comb);
                             userInput.patterns.emplace_back(revCom(comb));
                         }
                     }
-
-                    if (userInput.patterns.empty()) {
-                        userInput.patterns = {"TTAGGG", "CCCTAA"};
-                        fprintf(stderr, "No search patterns provided. Only scanning for: TTAGGG, CCCTAA\n");
-                    
-                    } else {
+            
+                    if (!userInput.patterns.empty()) {
                         // Remove duplicates
                         std::sort(userInput.patterns.begin(), userInput.patterns.end());
                         auto last = std::unique(userInput.patterns.begin(), userInput.patterns.end());
                         userInput.patterns.erase(last, userInput.patterns.end());
                     }
 
-                    userInput.hammingDistances = getHammingDistances(userInput.patterns, userInput.canonicalPatterns);
-                    lg.verbose("Hamming distances precomputed");
+                    // userInput.hammingDistances = getHammingDistances(userInput.patterns, userInput.canonicalFwd, userInput.canonicalRev); // To update
+                    // lg.verbose("Hamming distances precomputed");
+                }
                 break;
             }
+
 
             case 'w': {
                 try {

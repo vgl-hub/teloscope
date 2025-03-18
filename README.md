@@ -18,21 +18,21 @@ Usage
 
 Examples
 ------------
-* Example: Minimal case to run Teloscope.
+* Example: Minimal single case to run Teloscope.
 
-        teloscope -f "${file}" -o "${out_path}" -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG
+        teloscope -f "${file}" -o "${out_path}" -u
 
-* Example: Set window and step sizes.
+* Example: Multiple input case to run Teloscope. Set window and step sizes.
 
         teloscope -f "${file}" -o "${out_path}" -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG -w 2000 -s 1000
 
-* Example: Allowing the calculation of window metrics.
+* Example: Calculating window metrics.
 
         teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p NNNGGG -w 1000 -s 500 -g -e -r --verbose
 
 * Example: Allowing all outputs and using all flags.
 
-        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p TBAGGG,TTRGGG,YTAGGG  -w 2000 -s 1000 -d 200 -l 1000 -r -g -e -m -i -t 50000 --verbose
+        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p TBAGGG,TTRGGG,YTAGGG  -w 2000 -s 1000 -d 200 -l 1000 -r -g -e -m -i -t 50000 --verbose --cmd
   
 **Note:** Teloscope accepts nucleotides in IUPAC format and generates all possible pattern combinations. 
 
@@ -61,6 +61,7 @@ Optional Parameters:
         '-e'    --out-entropy   Output Shannon entropy for each window. [Default: false]
         '-m'    --out-matches   Output all canonical and terminal non-canonical matches. [Default: false]
         '-i'    --out-its       Output assembly interstitial telomere (ITSs) regions.[Default: false]
+        '-u'    --ultra-fast    Ultra-fast mode. Only scans terminal telomeres at contig ends. [Default: false]
         '-v'    --version       Print current software version.
         '-h'    --help  Print current software options.
         --verbose       Verbose output.
@@ -73,7 +74,7 @@ Teloscope outputs telomere annotations in BED format:
 
 * `terminal_telomeres.bed` Annotation of the full telomere in the assembly. This is made of canonical and non-canonical repeats. 
 
-Additional optional outputs:
+Additional optional outputs (Disabled with --ultra-fast):
 
 * `interstitial_telomeres.bed` Blocks of adjacent canonical repeat matches. Outside of the ends, it represents interstitial telomeres (ITSs).
 * `window_metrics.tsv` Tabulated file with calculated window metrics such as GC% and Shannon Entropy

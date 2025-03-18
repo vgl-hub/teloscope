@@ -7,10 +7,12 @@
 struct UserInputTeloscope : UserInput {
     
     std::string outRoute;
-    std::pair<std::string, std::string> canonicalPatterns;
-    unsigned short int canonicalSize;
-    std::vector<std::string> patterns;
     std::unordered_map<std::string, uint8_t> hammingDistances;
+
+    std::string canonicalFwd = "CCCTAA";
+    std::string canonicalRev = "TTAGGG";
+    unsigned short int canonicalSize = 6;
+    std::vector<std::string> patterns = {"TTAGGG", "CCCTAA"};
 
     uint32_t windowSize = 1000;
     uint8_t kmerLen = 21;

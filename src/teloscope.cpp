@@ -323,8 +323,8 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
             if (current->isEndOfWord) {                
                 std::string_view pattern(window.data() + i, (j - i + 1));
                 bool isForward = (pattern.size() >= 3 && pattern.compare(0, 3, "CCC") == 0);
-                bool isCanonical = (pattern == std::string_view(userInput.canonicalPatterns.first) || 
-                                    pattern == std::string_view(userInput.canonicalPatterns.second));
+                bool isCanonical = (pattern == std::string_view(userInput.canonicalFwd) || 
+                                    pattern == std::string_view(userInput.canonicalRev));
                 bool isTerminal = (windowStart + i <= terminalLimit || 
                                     windowStart + i >= segmentSize - terminalLimit);
                 float densityGain = static_cast<float>(pattern.size()) / window.size();
@@ -486,8 +486,8 @@ SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTelosc
                     uint32_t len = j - i + 1;
                     std::string_view pattern(&sequence[i], len);
                     bool isForward = (len >= 3 && sequence[i] == 'C' && sequence[i+1] == 'C' && sequence[i+2] == 'C');
-                    bool isCanonical = (pattern == std::string_view(userInput.canonicalPatterns.first) || 
-                                        pattern == std::string_view(userInput.canonicalPatterns.second));
+                    bool isCanonical = (pattern == std::string_view(userInput.canonicalFwd) || 
+                                        pattern == std::string_view(userInput.canonicalRev));
 
                     MatchInfo matchInfo;
                     matchInfo.position = absPos + i; // Keep absolute positions only
