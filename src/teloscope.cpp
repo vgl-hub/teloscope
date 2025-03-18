@@ -602,7 +602,11 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
     }
 
     // Report header
-    std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tits\tcanonical\twindows\n";
+    if (!userInput.ultraFastMode) {
+        std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tits\tcanonical\twindows\n";
+    } else {
+        std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\n";
+    }
 
     // BED and reports
     for (const auto& pathData : allPathData) {
@@ -683,7 +687,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
         std::string type = getChrType(labels, gaps);
 
         // Output path summary
-        std::cout << pos << "\t" << header << "\t" 
+        std::cout << pos + 1 << "\t" << header << "\t" 
                 << pathData.terminalBlocks.size() << "\t"
                 << (labels.empty() ? "none" : labels) << "\t" 
                 << gaps << "\t" << type;
@@ -774,10 +778,15 @@ void Teloscope::printSummary() {
         std::cout << "Total canonical matches\t" << totalCanMatches << "\n";
         std::cout << "Total windows analyzed\t" << totalNWindows << "\n";
     }
-
     
-    // Telomere-to-telomere chromosomes
-    std::cout << "\n+++ Chrom. Telomere Completeness+++\n";
+    // Chromosomes by telomere numbers
+    std::cout << "\n+++ Chromosome Telomere Counts+++\n";
+    std::cout << "Two telomeres\t" << totalT2T + totalGappedT2T + totalMissassembly + totalGappedMissassembly << "\n";
+    std::cout << "One telomere\t" << totalIncomplete + totalGappedIncomplete << "\n";
+    std::cout << "No telomeres\t" << totalNone + totalGappedNone << "\n";
+
+    // Chromosomes by telomere completeness
+    std::cout << "\n+++ Chromosome Telomere/Gap Completeness+++\n";
     std::cout << "T2T\t" << totalT2T << "\n";
     std::cout << "Gapped T2T\t" << totalGappedT2T << "\n";
     
