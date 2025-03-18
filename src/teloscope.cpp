@@ -769,33 +769,33 @@ void Teloscope::handleBEDFile() {
 
 void Teloscope::printSummary() {
     std::cout << "\n+++ Assembly Summary Report +++\n";
-    std::cout << "Total paths\t" << totalPaths << "\n";
-    std::cout << "Total gaps\t" << totalGaps << "\n";
-    std::cout << "Total telomeres\t" << totalTelomeres << "\n";
+    std::cout << "Total paths:\t" << totalPaths << "\n";
+    std::cout << "Total gaps:\t" << totalGaps << "\n";
+    std::cout << "Total telomeres:\t" << totalTelomeres << "\n";
     
     if (!userInput.ultraFastMode) {
-        std::cout << "Total ITS\t" << totalITS << "\n";
-        std::cout << "Total canonical matches\t" << totalCanMatches << "\n";
-        std::cout << "Total windows analyzed\t" << totalNWindows << "\n";
+        std::cout << "Total ITS:\t" << totalITS << "\n";
+        std::cout << "Total canonical matches:\t" << totalCanMatches << "\n";
+        std::cout << "Total windows analyzed:\t" << totalNWindows << "\n";
     }
     
     // Chromosomes by telomere numbers
     std::cout << "\n+++ Chromosome Telomere Counts+++\n";
-    std::cout << "Two telomeres\t" << totalT2T + totalGappedT2T + totalMissassembly + totalGappedMissassembly << "\n";
-    std::cout << "One telomere\t" << totalIncomplete + totalGappedIncomplete << "\n";
-    std::cout << "No telomeres\t" << totalNone + totalGappedNone << "\n";
+    std::cout << "Two telomeres:\t" << totalT2T + totalGappedT2T + totalMissassembly + totalGappedMissassembly << "\n";
+    std::cout << "One telomere:\t" << totalIncomplete + totalGappedIncomplete << "\n";
+    std::cout << "No telomeres:\t" << totalNone + totalGappedNone << "\n";
 
     // Chromosomes by telomere completeness
     std::cout << "\n+++ Chromosome Telomere/Gap Completeness+++\n";
-    std::cout << "T2T\t" << totalT2T << "\n";
-    std::cout << "Gapped T2T\t" << totalGappedT2T << "\n";
+    std::cout << "T2T:\t" << totalT2T << "\n";
+    std::cout << "Gapped T2T:\t" << totalGappedT2T << "\n";
     
-    std::cout << "Missassembled\t" << totalMissassembly << "\n";
-    std::cout << "Gapped missassembled\t" << totalGappedMissassembly << "\n";
+    std::cout << "Missassembled:\t" << totalMissassembly << "\n";
+    std::cout << "Gapped missassembled:\t" << totalGappedMissassembly << "\n";
     
-    std::cout << "Incomplete\t" << totalIncomplete << "\n";
-    std::cout << "Gapped incomplete\t" << totalGappedIncomplete << "\n";
+    std::cout << "Incomplete:\t" << totalIncomplete << "\n";
+    std::cout << "Gapped incomplete:\t" << totalGappedIncomplete << "\n";
     
-    std::cout << "No telomeres\t" << totalNone << "\n";
-    std::cout << "Gapped no telomeres\t" << totalGappedNone << "\n";
+    std::cout << "No telomeres:\t" << totalNone << "\n";
+    std::cout << "Gapped no telomeres:\t" << totalGappedNone << "\n";
 }
