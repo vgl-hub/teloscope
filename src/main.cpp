@@ -364,6 +364,8 @@ int main(int argc, char **argv) {
                 printf("\t'-e'\t--out-entropy\tOutput Shannon entropy for each window. [Default: false]\n");
                 printf("\t'-m'\t--out-matches\tOutput all canonical and terminal non-canonical matches. [Default: false]\n");
                 printf("\t'-i'\t--out-its\tOutput assembly interstitial telomere (ITSs) regions.[Default: false] \n");
+                printf("\t'-u'\t--ultra-fast\tUltra-fast mode. Only scans terminal telomeres at contig ends. [Default: false]\n");
+
                 printf("\t'-v'\t--version\tPrint current software version.\n");
                 printf("\t'-h'\t--help\tPrint current software options.\n");
                 printf("\t--verbose\tVerbose output.\n");

@@ -538,6 +538,53 @@ SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTelosc
 }
 
 
+std::string Teloscope::getChrType(const std::string& labels, uint16_t gaps) {
+    bool hasGaps = (gaps > 0);
+    
+    if (hasGaps) {
+        // Handle gapped cases
+        switch (labels.size()) {
+            case 0:
+                totalGappedNone++;
+                return "gapped_na";
+            case 1:
+                totalGappedIncomplete++;
+                return "gapped_incomplete";
+            case 2:
+                if (labels == "pq") {
+                    totalGappedT2T++;
+                    return "gapped_t2t";
+                } else {
+                    totalGappedMissassembly++;
+                    return "gapped_missassembly";
+                }
+            default:
+                return "gapped_unknown";
+        }
+    } else {
+        // Handle non-gapped cases
+        switch (labels.size()) {
+            case 0:
+                totalNone++;
+                return "na";
+            case 1:
+                totalIncomplete++;
+                return "incomplete";
+            case 2:
+                if (labels == "pq") {
+                    totalT2T++;
+                    return "t2t";
+                } else {
+                    totalMissassembly++;
+                    return "missassembly";
+                }
+            default:
+                return "unknown";
+        }
+    }
+}
+
+
 void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& windowRepeatsFile,
                             std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
                             std::ofstream& terminalBlocksFile, std::ofstream& interstitialBlocksFile) {
@@ -633,49 +680,29 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
         }
 
         // Get the chr/scaffold type
-        std::string type;
-        switch (labels.size()) {
-            case 0:
-                type = "na";
-                totalNone++;
-                break;
-            case 1:
-                type = "incomplete";
-                totalIncomplete++;
-                break;
-            case 2:
-                if (labels == "pq") {
-                    if (gaps == 0) {
-                        type = "t2t";
-                        totalT2T++;
-                    } else {
-                        type = "gapped_t2t";
-                        totalGappedT2T++;
-                    }
-                } else {
-                    type = "missasembly";
-                    totalMissassembly++;
-                }
-                break;
-        }
+        std::string type = getChrType(labels, gaps);
 
         // Output path summary
-        std::cout << pos << "\t"
-                << header << "\t"
+        std::cout << pos << "\t" << header << "\t" 
                 << pathData.terminalBlocks.size() << "\t"
-                << (labels.empty() ? "none" : labels) << "\t"
-                << gaps << "\t"
-                << type << "\t"
-                << pathData.interstitialBlocks.size() << "\t"
-                << pathData.canonicalMatches.size() << "\t"
-                << windows.size() << "\n";
-
-        // Update assembly summary
-        totalNWindows += windows.size();
-        totalTelomeres += pathData.terminalBlocks.size();
-        totalITS += pathData.interstitialBlocks.size();
-        totalCanMatches += pathData.canonicalMatches.size();
+                << (labels.empty() ? "none" : labels) << "\t" 
+                << gaps << "\t" << type;
+        
+        totalTelomeres += pathData.terminalBlocks.size(); // Update assembly summary
         totalGaps += gaps;
+
+        // Expand path summary
+        if (!userInput.ultraFastMode) {
+            std::cout << "\t" 
+                    << pathData.interstitialBlocks.size() << "\t"
+                    << pathData.canonicalMatches.size() << "\t"
+                    << windows.size();
+            
+            totalNWindows += windows.size(); // Update assembly summary
+            totalITS += pathData.interstitialBlocks.size();
+            totalCanMatches += pathData.canonicalMatches.size();
+        }
+        std::cout << "\n"; // Finish path summary
     }
     totalPaths = allPathData.size();
 }
@@ -689,7 +716,7 @@ void Teloscope::handleBEDFile() {
     std::ofstream terminalBlocksFile;
     std::ofstream interstitialBlocksFile;
 
-    std::cout << "Reporting window matches and metrics in BED/BEDgraphs...\n";
+    lg.verbose("\nReporting window matches and metrics in BED/BEDgraphs...");
 
     // Open files for writing
     if (userInput.outWinRepeats) {
@@ -735,17 +762,31 @@ void Teloscope::handleBEDFile() {
     terminalBlocksFile.close();
 }
 
+
 void Teloscope::printSummary() {
-    std::cout << "\n+++ Assembly Summary Report+++\n";
-    std::cout << "Total paths analyzed:\t" << totalPaths << "\n";
-    std::cout << "Total windows analyzed:\t" << totalNWindows << "\n";
-    std::cout << "Total telomeres found:\t" << totalTelomeres << "\n";
-    std::cout << "Total ITS found:\t" << totalITS << "\n";
-    std::cout << "Total canonical matches found:\t" << totalCanMatches << "\n";
-    std::cout << "Total gaps found:\t" << totalGaps << "\n";
-    std::cout << "Total T2T:\t" << totalT2T << "\n";
-    std::cout << "Total gapped T2T:\t" << totalGappedT2T << "\n";
-    std::cout << "Total missassembly:\t" << totalMissassembly << "\n";
-    std::cout << "Total incomplete:\t" << totalIncomplete << "\n";
-    std::cout << "Total none:\t" << totalNone << "\n";
+    std::cout << "\n+++ Assembly Summary Report +++\n";
+    std::cout << "Total paths\t" << totalPaths << "\n";
+    std::cout << "Total gaps\t" << totalGaps << "\n";
+    std::cout << "Total telomeres\t" << totalTelomeres << "\n";
+    
+    if (!userInput.ultraFastMode) {
+        std::cout << "Total ITS\t" << totalITS << "\n";
+        std::cout << "Total canonical matches\t" << totalCanMatches << "\n";
+        std::cout << "Total windows analyzed\t" << totalNWindows << "\n";
+    }
+
+    
+    // Telomere-to-telomere chromosomes
+    std::cout << "\n+++ Chrom. Telomere Completeness+++\n";
+    std::cout << "T2T\t" << totalT2T << "\n";
+    std::cout << "Gapped T2T\t" << totalGappedT2T << "\n";
+    
+    std::cout << "Missassembled\t" << totalMissassembly << "\n";
+    std::cout << "Gapped missassembled\t" << totalGappedMissassembly << "\n";
+    
+    std::cout << "Incomplete\t" << totalIncomplete << "\n";
+    std::cout << "Gapped incomplete\t" << totalGappedIncomplete << "\n";
+    
+    std::cout << "No telomeres\t" << totalNone << "\n";
+    std::cout << "Gapped no telomeres\t" << totalGappedNone << "\n";
 }

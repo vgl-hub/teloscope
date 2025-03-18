@@ -125,11 +125,16 @@ class Teloscope {
     uint32_t totalITS = 0;
     uint32_t totalCanMatches = 0;
     uint32_t totalGaps = 0;
+
+    // Chr/scaffold type summary
     uint32_t totalT2T = 0;
     uint32_t totalGappedT2T = 0;
     uint32_t totalMissassembly = 0;
+    uint32_t totalGappedMissassembly = 0;
     uint32_t totalIncomplete = 0;
+    uint32_t totalGappedIncomplete = 0;
     uint32_t totalNone = 0;
+    uint32_t totalGappedNone = 0;
 
     inline float getShannonEntropy(const uint32_t nucleotideCounts[4], uint32_t windowSize) {
         float entropy = 0.0;
@@ -178,6 +183,8 @@ public:
     std::vector<TelomereBlock> filterInterstitialBlocks(
                 const std::vector<TelomereBlock>& interstitialBlocks,
                 const std::vector<TelomereBlock>& terminalBlocks);
+    
+    std::string getChrType(const std::string& labels, uint16_t gaps);
 
     void writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& windowRepeatsFile,
                             std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
