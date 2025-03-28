@@ -52,7 +52,7 @@ Required Parameters:
         '-s'    --step  Set sliding window step. [Default: 500]
         '-j'    --threads       Set maximum number of threads. [Default: max. available]
         '-l'    --min-block-length      Set minimum block length for merging. [Default: 500]
-        '-d'    --max-block-distance    Set maximum block distance for merging. [Default: 50]
+        '-d'    --max-block-distance    Set maximum block distance for merging. [Default: 200]
         '-t'    --terminal-limit        Set terminal limit for exploring telomere variant regions (TVRs). [Default: 50000]
 
 Optional Parameters:

@@ -34,7 +34,7 @@ int main(int argc, char **argv) {
     
     if (argc == 1) { // case: with no arguments
             
-        printf("teloscope -f input.[fa/fa.gz] \nUse-h for additional help. \nUse -f to initiate the tool.");
+        printf("teloscope -f input.[fa/fa.gz] -o /output/path/ \nUse-h for additional help. \nUse -f to initiate the tool.\n");
         exit(0);
         
     }
@@ -358,7 +358,7 @@ int main(int argc, char **argv) {
                 printf("\t'-s'\t--step\tSet sliding window step. [Default: 500]\n");
                 printf("\t'-j'\t--threads\tSet maximum number of threads. [Default: max. available]\n");
                 printf("\t'-l'\t--min-block-length\tSet minimum block length for merging. [Default: 500]\n");
-                printf("\t'-d'\t--max-block-distance\tSet maximum block distance for merging. [Default: 50]\n");
+                printf("\t'-d'\t--max-block-distance\tSet maximum block distance for merging. [Default: 200]\n");
                 printf("\t'-t'\t--terminal-limit\tSet terminal limit for exploring telomere variant regions (TVRs). [Default: 50000]\n");
 
                 printf("\nOptional Parameters:\n");

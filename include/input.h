@@ -18,7 +18,7 @@ struct UserInputTeloscope : UserInput {
     uint8_t kmerLen = 21;
     uint32_t step = 500;
     unsigned short int minBlockLen = 500; // Only for all blocks
-    unsigned short int maxBlockDist = 50;
+    unsigned short int maxBlockDist = 200;
     unsigned short int minBlockCounts = 2;
     uint32_t terminalLimit = 50000;
 
