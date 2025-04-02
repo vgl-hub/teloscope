@@ -34,7 +34,7 @@ int main(int argc, char **argv) {
     
     if (argc == 1) { // case: with no arguments
             
-        printf("teloscope -f input.[fa/fa.gz] -o /output/path/ \nUse-h for additional help. \nUse -f to initiate the tool.\n");
+        printf("teloscope -f input.[fa/fa.gz] -o /output/path/ \nUse -h for additional help. \nUse -f to initiate the tool.\n\nUse -u for ultrafast mode.\n");
         exit(0);
         
     }

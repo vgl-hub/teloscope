@@ -72,7 +72,9 @@ struct WindowData {
     float shannonEntropy;
     // uint32_t winHDistance = 0;
     
-    std::vector<MatchInfo> winMatches;
+    std::vector<MatchInfo> winMatches; // Delete
+    std::vector<MatchInfo> terminalFwdMatches;
+    std::vector<MatchInfo> terminalRevMatches;
     std::vector<uint8_t> hDistances; 
     uint16_t canonicalCounts = 0;
     uint16_t nonCanonicalCounts = 0;
@@ -89,7 +91,10 @@ struct SegmentData {
     std::vector<TelomereBlock> interstitialBlocks;
     std::vector<MatchInfo> canonicalMatches;
     std::vector<MatchInfo> nonCanonicalMatches;
-    std::vector<MatchInfo> segMatches;
+    std::vector<MatchInfo> segMatches; // Delete
+    std::vector<MatchInfo> terminalFwdMatches;
+    std::vector<MatchInfo> terminalRevMatches;
+    std::vector<MatchInfo> interstitialMatches;
 };
 
 

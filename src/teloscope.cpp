@@ -285,12 +285,12 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
     uint32_t terminalLimit = userInput.terminalLimit;
     bool computeGC = userInput.outGC;
     bool computeEntropy = userInput.outEntropy;
+    int lastCanonicalPos = -1;
 
     // Determine starting index for Trie scanning
     uint32_t startIndex = (windowStart == 0 || overlapSize == 0)
                             ? 0 
                             : std::min(step - longestPatternSize, overlapSize - longestPatternSize);
-    int lastCanonicalPos = -1;
 
     for (uint32_t i = startIndex; i < window.size(); ++i) {
         if (computeGC || computeEntropy) {
@@ -322,11 +322,11 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
 
             if (current->isEndOfWord) {                
                 std::string_view pattern(window.data() + i, (j - i + 1));
+                bool isTerminal = (windowStart + i <= terminalLimit || 
+                                    windowStart + i >= segmentSize - terminalLimit); // Check i/j handles 
                 bool isForward = (pattern.size() >= 3 && pattern.compare(0, 3, "CCC") == 0);
                 bool isCanonical = (pattern == std::string_view(userInput.canonicalFwd) || 
                                     pattern == std::string_view(userInput.canonicalRev));
-                bool isTerminal = (windowStart + i <= terminalLimit || 
-                                    windowStart + i >= segmentSize - terminalLimit);
                 float densityGain = static_cast<float>(pattern.size()) / window.size();
                 uint32_t matchPos = absPos + windowStart + i; // Keep absolute positions only
 
@@ -348,21 +348,49 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                     lastCanonicalPos = matchPos;
                 }
 
-                // Update windowData
+                // // Update windowData
+                // if (j >= overlapSize || overlapSize == 0 || windowStart == 0) {
+                //     if (isCanonical) {
+                //         windowData.canonicalCounts++;
+                //         windowData.canonicalDensity += densityGain;
+                //         segmentData.canonicalMatches.push_back(matchInfo);
+
+                //     } else {
+                //         windowData.nonCanonicalCounts++;
+                //         windowData.nonCanonicalDensity += densityGain;
+                //     }
+                //     if (isTerminal) {
+                //         windowData.winMatches.push_back(matchInfo);
+                //         if (!isCanonical) {
+                //             segmentData.nonCanonicalMatches.push_back(matchInfo);
+                //         }
+                //     }
+                // }
+
+
+                // Update windowData with new classification approach
                 if (j >= overlapSize || overlapSize == 0 || windowStart == 0) {
-                    if (isCanonical) {
+                    if (isCanonical) { // C__
                         windowData.canonicalCounts++;
                         windowData.canonicalDensity += densityGain;
                         segmentData.canonicalMatches.push_back(matchInfo);
-
-                    } else {
+                    } else { // c__
                         windowData.nonCanonicalCounts++;
                         windowData.nonCanonicalDensity += densityGain;
-                    }
-                    if (isTerminal) {
-                        windowData.winMatches.push_back(matchInfo);
-                        if (!isCanonical) {
+                        if (isTerminal) {
                             segmentData.nonCanonicalMatches.push_back(matchInfo);
+                        }
+                    }
+
+
+                    if (!isTerminal) { // __t
+                        segmentData.interstitialMatches.push_back(matchInfo);
+                    } else { // __T
+                        // windowData.winMatches.push_back(matchInfo);
+                        if (isForward) { // _FT
+                            windowData.terminalFwdMatches.push_back(matchInfo);
+                        } else {  // _fT
+                            windowData.terminalRevMatches.push_back(matchInfo);
                         }
                     }
                 }
@@ -431,6 +459,14 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
             segmentData.segMatches.insert(segmentData.segMatches.end(),
                                         windowData.winMatches.begin(),
                                         windowData.winMatches.end());
+            
+            segmentData.terminalFwdMatches.insert(segmentData.terminalFwdMatches.end(),
+                                        windowData.terminalFwdMatches.begin(),
+                                        windowData.terminalFwdMatches.end());
+
+            segmentData.terminalRevMatches.insert(segmentData.terminalRevMatches.end(),
+                                        windowData.terminalRevMatches.begin(),
+                                        windowData.terminalRevMatches.end());
         }
 
         // Advance to the next window
@@ -446,15 +482,42 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
         windowView = std::string_view(sequence.data() + windowStart, currentWindowSize);
     }
 
-    // Process "all" and "canonical" matches
-    if (segmentData.segMatches.size() >= 2) {
-        uint16_t mergeDist = userInput.maxBlockDist;
-        segmentData.terminalBlocks = getTelomereBlocks(segmentData.segMatches, mergeDist);
-    }
+    // // Process "all" and "canonical" matches
+    // if (segmentData.segMatches.size() >= 2) {
+    //     uint16_t mergeDist = userInput.maxBlockDist;
+    //     segmentData.terminalBlocks = getTelomereBlocks(segmentData.segMatches, mergeDist);
+    // }
 
-    if (segmentData.canonicalMatches.size() >= 2) {
-        uint16_t mergeDist = this->trie.getLongestPatternSize();
-        segmentData.interstitialBlocks = getTelomereBlocks(segmentData.canonicalMatches, mergeDist);
+    // if (segmentData.canonicalMatches.size() >= 2) {
+    //     uint16_t mergeDist = this->trie.getLongestPatternSize();
+    //     segmentData.interstitialBlocks = getTelomereBlocks(segmentData.canonicalMatches, mergeDist);
+    // }
+
+
+    // 1. Process terminal matches by orientation
+    uint16_t relaxedDist = userInput.maxBlockDist;
+    
+    std::vector<TelomereBlock> fwdBlocks;
+    if (segmentData.terminalFwdMatches.size() >= 2) {
+        fwdBlocks = getTelomereBlocks(segmentData.terminalFwdMatches, relaxedDist);
+    }
+    
+    std::vector<TelomereBlock> revBlocks;
+    if (segmentData.terminalRevMatches.size() >= 2) {
+        revBlocks = getTelomereBlocks(segmentData.terminalRevMatches, relaxedDist);
+    }
+    
+    // 2. Create terminal blocks by combining orientation-specific blocks
+    segmentData.terminalBlocks.reserve(fwdBlocks.size() + revBlocks.size());
+    segmentData.terminalBlocks.insert(segmentData.terminalBlocks.end(), 
+                                        fwdBlocks.begin(), fwdBlocks.end());
+    segmentData.terminalBlocks.insert(segmentData.terminalBlocks.end(), 
+                                        revBlocks.begin(), revBlocks.end());
+
+    // 3. Create interstitial blocks with stricter merge distance
+    uint16_t strictDist = this->trie.getLongestPatternSize();
+    if (segmentData.interstitialMatches.size() >= 2) {
+        segmentData.interstitialBlocks = getTelomereBlocks(segmentData.interstitialMatches, strictDist);
     }
 
     segmentData.windows = windows;
