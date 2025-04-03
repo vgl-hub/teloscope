@@ -72,9 +72,10 @@ struct WindowData {
     float shannonEntropy;
     // uint32_t winHDistance = 0;
     
-    std::vector<MatchInfo> winMatches; // Delete
+    // std::vector<MatchInfo> winMatches; // Delete
     std::vector<MatchInfo> terminalFwdMatches;
     std::vector<MatchInfo> terminalRevMatches;
+    std::vector<MatchInfo> interstitialMatches;
     std::vector<uint8_t> hDistances; 
     uint16_t canonicalCounts = 0;
     uint16_t nonCanonicalCounts = 0;
@@ -185,9 +186,11 @@ public:
 
     std::vector<TelomereBlock> filterTerminalBlocks(const std::vector<TelomereBlock>& blocks);
 
-    std::vector<TelomereBlock> filterInterstitialBlocks(
-                const std::vector<TelomereBlock>& interstitialBlocks,
-                const std::vector<TelomereBlock>& terminalBlocks);
+    // std::vector<TelomereBlock> filterInterstitialBlocks(
+    //             const std::vector<TelomereBlock>& interstitialBlocks,
+    //             const std::vector<TelomereBlock>& terminalBlocks);
+    
+    std::vector<TelomereBlock> filterITSBlocks(const std::vector<TelomereBlock>& interstitialBlocks);
     
     std::string getChrType(const std::string& labels, uint16_t gaps);
 

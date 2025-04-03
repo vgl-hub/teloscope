@@ -111,9 +111,9 @@ std::vector<TelomereBlock> Teloscope::getTelomereBlocks(const std::vector<MatchI
             // p/q assignment
             float forwardRatio = (forwardCount * 100.0f) / blockCounts;
             float reverseRatio = (reverseCount * 100.0f) / blockCounts;
-            if (forwardRatio > 60.0f) {
+            if (forwardRatio > 66.0f) {
                 block.blockLabel = 'p';
-            } else if (reverseRatio > 60.0f) {
+            } else if (reverseRatio > 66.0f) {
                 block.blockLabel = 'q';
             } else {
                 block.blockLabel = 'u';
@@ -235,43 +235,62 @@ std::vector<TelomereBlock> Teloscope::filterTerminalBlocks(const std::vector<Tel
 }
 
 
-std::vector<TelomereBlock> Teloscope::filterInterstitialBlocks(
-            const std::vector<TelomereBlock>& interstitialBlocks,
-            const std::vector<TelomereBlock>& terminalBlocks) {
-    // If there are no terminal blocks, everything is interstitial
-    if (terminalBlocks.empty()) {
-        return interstitialBlocks;
-    }
+// std::vector<TelomereBlock> Teloscope::filterInterstitialBlocks(
+//             const std::vector<TelomereBlock>& interstitialBlocks,
+//             const std::vector<TelomereBlock>& terminalBlocks) {
+//     // If there are no terminal blocks, everything is interstitial
+//     if (terminalBlocks.empty()) {
+//         return interstitialBlocks;
+//     }
 
+//     std::vector<TelomereBlock> filteredBlocks;
+//     filteredBlocks.reserve(interstitialBlocks.size());
+
+//     // Helper lambda to check overlap
+//     auto overlapsWith = [&](const TelomereBlock &intr, const TelomereBlock &term) {
+//         uint64_t intrEnd = intr.start + intr.blockLen;
+//         uint64_t termEnd = term.start + term.blockLen;
+//         return (intr.start < termEnd) && (intrEnd > term.start);
+//     };
+
+//     // Trim interstitial blocks from the start
+//     size_t startIdx = 0;
+//     while (startIdx < interstitialBlocks.size() && overlapsWith(interstitialBlocks[startIdx], terminalBlocks.front())) {
+//         ++startIdx;
+//     }
+
+//     // Trim interstitial blocks from the end
+//     size_t endIdx = interstitialBlocks.size();
+//     while (endIdx > startIdx && overlapsWith(interstitialBlocks[endIdx - 1], terminalBlocks.back())) {
+//         --endIdx;
+//     }
+
+//     // Collect the remaining interstitial blocks
+//     for (size_t i = startIdx; i < endIdx; ++i) {
+//         filteredBlocks.push_back(interstitialBlocks[i]);
+//     }
+
+//     return filteredBlocks;
+// }
+
+
+
+std::vector<TelomereBlock> Teloscope::filterITSBlocks(const std::vector<TelomereBlock>& interstitialBlocks) {
     std::vector<TelomereBlock> filteredBlocks;
-    filteredBlocks.reserve(interstitialBlocks.size());
+    uint16_t minLength = 2 * userInput.patterns.front().size();
 
-    // Helper lambda to check overlap
-    auto overlapsWith = [&](const TelomereBlock &intr, const TelomereBlock &term) {
-        uint64_t intrEnd = intr.start + intr.blockLen;
-        uint64_t termEnd = term.start + term.blockLen;
-        return (intr.start < termEnd) && (intrEnd > term.start);
-    };
+    for (const auto& block : interstitialBlocks) {
+        if (block.blockLen < minLength) continue;  // Length filter
+        if (block.canonicalCount == 0) continue;   // Minimal canonical check
+        if (block.canonicalCount * 2 < block.blockCounts) continue; // Majority canonical
+        if (block.blockLabel == 'u' && (block.forwardCount < 2 && block.reverseCount < 2)) continue; // U check
 
-    // Trim interstitial blocks from the start
-    size_t startIdx = 0;
-    while (startIdx < interstitialBlocks.size() && overlapsWith(interstitialBlocks[startIdx], terminalBlocks.front())) {
-        ++startIdx;
-    }
-
-    // Trim interstitial blocks from the end
-    size_t endIdx = interstitialBlocks.size();
-    while (endIdx > startIdx && overlapsWith(interstitialBlocks[endIdx - 1], terminalBlocks.back())) {
-        --endIdx;
-    }
-
-    // Collect the remaining interstitial blocks
-    for (size_t i = startIdx; i < endIdx; ++i) {
-        filteredBlocks.push_back(interstitialBlocks[i]);
+    filteredBlocks.push_back(block);
     }
 
     return filteredBlocks;
 }
+
 
 
 void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowStart,
@@ -384,7 +403,7 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
 
 
                     if (!isTerminal) { // __t
-                        segmentData.interstitialMatches.push_back(matchInfo);
+                        windowData.interstitialMatches.push_back(matchInfo);
                     } else { // __T
                         // windowData.winMatches.push_back(matchInfo);
                         if (isForward) { // _FT
@@ -456,9 +475,9 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
 
         // Keep all in presence of canonical matches
         if (windowData.hasCanDimer) {
-            segmentData.segMatches.insert(segmentData.segMatches.end(),
-                                        windowData.winMatches.begin(),
-                                        windowData.winMatches.end());
+            // segmentData.segMatches.insert(segmentData.segMatches.end(),
+            //                             windowData.winMatches.begin(),
+            //                             windowData.winMatches.end());
             
             segmentData.terminalFwdMatches.insert(segmentData.terminalFwdMatches.end(),
                                         windowData.terminalFwdMatches.begin(),
@@ -467,6 +486,10 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
             segmentData.terminalRevMatches.insert(segmentData.terminalRevMatches.end(),
                                         windowData.terminalRevMatches.begin(),
                                         windowData.terminalRevMatches.end());
+            
+            segmentData.interstitialMatches.insert(segmentData.interstitialMatches.end(),
+                                        windowData.interstitialMatches.begin(),
+                                        windowData.interstitialMatches.end());
         }
 
         // Advance to the next window

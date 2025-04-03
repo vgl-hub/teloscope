@@ -149,7 +149,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
 
     // Filter blocks
     pathData.terminalBlocks = filterTerminalBlocks(pathData.terminalBlocks);
-    pathData.interstitialBlocks = filterInterstitialBlocks(pathData.interstitialBlocks, pathData.terminalBlocks);
+    pathData.interstitialBlocks = filterITSBlocks(pathData.interstitialBlocks);
 
     std::lock_guard<std::mutex> lck(mtx);
     allPathData.push_back(std::move(pathData));
