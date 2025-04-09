@@ -156,7 +156,7 @@ class Teloscope {
                 entropy -= probability * std::log2(probability);
             }
         }
-        return entropy;
+        return std::round(entropy * 1000.0f) / 1000.0f; // Round to 3 decimal places
     }
 
 
@@ -203,10 +203,6 @@ public:
     std::vector<TelomereBlock> filterITSBlocks(const std::vector<TelomereBlock>& interstitialBlocks);
     
     std::string getChrType(const std::string& labels, uint16_t gaps);
-
-    // void writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& windowRepeatsFile,
-    //                         std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
-    //                         std::ofstream& terminalBlocksFile, std::ofstream& interstitialBlocksFile);
     
     void writeBEDFile(std::ofstream& windowMetricsFile,
                     std::ofstream& canonicalMatchFile,
