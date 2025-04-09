@@ -45,6 +45,8 @@ public:
 
 struct MatchInfo {
     uint32_t position;
+    // uint32_t matchSize;
+    // std::string matchSeq;
     bool isCanonical;
     bool isForward;
 
@@ -202,9 +204,15 @@ public:
     
     std::string getChrType(const std::string& labels, uint16_t gaps);
 
-    void writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& windowRepeatsFile,
-                            std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
-                            std::ofstream& terminalBlocksFile, std::ofstream& interstitialBlocksFile);
+    // void writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& windowRepeatsFile,
+    //                         std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
+    //                         std::ofstream& terminalBlocksFile, std::ofstream& interstitialBlocksFile);
+    
+    void writeBEDFile(std::ofstream& windowMetricsFile,
+                    std::ofstream& canonicalMatchFile,
+                    std::ofstream& noncanonicalMatchFile,
+                    std::ofstream& terminalBlocksFile,
+                    std::ofstream& interstitialBlocksFile);
 
 
     void handleBEDFile();

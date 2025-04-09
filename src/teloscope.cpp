@@ -179,6 +179,7 @@ std::vector<TelomereBlock> Teloscope::getBlocksRecycle(
 std::vector<TelomereBlock> Teloscope::getBlocks(
     std::vector<MatchInfo>& matches, 
     uint16_t mergeDist, bool needsSorting) {
+    
     // Sort matches by position
     if (needsSorting) {
         std::sort(matches.begin(), matches.end(), [](const MatchInfo &a, const MatchInfo &b) {
@@ -255,9 +256,6 @@ std::vector<TelomereBlock> Teloscope::getBlocks(
 
     return telomereBlocks;
 }
-
-
-
 
 
 std::vector<TelomereBlock> Teloscope::filterTerminalBlocks(const std::vector<TelomereBlock>& blocks) {
@@ -695,108 +693,116 @@ std::string Teloscope::getChrType(const std::string& labels, uint16_t gaps) {
 }
 
 
-void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& windowRepeatsFile,
-                            std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
-                            std::ofstream& terminalBlocksFile, std::ofstream& interstitialBlocksFile) {
 
-    // Write header for window_metrics.tsv
-    if (userInput.outEntropy || userInput.outGC) {
-        windowMetricsFile << "Header\tStart\tEnd";
+void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
+                            std::ofstream& canonicalMatchFile,
+                            std::ofstream& noncanonicalMatchFile,
+                            std::ofstream& terminalBlocksFile,
+                            std::ofstream& interstitialBlocksFile) {
+
+    // Create optimized buffers
+    std::ostringstream windowMetricsBuffer;
+    std::ostringstream canonicalMatchBuffer;
+    std::ostringstream noncanonicalMatchBuffer;
+    std::ostringstream terminalBlocksBuffer;
+    std::ostringstream interstitialBlocksBuffer;
+
+    // Write combined header (BEDgraph format)
+    if (userInput.outWinRepeats || userInput.outEntropy || userInput.outGC) {
+        std::string description = "";
+
+        if (userInput.outWinRepeats) {
+            description += "CanonicalCounts, NonCanonicalCounts, CanonicalDensity, NonCanonicalDensity";
+        }
         if (userInput.outEntropy) {
-            windowMetricsFile << "\tShannonEntropy";
+            description += ", ShannonEntropy";
         }
         if (userInput.outGC) {
-            windowMetricsFile << "\tGCContent";
+            description += ", GCContent";
         }
-        windowMetricsFile << "\n";
+        windowMetricsBuffer << "track type=bedGraph name=\"Window Metrics\" description=\"" << description << "\"\n";
     }
 
-    // Report header
+    // Console report header
     if (!userInput.ultraFastMode) {
         std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tits\tcanonical\twindows\n";
     } else {
         std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\n";
     }
 
-    // BED and reports
+    // Processing paths
     for (const auto& pathData : allPathData) {
         const auto& header = pathData.header;
         const auto& windows = pathData.windows;
         const auto& pos = pathData.seqPos;
         const auto& gaps = pathData.gaps;
 
-        // Write blocks
+        // Terminal blocks
         std::string labels;
         for (const auto& block : pathData.terminalBlocks) {
             uint64_t blockEnd = block.start + block.blockLen;
-            terminalBlocksFile << header << "\t"
-                            << block.start << "\t"
-                            << blockEnd << "\t"
-                            << block.blockLen << "\t"
-                            << block.blockLabel << "\n";
+            terminalBlocksBuffer << header << "\t"
+                                << block.start << "\t"
+                                << blockEnd << "\t"
+                                << block.blockLen << "\t"
+                                << block.blockLabel << "\n";
             labels += block.blockLabel;
         }
 
+        // Interstitial blocks
         if (userInput.outITS) {
             for (const auto& block : pathData.interstitialBlocks) {
                 uint64_t blockEnd = block.start + block.blockLen;
-                interstitialBlocksFile << header << "\t"
-                            << block.start << "\t"
-                            << blockEnd << "\t"
-                            << block.blockLen << "\t"
-                            << block.blockLabel << "\n";
+                interstitialBlocksBuffer << header << "\t"
+                                        << block.start << "\t"
+                                        << blockEnd << "\t"
+                                        << block.blockLen << "\t"
+                                        << block.blockLabel << "\n";
             }
         }
 
-        // Write matches to separate files
+        // All canonical and terminal non-canonical matches
         if (userInput.outMatches) {
             for (const auto& match : pathData.canonicalMatches) {
-                canonicalMatchFile << header << "\t"
+                canonicalMatchBuffer << header << "\t"
                                 << match.position << "\t"
-                                << (match.position + 6) << "\t"
+                                << (match.position + 6) << "\t" // TODO: Fix end coordinates
                                 << "canonical" << "\n";
             }
 
             for (const auto& match : pathData.nonCanonicalMatches) {
-                noncanonicalMatchFile << header << "\t"
+                noncanonicalMatchBuffer << header << "\t"
                                     << match.position << "\t"
-                                    << (match.position + 6) << "\t"
+                                    << (match.position + 6) << "\t" // TODO: Fix end coordinates
                                     << "non-canonical" << "\n";
             }
         }
 
-        // Process window data
+        // Process window metrics
         for (const auto& window : windows) {
-            uint32_t windowEnd = window.windowStart + window.currentWindowSize; // Start is already 0-based
+            uint32_t windowEnd = window.windowStart + window.currentWindowSize;
 
             // Write window metrics if enabled
-            if (userInput.outEntropy || userInput.outGC) {
-                windowMetricsFile << header << "\t" << window.windowStart << "\t" << windowEnd;
+            if (userInput.outWinRepeats || userInput.outEntropy || userInput.outGC) {
+                windowMetricsBuffer << header << "\t" << window.windowStart << "\t" << windowEnd;
 
+                if (userInput.outWinRepeats) {
+                    windowMetricsBuffer << "\t" << window.canonicalCounts << "\t" << window.nonCanonicalCounts
+                                        << "\t" << window.canonicalDensity << "\t" << window.nonCanonicalDensity;
+                }
                 if (userInput.outEntropy) {
-                    windowMetricsFile << "\t" << window.shannonEntropy;
+                    windowMetricsBuffer << "\t" << std::fixed << std::setprecision(3) << window.shannonEntropy;
                 }
                 if (userInput.outGC) {
-                    windowMetricsFile << "\t" << window.gcContent;
+                    windowMetricsBuffer << "\t" << window.gcContent;
                 }
-                windowMetricsFile << "\n";
-            }
-
-            // Write repeats data if enabled
-            if (userInput.outWinRepeats && window.canonicalCounts > 1) {
-                windowRepeatsFile << header << "\t" << window.windowStart << "\t"
-                                << windowEnd << "\t"
-                                << window.canonicalCounts << "\t"
-                                << window.nonCanonicalCounts << "\t"
-                                << window.canonicalDensity << "\t"
-                                << window.nonCanonicalDensity << "\n";
+                windowMetricsBuffer << '\n';
             }
         }
 
-        // Get the chr/scaffold type
-        std::string type = getChrType(labels, gaps);
-
         // Output path summary
+        std::string type = getChrType(labels, gaps); // Telomere/Gap completeness
+        std::cout << "\n+++ Path Summary Report +++\n";
         std::cout << pos + 1 << "\t" << header << "\t" 
                 << pathData.terminalBlocks.size() << "\t"
                 << (labels.empty() ? "none" : labels) << "\t" 
@@ -819,26 +825,28 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& wi
         std::cout << "\n"; // Finish path summary
     }
     totalPaths = allPathData.size();
+
+    // Single flush per file
+    windowMetricsFile << windowMetricsBuffer.str();
+    canonicalMatchFile << canonicalMatchBuffer.str();
+    noncanonicalMatchFile << noncanonicalMatchBuffer.str();
+    terminalBlocksFile << terminalBlocksBuffer.str();
+    interstitialBlocksFile << interstitialBlocksBuffer.str();
 }
 
 
 void Teloscope::handleBEDFile() {
+    lg.verbose("\nReporting window matches and metrics...");
+
     std::ofstream windowMetricsFile;
-    std::ofstream windowRepeatsFile;
     std::ofstream canonicalMatchFile;
     std::ofstream noncanonicalMatchFile;
     std::ofstream terminalBlocksFile;
     std::ofstream interstitialBlocksFile;
 
-    lg.verbose("\nReporting window matches and metrics in BED/BEDgraphs...");
-
     // Open files for writing
-    if (userInput.outWinRepeats) {
-        windowRepeatsFile.open(userInput.outRoute + "/window_repeats.bedgraph");
-    }
-
-    if (userInput.outEntropy || userInput.outGC) {
-        windowMetricsFile.open(userInput.outRoute + "/window_metrics.tsv");
+    if (userInput.outWinRepeats || userInput.outEntropy || userInput.outGC) {
+        windowMetricsFile.open(userInput.outRoute + "/window_metrics.bedgraph");
     }
 
     if (userInput.outMatches) {
@@ -852,15 +860,11 @@ void Teloscope::handleBEDFile() {
 
     terminalBlocksFile.open(userInput.outRoute + "/terminal_telomeres.bed");
 
-    writeBEDFile(windowMetricsFile, windowRepeatsFile, canonicalMatchFile, 
-                noncanonicalMatchFile, terminalBlocksFile, interstitialBlocksFile);
+    writeBEDFile(windowMetricsFile, canonicalMatchFile, noncanonicalMatchFile,
+                terminalBlocksFile, interstitialBlocksFile);
 
     // Close all files once
-    if (userInput.outWinRepeats) {
-        windowRepeatsFile.close();
-    }
-
-    if (userInput.outEntropy || userInput.outGC) {
+    if (userInput.outWinRepeats || userInput.outEntropy || userInput.outGC) {
         windowMetricsFile.close();
     }
     
@@ -875,6 +879,189 @@ void Teloscope::handleBEDFile() {
 
     terminalBlocksFile.close();
 }
+
+
+
+// void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile, std::ofstream& windowRepeatsFile,
+//                             std::ofstream& canonicalMatchFile, std::ofstream& noncanonicalMatchFile,
+//                             std::ofstream& terminalBlocksFile, std::ofstream& interstitialBlocksFile) {
+
+//     // Write header for window_metrics.tsv
+//     if (userInput.outEntropy || userInput.outGC) {
+//         windowMetricsFile << "Header\tStart\tEnd";
+//         if (userInput.outEntropy) {
+//             windowMetricsFile << "\tShannonEntropy";
+//         }
+//         if (userInput.outGC) {
+//             windowMetricsFile << "\tGCContent";
+//         }
+//         windowMetricsFile << "\n";
+//     }
+
+//     // Report header
+//     if (!userInput.ultraFastMode) {
+//         std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tits\tcanonical\twindows\n";
+//     } else {
+//         std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\n";
+//     }
+
+//     // BED and reports
+//     for (const auto& pathData : allPathData) {
+//         const auto& header = pathData.header;
+//         const auto& windows = pathData.windows;
+//         const auto& pos = pathData.seqPos;
+//         const auto& gaps = pathData.gaps;
+
+//         // Write blocks
+//         std::string labels;
+//         for (const auto& block : pathData.terminalBlocks) {
+//             uint64_t blockEnd = block.start + block.blockLen;
+//             terminalBlocksFile << header << "\t"
+//                             << block.start << "\t"
+//                             << blockEnd << "\t"
+//                             << block.blockLen << "\t"
+//                             << block.blockLabel << "\n";
+//             labels += block.blockLabel;
+//         }
+
+//         if (userInput.outITS) {
+//             for (const auto& block : pathData.interstitialBlocks) {
+//                 uint64_t blockEnd = block.start + block.blockLen;
+//                 interstitialBlocksFile << header << "\t"
+//                             << block.start << "\t"
+//                             << blockEnd << "\t"
+//                             << block.blockLen << "\t"
+//                             << block.blockLabel << "\n";
+//             }
+//         }
+
+//         // Write matches to separate files
+//         if (userInput.outMatches) {
+//             for (const auto& match : pathData.canonicalMatches) {
+//                 canonicalMatchFile << header << "\t"
+//                                 << match.position << "\t"
+//                                 << (match.position + 6) << "\t"
+//                                 << "canonical" << "\n";
+//             }
+
+//             for (const auto& match : pathData.nonCanonicalMatches) {
+//                 noncanonicalMatchFile << header << "\t"
+//                                     << match.position << "\t"
+//                                     << (match.position + 6) << "\t"
+//                                     << "non-canonical" << "\n";
+//             }
+//         }
+
+//         // Process window data
+//         for (const auto& window : windows) {
+//             uint32_t windowEnd = window.windowStart + window.currentWindowSize; // Start is already 0-based
+
+//             // Write window metrics if enabled
+//             if (userInput.outEntropy || userInput.outGC) {
+//                 windowMetricsFile << header << "\t" << window.windowStart << "\t" << windowEnd;
+
+//                 if (userInput.outEntropy) {
+//                     windowMetricsFile << "\t" << window.shannonEntropy;
+//                 }
+//                 if (userInput.outGC) {
+//                     windowMetricsFile << "\t" << window.gcContent;
+//                 }
+//                 windowMetricsFile << "\n";
+//             }
+
+//             // Write repeats data if enabled
+//             if (userInput.outWinRepeats && window.canonicalCounts > 1) {
+//                 windowRepeatsFile << header << "\t" << window.windowStart << "\t"
+//                                 << windowEnd << "\t"
+//                                 << window.canonicalCounts << "\t"
+//                                 << window.nonCanonicalCounts << "\t"
+//                                 << window.canonicalDensity << "\t"
+//                                 << window.nonCanonicalDensity << "\n";
+//             }
+//         }
+
+//         // Get the chr/scaffold type
+//         std::string type = getChrType(labels, gaps);
+
+//         // Output path summary
+//         std::cout << pos + 1 << "\t" << header << "\t" 
+//                 << pathData.terminalBlocks.size() << "\t"
+//                 << (labels.empty() ? "none" : labels) << "\t" 
+//                 << gaps << "\t" << type;
+        
+//         totalTelomeres += pathData.terminalBlocks.size(); // Update assembly summary
+//         totalGaps += gaps;
+
+//         // Expand path summary
+//         if (!userInput.ultraFastMode) {
+//             std::cout << "\t" 
+//                     << pathData.interstitialBlocks.size() << "\t"
+//                     << pathData.canonicalMatches.size() << "\t"
+//                     << windows.size();
+            
+//             totalNWindows += windows.size(); // Update assembly summary
+//             totalITS += pathData.interstitialBlocks.size();
+//             totalCanMatches += pathData.canonicalMatches.size();
+//         }
+//         std::cout << "\n"; // Finish path summary
+//     }
+//     totalPaths = allPathData.size();
+// }
+
+
+// void Teloscope::handleBEDFile() {
+//     std::ofstream windowMetricsFile;
+//     std::ofstream windowRepeatsFile;
+//     std::ofstream canonicalMatchFile;
+//     std::ofstream noncanonicalMatchFile;
+//     std::ofstream terminalBlocksFile;
+//     std::ofstream interstitialBlocksFile;
+
+//     lg.verbose("\nReporting window matches and metrics in BED/BEDgraphs...");
+
+//     // Open files for writing
+//     if (userInput.outWinRepeats) {
+//         windowRepeatsFile.open(userInput.outRoute + "/window_repeats.bedgraph");
+//     }
+
+//     if (userInput.outEntropy || userInput.outGC) {
+//         windowMetricsFile.open(userInput.outRoute + "/window_metrics.tsv");
+//     }
+
+//     if (userInput.outMatches) {
+//         canonicalMatchFile.open(userInput.outRoute + "/canonical_matches.bed");
+//         noncanonicalMatchFile.open(userInput.outRoute + "/noncanonical_matches.bed");
+//     }
+
+//     if (userInput.outITS) {
+//         interstitialBlocksFile.open(userInput.outRoute + "/interstitial_telomeres.bed");
+//     }
+
+//     terminalBlocksFile.open(userInput.outRoute + "/terminal_telomeres.bed");
+
+//     writeBEDFile(windowMetricsFile, windowRepeatsFile, canonicalMatchFile, 
+//                 noncanonicalMatchFile, terminalBlocksFile, interstitialBlocksFile);
+
+//     // Close all files once
+//     if (userInput.outWinRepeats) {
+//         windowRepeatsFile.close();
+//     }
+
+//     if (userInput.outEntropy || userInput.outGC) {
+//         windowMetricsFile.close();
+//     }
+    
+//     if (userInput.outMatches) {
+//         canonicalMatchFile.close();
+//         noncanonicalMatchFile.close();
+//     }
+
+//     if (userInput.outITS) {
+//         interstitialBlocksFile.close();
+//     }
+
+//     terminalBlocksFile.close();
+// }
 
 
 void Teloscope::printSummary() {
