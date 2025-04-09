@@ -87,17 +87,20 @@ std::vector<TelomereBlock> Teloscope::getBlocksRecycle(
 
     std::vector<TelomereBlock> telomereBlocks;
     std::vector<MatchInfo> recycledMatches;
-    recycledMatches.reserve(matches.size()); // avoids reallocation overhead
+    recycledMatches.reserve(matches.size());
 
     uint16_t patternSize = userInput.canonicalSize;
     uint16_t minBlockCounts = userInput.minBlockCounts;
 
+    // Track block indices
+    size_t blockStartIdx = 0;
+    size_t currentIdx = 0;
+    
     uint64_t blockStart = matches[0].position;
     uint64_t prevPosition = blockStart;
     uint16_t blockCounts = 1;
     uint16_t forwardCount = matches[0].isForward;
     uint16_t canonicalCount = matches[0].isCanonical;
-    size_t matchStartIdx = 0;
 
     auto finalizeBlock = [&](uint64_t endPosition, size_t startIdx, size_t endIdx) {
         if (blockCounts >= minBlockCounts) {
@@ -127,12 +130,15 @@ std::vector<TelomereBlock> Teloscope::getBlocksRecycle(
 
             telomereBlocks.push_back(block);
         } else {
-            // Efficiently collect rejected matches
-            recycledMatches.insert(recycledMatches.end(), matches.begin() + startIdx, matches.begin() + endIdx + 1);
+            // Recycle all matches in this block
+            for (size_t i = startIdx; i <= endIdx; i++) {
+                recycledMatches.push_back(matches[i]);
+            }
         }
     };
 
     for (size_t i = 1; i < matches.size(); ++i) {
+        currentIdx = i;
         uint32_t distance = matches[i].position - prevPosition;
 
         if (distance <= mergeDist) {
@@ -141,18 +147,20 @@ std::vector<TelomereBlock> Teloscope::getBlocksRecycle(
             canonicalCount += matches[i].isCanonical;
             prevPosition = matches[i].position;
         } else {
-            finalizeBlock(prevPosition, matchStartIdx, i - 1);
+            finalizeBlock(prevPosition, blockStartIdx, i-1);
+            blockStartIdx = i;
             blockStart = matches[i].position;
             prevPosition = blockStart;
             blockCounts = 1;
             forwardCount = matches[i].isForward;
             canonicalCount = matches[i].isCanonical;
-            matchStartIdx = i;
         }
     }
-    finalizeBlock(prevPosition, matchStartIdx, matches.size() - 1);
+    
+    // Finalize the last block
+    finalizeBlock(prevPosition, blockStartIdx, currentIdx);
 
-    // Single, efficient move-based insertion
+    // Efficient move-based insertion
     if (!recycledMatches.empty()) {
         if (recycleToStart)
             interstitialMatches.insert(interstitialMatches.begin(),
