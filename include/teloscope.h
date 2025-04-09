@@ -61,6 +61,10 @@ struct TelomereBlock {
     uint16_t canonicalCount;
     uint16_t nonCanonicalCount;
     float blockDensity;
+    float blockFwdDensity;
+    float blockRevDensity;
+    float blockCanDensity;
+    float blockNonCanDensity;
     char blockLabel; // 'p', 'q', 'u'
 };
 
@@ -182,13 +186,17 @@ public:
 
     void sortBySeqPos();
 
-    std::vector<TelomereBlock> getTelomereBlocks(const std::vector<MatchInfo>& inputMatches, uint16_t mergeDist);
+    std::vector<TelomereBlock> getBlocksRecycle(
+        const std::vector<MatchInfo>& matches, 
+        uint16_t mergeDist,
+        std::vector<MatchInfo>& interstitialMatches,
+        bool recycleToStart);
+
+        std::vector<TelomereBlock> getBlocks(
+            std::vector<MatchInfo>& matches, 
+            uint16_t mergeDist, bool needsSorting);
 
     std::vector<TelomereBlock> filterTerminalBlocks(const std::vector<TelomereBlock>& blocks);
-
-    // std::vector<TelomereBlock> filterInterstitialBlocks(
-    //             const std::vector<TelomereBlock>& interstitialBlocks,
-    //             const std::vector<TelomereBlock>& terminalBlocks);
     
     std::vector<TelomereBlock> filterITSBlocks(const std::vector<TelomereBlock>& interstitialBlocks);
     
