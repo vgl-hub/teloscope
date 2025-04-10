@@ -724,6 +724,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
     }
 
     // Console report header
+    std::cout << "\n+++ Path Summary Report +++\n";
     if (!userInput.ultraFastMode) {
         std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tits\tcanonical\twindows\n";
     } else {
@@ -802,7 +803,6 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
 
         // Output path summary
         std::string type = getChrType(labels, gaps); // Telomere/Gap completeness
-        std::cout << "\n+++ Path Summary Report +++\n";
         std::cout << pos + 1 << "\t" << header << "\t" 
                 << pathData.terminalBlocks.size() << "\t"
                 << (labels.empty() ? "none" : labels) << "\t" 

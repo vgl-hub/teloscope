@@ -77,8 +77,7 @@ Teloscope outputs telomere annotations in BED format:
 Additional optional outputs (Disabled with --ultra-fast):
 
 * `interstitial_telomeres.bed` Blocks of adjacent canonical repeat matches. Outside of the ends, it represents interstitial telomeres (ITSs).
-* `window_metrics.tsv` Tabulated file with calculated window metrics such as GC% and Shannon Entropy
-* `window_repeats.bedgraph` File with canonical repeats, non-canonical repeats, canonical densities, and non-canonical densities by window. 
+* `window_metrics.bedgraph` Tabulated file with calculated window metrics such as canonical repeats, non-canonical repeats, canonical densities, non-canonical densities (-r), GC% (-g) and Shannon Entropy (-e) by window. 
 * `canonical_matches.bed` Coordinates of canonical repeats throughout the assembly. 
 * `noncanonical_matches.bed` Coordinates of non-canonical repeats in terminal regions of contigs. 
 
