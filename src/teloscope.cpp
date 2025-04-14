@@ -477,6 +477,15 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                         }
                     }
 
+                    // Track forward/reverse metrics
+                    if (isForward) {
+                        windowData.fwdCounts++;
+                        windowData.fwdDensity += densityGain;
+                    } else {
+                        windowData.revCounts++;
+                        windowData.revDensity += densityGain;
+                    }
+
                     if (!isTerminal) { // __t
                         windowData.interstitialMatches.push_back(matchInfo);
                     } else { // __T
@@ -493,10 +502,18 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                     if (isCanonical) {
                         nextOverlapData.canonicalCounts++;
                         nextOverlapData.canonicalDensity += densityGain;
-
                     } else {
                         nextOverlapData.nonCanonicalCounts++;
                         nextOverlapData.nonCanonicalDensity += densityGain;
+                    }
+
+                    // Track forward/reverse metrics for overlap window
+                    if (isForward) {
+                        nextOverlapData.fwdCounts++;
+                        nextOverlapData.fwdDensity += densityGain;
+                    } else {
+                        nextOverlapData.revCounts++;
+                        nextOverlapData.revDensity += densityGain;
                     }
                 }
 
@@ -749,7 +766,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
         std::string description = "";
 
         if (userInput.outWinRepeats) {
-            description += "CanonicalCounts, NonCanonicalCounts, CanonicalDensity, NonCanonicalDensity";
+            description += "ForwardDensity, ReverseDensity, CanonicalDensity, NonCanonicalDensity";
         }
         if (userInput.outEntropy) {
             description += ", ShannonEntropy";
@@ -833,7 +850,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
                 windowMetricsBuffer << header << "\t" << window.windowStart << "\t" << windowEnd;
 
                 if (userInput.outWinRepeats) {
-                    windowMetricsBuffer << "\t" << window.canonicalCounts << "\t" << window.nonCanonicalCounts
+                    windowMetricsBuffer << "\t" << window.fwdDensity << "\t" << window.revDensity << "\t"
                                         << "\t" << window.canonicalDensity << "\t" << window.nonCanonicalDensity;
                 }
                 if (userInput.outEntropy) {

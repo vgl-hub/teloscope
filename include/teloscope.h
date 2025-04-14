@@ -85,8 +85,12 @@ struct WindowData {
     std::vector<uint8_t> hDistances; 
     uint16_t canonicalCounts = 0;
     uint16_t nonCanonicalCounts = 0;
+    uint16_t fwdCounts = 0;
+    uint16_t revCounts = 0;
     float canonicalDensity = 0.0f;
     float nonCanonicalDensity = 0.0f;
+    float fwdDensity = 0.0f;
+    float revDensity = 0.0f;
     bool hasCanDimer = false; 
     
     WindowData() : windowStart(0), currentWindowSize(0), gcContent(0.0f), shannonEntropy(0.0f), hasCanDimer(false) {}
