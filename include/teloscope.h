@@ -44,13 +44,13 @@ public:
 
 
 struct MatchInfo {
-    uint32_t position;
-    // uint32_t matchSize;
-    // std::string matchSeq;
     bool isCanonical;
     bool isForward;
+    uint32_t position;
+    uint16_t matchSize;
+    // std::string matchSeq;
 
-    MatchInfo() : isCanonical(false), isForward(false) {}
+    MatchInfo() : isCanonical(false), isForward(false), matchSize(0) {}
 };
 
 

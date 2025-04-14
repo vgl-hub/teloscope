@@ -94,15 +94,17 @@ std::vector<TelomereBlock> Teloscope::getBlocksRecycle(
 
     // Track block indices
     size_t blockStartIdx = 0;
-    size_t currentIdx = 0;
     
     uint64_t blockStart = matches[0].position;
     uint64_t prevPosition = blockStart;
     uint16_t blockCounts = 1;
     uint16_t forwardCount = matches[0].isForward;
     uint16_t canonicalCount = matches[0].isCanonical;
+    uint64_t totalCovered = matches[0].matchSize;
+    uint64_t fwdCovered = matches[0].isForward * matches[0].matchSize;
+    uint64_t canCovered = matches[0].isCanonical * matches[0].matchSize;
 
-    auto finalizeBlock = [&](uint64_t endPosition, size_t startIdx, size_t endIdx) {
+    auto finalizeBlock = [&](uint64_t endPosition) {
         if (blockCounts >= minBlockCounts) {
             TelomereBlock block;
             block.start = blockStart;
@@ -112,13 +114,16 @@ std::vector<TelomereBlock> Teloscope::getBlocksRecycle(
             block.canonicalCount = canonicalCount;
             block.nonCanonicalCount = blockCounts - canonicalCount;
             
-            block.blockLen = (endPosition - blockStart) + patternSize;
-            block.blockDensity = static_cast<float>(blockCounts) / block.blockLen;
-            block.blockFwdDensity = static_cast<float>(forwardCount) / block.blockLen;
-            block.blockRevDensity = static_cast<float>(block.reverseCount) / block.blockLen;
-            block.blockCanDensity = static_cast<float>(canonicalCount) / block.blockLen;
-            block.blockNonCanDensity = static_cast<float>(block.nonCanonicalCount) / block.blockLen;
+            block.blockLen = (endPosition - blockStart) + patternSize; // TODO: Replace with last matchSize
+            
+            // Calculate proper densities using accumulated covered nucleotides
+            block.blockDensity = (static_cast<float>(totalCovered) / block.blockLen) * 100.0f;
+            block.blockFwdDensity = (static_cast<float>(fwdCovered) / block.blockLen) * 100.0f;
+            block.blockRevDensity = (static_cast<float>(totalCovered - fwdCovered) / block.blockLen) * 100.0f;
+            block.blockCanDensity = (static_cast<float>(canCovered) / block.blockLen) * 100.0f;
+            block.blockNonCanDensity = (static_cast<float>(totalCovered - canCovered) / block.blockLen) * 100.0f;
 
+            // p/q assignment based on forward percentage
             float forwardRatio = (forwardCount * 100.0f) / blockCounts;
             if (forwardRatio > 66.0f) {
                 block.blockLabel = 'p';
@@ -131,45 +136,59 @@ std::vector<TelomereBlock> Teloscope::getBlocksRecycle(
             telomereBlocks.push_back(block);
         } else {
             // Recycle all matches in this block
-            for (size_t i = startIdx; i <= endIdx; i++) {
+            for (size_t i = blockStartIdx; i < blockStartIdx + blockCounts; i++) {
                 recycledMatches.push_back(matches[i]);
             }
         }
     };
 
     for (size_t i = 1; i < matches.size(); ++i) {
-        currentIdx = i;
         uint32_t distance = matches[i].position - prevPosition;
 
         if (distance <= mergeDist) {
+            // Continue current block
             blockCounts++;
             forwardCount += matches[i].isForward;
             canonicalCount += matches[i].isCanonical;
+            
+            // Update covered nucleotides - more efficient using the boolean values
+            totalCovered += matches[i].matchSize;
+            fwdCovered += matches[i].isForward * matches[i].matchSize;
+            canCovered += matches[i].isCanonical * matches[i].matchSize;
+            
             prevPosition = matches[i].position;
         } else {
-            finalizeBlock(prevPosition, blockStartIdx, i-1);
+            // Finalize current block
+            finalizeBlock(prevPosition);
+            
+            // Start new block
             blockStartIdx = i;
             blockStart = matches[i].position;
             prevPosition = blockStart;
             blockCounts = 1;
             forwardCount = matches[i].isForward;
             canonicalCount = matches[i].isCanonical;
+            
+            // Reset covered nucleotides
+            totalCovered = matches[i].matchSize;
+            fwdCovered = matches[i].isForward * matches[i].matchSize;
+            canCovered = matches[i].isCanonical * matches[i].matchSize;
         }
     }
     
     // Finalize the last block
-    finalizeBlock(prevPosition, blockStartIdx, currentIdx);
+    finalizeBlock(prevPosition);
 
     // Efficient move-based insertion
     if (!recycledMatches.empty()) {
         if (recycleToStart)
             interstitialMatches.insert(interstitialMatches.begin(),
-                                        std::make_move_iterator(recycledMatches.begin()),
-                                        std::make_move_iterator(recycledMatches.end()));
+                                    std::make_move_iterator(recycledMatches.begin()),
+                                    std::make_move_iterator(recycledMatches.end()));
         else
             interstitialMatches.insert(interstitialMatches.end(),
-                                        std::make_move_iterator(recycledMatches.begin()),
-                                        std::make_move_iterator(recycledMatches.end()));
+                                    std::make_move_iterator(recycledMatches.begin()),
+                                    std::make_move_iterator(recycledMatches.end()));
     }
 
     return telomereBlocks;
@@ -197,6 +216,9 @@ std::vector<TelomereBlock> Teloscope::getBlocks(
     uint16_t blockCounts = 1;
     uint16_t forwardCount = matches[0].isForward;
     uint16_t canonicalCount = matches[0].isCanonical;
+    uint64_t totalCovered = matches[0].matchSize;
+    uint64_t fwdCovered = matches[0].isForward * matches[0].matchSize;
+    uint64_t canCovered = matches[0].isCanonical * matches[0].matchSize;
 
     auto finalizeBlock = [&](uint64_t endPosition) {
         if (blockCounts >= minBlockCounts) {
@@ -208,18 +230,20 @@ std::vector<TelomereBlock> Teloscope::getBlocks(
             block.canonicalCount = canonicalCount;
             block.nonCanonicalCount = blockCounts - canonicalCount;
             
-            block.blockLen = (endPosition - blockStart) + patternSize;
-            block.blockDensity = static_cast<float>(blockCounts) / block.blockLen;
-            block.blockFwdDensity = static_cast<float>(forwardCount) / block.blockLen;
-            block.blockRevDensity = static_cast<float>(block.reverseCount) / block.blockLen;
-            block.blockCanDensity = static_cast<float>(canonicalCount) / block.blockLen;
-            block.blockNonCanDensity = static_cast<float>(block.nonCanonicalCount) / block.blockLen;
+            block.blockLen = (endPosition - blockStart) + patternSize; // TODO: Replace with last matchSize
+            
+            // Calculate proper densities using accumulated covered nucleotides
+            block.blockDensity = (static_cast<float>(totalCovered) / block.blockLen) * 100.0f;
+            block.blockFwdDensity = (static_cast<float>(fwdCovered) / block.blockLen) * 100.0f;
+            block.blockRevDensity = (static_cast<float>(totalCovered - fwdCovered) / block.blockLen) * 100.0f;
+            block.blockCanDensity = (static_cast<float>(canCovered) / block.blockLen) * 100.0f;
+            block.blockNonCanDensity = (static_cast<float>(totalCovered - canCovered) / block.blockLen) * 100.0f;
 
             // p/q assignment based on forward percentage
             float forwardRatio = (forwardCount * 100.0f) / blockCounts;
-            if (forwardRatio > 66.0f) {
+            if (forwardRatio > 66.6f) {
                 block.blockLabel = 'p';
-            } else if (forwardRatio < 33.0f) {
+            } else if (forwardRatio < 33.3f) {
                 block.blockLabel = 'q';
             } else {
                 block.blockLabel = 'u';
@@ -237,6 +261,12 @@ std::vector<TelomereBlock> Teloscope::getBlocks(
             blockCounts++;
             forwardCount += matches[i].isForward;
             canonicalCount += matches[i].isCanonical;
+            
+            // Update covered nucleotides
+            totalCovered += matches[i].matchSize;
+            fwdCovered += matches[i].isForward * matches[i].matchSize;
+            canCovered += matches[i].isCanonical * matches[i].matchSize;
+            
             prevPosition = matches[i].position;
         } else {
             // Finalize current block
@@ -248,6 +278,11 @@ std::vector<TelomereBlock> Teloscope::getBlocks(
             blockCounts = 1;
             forwardCount = matches[i].isForward;
             canonicalCount = matches[i].isCanonical;
+            
+            // Reset covered nucleotides
+            totalCovered = matches[i].matchSize;
+            fwdCovered = matches[i].isForward * matches[i].matchSize;
+            canCovered = matches[i].isCanonical * matches[i].matchSize;
         }
     }
 
@@ -406,13 +441,14 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                 bool isForward = (pattern.size() >= 3 && pattern.compare(0, 3, "CCC") == 0);
                 bool isCanonical = (pattern == std::string_view(userInput.canonicalFwd) || 
                                     pattern == std::string_view(userInput.canonicalRev));
-                float densityGain = static_cast<float>(pattern.size()) / window.size();
+                float densityGain = (static_cast<float>(pattern.size()) / window.size()) * 100.0f;
                 uint32_t matchPos = absPos + windowStart + i; // Keep absolute positions only
 
                 MatchInfo matchInfo;
                 matchInfo.position = matchPos;
                 matchInfo.isCanonical = isCanonical;
                 matchInfo.isForward = isForward;
+                matchInfo.matchSize = pattern.size();
 
                 // Check dimers
                 if (isCanonical) {
@@ -601,6 +637,7 @@ SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTelosc
                     matchInfo.position = absPos + i; // Keep absolute positions only
                     matchInfo.isCanonical = isCanonical;
                     matchInfo.isForward = isForward;
+                    matchInfo.matchSize = len;
 
                     if (isForward) {
                         fwdMatches.push_back(matchInfo);
@@ -746,7 +783,11 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
                                 << block.start << "\t"
                                 << blockEnd << "\t"
                                 << block.blockLen << "\t"
-                                << block.blockLabel << "\n";
+                                << block.blockLabel << "\t"
+                                << block.blockFwdDensity << "\t"
+                                << block.blockRevDensity << "\t"
+                                << block.blockCanDensity << "\t"
+                                << block.blockNonCanDensity << "\n";
             labels += block.blockLabel;
         }
 
@@ -758,7 +799,11 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
                                         << block.start << "\t"
                                         << blockEnd << "\t"
                                         << block.blockLen << "\t"
-                                        << block.blockLabel << "\n";
+                                        << block.blockLabel << "\t"
+                                        << block.blockFwdDensity << "\t"
+                                        << block.blockRevDensity << "\t"
+                                        << block.blockCanDensity << "\t"
+                                        << block.blockNonCanDensity << "\n";
             }
         }
 
