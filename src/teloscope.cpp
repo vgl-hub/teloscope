@@ -773,7 +773,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
         std::string description = "";
 
         if (userInput.outWinRepeats) {
-            description += "ForwardDensity, ReverseDensity, CanonicalDensity, NonCanonicalDensity";
+            description += "ForwardCounts, ReverseCounts, CanonicalCounts, NonCanonicalCounts";
         }
         if (userInput.outEntropy) {
             description += ", ShannonEntropy";
@@ -808,10 +808,10 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
                                 << blockEnd << "\t"
                                 << block.blockLen << "\t"
                                 << block.blockLabel << "\t"
-                                << block.blockFwdDensity << "\t"
-                                << block.blockRevDensity << "\t"
-                                << block.blockCanDensity << "\t"
-                                << block.blockNonCanDensity << "\n";
+                                << block.forwardCount << "\t"
+                                << block.reverseCount << "\t"
+                                << block.canonicalCount << "\t"
+                                << block.nonCanonicalCount << "\n";
             labels += block.blockLabel;
         }
 
@@ -824,10 +824,10 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
                                         << blockEnd << "\t"
                                         << block.blockLen << "\t"
                                         << block.blockLabel << "\t"
-                                        << block.blockFwdDensity << "\t"
-                                        << block.blockRevDensity << "\t"
-                                        << block.blockCanDensity << "\t"
-                                        << block.blockNonCanDensity << "\n";
+                                        << block.forwardCount << "\t"
+                                        << block.reverseCount << "\t"
+                                        << block.canonicalCount << "\t"
+                                        << block.nonCanonicalCount << "\n";
             }
         }
 
@@ -857,8 +857,8 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
                 windowMetricsBuffer << header << "\t" << window.windowStart << "\t" << windowEnd;
 
                 if (userInput.outWinRepeats) {
-                    windowMetricsBuffer << "\t" << window.fwdDensity << "\t" << window.revDensity << "\t"
-                                        << "\t" << window.canonicalDensity << "\t" << window.nonCanonicalDensity;
+                    windowMetricsBuffer << "\t" << window.fwdCounts << "\t" << window.revCounts << "\t"
+                                        << "\t" << window.canonicalCounts << "\t" << window.nonCanonicalCounts;
                 }
                 if (userInput.outEntropy) {
                     windowMetricsBuffer << "\t" << window.shannonEntropy;
