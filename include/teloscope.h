@@ -48,7 +48,7 @@ struct MatchInfo {
     bool isForward;
     uint32_t position;
     uint16_t matchSize;
-    // std::string matchSeq;
+    std::string matchSeq;
 
     MatchInfo() : isCanonical(false), isForward(false), matchSize(0) {}
 };
