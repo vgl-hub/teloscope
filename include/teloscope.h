@@ -113,6 +113,7 @@ struct PathData {
     unsigned int seqPos;
     std::string header;
     uint16_t gaps = 0;
+    uint64_t pathSize;
     std::vector<WindowData> windows;
     std::vector<TelomereBlock> terminalBlocks;
     std::vector<TelomereBlock> interstitialBlocks;

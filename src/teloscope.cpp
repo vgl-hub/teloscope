@@ -798,6 +798,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
         const auto& windows = pathData.windows;
         const auto& pos = pathData.seqPos;
         const auto& gaps = pathData.gaps;
+        const auto& pathSize = pathData.pathSize;
 
         // Terminal blocks
         std::string labels;
@@ -811,7 +812,8 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
                                 << block.forwardCount << "\t"
                                 << block.reverseCount << "\t"
                                 << block.canonicalCount << "\t"
-                                << block.nonCanonicalCount << "\n";
+                                << block.nonCanonicalCount << "\t"
+                                << pathSize << "\n";
             labels += block.blockLabel;
         }
 
