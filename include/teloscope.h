@@ -181,6 +181,8 @@ public:
         }
     }
 
+    bool walkSegment(InSegment* segment, InSequences& inSequences);
+
     bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
 
     void analyzeWindow(const std::string_view &window, uint32_t windowStart,

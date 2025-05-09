@@ -29,37 +29,116 @@ void Input::load(UserInputTeloscope userInput) {
 
 
 void Input::read(InSequences &inSequences) {
-
-    loadGenome(userInput, inSequences); // load from FA/FQ/GFA to templated object
+    // Load sequences (FA, FQ, or GFA) into inSequences and prepare handlers
+    loadGenome(userInput, inSequences);
     lg.verbose("Finished loading genome assembly");
 
-    // Report report;
-    // report.writeToStream(inSequences, "test.gfa", userInput); // write to output file, so far only gives the original GFA
-
-    std::vector<InPath> inPaths = inSequences.getInPaths(); 
-    std::vector<InSegment*> *inSegments = inSequences.getInSegments(); 
+    std::vector<InPath> inPaths = inSequences.getInPaths();
+    std::vector<InSegment*> *inSegments = inSequences.getInSegments();
     std::vector<InGap> *inGaps = inSequences.getInGaps();
-
     Teloscope teloscope(userInput);
 
-    for (InPath& inPath : inPaths)
+    // GFA-based annotation
+    if (userInput.inSequence.find(".gfa") != std::string::npos) {
+        for (InSegment* inSegment : *inSegments) {
+            threadPool.queueJob([inSegment, &inSequences, &teloscope]() {
+                return teloscope.walkSegment(inSegment, inSequences);
+            });
+        }
+        
+        lg.verbose("Waiting for telomere annotation jobs to complete");
+        jobWait(threadPool);
+        lg.verbose("\nAll telomere annotation jobs completed.");
+
+        // Write annotated GFA
+        Report report;
+        std::string outGfa = userInput.outRoute + "/assembly.telo.annotated.gfa";
+        report.writeToStream(inSequences, outGfa, userInput);
+        lg.verbose("Annotated GFA written to " + outGfa);
+        return;
+    }
+
+    // Path-based annotation and BED export
+    for (InPath& inPath : inPaths) {
         threadPool.queueJob([&inPath, this, inSegments, inGaps, &teloscope]() {
             return teloscope.walkPath(&inPath, *inSegments, *inGaps);
-        }); 
-
+        });
+    }
     lg.verbose("Waiting for jobs to complete");
-
-    jobWait(threadPool); // Wait for all jobs to complete
+    jobWait(threadPool);
     lg.verbose("\nAll jobs completed.");
-    
+
     teloscope.sortBySeqPos();
-    lg.verbose("\nPaths sorted by original position.");  
+    lg.verbose("\nPaths sorted by original position.");
 
     teloscope.handleBEDFile();
     lg.verbose("\nBED/BEDgraph files generated.");
 
     teloscope.printSummary();
     lg.verbose("\nSummary printed.");
+}
+
+
+bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
+    Log threadLog;
+    threadLog.add("\n\tWalking segment:\t" + segment->getSeqHeader());
+
+    std::string sequence = segment->getInSequence(0, 0);
+    unmaskSequence(sequence);
+
+    // Initialize SegmentData for this segment
+    SegmentData segmentData;
+    segmentData = analyzeSegmentTips(sequence, userInput, 0); // absPos = 0
+    segmentData.terminalBlocks = filterTerminalBlocks(segmentData.terminalBlocks);
+    // std::lock_guard<std::mutex> lock(mtx);
+
+    std::cout << "Sequence: " << sequence.substr(0,1000) << std::endl;
+    std::cout << "Terminal blocks: " << segmentData.terminalBlocks.size() << std::endl;
+
+    for (const TelomereBlock& block : segmentData.terminalBlocks) {
+        bool atStart = (block.start == 0);
+        char strand = (block.blockLabel == 'p' ? '+' : '-');
+
+        // Build a unique header for new telomere node
+        std::string header = "telomere_"
+                        + segment->getSeqHeader()
+                        + strand
+                        + (atStart ? "_start" : "_end");
+        std::cout << "Header: " << header << std::endl;
+
+        // Placeholder node with tags: LN (unit length), RC (read count), TL (actual length)
+        Sequence* teloSeq = new Sequence{ header, "", new std::string("*") }; // Empty sequence "*"
+        std::vector<Tag> tags = {
+            Tag{'i', "LN", "6"},
+            Tag{'i', "RC", "6000"},
+            Tag{'i', "TL", std::to_string(block.blockLen)}
+        };
+        std::cout << "Tags: " << tags[0].content << ", " << tags[1].content << ", " << tags[2].content << std::endl;
+
+        // Create & hash the new telomere segment synchronously
+        inSequences.traverseInSegmentWrapper(teloSeq, tags);
+        unsigned int teloUid = inSequences.getHash1()->at(header);
+        printf("Telomere node UID: %u\n", teloUid);
+
+        // Link it back to our segment
+        InEdge e;
+        e.newEdge(
+          inSequences.uId.next(),   // new edge UID
+          segment->getuId(),            // contig → telomere
+          teloUid,                  // telomere node
+          '+',                      // assume forward
+          '+',                      // display forward
+          "*",                      // no overlap
+          "",                       // no header
+          {}                        // no extra tags
+        );
+        inSequences.insertHash(e.geteHeader(), e.geteUId());
+        inSequences.appendEdge(e);
+    }
+
+    threadLog.add("\tCompleted walking segment:\t" + segment->getSeqHeader());
+    logs.push_back(threadLog);
+    return true;
 }
 
 
