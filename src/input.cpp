@@ -90,7 +90,7 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
     SegmentData segmentData;
     segmentData = analyzeSegmentTips(sequence, userInput, 0); // absPos = 0
     segmentData.terminalBlocks = filterTerminalBlocks(segmentData.terminalBlocks);
-    char strand = segOr;
+    // char segOr = (block.blockLabel == 'p' ? '+' : '-'); // TODO
 
     std::cout << "Sequence: " << sequence.substr(0,1000) << std::endl;
     std::cout << "Terminal blocks: " << segmentData.terminalBlocks.size() << std::endl;
@@ -99,6 +99,7 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
         uint64_t distToStart = block.start;
         uint64_t distToEnd   = sequence.size() - (block.start + block.blockLen);
         bool atStart = distToStart <= distToEnd;
+        char segOr = (block.blockLabel == 'p' ? '+' : '-'); 
 
         // Build a unique header for new telomere node
         std::string header = "telomere_"
