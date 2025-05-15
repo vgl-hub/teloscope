@@ -90,23 +90,24 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
     SegmentData segmentData;
     segmentData = analyzeSegmentTips(sequence, userInput, 0); // absPos = 0
     segmentData.terminalBlocks = filterTerminalBlocks(segmentData.terminalBlocks);
-    // std::lock_guard<std::mutex> lock(mtx);
+    char strand = segOr;
 
     std::cout << "Sequence: " << sequence.substr(0,1000) << std::endl;
     std::cout << "Terminal blocks: " << segmentData.terminalBlocks.size() << std::endl;
 
     for (const TelomereBlock& block : segmentData.terminalBlocks) {
-        bool atStart = (block.start == 0);
-        char strand = (block.blockLabel == 'p' ? '+' : '-');
+        uint64_t distToStart = block.start;
+        uint64_t distToEnd   = sequence.size() - (block.start + block.blockLen);
+        bool atStart = distToStart <= distToEnd;
 
         // Build a unique header for new telomere node
         std::string header = "telomere_"
                         + segment->getSeqHeader()
-                        + strand
+                        + segOr
                         + (atStart ? "_start" : "_end");
         std::cout << "Header: " << header << std::endl;
 
-        // Placeholder node with tags: LN (unit length), RC (read count), TL (actual length)
+        // Placeholder node with tags: LN (unit length), RC (read count), TL (telomere length)
         Sequence* teloSeq = new Sequence{ header, "", new std::string("*") }; // Empty sequence "*"
         std::vector<Tag> tags = {
             Tag{'i', "LN", "6"},
@@ -120,20 +121,27 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
         unsigned int teloUid = inSequences.getHash1()->at(header);
         printf("Telomere node UID: %u\n", teloUid);
 
-        // Link it back to our segment
-        InEdge e;
-        e.newEdge(
+        // Prepare edge orientation
+        char fromOrient = '+';
+        char toOrient   = atStart
+                            ? segOr
+                            : (segOr == '+' ? '-' : '+');
+
+        // Link telomere node back to our segment
+        //    L telomere…      +   <seg>   <segOr>   0M   RC:i:0
+        InEdge inEdge;
+        inEdge.newEdge(
           inSequences.uId.next(),   // new edge UID
-          segment->getuId(),            // contig → telomere
-          teloUid,                  // telomere node
-          '+',                      // assume forward
-          '+',                      // display forward
-          "*",                      // no overlap
+          segment->getuId(),            // source = our contig
+          teloUid,                  // target = telomere node
+          fromOrient,                      // FromOrient
+          toOrient,                      // ToOrient
+          "0M",                      // no overlap
           "",                       // no header
-          {}                        // no extra tags
+          std::vector<Tag>{ Tag{'i',"RC","0"} } // no read counts
         );
-        inSequences.insertHash(e.geteHeader(), e.geteUId());
-        inSequences.appendEdge(e);
+        inSequences.insertHash(inEdge.geteHeader(), inEdge.geteUId());
+        inSequences.appendEdge(inEdge);
     }
 
     threadLog.add("\tCompleted walking segment:\t" + segment->getSeqHeader());

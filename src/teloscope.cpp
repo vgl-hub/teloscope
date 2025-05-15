@@ -314,9 +314,7 @@ std::vector<TelomereBlock> Teloscope::filterTerminalBlocks(const std::vector<Tel
     bool has_q2 = false;
 
     for (const auto& block : blocks) {
-        if (block.blockLen < userInput.minBlockLen || block.blockLabel == 'u') {
-            continue; // Exclude spurious blocks
-        }
+        if (block.blockLen < userInput.minBlockLen || block.blockCanDensity < 0.8) continue;  // Length and density filters
 
         if (block.blockLabel == 'p') {
             // Update best_p and second_best_p
@@ -383,7 +381,7 @@ std::vector<TelomereBlock> Teloscope::filterITSBlocks(const std::vector<Telomere
     for (const auto& block : interstitialBlocks) {
         if (block.blockLen < minLength) continue;  // Length filter
         if (block.canonicalCount == 0) continue;   // Minimal canonical check
-        if (block.canonicalCount * 2 < block.blockCounts) continue; // Majority canonical
+        if (block.blockCanDensity < 0.5) continue; // Majority canonical
         if (block.blockLabel == 'u' && (block.forwardCount < 2 && block.reverseCount < 2)) continue; // U check
 
     filteredBlocks.push_back(block);
