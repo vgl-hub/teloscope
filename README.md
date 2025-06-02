@@ -3,7 +3,7 @@ Teloscope
 
 Introduction
 ------------
-Teloscope is a universal telomere annotation tool. It comprehensively runs matching, counting, and reporting telomeric repeats from genome assemblies (.fa) or (.fa.gz). Teloscope reports all these metrics in BED/BEDgraph files and produces a summary report. To install `teloscope`, use: 
+Teloscope is a comprehensive telomere annotation tool. It rapidly matches, counts, and reports telomeric repeats from genome assemblies (.fa) or (.fa.gz). Teloscope reports all these metrics in BED/BEDgraph files and produces a summary report. To install `teloscope`, use: 
 ```sh
 git clone https://github.com/vgl-hub/teloscope.git --recursive;
 cd teloscope; 

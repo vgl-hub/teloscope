@@ -104,23 +104,20 @@ std::vector<TelomereBlock> Teloscope::getBlocksRecycle(
     uint16_t lastMatchSize = matches[0].matchSize; 
 
     auto finalizeBlock = [&](uint64_t endPosition) {
-        if (blockCounts >= minBlockCounts) {
+        if (blockCounts >= minBlockCounts && canonicalCount > 0) {
             TelomereBlock block;
             block.start = blockStart;
+            block.blockLen = (endPosition - blockStart) + lastMatchSize;
+
             block.blockCounts = blockCounts;
             block.forwardCount = forwardCount;
             block.reverseCount = blockCounts - forwardCount;
             block.canonicalCount = canonicalCount;
             block.nonCanonicalCount = blockCounts - canonicalCount;
-            
-            block.blockLen = (endPosition - blockStart) + lastMatchSize;
-            
-            // Calculate proper densities using accumulated covered nucleotides
-            block.blockDensity = (static_cast<float>(totalCovered) / block.blockLen) * 100.0f;
-            block.blockFwdDensity = (static_cast<float>(fwdCovered) / block.blockLen) * 100.0f;
-            block.blockRevDensity = (static_cast<float>(totalCovered - fwdCovered) / block.blockLen) * 100.0f;
-            block.blockCanDensity = (static_cast<float>(canCovered) / block.blockLen) * 100.0f;
-            block.blockNonCanDensity = (static_cast<float>(totalCovered - canCovered) / block.blockLen) * 100.0f;
+
+            block.totalCovered = totalCovered;
+            block.fwdCovered = fwdCovered;
+            block.canCovered = canCovered;
 
             // p/q assignment based on forward percentage
             float forwardRatio = (forwardCount * 100.0f) / blockCounts;
@@ -223,23 +220,20 @@ std::vector<TelomereBlock> Teloscope::getBlocks(
     uint16_t lastMatchSize = matches[0].matchSize;
 
     auto finalizeBlock = [&](uint64_t endPosition) {
-        if (blockCounts >= minBlockCounts) {
+        if (blockCounts >= minBlockCounts && canonicalCount > 0) {
             TelomereBlock block;
             block.start = blockStart;
+            block.blockLen = (endPosition - blockStart) + lastMatchSize;
+            
             block.blockCounts = blockCounts;
             block.forwardCount = forwardCount;
             block.reverseCount = blockCounts - forwardCount;
             block.canonicalCount = canonicalCount;
             block.nonCanonicalCount = blockCounts - canonicalCount;
             
-            block.blockLen = (endPosition - blockStart) + lastMatchSize;
-            
-            // Calculate proper densities using accumulated covered nucleotides
-            block.blockDensity = (static_cast<float>(totalCovered) / block.blockLen) * 100.0f;
-            block.blockFwdDensity = (static_cast<float>(fwdCovered) / block.blockLen) * 100.0f;
-            block.blockRevDensity = (static_cast<float>(totalCovered - fwdCovered) / block.blockLen) * 100.0f;
-            block.blockCanDensity = (static_cast<float>(canCovered) / block.blockLen) * 100.0f;
-            block.blockNonCanDensity = (static_cast<float>(totalCovered - canCovered) / block.blockLen) * 100.0f;
+            block.totalCovered = totalCovered;
+            block.fwdCovered = fwdCovered;
+            block.canCovered = canCovered;
 
             // p/q assignment based on forward percentage
             float forwardRatio = (forwardCount * 100.0f) / blockCounts;
@@ -298,6 +292,68 @@ std::vector<TelomereBlock> Teloscope::getBlocks(
 }
 
 
+std::vector<TelomereBlock> Teloscope::extendBlocks(std::vector<TelomereBlock> &blocks, uint16_t maxBlockDist) {
+    std::vector<TelomereBlock> extendedBlocks;
+    extendedBlocks.reserve(blocks.size());
+
+    TelomereBlock currentBlock = blocks[0];
+    // std::cout << "Initial block: start=" << currentBlock.start << ", len=" << currentBlock.blockLen << ", canonicalCount=" << currentBlock.canonicalCount << "\n";
+
+    for (size_t i = 1; i < blocks.size(); ++i) {
+        TelomereBlock &nextBlock = blocks[i];
+        uint64_t gap = nextBlock.start - (currentBlock.start + currentBlock.blockLen);
+
+        // std::cout << "\nCurrent block end: " << (currentBlock.start + currentBlock.blockLen)
+        //           << ", Next block start: " << nextBlock.start
+        //           << ", Gap: " << gap << "\n";
+
+        if (gap <= maxBlockDist) { // TODO: Test density
+            // Extend the current block
+            currentBlock.blockLen = (nextBlock.start + nextBlock.blockLen) - currentBlock.start;
+
+            // Update counts
+            currentBlock.blockCounts += nextBlock.blockCounts;
+            currentBlock.forwardCount += nextBlock.forwardCount;
+            currentBlock.reverseCount += nextBlock.reverseCount;
+            currentBlock.canonicalCount += nextBlock.canonicalCount;
+            currentBlock.nonCanonicalCount += nextBlock.nonCanonicalCount;
+
+            // Update coverage metrics
+            currentBlock.totalCovered += nextBlock.totalCovered;
+            currentBlock.fwdCovered += nextBlock.fwdCovered;
+            currentBlock.canCovered += nextBlock.canCovered;
+
+            // std::cout << "After extend: len=" << currentBlock.blockLen
+            //           << ", canonicalCount=" << currentBlock.canonicalCount << "\n";
+
+        } else {
+            // Push the finalized block
+            // std::cout << "Not extending. Saving current block and moving to next.\n";
+            extendedBlocks.push_back(currentBlock);
+            currentBlock = nextBlock;  // Start a new block
+
+            // std::cout << "New current block: start=" << currentBlock.start
+            //           << ", len=" << currentBlock.blockLen << ", canonicalCount=" << currentBlock.canonicalCount << "\n";
+        }
+    }
+
+    // Add the last block
+    extendedBlocks.push_back(currentBlock);
+    // std::cout << "Final block added: start=" << currentBlock.start
+    //           << ", len=" << currentBlock.blockLen << ", canonicalCount=" << currentBlock.canonicalCount << "\n";
+
+    // Final validation check
+    // std::cout << "\n\nTotal extended blocks: " << extendedBlocks.size() << "\n";
+    for (const auto& blk : extendedBlocks) {
+        // std::cout << "Extended block: start=" << blk.start
+        //           << ", len=" << blk.blockLen
+        //           << ", canonicalCount=" << blk.canonicalCount << "\n";
+    }
+
+    return extendedBlocks;
+}
+
+
 std::vector<TelomereBlock> Teloscope::filterTerminalBlocks(const std::vector<TelomereBlock>& blocks) {
     std::vector<TelomereBlock> filteredBlocks;
 
@@ -314,7 +370,9 @@ std::vector<TelomereBlock> Teloscope::filterTerminalBlocks(const std::vector<Tel
     bool has_q2 = false;
 
     for (const auto& block : blocks) {
-        if (block.blockLen < userInput.minBlockLen || block.blockCanDensity < 0.8) continue;  // Length and density filters
+        // Length and density filters
+        if (block.blockLen < userInput.minBlockLen || 
+            (static_cast<float>(block.canCovered) / block.blockLen) < 0.7) continue;
 
         if (block.blockLabel == 'p') {
             // Update best_p and second_best_p
@@ -381,7 +439,7 @@ std::vector<TelomereBlock> Teloscope::filterITSBlocks(const std::vector<Telomere
     for (const auto& block : interstitialBlocks) {
         if (block.blockLen < minLength) continue;  // Length filter
         if (block.canonicalCount == 0) continue;   // Minimal canonical check
-        if (block.blockCanDensity < 0.5) continue; // Majority canonical
+        if (block.canCovered / block.blockLen < 0.5) continue; // Majority canonical
         if (block.blockLabel == 'u' && (block.forwardCount < 2 && block.reverseCount < 2)) continue; // U check
 
     filteredBlocks.push_back(block);
@@ -597,16 +655,18 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
     }
 
     // 1. Process terminal matches by orientation
-    uint16_t relaxedDist = userInput.maxBlockDist;
-    
-    std::vector<TelomereBlock> fwdBlocks;
+    uint16_t relaxedDist = userInput.maxMatchDist;
+    uint16_t extendDist = userInput.maxBlockDist;
+    std::vector<TelomereBlock> fwdBlocks, revBlocks;
+
     if (segmentData.terminalFwdMatches.size() >= 2) {
         fwdBlocks = getBlocksRecycle(segmentData.terminalFwdMatches, relaxedDist, segmentData.interstitialMatches, true);
+        fwdBlocks = extendBlocks(fwdBlocks, extendDist);
     }
-    
-    std::vector<TelomereBlock> revBlocks;
+
     if (segmentData.terminalRevMatches.size() >= 2) {
         revBlocks = getBlocksRecycle(segmentData.terminalRevMatches, relaxedDist, segmentData.interstitialMatches, false);
+        revBlocks = extendBlocks(revBlocks, extendDist);
     }
     
     // 2. Create terminal blocks by combining orientation-specific blocks
@@ -681,10 +741,13 @@ SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTelosc
     }
     
     // Create and add p/q blocks to segmentData.terminalBlocks
-    uint16_t mergeDist = userInput.maxBlockDist;
+    uint16_t mergeDist = userInput.maxMatchDist;
+    uint16_t extendDist = userInput.maxBlockDist;
+    std::vector<TelomereBlock> fwdBlocks, revBlocks;
     
     if (fwdMatches.size() >= 2) {
-        std::vector<TelomereBlock> fwdBlocks = getBlocks(fwdMatches, mergeDist, false);
+        fwdBlocks = getBlocks(fwdMatches, mergeDist, false);
+        fwdBlocks = extendBlocks(fwdBlocks, extendDist);
         segmentData.terminalBlocks.insert(
             segmentData.terminalBlocks.end(),
             std::make_move_iterator(fwdBlocks.begin()),
@@ -693,7 +756,8 @@ SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTelosc
     }
     
     if (revMatches.size() >= 2) {
-        std::vector<TelomereBlock> revBlocks = getBlocks(revMatches, mergeDist, false);
+        revBlocks = getBlocks(revMatches, mergeDist, false);
+        revBlocks = extendBlocks(revBlocks, extendDist);
         segmentData.terminalBlocks.insert(
             segmentData.terminalBlocks.end(),
             std::make_move_iterator(revBlocks.begin()),

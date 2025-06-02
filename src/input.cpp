@@ -91,6 +91,8 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
     segmentData = analyzeSegmentTips(sequence, userInput, 0); // absPos = 0
     segmentData.terminalBlocks = filterTerminalBlocks(segmentData.terminalBlocks);
     // char segOr = (block.blockLabel == 'p' ? '+' : '-'); // TODO
+    // auto &adj = inSequences.getAdjEdgeList()[ segment->getuId() ];
+
 
     std::cout << "Sequence: " << sequence.substr(0,1000) << std::endl;
     std::cout << "Terminal blocks: " << segmentData.terminalBlocks.size() << std::endl;

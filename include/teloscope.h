@@ -62,11 +62,9 @@ struct TelomereBlock {
     uint16_t reverseCount;
     uint16_t canonicalCount;
     uint16_t nonCanonicalCount;
-    float blockDensity;
-    float blockFwdDensity;
-    float blockRevDensity;
-    float blockCanDensity;
-    float blockNonCanDensity;
+    uint32_t totalCovered;
+    uint32_t fwdCovered;
+    uint32_t canCovered;
     char blockLabel; // 'p', 'q', 'u'
 };
 
@@ -204,6 +202,8 @@ public:
         std::vector<TelomereBlock> getBlocks(
             std::vector<MatchInfo>& matches, 
             uint16_t mergeDist, bool needsSorting);
+    
+    std::vector<TelomereBlock> extendBlocks(std::vector<TelomereBlock> &blocks, uint16_t maxBlockDist);
 
     std::vector<TelomereBlock> filterTerminalBlocks(const std::vector<TelomereBlock>& blocks);
     
