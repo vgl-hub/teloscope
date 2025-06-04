@@ -292,22 +292,19 @@ std::vector<TelomereBlock> Teloscope::getBlocks(
 }
 
 
-std::vector<TelomereBlock> Teloscope::extendBlocks(std::vector<TelomereBlock> &blocks, uint16_t maxBlockDist) {
+std::vector<TelomereBlock> Teloscope::extendBlocks(std::vector<TelomereBlock> &blocks, 
+    uint16_t maxBlockDist, float densityCutoff, uint32_t segmentSize, uint32_t absPos) {
     std::vector<TelomereBlock> extendedBlocks;
     extendedBlocks.reserve(blocks.size());
 
     TelomereBlock currentBlock = blocks[0];
-    // std::cout << "Initial block: start=" << currentBlock.start << ", len=" << currentBlock.blockLen << ", canonicalCount=" << currentBlock.canonicalCount << "\n";
+    currentBlock.hasValidOr = true; // Default
 
     for (size_t i = 1; i < blocks.size(); ++i) {
         TelomereBlock &nextBlock = blocks[i];
         uint64_t gap = nextBlock.start - (currentBlock.start + currentBlock.blockLen);
 
-        // std::cout << "\nCurrent block end: " << (currentBlock.start + currentBlock.blockLen)
-        //           << ", Next block start: " << nextBlock.start
-        //           << ", Gap: " << gap << "\n";
-
-        if (gap <= maxBlockDist) { // TODO: Test density
+        if (gap <= maxBlockDist) {
             // Extend the current block
             currentBlock.blockLen = (nextBlock.start + nextBlock.blockLen) - currentBlock.start;
 
@@ -323,113 +320,250 @@ std::vector<TelomereBlock> Teloscope::extendBlocks(std::vector<TelomereBlock> &b
             currentBlock.fwdCovered += nextBlock.fwdCovered;
             currentBlock.canCovered += nextBlock.canCovered;
 
-            // std::cout << "After extend: len=" << currentBlock.blockLen
-            //           << ", canonicalCount=" << currentBlock.canonicalCount << "\n";
-
         } else {
+            // Calculate relative distances
+            uint64_t relativeStart = currentBlock.start - absPos;
+            uint64_t leftDist = relativeStart;
+            uint64_t rightDist = segmentSize - (relativeStart + currentBlock.blockLen);
+            
+            // Apply overhang rules
+            if ((currentBlock.blockLabel == 'p' && leftDist > rightDist) ||
+                (currentBlock.blockLabel == 'q' && leftDist < rightDist)) {
+                currentBlock.hasValidOr = false;
+            }
+            
             // Push the finalized block
-            // std::cout << "Not extending. Saving current block and moving to next.\n";
-            extendedBlocks.push_back(currentBlock);
-            currentBlock = nextBlock;  // Start a new block
-
-            // std::cout << "New current block: start=" << currentBlock.start
-            //           << ", len=" << currentBlock.blockLen << ", canonicalCount=" << currentBlock.canonicalCount << "\n";
+            float density = static_cast<float>(currentBlock.canCovered) / currentBlock.blockLen;
+            if (currentBlock.blockLen >= userInput.minBlockLen && density >= densityCutoff) {
+                extendedBlocks.push_back(currentBlock);
+            }
+            
+            // Start a new block
+            currentBlock = nextBlock;  
+            currentBlock.hasValidOr = true;  // Default is true for new blocks
         }
     }
 
-    // Add the last block
-    extendedBlocks.push_back(currentBlock);
-    // std::cout << "Final block added: start=" << currentBlock.start
-    //           << ", len=" << currentBlock.blockLen << ", canonicalCount=" << currentBlock.canonicalCount << "\n";
-
-    // Final validation check
-    // std::cout << "\n\nTotal extended blocks: " << extendedBlocks.size() << "\n";
-    for (const auto& blk : extendedBlocks) {
-        // std::cout << "Extended block: start=" << blk.start
-        //           << ", len=" << blk.blockLen
-        //           << ", canonicalCount=" << blk.canonicalCount << "\n";
+    // Add the last block - also adjust coordinates
+    uint64_t relativeStart = currentBlock.start - absPos;
+    uint64_t leftDist = relativeStart;
+    uint64_t rightDist = segmentSize - (relativeStart + currentBlock.blockLen);
+    
+    if ((currentBlock.blockLabel == 'p' && leftDist > rightDist) ||
+        (currentBlock.blockLabel == 'q' && leftDist < rightDist)) {
+        currentBlock.hasValidOr = false;
+    }
+    
+    float density = static_cast<float>(currentBlock.canCovered) / currentBlock.blockLen;
+    if (currentBlock.blockLen >= userInput.minBlockLen && density >= densityCutoff) {
+        extendedBlocks.push_back(currentBlock);
     }
 
     return extendedBlocks;
 }
 
 
-std::vector<TelomereBlock> Teloscope::filterTerminalBlocks(const std::vector<TelomereBlock>& blocks) {
-    std::vector<TelomereBlock> filteredBlocks;
-
-    // Track 'p' blocks
-    TelomereBlock best_p;
-    bool has_p1 = false;
-    TelomereBlock second_best_p;
-    bool has_p2 = false;
-
-    // Track 'q' blocks
-    TelomereBlock best_q;
-    bool has_q1 = false;
-    TelomereBlock second_best_q;
-    bool has_q2 = false;
-
-    for (const auto& block : blocks) {
-        // Length and density filters
-        if (block.blockLen < userInput.minBlockLen || 
-            (static_cast<float>(block.canCovered) / block.blockLen) < 0.7) continue;
-
-        if (block.blockLabel == 'p') {
-            // Update best_p and second_best_p
-            if (!has_p1 || block.blockLen > best_p.blockLen) {
-                second_best_p = best_p;
-                has_p2 = has_p1;
-                best_p = block;
-                has_p1 = true;
-            }
-            else if (!has_p2 || block.blockLen > second_best_p.blockLen) {
-                second_best_p = block;
-                has_p2 = true;
-            }
-        }
-        else if (block.blockLabel == 'q') {
-            // Update best_q and second_best_q
-            if (!has_q1 || block.blockLen > best_q.blockLen) {
-                second_best_q = best_q;
-                has_q2 = has_q1;
-                best_q = block;
-                has_q1 = true;
-            }
-            else if (!has_q2 || block.blockLen > second_best_q.blockLen) {
-                second_best_q = block;
-                has_q2 = true;
-            }
-        }
+void Teloscope::labelTerminalBlocks(
+    std::vector<TelomereBlock>& blocks, uint16_t gaps,
+    std::string& terminalLabel, std::string& scaffoldType) {
+    // Reset isLongest for all blocks
+    for (auto& block : blocks) {
+        block.isLongest = false;
     }
 
-    // Assign best 'p' and 'q' blocks per path
-    if (has_p1 && has_q1) { 
-        filteredBlocks.push_back(best_p);
-        filteredBlocks.push_back(best_q);
-    }
-    else { 
-        if (has_p1) {
-            filteredBlocks.push_back(best_p);
-            if (has_p2) {
-                filteredBlocks.push_back(second_best_p);
-            }
-        }
-        if (has_q1) {
-            filteredBlocks.push_back(best_q);
-            if (has_q2) {
-                filteredBlocks.push_back(second_best_q);
-            }
-        }
+    // Initialize return values
+    terminalLabel = "";
+    bool hasGaps = (gaps > 0);
+    std::string gap_prefix = hasGaps ? "gapped_" : "";
+
+    // If no blocks, set empty label and "none" type and return early
+    if (blocks.empty()) {
+        scaffoldType = gap_prefix + "none";
+        return;
     }
 
-    // Sort by coords
-    std::sort(filteredBlocks.begin(), filteredBlocks.end(),
+    // Sort blocks by coordinates for consistent ordering
+    std::sort(blocks.begin(), blocks.end(),
             [](const TelomereBlock &a, const TelomereBlock &b) {
                 return a.start < b.start;
             });
 
-    return filteredBlocks;
+    // Find longest 'p' and 'q' blocks and track error status
+    TelomereBlock* longest_p = nullptr;
+    TelomereBlock* longest_q = nullptr;
+    uint64_t max_p_coverage = 0;
+    uint64_t max_q_coverage = 0;
+
+    // Build granular label while finding longest blocks
+    for (auto& block : blocks) {
+        // Find longest blocks
+        if (block.blockLabel == 'p' && block.canCovered > max_p_coverage) {
+            longest_p = &block;
+            max_p_coverage = block.canCovered;
+        } 
+        else if (block.blockLabel == 'q' && block.canCovered > max_q_coverage) {
+            longest_q = &block;
+            max_q_coverage = block.canCovered;
+        }
+        
+        // Add to granular label (will update uppercase status later)
+        char label = block.blockLabel;
+        terminalLabel += label;
+        
+        if (!block.hasValidOr) {
+            terminalLabel += '*';
+        }
+    }
+
+    // Mark longest blocks
+    if (longest_p) {
+        longest_p->isLongest = true;
+    }
+    if (longest_q) {
+        longest_q->isLongest = true;
+    }
+
+    // Update granular label with uppercase for longest blocks
+    for (size_t i = 0, j = 0; i < blocks.size(); i++) {
+        if (blocks[i].isLongest) {
+            terminalLabel[j] = std::toupper(terminalLabel[j]);
+        }
+        j++; // Move to next label position
+        if (j < terminalLabel.length() && terminalLabel[j] == '*') {
+            j++; // Skip asterisk if present
+        }
+    }
+    
+    // Determine scaffold type directly from blocks info
+    bool has_P = (longest_p != nullptr);
+    bool has_Q = (longest_q != nullptr);
+    
+    // Check for errors in longest blocks
+    if ((has_P && !longest_p->hasValidOr) || (has_Q && !longest_q->hasValidOr)) {
+        scaffoldType = gap_prefix + "error";
+        return;
+    }
+    
+    // Complete chromosome
+    if (has_P && has_Q) {
+        // Check if P comes before Q in the sorted blocks
+        if (longest_p->start < longest_q->start) {
+            scaffoldType = gap_prefix + "t2t";
+        } else {
+            // QP, Qq, Pp cases
+            scaffoldType = gap_prefix + "missassembly";
+        }
+        return;
+    }
+    
+    // Special case: Check for missassembly patterns
+    if (has_P) {
+        // Check for lowercase p blocks that would indicate missassembly
+        bool has_p_blocks = false;
+        for (const auto& block : blocks) {
+            if (block.blockLabel == 'p' && &block != longest_p && block.hasValidOr) {
+                has_p_blocks = true;
+                break;
+            }
+        }
+        if (has_p_blocks) {
+            scaffoldType = gap_prefix + "missassembly";
+            return;
+        }
+    }
+    
+    if (has_Q) {
+        // Check for lowercase q blocks that would indicate missassembly
+        bool has_q_blocks = false;
+        for (const auto& block : blocks) {
+            if (block.blockLabel == 'q' && &block != longest_q && block.hasValidOr) {
+                has_q_blocks = true;
+                break;
+            }
+        }
+        if (has_q_blocks) {
+            scaffoldType = gap_prefix + "missassembly";
+            return;
+        }
+    }
+    
+    // If we get here, it's an incomplete chromosome with one telomere
+    scaffoldType = gap_prefix + "incomplete";
 }
+
+
+// std::vector<TelomereBlock> Teloscope::filterTerminalBlocks(const std::vector<TelomereBlock>& blocks) {
+//     std::vector<TelomereBlock> filteredBlocks;
+
+//     // Track 'p' blocks
+//     TelomereBlock best_p;
+//     bool has_p1 = false;
+//     TelomereBlock second_best_p;
+//     bool has_p2 = false;
+
+//     // Track 'q' blocks
+//     TelomereBlock best_q;
+//     bool has_q1 = false;
+//     TelomereBlock second_best_q;
+//     bool has_q2 = false;
+
+//     for (const auto& block : blocks) {
+//         if (block.blockLabel == 'p') {
+//             // Update best_p and second_best_p
+//             if (!has_p1 || block.blockLen > best_p.blockLen) {
+//                 second_best_p = best_p;
+//                 has_p2 = has_p1;
+//                 best_p = block;
+//                 has_p1 = true;
+//             }
+//             else if (!has_p2 || block.blockLen > second_best_p.blockLen) {
+//                 second_best_p = block;
+//                 has_p2 = true;
+//             }
+//         }
+//         else if (block.blockLabel == 'q') {
+//             // Update best_q and second_best_q
+//             if (!has_q1 || block.blockLen > best_q.blockLen) {
+//                 second_best_q = best_q;
+//                 has_q2 = has_q1;
+//                 best_q = block;
+//                 has_q1 = true;
+//             }
+//             else if (!has_q2 || block.blockLen > second_best_q.blockLen) {
+//                 second_best_q = block;
+//                 has_q2 = true;
+//             }
+//         }
+//     }
+
+//     // Assign best 'p' and 'q' blocks per path
+//     if (has_p1 && has_q1) { 
+//         filteredBlocks.push_back(best_p);
+//         filteredBlocks.push_back(best_q);
+//     }
+//     else { 
+//         if (has_p1) {
+//             filteredBlocks.push_back(best_p);
+//             if (has_p2) {
+//                 filteredBlocks.push_back(second_best_p);
+//             }
+//         }
+//         if (has_q1) {
+//             filteredBlocks.push_back(best_q);
+//             if (has_q2) {
+//                 filteredBlocks.push_back(second_best_q);
+//             }
+//         }
+//     }
+
+//     // Sort by coords
+//     std::sort(filteredBlocks.begin(), filteredBlocks.end(),
+//             [](const TelomereBlock &a, const TelomereBlock &b) {
+//                 return a.start < b.start;
+//             });
+
+//     return filteredBlocks;
+// }
 
 
 std::vector<TelomereBlock> Teloscope::filterITSBlocks(const std::vector<TelomereBlock>& interstitialBlocks) {
@@ -596,7 +730,6 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
     SegmentData segmentData;
     segmentData.canonicalMatches.reserve(segmentSize / 6);
     segmentData.nonCanonicalMatches.reserve(segmentSize / 6);
-    segmentData.segMatches.reserve(segmentSize / 6);
     segmentData.windows.reserve((segmentSize - windowSize) / step + 2);
 
     WindowData prevOverlapData; // Data from previous overlap
@@ -661,14 +794,14 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
 
     if (segmentData.terminalFwdMatches.size() >= 2) {
         fwdBlocks = getBlocksRecycle(segmentData.terminalFwdMatches, relaxedDist, segmentData.interstitialMatches, true);
-        fwdBlocks = extendBlocks(fwdBlocks, extendDist);
+        fwdBlocks = extendBlocks(fwdBlocks, extendDist, 0.7f, segmentSize, absPos);
     }
 
     if (segmentData.terminalRevMatches.size() >= 2) {
         revBlocks = getBlocksRecycle(segmentData.terminalRevMatches, relaxedDist, segmentData.interstitialMatches, false);
-        revBlocks = extendBlocks(revBlocks, extendDist);
+        revBlocks = extendBlocks(revBlocks, extendDist, 0.7f, segmentSize, absPos);
     }
-    
+
     // 2. Create terminal blocks by combining orientation-specific blocks
     segmentData.terminalBlocks.reserve(fwdBlocks.size() + revBlocks.size());
     segmentData.terminalBlocks.insert(segmentData.terminalBlocks.end(), 
@@ -689,7 +822,7 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
 
 SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTeloscope &userInput, uint32_t absPos) {
     SegmentData segmentData;
-    uint32_t seqLen = sequence.size();
+    uint32_t segmentSize = sequence.size();
     uint32_t terminalLimit = userInput.terminalLimit;
     unsigned short int longestPatternSize = this->trie.getLongestPatternSize();
 
@@ -731,13 +864,13 @@ SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTelosc
         }
     };
     
-    if (seqLen > 2 * terminalLimit) {
+    if (segmentSize > 2 * terminalLimit) {
         // Process terminal regions only
         processRegion(0, terminalLimit);
-        processRegion(seqLen - terminalLimit, seqLen);
+        processRegion(segmentSize - terminalLimit, segmentSize);
     } else {
         // Process entire sequence
-        processRegion(0, seqLen);
+        processRegion(0, segmentSize);
     }
     
     // Create and add p/q blocks to segmentData.terminalBlocks
@@ -747,7 +880,7 @@ SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTelosc
     
     if (fwdMatches.size() >= 2) {
         fwdBlocks = getBlocks(fwdMatches, mergeDist, false);
-        fwdBlocks = extendBlocks(fwdBlocks, extendDist);
+        fwdBlocks = extendBlocks(fwdBlocks, extendDist, 0.7f, segmentSize, absPos);
         segmentData.terminalBlocks.insert(
             segmentData.terminalBlocks.end(),
             std::make_move_iterator(fwdBlocks.begin()),
@@ -757,7 +890,7 @@ SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTelosc
     
     if (revMatches.size() >= 2) {
         revBlocks = getBlocks(revMatches, mergeDist, false);
-        revBlocks = extendBlocks(revBlocks, extendDist);
+        revBlocks = extendBlocks(revBlocks, extendDist, 0.7f, segmentSize, absPos);
         segmentData.terminalBlocks.insert(
             segmentData.terminalBlocks.end(),
             std::make_move_iterator(revBlocks.begin()),
@@ -769,51 +902,51 @@ SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTelosc
 }
 
 
-std::string Teloscope::getChrType(const std::string& labels, uint16_t gaps) {
-    bool hasGaps = (gaps > 0);
+// std::string Teloscope::getChrType(const std::string& labels, uint16_t gaps) {
+//     bool hasGaps = (gaps > 0);
     
-    if (hasGaps) {
-        // Handle gapped cases
-        switch (labels.size()) {
-            case 0:
-                totalGappedNone++;
-                return "gapped_na";
-            case 1:
-                totalGappedIncomplete++;
-                return "gapped_incomplete";
-            case 2:
-                if (labels == "pq") {
-                    totalGappedT2T++;
-                    return "gapped_t2t";
-                } else {
-                    totalGappedMissassembly++;
-                    return "gapped_missassembly";
-                }
-            default:
-                return "gapped_unknown";
-        }
-    } else {
-        // Handle non-gapped cases
-        switch (labels.size()) {
-            case 0:
-                totalNone++;
-                return "na";
-            case 1:
-                totalIncomplete++;
-                return "incomplete";
-            case 2:
-                if (labels == "pq") {
-                    totalT2T++;
-                    return "t2t";
-                } else {
-                    totalMissassembly++;
-                    return "missassembly";
-                }
-            default:
-                return "unknown";
-        }
-    }
-}
+//     if (hasGaps) {
+//         // Handle gapped cases
+//         switch (labels.size()) {
+//             case 0:
+//                 totalGappedNone++;
+//                 return "gapped_na";
+//             case 1:
+//                 totalGappedIncomplete++;
+//                 return "gapped_incomplete";
+//             case 2:
+//                 if (labels == "pq") {
+//                     totalGappedT2T++;
+//                     return "gapped_t2t";
+//                 } else {
+//                     totalGappedMissassembly++;
+//                     return "gapped_missassembly";
+//                 }
+//             default:
+//                 return "gapped_unknown";
+//         }
+//     } else {
+//         // Handle non-gapped cases
+//         switch (labels.size()) {
+//             case 0:
+//                 totalNone++;
+//                 return "na";
+//             case 1:
+//                 totalIncomplete++;
+//                 return "incomplete";
+//             case 2:
+//                 if (labels == "pq") {
+//                     totalT2T++;
+//                     return "t2t";
+//                 } else {
+//                     totalMissassembly++;
+//                     return "missassembly";
+//                 }
+//             default:
+//                 return "unknown";
+//         }
+//     }
+// }
 
 
 
@@ -849,9 +982,9 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
     // Console report header
     std::cout << "\n+++ Path Summary Report +++\n";
     if (!userInput.ultraFastMode) {
-        std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tits\tcanonical\twindows\n";
+        std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular\tits\tcanonical\twindows\n";
     } else {
-        std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\n";
+        std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular\n";
     }
 
     // Processing paths
@@ -861,6 +994,10 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
         const auto& pos = pathData.seqPos;
         const auto& gaps = pathData.gaps;
         const auto& pathSize = pathData.pathSize;
+
+        // Longest telomere blocks
+        int longestCount = 0;
+        std::string longestLabels;
 
         // Terminal blocks
         std::string labels;
@@ -876,7 +1013,12 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
                                 << block.canonicalCount << "\t"
                                 << block.nonCanonicalCount << "\t"
                                 << pathSize << "\n";
-            labels += block.blockLabel;
+
+            // Only count and include label if this is a longest block
+            if (block.isLongest) {
+                longestCount++;
+                longestLabels += block.blockLabel;
+            }
         }
 
         // Interstitial blocks
@@ -934,14 +1076,15 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
             }
         }
 
-        // Output path summary
-        std::string type = getChrType(labels, gaps); // Telomere/Gap completeness
+        // Output path summary (updated v0.1.1)
         std::cout << pos + 1 << "\t" << header << "\t" 
-                << pathData.terminalBlocks.size() << "\t"
-                << (labels.empty() ? "none" : labels) << "\t" 
-                << gaps << "\t" << type;
+                << longestCount << "\t"
+                << (longestLabels.empty() ? "none" : longestLabels) << "\t" 
+                << gaps << "\t" 
+                << pathData.scaffoldType << "\t"
+                << pathData.terminalLabel;
         
-        totalTelomeres += pathData.terminalBlocks.size(); // Update assembly summary
+        totalTelomeres += longestCount; // Update assembly summary with longest count
         totalGaps += gaps;
 
         // Expand path summary

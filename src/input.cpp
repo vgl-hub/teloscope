@@ -89,7 +89,7 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
     // Initialize SegmentData for this segment
     SegmentData segmentData;
     segmentData = analyzeSegmentTips(sequence, userInput, 0); // absPos = 0
-    segmentData.terminalBlocks = filterTerminalBlocks(segmentData.terminalBlocks);
+    // segmentData.terminalBlocks = filterTerminalBlocks(segmentData.terminalBlocks); // TODO: extendBlocks???
     // char segOr = (block.blockLabel == 'p' ? '+' : '-'); // TODO
     // auto &adj = inSequences.getAdjEdgeList()[ segment->getuId() ];
 
@@ -238,7 +238,9 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     }
 
     // Filter blocks
-    pathData.terminalBlocks = filterTerminalBlocks(pathData.terminalBlocks);
+    labelTerminalBlocks(pathData.terminalBlocks, pathData.gaps, 
+                        pathData.terminalLabel, pathData.scaffoldType);
+    // pathData.terminalBlocks = filterTerminalBlocks(pathData.terminalBlocks);
     pathData.interstitialBlocks = filterITSBlocks(pathData.interstitialBlocks);
 
     std::lock_guard<std::mutex> lck(mtx);

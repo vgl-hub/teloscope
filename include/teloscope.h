@@ -65,7 +65,11 @@ struct TelomereBlock {
     uint32_t totalCovered;
     uint32_t fwdCovered;
     uint32_t canCovered;
+    bool hasValidOr;
+    bool isLongest;
     char blockLabel; // 'p', 'q', 'u'
+
+    TelomereBlock() : hasValidOr(true), isLongest(false) {}
 };
 
 struct WindowData {
@@ -76,7 +80,6 @@ struct WindowData {
     float shannonEntropy;
     // uint32_t winHDistance = 0;
     
-    // std::vector<MatchInfo> winMatches; // Delete
     std::vector<MatchInfo> terminalFwdMatches;
     std::vector<MatchInfo> terminalRevMatches;
     std::vector<MatchInfo> interstitialMatches;
@@ -100,7 +103,6 @@ struct SegmentData {
     std::vector<TelomereBlock> interstitialBlocks;
     std::vector<MatchInfo> canonicalMatches;
     std::vector<MatchInfo> nonCanonicalMatches;
-    std::vector<MatchInfo> segMatches; // Delete
     std::vector<MatchInfo> terminalFwdMatches;
     std::vector<MatchInfo> terminalRevMatches;
     std::vector<MatchInfo> interstitialMatches;
@@ -117,6 +119,8 @@ struct PathData {
     std::vector<TelomereBlock> interstitialBlocks;
     std::vector<MatchInfo> canonicalMatches;
     std::vector<MatchInfo> nonCanonicalMatches;
+    std::string terminalLabel;
+    std::string scaffoldType;
 };
 
 
@@ -202,10 +206,14 @@ public:
         std::vector<TelomereBlock> getBlocks(
             std::vector<MatchInfo>& matches, 
             uint16_t mergeDist, bool needsSorting);
-    
-    std::vector<TelomereBlock> extendBlocks(std::vector<TelomereBlock> &blocks, uint16_t maxBlockDist);
 
-    std::vector<TelomereBlock> filterTerminalBlocks(const std::vector<TelomereBlock>& blocks);
+    std::vector<TelomereBlock> extendBlocks(std::vector<TelomereBlock> &blocks, 
+    uint16_t maxBlockDist, float densityCutoff, uint32_t segmentSize, uint32_t absPos);
+
+    void labelTerminalBlocks(std::vector<TelomereBlock>& blocks, uint16_t gaps,
+                        std::string& terminalLabel, std::string& scaffoldType);
+
+    // std::vector<TelomereBlock> filterTerminalBlocks(const std::vector<TelomereBlock>& blocks);
     
     std::vector<TelomereBlock> filterITSBlocks(const std::vector<TelomereBlock>& interstitialBlocks);
     
