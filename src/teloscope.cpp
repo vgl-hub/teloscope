@@ -295,6 +295,10 @@ std::vector<TelomereBlock> Teloscope::getBlocks(
 std::vector<TelomereBlock> Teloscope::extendBlocks(std::vector<TelomereBlock> &blocks, 
     uint16_t maxBlockDist, float densityCutoff, uint32_t segmentSize, uint32_t absPos) {
     std::vector<TelomereBlock> extendedBlocks;
+    if (blocks.empty()) {
+        return extendedBlocks;
+    }
+
     extendedBlocks.reserve(blocks.size());
 
     TelomereBlock currentBlock = blocks[0];
