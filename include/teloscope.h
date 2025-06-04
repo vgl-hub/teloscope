@@ -145,6 +145,12 @@ class Teloscope {
     uint32_t totalCanMatches = 0;
     uint32_t totalGaps = 0;
 
+    // Telomere stats
+    float teloMean = 0.0f;
+    float teloMedian = 0.0f;
+    float teloMin = 0.0f;
+    float teloMax = 0.0f;
+
     // Chr/scaffold type summary
     uint32_t totalT2T = 0;
     uint32_t totalGappedT2T = 0;
@@ -154,6 +160,8 @@ class Teloscope {
     uint32_t totalGappedIncomplete = 0;
     uint32_t totalNone = 0;
     uint32_t totalGappedNone = 0;
+    uint32_t totalErrors = 0;
+    uint32_t totalGappedErrors = 0;
 
     inline float getShannonEntropy(const uint32_t nucleotideCounts[4], uint32_t windowSize) {
         float entropy = 0.0;

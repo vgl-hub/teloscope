@@ -379,6 +379,7 @@ void Teloscope::labelTerminalBlocks(
     // If no blocks, set empty label and "none" type and return early
     if (blocks.empty()) {
         scaffoldType = gap_prefix + "none";
+        (hasGaps ? totalGappedNone : totalNone)++; // Summary counters
         return;
     }
 
@@ -416,12 +417,8 @@ void Teloscope::labelTerminalBlocks(
     }
 
     // Mark longest blocks
-    if (longest_p) {
-        longest_p->isLongest = true;
-    }
-    if (longest_q) {
-        longest_q->isLongest = true;
-    }
+    if (longest_p) longest_p->isLongest = true;
+    if (longest_q) longest_q->isLongest = true;
 
     // Update granular label with uppercase for longest blocks
     for (size_t i = 0, j = 0; i < blocks.size(); i++) {
@@ -441,6 +438,7 @@ void Teloscope::labelTerminalBlocks(
     // Check for errors in longest blocks
     if ((has_P && !longest_p->hasValidOr) || (has_Q && !longest_q->hasValidOr)) {
         scaffoldType = gap_prefix + "error";
+        (hasGaps ? totalGappedErrors : totalErrors)++; // Summary counters
         return;
     }
     
@@ -449,14 +447,16 @@ void Teloscope::labelTerminalBlocks(
         // Check if P comes before Q in the sorted blocks
         if (longest_p->start < longest_q->start) {
             scaffoldType = gap_prefix + "t2t";
+            (hasGaps ? totalGappedT2T : totalT2T)++; // Summary counters
         } else {
             // QP, Qq, Pp cases
             scaffoldType = gap_prefix + "missassembly";
+            (hasGaps ? totalGappedMissassembly : totalMissassembly)++; // Summary counters
         }
         return;
     }
     
-    // Special case: Check for missassembly patterns
+    // Check for Pp and Qq missassemblies
     if (has_P) {
         // Check for lowercase p blocks that would indicate missassembly
         bool has_p_blocks = false;
@@ -468,6 +468,7 @@ void Teloscope::labelTerminalBlocks(
         }
         if (has_p_blocks) {
             scaffoldType = gap_prefix + "missassembly";
+            (hasGaps ? totalGappedMissassembly : totalMissassembly)++; // Summary counters
             return;
         }
     }
@@ -483,87 +484,15 @@ void Teloscope::labelTerminalBlocks(
         }
         if (has_q_blocks) {
             scaffoldType = gap_prefix + "missassembly";
+            (hasGaps ? totalGappedMissassembly : totalMissassembly)++; // Summary counters
             return;
         }
     }
     
-    // If we get here, it's an incomplete chromosome with one telomere
+    // Incomplete chromosome with a single telomere
     scaffoldType = gap_prefix + "incomplete";
+    hasGaps ? totalGappedIncomplete++ : totalIncomplete++;
 }
-
-
-// std::vector<TelomereBlock> Teloscope::filterTerminalBlocks(const std::vector<TelomereBlock>& blocks) {
-//     std::vector<TelomereBlock> filteredBlocks;
-
-//     // Track 'p' blocks
-//     TelomereBlock best_p;
-//     bool has_p1 = false;
-//     TelomereBlock second_best_p;
-//     bool has_p2 = false;
-
-//     // Track 'q' blocks
-//     TelomereBlock best_q;
-//     bool has_q1 = false;
-//     TelomereBlock second_best_q;
-//     bool has_q2 = false;
-
-//     for (const auto& block : blocks) {
-//         if (block.blockLabel == 'p') {
-//             // Update best_p and second_best_p
-//             if (!has_p1 || block.blockLen > best_p.blockLen) {
-//                 second_best_p = best_p;
-//                 has_p2 = has_p1;
-//                 best_p = block;
-//                 has_p1 = true;
-//             }
-//             else if (!has_p2 || block.blockLen > second_best_p.blockLen) {
-//                 second_best_p = block;
-//                 has_p2 = true;
-//             }
-//         }
-//         else if (block.blockLabel == 'q') {
-//             // Update best_q and second_best_q
-//             if (!has_q1 || block.blockLen > best_q.blockLen) {
-//                 second_best_q = best_q;
-//                 has_q2 = has_q1;
-//                 best_q = block;
-//                 has_q1 = true;
-//             }
-//             else if (!has_q2 || block.blockLen > second_best_q.blockLen) {
-//                 second_best_q = block;
-//                 has_q2 = true;
-//             }
-//         }
-//     }
-
-//     // Assign best 'p' and 'q' blocks per path
-//     if (has_p1 && has_q1) { 
-//         filteredBlocks.push_back(best_p);
-//         filteredBlocks.push_back(best_q);
-//     }
-//     else { 
-//         if (has_p1) {
-//             filteredBlocks.push_back(best_p);
-//             if (has_p2) {
-//                 filteredBlocks.push_back(second_best_p);
-//             }
-//         }
-//         if (has_q1) {
-//             filteredBlocks.push_back(best_q);
-//             if (has_q2) {
-//                 filteredBlocks.push_back(second_best_q);
-//             }
-//         }
-//     }
-
-//     // Sort by coords
-//     std::sort(filteredBlocks.begin(), filteredBlocks.end(),
-//             [](const TelomereBlock &a, const TelomereBlock &b) {
-//                 return a.start < b.start;
-//             });
-
-//     return filteredBlocks;
-// }
 
 
 std::vector<TelomereBlock> Teloscope::filterITSBlocks(const std::vector<TelomereBlock>& interstitialBlocks) {
@@ -902,54 +831,6 @@ SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTelosc
 }
 
 
-// std::string Teloscope::getChrType(const std::string& labels, uint16_t gaps) {
-//     bool hasGaps = (gaps > 0);
-    
-//     if (hasGaps) {
-//         // Handle gapped cases
-//         switch (labels.size()) {
-//             case 0:
-//                 totalGappedNone++;
-//                 return "gapped_na";
-//             case 1:
-//                 totalGappedIncomplete++;
-//                 return "gapped_incomplete";
-//             case 2:
-//                 if (labels == "pq") {
-//                     totalGappedT2T++;
-//                     return "gapped_t2t";
-//                 } else {
-//                     totalGappedMissassembly++;
-//                     return "gapped_missassembly";
-//                 }
-//             default:
-//                 return "gapped_unknown";
-//         }
-//     } else {
-//         // Handle non-gapped cases
-//         switch (labels.size()) {
-//             case 0:
-//                 totalNone++;
-//                 return "na";
-//             case 1:
-//                 totalIncomplete++;
-//                 return "incomplete";
-//             case 2:
-//                 if (labels == "pq") {
-//                     totalT2T++;
-//                     return "t2t";
-//                 } else {
-//                     totalMissassembly++;
-//                     return "missassembly";
-//                 }
-//             default:
-//                 return "unknown";
-//         }
-//     }
-// }
-
-
-
 void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
                             std::ofstream& canonicalMatchFile,
                             std::ofstream& noncanonicalMatchFile,
@@ -988,6 +869,9 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
     }
 
     // Processing paths
+    totalPaths = allPathData.size();
+    std::vector<float> telomereLengths; //  vector of floats for getStats
+
     for (const auto& pathData : allPathData) {
         const auto& header = pathData.header;
         const auto& windows = pathData.windows;
@@ -1018,6 +902,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
             if (block.isLongest) {
                 longestCount++;
                 longestLabels += block.blockLabel;
+                telomereLengths.push_back(static_cast<float>(block.blockLen)); 
             }
         }
 
@@ -1033,7 +918,8 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
                                         << block.forwardCount << "\t"
                                         << block.reverseCount << "\t"
                                         << block.canonicalCount << "\t"
-                                        << block.nonCanonicalCount << "\n";
+                                        << block.nonCanonicalCount << "\t"
+                                        << pathSize << "\n";
             }
         }
 
@@ -1100,7 +986,15 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
         }
         std::cout << "\n"; // Finish path summary
     }
-    totalPaths = allPathData.size();
+
+    // Calculate telomere statistics
+    if (!telomereLengths.empty()) {
+        Stats stats = getStats(telomereLengths);
+        teloMean = stats.mean;
+        teloMedian = stats.median;
+        teloMin = stats.min;
+        teloMax = stats.max;
+    }
 
     // Single flush per file
     windowMetricsFile << windowMetricsBuffer.str();
@@ -1164,12 +1058,24 @@ void Teloscope::printSummary() {
     std::cout << "Total telomeres:\t" << totalTelomeres << "\n";
     
     if (!userInput.ultraFastMode) {
-        std::cout << "Total ITS:\t" << totalITS << "\n";
+        std::cout << "Total ITS blocks:\t" << totalITS << "\n";
         std::cout << "Total canonical matches:\t" << totalCanMatches << "\n";
         std::cout << "Total windows analyzed:\t" << totalNWindows << "\n";
     }
     
-    // Chromosomes by telomere numbers
+    // Telomere statistics
+    std::cout << "\n+++ Telomere Statistics +++\n";
+    if (totalTelomeres > 0) {
+        std::cout << "Mean length:\t" << teloMean << "\n";
+        std::cout << "Median length:\t" << teloMedian << "\n";
+        std::cout << "Min length:\t" << teloMin << "\n";
+        std::cout << "Max length:\t" << teloMax << "\n";
+    }
+    else {
+        std::cout << "No telomeres found for statistics.\n";
+    }
+
+    // Chromosomes by telomere numbers (excluding errors)
     std::cout << "\n+++ Chromosome Telomere Counts+++\n";
     std::cout << "Two telomeres:\t" << totalT2T + totalGappedT2T + totalMissassembly + totalGappedMissassembly << "\n";
     std::cout << "One telomere:\t" << totalIncomplete + totalGappedIncomplete << "\n";
@@ -1188,4 +1094,7 @@ void Teloscope::printSummary() {
     
     std::cout << "No telomeres:\t" << totalNone << "\n";
     std::cout << "Gapped no telomeres:\t" << totalGappedNone << "\n";
+    
+    std::cout << "Errors:\t" << totalErrors << "\n";
+    std::cout << "Gapped errors:\t" << totalGappedErrors << "\n";
 }
