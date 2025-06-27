@@ -439,10 +439,10 @@ void Teloscope::labelTerminalBlocks(
     bool has_P = (longest_p != nullptr);
     bool has_Q = (longest_q != nullptr);
     
-    // Check for errors in longest blocks
+    // Check for discordant telomeres in longest blocks
     if ((has_P && !longest_p->hasValidOr) || (has_Q && !longest_q->hasValidOr)) {
-        scaffoldType = gap_prefix + "error";
-        (hasGaps ? totalGappedErrors : totalErrors)++; // Summary counters
+        scaffoldType = gap_prefix + "discordant";
+        (hasGaps ? totalGappedDiscordant : totalDiscordant)++; // Summary counters
         return;
     }
     
@@ -1079,7 +1079,7 @@ void Teloscope::printSummary() {
         std::cout << "No telomeres found for statistics.\n";
     }
 
-    // Chromosomes by telomere numbers (excluding errors)
+    // Chromosomes by telomere numbers (excluding discordant telomeres)
     std::cout << "\n+++ Chromosome Telomere Counts+++\n";
     std::cout << "Two telomeres:\t" << totalT2T + totalGappedT2T + totalMissassembly + totalGappedMissassembly << "\n";
     std::cout << "One telomere:\t" << totalIncomplete + totalGappedIncomplete << "\n";
@@ -1099,6 +1099,6 @@ void Teloscope::printSummary() {
     std::cout << "No telomeres:\t" << totalNone << "\n";
     std::cout << "Gapped no telomeres:\t" << totalGappedNone << "\n";
     
-    std::cout << "Errors:\t" << totalErrors << "\n";
-    std::cout << "Gapped errors:\t" << totalGappedErrors << "\n";
+    std::cout << "Discordant:\t" << totalDiscordant << "\n";
+    std::cout << "Gapped discordant:\t" << totalGappedDiscordant << "\n";
 }

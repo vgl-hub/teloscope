@@ -160,8 +160,8 @@ class Teloscope {
     uint32_t totalGappedIncomplete = 0;
     uint32_t totalNone = 0;
     uint32_t totalGappedNone = 0;
-    uint32_t totalErrors = 0;
-    uint32_t totalGappedErrors = 0;
+    uint32_t totalDiscordant = 0;
+    uint32_t totalGappedDiscordant = 0;
 
     inline float getShannonEntropy(const uint32_t nucleotideCounts[4], uint32_t windowSize) {
         float entropy = 0.0;
