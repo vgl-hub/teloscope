@@ -22,7 +22,6 @@ struct UserInputTeloscope : UserInput {
     unsigned short int minBlockCounts = 2;
     unsigned short int maxMatchDist = 50;
     uint32_t terminalLimit = 50000;
-    float minBlockDensity = 0.5;
 
     bool outFasta = false;
     bool outWinRepeats = false;
