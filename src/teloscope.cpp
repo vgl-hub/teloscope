@@ -727,12 +727,12 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
 
     if (segmentData.terminalFwdMatches.size() >= 2) {
         fwdBlocks = getBlocksRecycle(segmentData.terminalFwdMatches, relaxedDist, segmentData.interstitialMatches, true);
-        fwdBlocks = extendBlocks(fwdBlocks, extendDist, userInput.minBlockDensity, segmentSize, absPos);
+        fwdBlocks = extendBlocks(fwdBlocks, extendDist, 0.5f, segmentSize, absPos);
     }
 
     if (segmentData.terminalRevMatches.size() >= 2) {
         revBlocks = getBlocksRecycle(segmentData.terminalRevMatches, relaxedDist, segmentData.interstitialMatches, false);
-        revBlocks = extendBlocks(revBlocks, extendDist, userInput.minBlockDensity, segmentSize, absPos);
+        revBlocks = extendBlocks(revBlocks, extendDist, 0.5f, segmentSize, absPos);
     }
 
     // 2. Create terminal blocks by combining orientation-specific blocks
