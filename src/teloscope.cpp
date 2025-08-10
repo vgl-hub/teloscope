@@ -506,7 +506,7 @@ std::vector<TelomereBlock> Teloscope::filterITSBlocks(const std::vector<Telomere
     for (const auto& block : interstitialBlocks) {
         if (block.blockLen < minLength) continue;  // Length filter
         if (block.canonicalCount == 0) continue;   // Minimal canonical check
-        if (block.canCovered / block.blockLen < 0.5) continue; // Majority canonical
+        if ((static_cast<float>(block.canCovered) / block.blockLen) < 0.5) continue; // Majority canonical
         if (block.blockLabel == 'u' && (block.forwardCount < 2 && block.reverseCount < 2)) continue; // U check
 
     filteredBlocks.push_back(block);
@@ -723,16 +723,17 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
     // 1. Process terminal matches by orientation
     uint16_t relaxedDist = userInput.maxMatchDist;
     uint16_t extendDist = userInput.maxBlockDist;
+    float densityCutoff = userInput.minBlockDensity;
     std::vector<TelomereBlock> fwdBlocks, revBlocks;
 
     if (segmentData.terminalFwdMatches.size() >= 2) {
         fwdBlocks = getBlocksRecycle(segmentData.terminalFwdMatches, relaxedDist, segmentData.interstitialMatches, true);
-        fwdBlocks = extendBlocks(fwdBlocks, extendDist, 0.5f, segmentSize, absPos);
+        fwdBlocks = extendBlocks(fwdBlocks, extendDist, densityCutoff, segmentSize, absPos);
     }
 
     if (segmentData.terminalRevMatches.size() >= 2) {
         revBlocks = getBlocksRecycle(segmentData.terminalRevMatches, relaxedDist, segmentData.interstitialMatches, false);
-        revBlocks = extendBlocks(revBlocks, extendDist, 0.5f, segmentSize, absPos);
+        revBlocks = extendBlocks(revBlocks, extendDist, densityCutoff, segmentSize, absPos);
     }
 
     // 2. Create terminal blocks by combining orientation-specific blocks
@@ -810,11 +811,12 @@ SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTelosc
     // Create and add p/q blocks to segmentData.terminalBlocks
     uint16_t mergeDist = userInput.maxMatchDist;
     uint16_t extendDist = userInput.maxBlockDist;
+    float densityCutoff = userInput.minBlockDensity;
     std::vector<TelomereBlock> fwdBlocks, revBlocks;
     
     if (fwdMatches.size() >= 2) {
         fwdBlocks = getBlocks(fwdMatches, mergeDist, false);
-        fwdBlocks = extendBlocks(fwdBlocks, extendDist, 0.7f, segmentSize, absPos);
+        fwdBlocks = extendBlocks(fwdBlocks, extendDist, densityCutoff, segmentSize, absPos);
         segmentData.terminalBlocks.insert(
             segmentData.terminalBlocks.end(),
             std::make_move_iterator(fwdBlocks.begin()),
@@ -824,7 +826,7 @@ SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTelosc
     
     if (revMatches.size() >= 2) {
         revBlocks = getBlocks(revMatches, mergeDist, false);
-        revBlocks = extendBlocks(revBlocks, extendDist, 0.7f, segmentSize, absPos);
+        revBlocks = extendBlocks(revBlocks, extendDist, densityCutoff, segmentSize, absPos);
         segmentData.terminalBlocks.insert(
             segmentData.terminalBlocks.end(),
             std::make_move_iterator(revBlocks.begin()),
