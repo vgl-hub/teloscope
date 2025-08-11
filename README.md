@@ -20,15 +20,15 @@ Examples
 ------------
 * Example: Minimal single case to run Teloscope.
 
-        teloscope -f "${file}" -o "${out_path}" -u
+        teloscope -f "${file}"
 
-* Example: Multiple input case to run Teloscope. Set window and step sizes.
+* Example: Multiple input case to run Teloscope. 
 
-        teloscope -f "${file}" -o "${out_path}" -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG -w 2000 -s 1000
+        teloscope -f "${file}" -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG
 
-* Example: Calculating window metrics.
+* Example: Set window and step sizes. Calculating window metrics.
 
-        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p NNNGGG -w 1000 -s 500 -g -e -r --verbose
+        teloscope -f "${file}" -o "${out_path}" -j 16 -c TTAGGG -p NNNGGG -w 2000 -s 1000 -g -e -r --verbose
 
 * Example: Allowing all outputs and using all flags.
 
@@ -45,23 +45,25 @@ To check out all options and flags, please use:
 ```
 Required Parameters:
         '-f'    --input-sequence        Initiate tool with fasta file.
-        '-o'    --output        Set output route.
+        '-o'    --output        Set output route. [Default: Input path]
         '-c'    --canonical     Set canonical pattern. [Default: TTAGGG]
         '-p'    --patterns      Set patterns to explore, separate them by commas [Default: TTAGGG]
-        '-w'    --window        Set sliding window size. [Default: 1000]
-        '-s'    --step  Set sliding window step. [Default: 500]
         '-j'    --threads       Set maximum number of threads. [Default: max. available]
-        '-l'    --min-block-length      Set minimum block length for merging. [Default: 500]
-        '-d'    --max-block-distance    Set maximum block distance for merging. [Default: 200]
         '-t'    --terminal-limit        Set terminal limit for exploring telomere variant regions (TVRs). [Default: 50000]
+        '-k'    --max-match-distance    Set maximum distance for merging matches. [Default: 50]
+        '-d'    --max-block-distance    Set maximum block distance for extension. [Default: 200]
+        '-l'    --min-block-length      Set minimum block length. [Default: 500]
+        '-y'    --min-block-density     Set minimum block density. [Default: 0.5]
 
 Optional Parameters:
+        '-w'    --window        Set sliding window size. [Default: 1000]
+        '-s'    --step  Set sliding window step. [Default: 500]
         '-r'    --out-win-repeats       Output canonical/noncanonical repeats and density by window. [Default: false]
         '-g'    --out-gc        Output GC content for each window. [Default: false]
         '-e'    --out-entropy   Output Shannon entropy for each window. [Default: false]
         '-m'    --out-matches   Output all canonical and terminal non-canonical matches. [Default: false]
         '-i'    --out-its       Output assembly interstitial telomere (ITSs) regions.[Default: false]
-        '-u'    --ultra-fast    Ultra-fast mode. Only scans terminal telomeres at contig ends. [Default: false]
+        '-u'    --ultra-fast    Ultra-fast mode. Only scans terminal telomeres at contig ends. [Default: true]
         '-v'    --version       Print current software version.
         '-h'    --help  Print current software options.
         --verbose       Verbose output.
