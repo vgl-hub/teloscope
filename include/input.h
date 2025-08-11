@@ -7,7 +7,7 @@
 struct UserInputTeloscope : UserInput {
     
     std::string inSequencePrefix;
-    std::string inSequenceSuffix;
+    std::string inSequenceName;
     std::string outRoute;
     std::unordered_map<std::string, uint8_t> hammingDistances;
 

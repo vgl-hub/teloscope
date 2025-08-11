@@ -110,7 +110,7 @@ int main(int argc, char **argv) {
                     const std::filesystem::path real = std::filesystem::canonical(userInput.inSequence);
                     userInput.inSequence       = real.string();
                     userInput.inSequencePrefix = real.parent_path().string();
-                    userInput.inSequenceSuffix = real.extension().string();
+                    userInput.inSequenceName = real.filename().string();
                     userInput.outRoute = userInput.inSequencePrefix;
                 }
                 

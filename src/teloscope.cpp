@@ -969,7 +969,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
             }
         }
 
-        // Output path summary (updated v0.1.1)
+        // Output path summary
         std::cout << pos + 1 << "\t" << header << "\t" 
                 << longestCount << "\t"
                 << (longestLabels.empty() ? "none" : longestLabels) << "\t" 
@@ -1023,19 +1023,19 @@ void Teloscope::handleBEDFile() {
 
     // Open files for writing
     if (userInput.outWinRepeats || userInput.outEntropy || userInput.outGC) {
-        windowMetricsFile.open(userInput.outRoute + "/window_metrics.bedgraph");
+        windowMetricsFile.open(userInput.outRoute + "/" + userInput.inSequenceName  + "_window_metrics.bedgraph");
     }
 
     if (userInput.outMatches) {
-        canonicalMatchFile.open(userInput.outRoute + "/canonical_matches.bed");
-        noncanonicalMatchFile.open(userInput.outRoute + "/noncanonical_matches.bed");
+        canonicalMatchFile.open(userInput.outRoute + "/" + userInput.inSequenceName  + "_canonical_matches.bed");
+        noncanonicalMatchFile.open(userInput.outRoute + "/" + userInput.inSequenceName  + "_noncanonical_matches.bed");
     }
 
     if (userInput.outITS) {
-        interstitialBlocksFile.open(userInput.outRoute + "/interstitial_telomeres.bed");
+        interstitialBlocksFile.open(userInput.outRoute + "/" + userInput.inSequenceName  + "_interstitial_telomeres.bed");
     }
 
-    terminalBlocksFile.open(userInput.outRoute + "/terminal_telomeres.bed");
+    terminalBlocksFile.open(userInput.outRoute + "/" + userInput.inSequenceName  + "_terminal_telomeres.bed");
 
     writeBEDFile(windowMetricsFile, canonicalMatchFile, noncanonicalMatchFile,
                 terminalBlocksFile, interstitialBlocksFile);
