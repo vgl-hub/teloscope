@@ -1086,7 +1086,7 @@ void Teloscope::printSummary() {
     std::cout << "\n+++ Chromosome Telomere Counts+++\n";
     std::cout << "Two telomeres:\t" << totalT2T + totalGappedT2T + totalMissassembly + totalGappedMissassembly << "\n";
     std::cout << "One telomere:\t" << totalIncomplete + totalGappedIncomplete << "\n";
-    std::cout << "No telomeres:\t" << totalNone + totalGappedNone << "\n";
+    std::cout << "Zero telomeres:\t" << totalNone + totalGappedNone << "\n";
 
     // Chromosomes by telomere completeness
     std::cout << "\n+++ Chromosome Telomere/Gap Completeness+++\n";
