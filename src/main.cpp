@@ -34,7 +34,7 @@ int main(int argc, char **argv) {
     
     if (argc == 1) { // case: with no arguments
             
-        printf("teloscope -f input.[fa/fa.gz] -o /output/path/ \nUse -f to initiate the tool.\nUse -u for ultrafast mode.\nUse -h for additional help.\n");
+        printf("teloscope -f input.[fa|fa.gz|gfa] -o /output/path/ \nUse -f to initiate the tool.\nUse -h for additional help.\n");
         exit(0);
         
     }
@@ -47,9 +47,11 @@ int main(int argc, char **argv) {
         {"step", required_argument, 0, 's'},
         {"canonical", required_argument, 0, 'c'},
         {"threads", required_argument, 0, 'j'},
-        {"min-block-length", required_argument, 0, 'l'},
-        {"max-block-distance", required_argument, 0, 'd'},
         {"terminal-limit", required_argument, 0, 't'},
+        {"max-match-distance", required_argument, 0, 'k'},
+        {"max-block-distance", required_argument, 0, 'd'},
+        {"min-block-length", required_argument, 0, 'l'},
+        {"min-block-density", required_argument, 0, 'y'},
 
         {"out-fasta", no_argument, 0, 'a'},
         {"out-win-repeats", no_argument, 0, 'r'},
@@ -68,9 +70,9 @@ int main(int argc, char **argv) {
     while (arguments) { // loop through argv
         
         int option_index = 0;
-        
-        c = getopt_long(argc, argv, "-:f:j:o:p:s:w:c:l:d:t:argemivhu", long_options, &option_index);
-        
+
+        c = getopt_long(argc, argv, "-:f:j:o:p:s:w:c:t:k:d:l:y:argemivhu", long_options, &option_index);
+
         if (c == -1) { // exit the loop if run out of options
             break;
             
@@ -104,6 +106,12 @@ int main(int argc, char **argv) {
                 } else { // input is a regular file
                     ifFileExists(optarg);
                     userInput.inSequence = optarg;
+
+                    const std::filesystem::path real = std::filesystem::canonical(userInput.inSequence);
+                    userInput.inSequence       = real.string();
+                    userInput.inSequencePrefix = real.parent_path().string();
+                    userInput.inSequenceSuffix = real.extension().string();
+                    userInput.outRoute = userInput.inSequencePrefix;
                 }
                 
                 if (userInput.inSequence.empty()) {
@@ -113,12 +121,12 @@ int main(int argc, char **argv) {
                 break;
 
 
-            case 'o':
+            case 'o': // output route
                 {
                     userInput.outRoute = optarg;
 
                     if (userInput.outRoute.empty()) {
-                        fprintf(stderr, "Error: Output route is required. Use -o or --output.\n");
+                        userInput.outRoute = userInput.inSequencePrefix; 
                         exit(EXIT_FAILURE);
                     }
 
@@ -249,6 +257,38 @@ int main(int argc, char **argv) {
             }
 
 
+            case 't' : {
+                try {
+                    userInput.terminalLimit = std::stoi(optarg);
+                    
+                    if (userInput.terminalLimit <= 0) {
+                        fprintf(stderr, "Error: Terminal limit (-t or --terminal-limit) must be > 0.\n");
+                        exit(EXIT_FAILURE);
+                    }
+                } catch (const std::exception& e) {
+                    fprintf(stderr, "Error: Invalid terminal limit '%s'. Must be a number.\n", optarg);
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            }
+
+
+            case 'k': { // max match distance (merge distance for matches)
+                try {
+                    int v = std::stoi(optarg);
+                    if (v <= 0) {
+                        fprintf(stderr, "Error: Max match distance (-k/--max-match-distance) must be > 0.\n");
+                        exit(EXIT_FAILURE);
+                    }
+                    userInput.maxMatchDist = static_cast<unsigned short>(v);
+                } catch (...) {
+                    fprintf(stderr, "Error: Invalid max match distance '%s'. Must be a number.\n", optarg);
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            }
+
+
             case 'l': {
                 try {
                     userInput.minBlockLen = std::stoi(optarg);
@@ -281,16 +321,16 @@ int main(int argc, char **argv) {
             }
 
 
-            case 't' : {
+            case 'y': { // min block density (fraction 0–1)
                 try {
-                    userInput.terminalLimit = std::stoi(optarg);
-                    
-                    if (userInput.terminalLimit <= 0) {
-                        fprintf(stderr, "Error: Terminal limit (-t or --terminal-limit) must be > 0.\n");
+                    float v = std::stof(optarg);
+                    if (v < 0.0f || v > 1.0f) {
+                        fprintf(stderr, "Error: Min block density (-y/--min-block-density) must be in the range [0,1].\n");
                         exit(EXIT_FAILURE);
                     }
-                } catch (const std::exception& e) {
-                    fprintf(stderr, "Error: Invalid terminal limit '%s'. Must be a number.\n", optarg);
+                    userInput.minBlockDensity = v;
+                } catch (...) {
+                    fprintf(stderr, "Error: Invalid min block density '%s'. Must be a number [0,1].\n", optarg);
                     exit(EXIT_FAILURE);
                 }
                 break;
@@ -299,44 +339,59 @@ int main(int argc, char **argv) {
 
             case 'a':
                 userInput.outFasta = true;
+                userInput.ultraFastMode = false;
                 break;
 
 
             case 'r':
                 userInput.outWinRepeats = true;
+                userInput.ultraFastMode = false;
+                fprintf(stderr, "Normal mode: Scanning window telomeric repeats.\n");
                 break;
 
 
             case 'g':
                 userInput.outGC = true;
+                userInput.ultraFastMode = false;
+                fprintf(stderr, "Normal mode: Scanning window GC content.\n");
                 break;
 
 
             case 'e':
                 userInput.outEntropy = true;
+                userInput.ultraFastMode = false;
+                fprintf(stderr, "Normal mode: Scanning window Shannon entropy.\n");
                 break;
 
 
             case 'm':
                 userInput.outMatches = true;
+                userInput.ultraFastMode = false;
+                fprintf(stderr, "Normal mode: Scanning genome-wide telomeric matches.\n");
                 break;
 
 
             case 'i':
                 userInput.outITS = true;
+                userInput.ultraFastMode = false;
+                fprintf(stderr, "Normal mode: Scanning genome-wide interstitial telomeres (ITS).\n");
                 break;
 
 
-            case 'u':
-                userInput.ultraFastMode = true;
-                userInput.outGC = false;
-                userInput.outEntropy = false;
-                userInput.outITS = false;
-                userInput.outWinRepeats = false;
-                userInput.outMatches = false;
-                fprintf(stderr, "Warning: Ultra-fast mode enabled. Only scanning terminal regions.\n");
-                fprintf(stderr, "Warning: Interstitial telomeres (ITS) scan and window-based metrics are disabled.\n");
+            case 'u': {
+                if (userInput.outWinRepeats || userInput.outGC ||
+                    userInput.outEntropy   || userInput.outITS ||
+                    userInput.outMatches) {
+                    // Conflicts present → keep genome-wide, ignore -u
+                    userInput.ultraFastMode = false;
+                    fprintf(stderr, "Ignoring -u: -r/-g/-e/-i/-m request genome-wide scanning.\n");
+                } else {
+                    // No conflicts seen so far → enable terminal-only
+                    userInput.ultraFastMode = true;
+                    fprintf(stderr, "Fast mode: Only scanning terminal regions.\n");
+                }
                 break;
+            }
 
 
             case 'v': // software version
@@ -354,20 +409,22 @@ int main(int argc, char **argv) {
                 printf("\t'-o'\t--output\tSet output route.\n");
                 printf("\t'-c'\t--canonical\tSet canonical pattern. [Default: TTAGGG]\n");
                 printf("\t'-p'\t--patterns\tSet patterns to explore, separate them by commas [Default: TTAGGG]\n");
-                printf("\t'-w'\t--window\tSet sliding window size. [Default: 1000]\n");
-                printf("\t'-s'\t--step\tSet sliding window step. [Default: 500]\n");
                 printf("\t'-j'\t--threads\tSet maximum number of threads. [Default: max. available]\n");
-                printf("\t'-l'\t--min-block-length\tSet minimum block length for merging. [Default: 500]\n");
-                printf("\t'-d'\t--max-block-distance\tSet maximum block distance for merging. [Default: 200]\n");
                 printf("\t'-t'\t--terminal-limit\tSet terminal limit for exploring telomere variant regions (TVRs). [Default: 50000]\n");
+                printf("\t'-k'\t--max-match-distance\tSet maximum distance for merging matches. [Default: 50]\n");
+                printf("\t'-d'\t--max-block-distance\tSet maximum block distance for extension. [Default: 200]\n");
+                printf("\t'-l'\t--min-block-length\tSet minimum block length. [Default: 500]\n");
+                printf("\t'-y'\t--min-block-density\tSet minimum block density. [Default: 0.5]\n");
 
                 printf("\nOptional Parameters:\n");
+                printf("\t'-w'\t--window\tSet sliding window size. [Default: 1000]\n");
+                printf("\t'-s'\t--step\tSet sliding window step. [Default: 500]\n");
                 printf("\t'-r'\t--out-win-repeats\tOutput canonical/noncanonical repeats and density by window. [Default: false]\n");
                 printf("\t'-g'\t--out-gc\tOutput GC content for each window. [Default: false]\n");
                 printf("\t'-e'\t--out-entropy\tOutput Shannon entropy for each window. [Default: false]\n");
                 printf("\t'-m'\t--out-matches\tOutput all canonical and terminal non-canonical matches. [Default: false]\n");
                 printf("\t'-i'\t--out-its\tOutput assembly interstitial telomere (ITSs) regions.[Default: false] \n");
-                printf("\t'-u'\t--ultra-fast\tUltra-fast mode. Only scans terminal telomeres at contig ends. [Default: false]\n");
+                printf("\t'-u'\t--ultra-fast\tUltra-fast mode. Only scans terminal telomeres at contig ends. [Default: true]\n");
 
                 printf("\t'-v'\t--version\tPrint current software version.\n");
                 printf("\t'-h'\t--help\tPrint current software options.\n");

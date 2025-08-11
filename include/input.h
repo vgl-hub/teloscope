@@ -6,6 +6,8 @@
 
 struct UserInputTeloscope : UserInput {
     
+    std::string inSequencePrefix;
+    std::string inSequenceSuffix;
     std::string outRoute;
     std::unordered_map<std::string, uint8_t> hammingDistances;
 
@@ -25,13 +27,13 @@ struct UserInputTeloscope : UserInput {
     unsigned short int minBlockCounts = 2;
     float minBlockDensity = 0.5f;
 
-    bool outFasta = false;
+    bool outFasta = false; // TODO
     bool outWinRepeats = false;
     bool outGC = false;
     bool outEntropy = false;
     bool outMatches = false;
     bool outITS = false;
-    bool ultraFastMode = false;
+    bool ultraFastMode = true;
     
     double maxMem = 0;
     std::string prefix = ".", outFile = ""; // JACK: CHECK
