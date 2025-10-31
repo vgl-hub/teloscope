@@ -93,7 +93,8 @@ How to cite
 **Teloscope** is part of the gfastar tool suite. 
 If you use **Teloscope** in your research, please cite:
 
-The complete genome of a songbird
+The complete genome of a songbird  
 Giulio Formenti, Nivesh Jain, Jack A. Medico, Marco Sollitto, Dmitry Antipov, Suziane Barcellos, Matthew Biegler, Inês Borges, J King Chang, Ying Chen, Haoyu Cheng, Helena Conceição, Matthew Davenport, Lorraine De Oliveira, Erick Duarte, Gillian Durham, Jonathan Fenn, Niamh Forde, Pedro A. Galante, Kenji Gerhardt, Alice M. Giani, Simona Giunta, Juhyun Kim, Aleksey Komissarov, Bonhwang Koo, Sergey Koren, Denis Larkin, Chul Lee, Heng Li, Kateryna Makova, Patrick Masterson, Terence Murphy, Kirsty McCaffrey, Rafael L.V. Mercuri, Yeojung Na, Mary J. O’Connell, Shujun Ou, Adam Phillippy, Marina Popova, Arang Rhie, Francisco J. Ruiz-Ruano, Simona Secomandi, Linnéa Smeds, Alexander Suh, Tatiana Tilley, Niki Vontzou, Paul D. Waters, Jennifer Balacco, Erich D. Jarvis
 bioRxiv 2025.10.14.682431; doi: https://doi.org/10.1101/2025.10.14.682431
+
 
