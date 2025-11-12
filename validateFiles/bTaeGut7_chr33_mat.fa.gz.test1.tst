@@ -1,10 +1,6 @@
 testFiles/bTaeGut7_chr33_mat.fa.gz -f
 embedded
 
-bTaeGut7_chr33_mat.fa.gz_terminal_telomeres.bed
-chr33_mat	693	14354	13661	p	2181	0	2181	0	4246341
-chr33_mat	4219967	4246337	26370	q	0	4321	4321	0	4246341
-
 +++ Path Summary Report +++
 pos	header	telomeres	labels	gaps	type	granular
 1	chr33_mat	2	pq	0	t2t	PQ
