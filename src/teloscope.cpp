@@ -744,8 +744,7 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
                                         revBlocks.begin(), revBlocks.end());
 
     // 3. Create interstitial blocks with stricter merge distance
-    // uint16_t strictDist = this->trie.getLongestPatternSize();
-    uint16_t strictDist = 18;
+    uint16_t strictDist = 48;
     if (segmentData.interstitialMatches.size() >= 2) {
         segmentData.interstitialBlocks = getBlocks(segmentData.interstitialMatches, strictDist, true);
     }

@@ -220,8 +220,6 @@ public:
 
     void labelTerminalBlocks(std::vector<TelomereBlock>& blocks, uint16_t gaps,
                         std::string& terminalLabel, std::string& scaffoldType);
-
-    // std::vector<TelomereBlock> filterTerminalBlocks(const std::vector<TelomereBlock>& blocks);
     
     std::vector<TelomereBlock> filterITSBlocks(const std::vector<TelomereBlock>& interstitialBlocks);
     
