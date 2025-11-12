@@ -1,0 +1,34 @@
+-f testFiles/bTaeGut7_chr33_pat.fa.gz
+embedded
+
++++ Path Summary Report +++
+pos	header	telomeres	labels	gaps	type	granular
+1	chr33_pat	2	pq	0	t2t	PQ
+
++++ Assembly Summary Report +++
+Total paths:	1
+Total gaps:	0
+Total telomeres:	2
+
++++ Telomere Statistics +++
+Mean length:	14413
+Median length:	14413
+Min length:	9984
+Max length:	18842
+
++++ Chromosome Telomere Counts+++
+Two telomeres:	1
+One telomere:	0
+Zero telomeres:	0
+
++++ Chromosome Telomere/Gap Completeness+++
+T2T:	1
+Gapped T2T:	0
+Missassembled:	0
+Gapped missassembled:	0
+Incomplete:	0
+Gapped incomplete:	0
+No telomeres:	0
+Gapped no telomeres:	0
+Discordant:	0
+Gapped discordant:	0
