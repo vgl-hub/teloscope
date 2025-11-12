@@ -10,14 +10,7 @@ jobs:
     name: Validate
     strategy:
       matrix:
-        include:
-          - os: macos-latest
-            command: ".github/workflows/val.sh"
-          - os: ubuntu-latest
-            command: ".github/workflows/val.sh"
-            chmod: true
-          - os: windows-2019
-            command: ".github/workflows/val.bat"
+        os: [macos-latest, ubuntu-latest, windows-2019]
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
@@ -29,9 +22,20 @@ jobs:
     - name: Build
       run: make all -j
 
-    - name: Validate
+    - name: Set permissions (POSIX)
+      if: runner.os != 'Windows'
+      shell: bash
       run: |
         chmod +x .github/workflows/val.sh
-        chmod +r validateFiles/*.tst
-        chmod +r testFiles/*.fasta
-        ${{ matrix.command }}
+        find validateFiles -type f -name '*.tst' -exec chmod +r {} +
+        find testFiles -type f \( -name '*.fa' -o -name '*.fasta' -o -name '*.fa.gz' -o -name '*.fasta.gz' -o -name '*.gfa' \) -exec chmod +r {} +
+
+    - name: Validate (POSIX)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: .github/workflows/val.sh
+
+    - name: Validate (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: .\.github\workflows\val.bat
