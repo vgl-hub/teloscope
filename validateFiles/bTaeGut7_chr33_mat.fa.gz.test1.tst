@@ -1,4 +1,4 @@
-testFiles/bTaeGut7_chr33_mat.fa.gz -f
+-f testFiles/bTaeGut7_chr33_mat.fa.gz
 embedded
 
 +++ Path Summary Report +++
