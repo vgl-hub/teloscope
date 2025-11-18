@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <vector>
 #include <string>
+#include <string_view>
 #include <memory>
 #include <unordered_map>
 
@@ -195,13 +196,11 @@ public:
 
     bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
 
-    void analyzeWindow(const std::string_view &window, uint32_t windowStart,
-                        WindowData& windowData, WindowData& nextOverlapData,
-                        SegmentData& segmentData, uint32_t segmentSize, uint32_t absPos);
+    void scanWindow(const std::string_view &window, uint32_t windowStart,
+                    uint32_t absPos, uint32_t segmentSize,
+                    WindowData& windowData, WindowData& nextOverlapData);
 
-    SegmentData analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint32_t absPos);
-
-    SegmentData analyzeSegmentTips(std::string &sequence, UserInputTeloscope &userInput, uint32_t absPos);
+    SegmentData scanSegment(const std::string &sequence, UserInputTeloscope &userInput, uint32_t absPos);
 
     void sortBySeqPos();
 

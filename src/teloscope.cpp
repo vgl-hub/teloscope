@@ -8,6 +8,7 @@
 #include <cmath>
 #include <type_traits> // handlesBEDFile
 #include <chrono> // check
+#include <string_view>
 
 #include "log.h"
 #include "global.h"
@@ -516,23 +517,28 @@ std::vector<TelomereBlock> Teloscope::filterITSBlocks(const std::vector<Telomere
 }
 
 
-void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowStart,
-                            WindowData& windowData, WindowData& nextOverlapData,
-                            SegmentData& segmentData, uint32_t segmentSize, uint32_t absPos) {
+void Teloscope::scanWindow(const std::string_view &window, uint32_t windowStart,
+                           uint32_t absPos, uint32_t segmentSize,
+                           WindowData& windowData, WindowData& nextOverlapData) {
+    if (window.empty()) {
+        return;
+    }
 
-    windowData.windowStart = windowStart; // CHECK: Why is this here?
-    unsigned short int longestPatternSize = this->trie.getLongestPatternSize();
-    uint32_t step = userInput.step;
-    uint32_t overlapSize = userInput.windowSize - step;
-    uint32_t terminalLimit = userInput.terminalLimit;
-    bool computeGC = userInput.outGC;
-    bool computeEntropy = userInput.outEntropy;
+    const unsigned short int longestPatternSize = trie.getLongestPatternSize();
+    const uint32_t step = std::max<uint32_t>(1, userInput.step);
+    const uint32_t overlapSize = (userInput.windowSize > step) ? (userInput.windowSize - step) : 0;
+    const uint32_t terminalLimit = userInput.terminalLimit;
+    const bool computeGC = userInput.outGC;
+    const bool computeEntropy = userInput.outEntropy;
     int lastCanonicalPos = -1;
 
     // Determine starting index for Trie scanning
-    uint32_t startIndex = (windowStart == 0 || overlapSize == 0)
-                            ? 0 
-                            : std::min(step - longestPatternSize, overlapSize - longestPatternSize);
+    uint32_t startIndex = 0;
+    if (windowStart != 0 && overlapSize != 0) {
+        uint32_t stepOffset = (step > longestPatternSize) ? (step - longestPatternSize) : 0;
+        uint32_t overlapOffset = (overlapSize > longestPatternSize) ? (overlapSize - longestPatternSize) : 0;
+        startIndex = std::min(stepOffset, overlapOffset);
+    }
 
     for (uint32_t i = startIndex; i < window.size(); ++i) {
         if (computeGC || computeEntropy) {
@@ -551,26 +557,26 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
             }
             if (i >= step && overlapSize != 0) {
                 nextOverlapData.nucleotideCounts[index]++;
-            } 
+            }
         }
 
         // Pattern matching using Trie
         auto current = trie.getRoot();
         uint32_t scanLimit = std::min(i + longestPatternSize, static_cast<uint32_t>(window.size()));
 
-        for (uint32_t j = i; j < scanLimit; ++j) { // Scan positions until longest pattern
-            current = trie.getChild(current, window[j]); // window[j] is a character
+        for (uint32_t j = i; j < scanLimit; ++j) {
+            current = trie.getChild(current, window[j]);
             if (!current) break;
 
-            if (current->isEndOfWord) {                
+            if (current->isEndOfWord) {
                 std::string_view pattern(window.data() + i, (j - i + 1));
-                bool isTerminal = (windowStart + i <= terminalLimit || 
-                                    windowStart + i >= segmentSize - terminalLimit); // Check i/j handles 
+                bool isTerminal = (windowStart + i <= terminalLimit ||
+                                   windowStart + i >= (segmentSize > terminalLimit ? segmentSize - terminalLimit : 0));
                 bool isForward = (pattern.size() >= 3 && pattern.compare(0, 3, "CCC") == 0);
-                bool isCanonical = (pattern == std::string_view(userInput.canonicalFwd) || 
+                bool isCanonical = (pattern == std::string_view(userInput.canonicalFwd) ||
                                     pattern == std::string_view(userInput.canonicalRev));
                 float densityGain = (static_cast<float>(pattern.size()) / window.size()) * 100.0f;
-                uint32_t matchPos = absPos + windowStart + i; // Keep absolute positions only
+                uint32_t matchPos = absPos + windowStart + i;
 
                 MatchInfo matchInfo;
                 matchInfo.position = matchPos;
@@ -592,21 +598,15 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                     lastCanonicalPos = matchPos;
                 }
 
-                // Update windowData with new classification approach
                 if (j >= overlapSize || overlapSize == 0 || windowStart == 0) {
-                    if (isCanonical) { // C__
+                    if (isCanonical) {
                         windowData.canonicalCounts++;
                         windowData.canonicalDensity += densityGain;
-                        segmentData.canonicalMatches.push_back(matchInfo);
-                    } else { // c__
+                    } else {
                         windowData.nonCanonicalCounts++;
                         windowData.nonCanonicalDensity += densityGain;
-                        if (isTerminal) {
-                            segmentData.nonCanonicalMatches.push_back(matchInfo);
-                        }
                     }
 
-                    // Track forward/reverse metrics
                     if (isForward) {
                         windowData.fwdCounts++;
                         windowData.fwdDensity += densityGain;
@@ -615,18 +615,15 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                         windowData.revDensity += densityGain;
                     }
 
-                    if (!isTerminal) { // __t
+                    if (!isTerminal) {
                         windowData.interstitialMatches.push_back(matchInfo);
-                    } else { // __T
-                        if (isForward) { // _FT
-                            windowData.terminalFwdMatches.push_back(matchInfo);
-                        } else {  // _fT
-                            windowData.terminalRevMatches.push_back(matchInfo);
-                        }
+                    } else if (isForward) {
+                        windowData.terminalFwdMatches.push_back(matchInfo);
+                    } else {
+                        windowData.terminalRevMatches.push_back(matchInfo);
                     }
                 }
 
-                // Update nextOverlapData
                 if (i >= step && overlapSize != 0) {
                     if (isCanonical) {
                         nextOverlapData.canonicalCounts++;
@@ -636,7 +633,6 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                         nextOverlapData.nonCanonicalDensity += densityGain;
                     }
 
-                    // Track forward/reverse metrics for overlap window
                     if (isForward) {
                         nextOverlapData.fwdCounts++;
                         nextOverlapData.fwdDensity += densityGain;
@@ -645,86 +641,81 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                         nextOverlapData.revDensity += densityGain;
                     }
                 }
-
-                if (isCanonical) {
-                    lastCanonicalPos = matchPos;
-                }
             }
         }
     }
 }
 
 
-SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint32_t absPos) {
-    uint32_t windowSize = userInput.windowSize;
-    uint32_t step = userInput.step;
-    uint32_t segmentSize = sequence.size();
-
+SegmentData Teloscope::scanSegment(const std::string &sequence, UserInputTeloscope &userInput, uint32_t absPos) {
     SegmentData segmentData;
-    segmentData.canonicalMatches.reserve(segmentSize / 6);
-    segmentData.nonCanonicalMatches.reserve(segmentSize / 6);
-    segmentData.windows.reserve((segmentSize - windowSize) / step + 2);
-
-    WindowData prevOverlapData; // Data from previous overlap
-    WindowData nextOverlapData; // Data for next overlap
-
-    std::vector<WindowData> windows;
-    uint32_t windowStart = 0;
-    uint32_t currentWindowSize = std::min(windowSize, segmentSize); // In case first segment is short
-    std::string_view windowView(sequence.data(), currentWindowSize);
-
-    while (windowStart < segmentSize) {
-        // Prepare and analyze current window
-        WindowData windowData = prevOverlapData;
-
-        analyzeWindow(windowView, windowStart, 
-                    windowData, nextOverlapData, 
-                    segmentData, segmentSize, absPos);
-
-        if (userInput.outGC) { windowData.gcContent = getGCContent(windowData.nucleotideCounts, windowView.size()); }
-        if (userInput.outEntropy) { windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, windowView.size()); }
-
-        // Update windowData
-        windowData.windowStart = windowStart + absPos;
-        windowData.currentWindowSize = currentWindowSize;
-        windows.emplace_back(windowData);
-
-        prevOverlapData = nextOverlapData; // Pass and reset overlap data
-        nextOverlapData = WindowData(); // Reset for next iteration
-
-        // Keep all in presence of canonical matches
-        if (windowData.hasCanDimer) {
-            segmentData.terminalFwdMatches.insert(segmentData.terminalFwdMatches.end(),
-                                        windowData.terminalFwdMatches.begin(),
-                                        windowData.terminalFwdMatches.end());
-
-            segmentData.terminalRevMatches.insert(segmentData.terminalRevMatches.end(),
-                                        windowData.terminalRevMatches.begin(),
-                                        windowData.terminalRevMatches.end());
-            
-            segmentData.interstitialMatches.insert(segmentData.interstitialMatches.end(),
-                                        windowData.interstitialMatches.begin(),
-                                        windowData.interstitialMatches.end());
-        }
-
-        // Advance to the next window
-        windowStart += step;
-
-        // Check if the remaining sequence is a meaningful window
-        if (windowStart + step >= segmentSize) {
-            break;
-        }
-
-        // Prepare next window
-        currentWindowSize = std::min(windowSize, segmentSize - windowStart);
-        windowView = std::string_view(sequence.data() + windowStart, currentWindowSize);
+    const uint32_t segmentSize = sequence.size();
+    if (segmentSize == 0) {
+        return segmentData;
     }
 
-    // 1. Process terminal matches by orientation
-    uint16_t relaxedDist = userInput.maxMatchDist;
-    uint16_t extendDist = userInput.maxBlockDist;
-    float densityCutoff = userInput.minBlockDensity;
-    std::vector<TelomereBlock> fwdBlocks, revBlocks;
+    const unsigned short int longestPatternSize = trie.getLongestPatternSize();
+    const uint32_t terminalLimit = userInput.terminalLimit;
+    const uint32_t endBoundary = (segmentSize > terminalLimit) ? (segmentSize - terminalLimit) : 0;
+    const std::string_view canonicalFwd(userInput.canonicalFwd);
+    const std::string_view canonicalRev(userInput.canonicalRev);
+
+    // Reserve common capacities to minimize reallocations
+    const uint32_t estimatedMatches = std::max<uint32_t>(1, segmentSize / std::max<uint32_t>(1, userInput.canonicalSize));
+    segmentData.canonicalMatches.reserve(estimatedMatches);
+    segmentData.nonCanonicalMatches.reserve(estimatedMatches / 2);
+    segmentData.terminalFwdMatches.reserve(estimatedMatches / 2);
+    segmentData.terminalRevMatches.reserve(estimatedMatches / 2);
+    segmentData.interstitialMatches.reserve(estimatedMatches);
+
+    for (uint32_t i = 0; i < segmentSize; ++i) {
+        auto node = trie.getRoot();
+        uint32_t scanLimit = std::min(i + longestPatternSize, segmentSize);
+
+        for (uint32_t j = i; j < scanLimit; ++j) {
+            node = trie.getChild(node, sequence[j]);
+            if (!node) break;
+
+            if (node->isEndOfWord) {
+                uint32_t len = j - i + 1;
+                std::string_view pattern(sequence.data() + i, len);
+                bool isForward = (len >= 3 && pattern.compare(0, 3, "CCC") == 0);
+                bool isCanonical = (pattern == canonicalFwd || pattern == canonicalRev);
+                uint32_t relPos = i;
+                bool isTerminal = (relPos <= terminalLimit) || (relPos >= endBoundary);
+
+                MatchInfo matchInfo;
+                matchInfo.position = absPos + relPos;
+                matchInfo.isCanonical = isCanonical;
+                matchInfo.isForward = isForward;
+                matchInfo.matchSize = len;
+                matchInfo.matchSeq.assign(pattern);
+
+                if (isCanonical) {
+                    segmentData.canonicalMatches.push_back(matchInfo);
+                } else if (isTerminal) {
+                    segmentData.nonCanonicalMatches.push_back(matchInfo);
+                }
+
+                if (isTerminal) {
+                    if (isForward) {
+                        segmentData.terminalFwdMatches.push_back(matchInfo);
+                    } else {
+                        segmentData.terminalRevMatches.push_back(matchInfo);
+                    }
+                } else {
+                    segmentData.interstitialMatches.push_back(matchInfo);
+                }
+            }
+        }
+    }
+
+    // Build terminal blocks using all collected matches (distance-driven)
+    const uint16_t relaxedDist = userInput.maxMatchDist;
+    const uint16_t extendDist = userInput.maxBlockDist;
+    const float densityCutoff = userInput.minBlockDensity;
+    std::vector<TelomereBlock> fwdBlocks;
+    std::vector<TelomereBlock> revBlocks;
 
     if (segmentData.terminalFwdMatches.size() >= 2) {
         fwdBlocks = getBlocksRecycle(segmentData.terminalFwdMatches, relaxedDist, segmentData.interstitialMatches, true);
@@ -736,103 +727,54 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
         revBlocks = extendBlocks(revBlocks, extendDist, densityCutoff, segmentSize, absPos);
     }
 
-    // 2. Create terminal blocks by combining orientation-specific blocks
     segmentData.terminalBlocks.reserve(fwdBlocks.size() + revBlocks.size());
-    segmentData.terminalBlocks.insert(segmentData.terminalBlocks.end(), 
-                                        fwdBlocks.begin(), fwdBlocks.end());
-    segmentData.terminalBlocks.insert(segmentData.terminalBlocks.end(), 
-                                        revBlocks.begin(), revBlocks.end());
+    segmentData.terminalBlocks.insert(segmentData.terminalBlocks.end(), fwdBlocks.begin(), fwdBlocks.end());
+    segmentData.terminalBlocks.insert(segmentData.terminalBlocks.end(), revBlocks.begin(), revBlocks.end());
 
-    // 3. Create interstitial blocks with stricter merge distance
-    uint16_t strictDist = 48;
+    const uint16_t strictDist = 48;
     if (segmentData.interstitialMatches.size() >= 2) {
         segmentData.interstitialBlocks = getBlocks(segmentData.interstitialMatches, strictDist, true);
     }
 
-    segmentData.windows = windows;
-    return segmentData;
-}
+    // Collect window metrics only when requested (non-ultra fast mode)
+    if (!userInput.ultraFastMode) {
+        const uint32_t step = std::max<uint32_t>(1, userInput.step);
+        const uint32_t windowSize = std::max<uint32_t>(1, userInput.windowSize);
+        if (segmentSize > 0) {
+            uint32_t windowStart = 0;
+            WindowData prevOverlapData;
+            WindowData nextOverlapData;
+            segmentData.windows.reserve((segmentSize / step) + 1);
 
+            while (windowStart < segmentSize) {
+                uint32_t currentWindowSize = std::min(windowSize, segmentSize - windowStart);
+                std::string_view windowView(sequence.data() + windowStart, currentWindowSize);
 
-SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTeloscope &userInput, uint32_t absPos) {
-    SegmentData segmentData;
-    uint32_t segmentSize = sequence.size();
-    uint32_t terminalLimit = userInput.terminalLimit;
-    unsigned short int longestPatternSize = this->trie.getLongestPatternSize();
+                WindowData windowData = prevOverlapData;
+                scanWindow(windowView, windowStart, absPos, segmentSize, windowData, nextOverlapData);
 
-    // Use local vectors instead of segmentData members
-    std::vector<MatchInfo> fwdMatches;
-    std::vector<MatchInfo> revMatches;
-    
-    // Helper function to match in range
-    auto processRegion = [&](uint32_t start, uint32_t end) {
-        for (uint32_t i = start; i < end; ++i) {
-            auto node = trie.getRoot();
-            uint32_t scanLimit = std::min(i + longestPatternSize, end);
-
-            for (uint32_t j = i; j < scanLimit; ++j) { // Scan positions until longest pattern
-                node = trie.getChild(node, sequence[j]); // sequence[j] is a character
-                if (!node) break;
-                
-                if (node->isEndOfWord) {
-                    uint32_t len = j - i + 1;
-                    std::string_view pattern(&sequence[i], len);
-                    bool isForward = (len >= 3 && sequence[i] == 'C' && sequence[i+1] == 'C' && sequence[i+2] == 'C');
-                    bool isCanonical = (pattern == std::string_view(userInput.canonicalFwd) || 
-                                        pattern == std::string_view(userInput.canonicalRev));
-
-                    MatchInfo matchInfo;
-                    matchInfo.position = absPos + i; // Keep absolute positions only
-                    matchInfo.isCanonical = isCanonical;
-                    matchInfo.isForward = isForward;
-                    matchInfo.matchSize = len;
-                    matchInfo.matchSeq = std::string(pattern);
-
-                    if (isForward) {
-                        fwdMatches.push_back(matchInfo);
-                    } else {
-                        revMatches.push_back(matchInfo);
-                    }
+                if (userInput.outGC) {
+                    windowData.gcContent = getGCContent(windowData.nucleotideCounts, windowView.size());
                 }
+                if (userInput.outEntropy) {
+                    windowData.shannonEntropy = getShannonEntropy(windowData.nucleotideCounts, windowView.size());
+                }
+
+                windowData.windowStart = absPos + windowStart;
+                windowData.currentWindowSize = currentWindowSize;
+                segmentData.windows.emplace_back(std::move(windowData));
+
+                prevOverlapData = nextOverlapData;
+                nextOverlapData = WindowData();
+
+                if (windowStart + step >= segmentSize) {
+                    break;
+                }
+                windowStart += step;
             }
         }
-    };
-    
-    if (segmentSize > 2 * terminalLimit) {
-        // Process terminal regions only
-        processRegion(0, terminalLimit);
-        processRegion(segmentSize - terminalLimit, segmentSize);
-    } else {
-        // Process entire sequence
-        processRegion(0, segmentSize);
     }
-    
-    // Create and add p/q blocks to segmentData.terminalBlocks
-    uint16_t mergeDist = userInput.maxMatchDist;
-    uint16_t extendDist = userInput.maxBlockDist;
-    float densityCutoff = userInput.minBlockDensity;
-    std::vector<TelomereBlock> fwdBlocks, revBlocks;
-    
-    if (fwdMatches.size() >= 2) {
-        fwdBlocks = getBlocks(fwdMatches, mergeDist, false);
-        fwdBlocks = extendBlocks(fwdBlocks, extendDist, densityCutoff, segmentSize, absPos);
-        segmentData.terminalBlocks.insert(
-            segmentData.terminalBlocks.end(),
-            std::make_move_iterator(fwdBlocks.begin()),
-            std::make_move_iterator(fwdBlocks.end())
-        );
-    }
-    
-    if (revMatches.size() >= 2) {
-        revBlocks = getBlocks(revMatches, mergeDist, false);
-        revBlocks = extendBlocks(revBlocks, extendDist, densityCutoff, segmentSize, absPos);
-        segmentData.terminalBlocks.insert(
-            segmentData.terminalBlocks.end(),
-            std::make_move_iterator(revBlocks.begin()),
-            std::make_move_iterator(revBlocks.end())
-        );
-    }
-    
+
     return segmentData;
 }
 
