@@ -619,9 +619,9 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                         windowData.interstitialMatches.push_back(matchInfo);
                     } else { // __T
                         if (isForward) { // _FT
-                            windowData.terminalFwdMatches.push_back(matchInfo);
+                            segmentData.terminalFwdMatches.push_back(matchInfo);
                         } else {  // _fT
-                            windowData.terminalRevMatches.push_back(matchInfo);
+                            segmentData.terminalRevMatches.push_back(matchInfo);
                         }
                     }
                 }
@@ -694,14 +694,6 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
 
         // Keep all in presence of canonical matches
         if (windowData.hasCanDimer) {
-            segmentData.terminalFwdMatches.insert(segmentData.terminalFwdMatches.end(),
-                                        windowData.terminalFwdMatches.begin(),
-                                        windowData.terminalFwdMatches.end());
-
-            segmentData.terminalRevMatches.insert(segmentData.terminalRevMatches.end(),
-                                        windowData.terminalRevMatches.begin(),
-                                        windowData.terminalRevMatches.end());
-            
             segmentData.interstitialMatches.insert(segmentData.interstitialMatches.end(),
                                         windowData.interstitialMatches.begin(),
                                         windowData.interstitialMatches.end());

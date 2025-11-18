@@ -80,8 +80,6 @@ struct WindowData {
     float shannonEntropy;
     // uint32_t winHDistance = 0;
     
-    std::vector<MatchInfo> terminalFwdMatches;
-    std::vector<MatchInfo> terminalRevMatches;
     std::vector<MatchInfo> interstitialMatches;
     std::vector<uint8_t> hDistances; 
     uint16_t canonicalCounts = 0;
