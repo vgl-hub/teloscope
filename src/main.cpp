@@ -3,7 +3,7 @@
 #include <iostream>
 
 
-std::string version = "0.1.2";
+std::string version = "0.1.3";
 
 // global
 std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
