@@ -121,9 +121,9 @@ std::vector<TelomereBlock> Teloscope::getBlocksRecycle(
 
             // p/q assignment based on forward percentage
             float forwardRatio = (forwardCount * 100.0f) / blockCounts;
-            if (forwardRatio > 66.0f) {
+            if (forwardRatio > 66.6f) {
                 block.blockLabel = 'p';
-            } else if (forwardRatio < 33.0f) {
+            } else if (forwardRatio < 33.3f) {
                 block.blockLabel = 'q';
             } else {
                 block.blockLabel = 'u';
@@ -502,14 +502,13 @@ void Teloscope::labelTerminalBlocks(
 std::vector<TelomereBlock> Teloscope::filterITSBlocks(const std::vector<TelomereBlock>& interstitialBlocks) {
     std::vector<TelomereBlock> filteredBlocks;
     uint16_t minLength = 2 * userInput.patterns.front().size();
+    constexpr uint16_t minCanonicalCount = 4;
 
     for (const auto& block : interstitialBlocks) {
         if (block.blockLen < minLength) continue;  // Length filter
-        if (block.canonicalCount == 0) continue;   // Minimal canonical check
-        if ((static_cast<float>(block.canCovered) / block.blockLen) < 0.5) continue; // Majority canonical
+        if (block.canonicalCount < minCanonicalCount) continue; // Minimal canonical count
         if (block.blockLabel == 'u' && (block.forwardCount < 2 && block.reverseCount < 2)) continue; // U check
-
-    filteredBlocks.push_back(block);
+        filteredBlocks.push_back(block);
     }
 
     return filteredBlocks;
@@ -693,7 +692,7 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
         nextOverlapData = WindowData(); // Reset for next iteration
 
         // Keep all in presence of canonical matches
-        if (windowData.hasCanDimer) {
+        if (windowData.canonicalCounts >= 2) {
             segmentData.interstitialMatches.insert(segmentData.interstitialMatches.end(),
                                         windowData.interstitialMatches.begin(),
                                         windowData.interstitialMatches.end());
@@ -713,18 +712,18 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
     }
 
     // 1. Process terminal matches by orientation
-    uint16_t relaxedDist = userInput.maxMatchDist;
+    uint16_t mergeDist = userInput.maxMatchDist;
     uint16_t extendDist = userInput.maxBlockDist;
     float densityCutoff = userInput.minBlockDensity;
     std::vector<TelomereBlock> fwdBlocks, revBlocks;
 
     if (segmentData.terminalFwdMatches.size() >= 2) {
-        fwdBlocks = getBlocksRecycle(segmentData.terminalFwdMatches, relaxedDist, segmentData.interstitialMatches, true);
+        fwdBlocks = getBlocksRecycle(segmentData.terminalFwdMatches, mergeDist, segmentData.interstitialMatches, true);
         fwdBlocks = extendBlocks(fwdBlocks, extendDist, densityCutoff, segmentSize, absPos);
     }
 
     if (segmentData.terminalRevMatches.size() >= 2) {
-        revBlocks = getBlocksRecycle(segmentData.terminalRevMatches, relaxedDist, segmentData.interstitialMatches, false);
+        revBlocks = getBlocksRecycle(segmentData.terminalRevMatches, mergeDist, segmentData.interstitialMatches, false);
         revBlocks = extendBlocks(revBlocks, extendDist, densityCutoff, segmentSize, absPos);
     }
 
@@ -736,9 +735,8 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
                                         revBlocks.begin(), revBlocks.end());
 
     // 3. Create interstitial blocks with stricter merge distance
-    uint16_t strictDist = 48;
     if (segmentData.interstitialMatches.size() >= 2) {
-        segmentData.interstitialBlocks = getBlocks(segmentData.interstitialMatches, strictDist, true);
+        segmentData.interstitialBlocks = getBlocks(segmentData.interstitialMatches, mergeDist, true);
     }
 
     segmentData.windows = windows;
