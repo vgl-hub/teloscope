@@ -615,7 +615,7 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                     }
 
                     if (!isTerminal) { // __t
-                        windowData.interstitialMatches.push_back(matchInfo);
+                        segmentData.interstitialMatches.push_back(matchInfo);
                     } else { // __T
                         if (isForward) { // _FT
                             segmentData.terminalFwdMatches.push_back(matchInfo);
@@ -690,13 +690,6 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
 
         prevOverlapData = nextOverlapData; // Pass and reset overlap data
         nextOverlapData = WindowData(); // Reset for next iteration
-
-        // Keep all in presence of canonical matches
-        if (windowData.canonicalCounts >= 2) {
-            segmentData.interstitialMatches.insert(segmentData.interstitialMatches.end(),
-                                        windowData.interstitialMatches.begin(),
-                                        windowData.interstitialMatches.end());
-        }
 
         // Advance to the next window
         windowStart += step;
