@@ -64,11 +64,11 @@ std::vector<std::string> getEditVariants(const std::string &pattern, uint8_t max
         }
     }
     
-    // For edit distance 2+: recursively generate from distance-1 variants
+    // For edit distance 2+: generate from distance-1 variants (iterate by index to avoid copy)
     if (maxDist >= 2) {
-        std::vector<std::string> dist1Variants = variants; // Copy current variants
-        for (const std::string &d1var : dist1Variants) {
-            std::vector<std::string> d2vars = getEditVariants(d1var, 1);
+        size_t dist1End = variants.size(); // Snapshot count before adding distance-2
+        for (size_t v = 0; v < dist1End; ++v) {
+            std::vector<std::string> d2vars = getEditVariants(variants[v], 1);
             variants.insert(variants.end(), d2vars.begin(), d2vars.end());
         }
     }

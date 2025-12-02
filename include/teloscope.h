@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <vector>
 #include <string>
+#include <string_view>
 #include <array>
 
 class Trie {
@@ -142,6 +143,10 @@ class Teloscope {
     Trie trie; // Declare trie instance
     UserInputTeloscope userInput; // Declare user input instance
     std::vector<PathData> allPathData; // Assembly data
+    
+    // Cached string_views for canonical patterns (avoid reconstruction per window)
+    std::string_view canonicalFwdView;
+    std::string_view canonicalRevView;
 
     // Assembly Summary 
     uint32_t totalPaths = 0;
@@ -191,8 +196,10 @@ class Teloscope {
 
 public:
 
-    Teloscope(UserInputTeloscope userInput) : userInput(userInput) {
-        for (const auto& pattern : userInput.patterns) {
+    Teloscope(UserInputTeloscope userInput) : userInput(userInput),
+        canonicalFwdView(this->userInput.canonicalFwd),
+        canonicalRevView(this->userInput.canonicalRev) {
+        for (const auto& pattern : this->userInput.patterns) {
             trie.insertPattern(pattern);
         }
     }

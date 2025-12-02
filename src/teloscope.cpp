@@ -534,9 +534,6 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
     bool computeEntropy = userInput.outEntropy;
     int lastCanonicalPos = -1;
 
-    const std::string_view canonicalFwdView(userInput.canonicalFwd);
-    const std::string_view canonicalRevView(userInput.canonicalRev);
-
     // Determine starting index for Trie scanning
     uint32_t startIndex = (windowStart == 0 || overlapSize == 0)
                             ? 0 
