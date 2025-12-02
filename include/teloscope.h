@@ -78,9 +78,7 @@ struct WindowData {
     uint32_t nucleotideCounts[4] = {0, 0, 0, 0};
     float gcContent;
     float shannonEntropy;
-    // uint32_t winHDistance = 0;
     
-    std::vector<uint8_t> hDistances; 
     uint16_t canonicalCounts = 0;
     uint16_t nonCanonicalCounts = 0;
     uint16_t fwdCounts = 0;

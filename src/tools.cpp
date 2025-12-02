@@ -1,4 +1,5 @@
 #include "tools.h"
+#include "functions.h"
 
 std::unordered_map<char, std::vector<char>> IUPAC = {
     {'A', {'A'}},
@@ -33,6 +34,49 @@ void getCombinations(const std::string &pattern, std::string &current, size_t in
 }
 
 
+std::vector<std::string> getEditVariants(const std::string &pattern, uint8_t maxDist) {
+    // Generate all substitution variants up to maxDist edit distance. 
+    std::vector<std::string> variants;
+    
+    if (maxDist == 0) {
+        return variants; // No variants needed for exact matching
+    }
+    
+    const char nucleotides[] = {'A', 'C', 'G', 'T'};
+    
+    // For edit distance 1: generate all single-substitution variants
+    if (maxDist >= 1) {
+        for (size_t i = 0; i < pattern.size(); ++i) {
+            char original = pattern[i];
+            
+            // "N" or other IUPAC codes skipped.
+            if (original != 'A' && original != 'C' && original != 'G' && original != 'T') {
+                continue;
+            }
+            
+            for (char c : nucleotides) {
+                if (c != original) {
+                    std::string variant = pattern;
+                    variant[i] = c;
+                    variants.push_back(variant);
+                }
+            }
+        }
+    }
+    
+    // For edit distance 2+: recursively generate from distance-1 variants
+    if (maxDist >= 2) {
+        std::vector<std::string> dist1Variants = variants; // Copy current variants
+        for (const std::string &d1var : dist1Variants) {
+            std::vector<std::string> d2vars = getEditVariants(d1var, 1);
+            variants.insert(variants.end(), d2vars.begin(), d2vars.end());
+        }
+    }
+    
+    return variants;
+}
+
+
 std::unordered_map<std::string, uint8_t> getHammingDistances(
     const std::vector<std::string> &patterns,
     const std::pair<std::string, std::string> &canonicalPatterns
@@ -60,4 +104,46 @@ std::unordered_map<std::string, uint8_t> getHammingDistances(
     }
 
     return hammingDistances;
+}
+
+
+std::vector<std::string> expandPatterns(
+    const std::vector<std::string> &rawPatterns,
+    uint8_t editDistance) {
+
+    std::vector<std::string> seeds = rawPatterns;
+
+    std::vector<std::string> preparedPatterns;
+
+    for (const auto &seed : seeds) {
+        if (seed.empty()) {
+            continue;
+        }
+
+        std::vector<std::string> combinations;
+        std::string working = seed;
+        getCombinations(seed, working, 0, combinations);
+
+        for (const auto &combo : combinations) {
+            std::vector<std::string> variants;
+            variants.push_back(combo);
+
+            if (editDistance > 0) {
+                auto edits = getEditVariants(combo, editDistance);
+                variants.insert(variants.end(), edits.begin(), edits.end());
+            }
+
+            for (const auto &variant : variants) {
+                preparedPatterns.emplace_back(variant);
+                preparedPatterns.emplace_back(revCom(variant));
+            }
+        }
+    }
+
+    std::sort(preparedPatterns.begin(), preparedPatterns.end());
+    preparedPatterns.erase(
+        std::unique(preparedPatterns.begin(), preparedPatterns.end()),
+        preparedPatterns.end());
+
+    return preparedPatterns;
 }

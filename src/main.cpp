@@ -31,6 +31,7 @@ int main(int argc, char **argv) {
     std::string cmd;
 
     bool isPipe = false; // to check if input is from pipe
+    bool hasInputPatterns = false;
     
     if (argc == 1) { // case: with no arguments
             
@@ -52,6 +53,7 @@ int main(int argc, char **argv) {
         {"max-block-distance", required_argument, 0, 'd'},
         {"min-block-length", required_argument, 0, 'l'},
         {"min-block-density", required_argument, 0, 'y'},
+        {"edit-distance", required_argument, 0, 'x'},
 
         {"out-fasta", no_argument, 0, 'a'},
         {"out-win-repeats", no_argument, 0, 'r'},
@@ -71,7 +73,7 @@ int main(int argc, char **argv) {
         
         int option_index = 0;
 
-        c = getopt_long(argc, argv, "-:f:j:o:p:s:w:c:t:k:d:l:y:argemivhu", long_options, &option_index);
+        c = getopt_long(argc, argv, "-:f:j:o:p:s:w:c:t:k:d:l:y:x:argemivhu", long_options, &option_index);
 
         if (c == -1) { // exit the loop if run out of options
             break;
@@ -167,47 +169,25 @@ int main(int argc, char **argv) {
 
             
             case 'p': { // Handle search patterns
+                hasInputPatterns = true;
                 if (!optarg || strlen(optarg) == 0) {
                     fprintf(stderr, "Warning: Empty pattern list provided, using default: TTAGGG, CCCTAA\n");
-                
                 } else {
-                    userInput.patterns.clear(); // Clear default patterns first
-                    
+                    userInput.rawPatterns.clear();
                     std::istringstream patternStream(optarg);
                     std::string pattern;
-                    
+
                     while (std::getline(patternStream, pattern, ',')) {
                         if (pattern.empty()) continue;
-            
+
                         if (std::any_of(pattern.begin(), pattern.end(), ::isdigit)) {
                             fprintf(stderr, "Error: Pattern '%s' contains numerical characters.\n", pattern.c_str());
                             exit(EXIT_FAILURE);
                         }
-                        
-                        unmaskSequence(pattern);
-                        
-                        // Generate all combinations for the pattern based on IUPAC codes
-                        std::vector<std::string> combinations;
-                        std::string current_pattern = pattern;
-                        getCombinations(pattern, current_pattern, 0, combinations);
-                        lg.verbose("Adding (" + std::to_string(combinations.size()) + ") telomeric patterns and their reverse complements");
-            
-                        // Add each combination and its reverse complement to userInput.patterns
-                        for (const std::string &comb : combinations) {
-                            userInput.patterns.emplace_back(comb);
-                            userInput.patterns.emplace_back(revCom(comb));
-                        }
-                    }
-            
-                    if (!userInput.patterns.empty()) {
-                        // Remove duplicates
-                        std::sort(userInput.patterns.begin(), userInput.patterns.end());
-                        auto last = std::unique(userInput.patterns.begin(), userInput.patterns.end());
-                        userInput.patterns.erase(last, userInput.patterns.end());
-                    }
 
-                    // userInput.hammingDistances = getHammingDistances(userInput.patterns, userInput.canonicalFwd, userInput.canonicalRev); // To update
-                    // lg.verbose("Hamming distances precomputed");
+                        unmaskSequence(pattern);
+                        userInput.rawPatterns.emplace_back(pattern);
+                    }
                 }
                 break;
             }
@@ -337,6 +317,22 @@ int main(int argc, char **argv) {
             }
 
 
+            case 'x': { // edit distance for pattern matching
+                try {
+                    int v = std::stoi(optarg);
+                    if (v < 0 || v > 3) {
+                        fprintf(stderr, "Error: Edit distance (-x/--edit-distance) must be in the range [0,3].\n");
+                        exit(EXIT_FAILURE);
+                    }
+                    userInput.editDistance = static_cast<uint8_t>(v);
+                } catch (...) {
+                    fprintf(stderr, "Error: Invalid edit distance '%s'. Must be a number [0,3].\n", optarg);
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            }
+
+
             case 'a':
                 userInput.outFasta = true;
                 userInput.ultraFastMode = false;
@@ -346,35 +342,30 @@ int main(int argc, char **argv) {
             case 'r':
                 userInput.outWinRepeats = true;
                 userInput.ultraFastMode = false;
-                fprintf(stderr, "Normal mode: Scanning window telomeric repeats.\n");
                 break;
 
 
             case 'g':
                 userInput.outGC = true;
                 userInput.ultraFastMode = false;
-                fprintf(stderr, "Normal mode: Scanning window GC content.\n");
                 break;
 
 
             case 'e':
                 userInput.outEntropy = true;
                 userInput.ultraFastMode = false;
-                fprintf(stderr, "Normal mode: Scanning window Shannon entropy.\n");
                 break;
 
 
             case 'm':
                 userInput.outMatches = true;
                 userInput.ultraFastMode = false;
-                fprintf(stderr, "Normal mode: Scanning genome-wide telomeric matches.\n");
                 break;
 
 
             case 'i':
                 userInput.outITS = true;
                 userInput.ultraFastMode = false;
-                fprintf(stderr, "Normal mode: Scanning genome-wide interstitial telomeres (ITS).\n");
                 break;
 
 
@@ -415,6 +406,7 @@ int main(int argc, char **argv) {
                 printf("\t'-d'\t--max-block-distance\tSet maximum block distance for extension. [Default: 200]\n");
                 printf("\t'-l'\t--min-block-length\tSet minimum block length. [Default: 500]\n");
                 printf("\t'-y'\t--min-block-density\tSet minimum block density. [Default: 0.5]\n");
+                printf("\t'-x'\t--edit-distance\tSet edit distance for pattern matching (0-3). [Default: 0]\n");
 
                 printf("\nOptional Parameters:\n");
                 printf("\t'-w'\t--window\tSet sliding window size. [Default: 1000]\n");
@@ -434,9 +426,45 @@ int main(int argc, char **argv) {
         }
     }
 
+    // Finalize raw pattern seeds before expansion
+    if (userInput.rawPatterns.empty()) {
+        if (hasInputPatterns) {
+            fprintf(stderr, "Warning: No valid patterns supplied via -p. Using defaults: TTAGGG, CCCTAA\n");
+        }
+        userInput.rawPatterns = {"TTAGGG", "CCCTAA"};
+    }
+
+    // Expand IUPAC + edit-distance variants once and log the result
     lg.verbose("Input variables assigned");
-    
-    if (cmd_flag) { // print command line
+    userInput.patterns = expandPatterns(userInput.rawPatterns, userInput.editDistance);
+
+    fprintf(stderr, "Scanning %zu telomeric variants (includes reverse complements).\n",
+            userInput.patterns.size());
+    if (userInput.editDistance > 0) {
+        fprintf(stderr, "Edit distance enabled: up to %u substitution%s per seed.\n",
+                userInput.editDistance,
+                userInput.editDistance > 1 ? "s" : "");
+    }
+
+    // Summarize requested outputs in a single line for normal runs
+    std::string outputSummary;
+    auto appendOutput = [&](const char *label) {
+        if (!outputSummary.empty()) {
+            outputSummary += ", ";
+        }
+        outputSummary += label;
+    };
+    if (userInput.outGC) appendOutput("GC windows");
+    if (userInput.outWinRepeats) appendOutput("repeat density");
+    if (userInput.outEntropy) appendOutput("Shannon entropy");
+    if (userInput.outMatches) appendOutput("genome-wide matches");
+    if (userInput.outITS) appendOutput("ITS blocks");
+    if (!outputSummary.empty()) {
+        fprintf(stderr, "Outputs: %s.\n", outputSummary.c_str());
+    }
+
+    // Optional command echo for reproducibility
+    if (cmd_flag) {
         for (unsigned short int arg_counter = 0; arg_counter < argc; arg_counter++) {
             printf("%s ", argv[arg_counter]);
         }
@@ -444,6 +472,7 @@ int main(int argc, char **argv) {
         
     }
 
+    // Start processing threads and load inputs
     threadPool.init(maxThreads);
 
     Input in;

@@ -14,12 +14,14 @@ struct UserInputTeloscope : UserInput {
     std::string canonicalFwd = "CCCTAA";
     std::string canonicalRev = "TTAGGG";
     unsigned short int canonicalSize = 6;
+    std::vector<std::string> rawPatterns = {"TTAGGG", "CCCTAA"};
     std::vector<std::string> patterns = {"TTAGGG", "CCCTAA"};
 
     uint32_t windowSize = 1000;
-    uint8_t kmerLen = 21;
     uint32_t step = 500;
     uint32_t terminalLimit = 50000;
+    uint8_t editDistance = 0;
+    uint8_t kmerLen = 21;
 
     unsigned short int maxMatchDist = 50;
     unsigned short int minBlockLen = 500; // Only for all blocks

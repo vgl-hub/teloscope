@@ -528,6 +528,9 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
     bool computeEntropy = userInput.outEntropy;
     int lastCanonicalPos = -1;
 
+    const std::string_view canonicalFwdView(userInput.canonicalFwd);
+    const std::string_view canonicalRevView(userInput.canonicalRev);
+
     // Determine starting index for Trie scanning
     uint32_t startIndex = (windowStart == 0 || overlapSize == 0)
                             ? 0 
@@ -566,8 +569,8 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                 bool isTerminal = (windowStart + i <= terminalLimit || 
                                     windowStart + i >= segmentSize - terminalLimit); // Check i/j handles 
                 bool isForward = (pattern.size() >= 3 && pattern.compare(0, 3, "CCC") == 0);
-                bool isCanonical = (pattern == std::string_view(userInput.canonicalFwd) || 
-                                    pattern == std::string_view(userInput.canonicalRev));
+                bool isCanonical = (pattern == canonicalFwdView || 
+                                    pattern == canonicalRevView);
                 float densityGain = (static_cast<float>(pattern.size()) / window.size()) * 100.0f;
                 uint32_t matchPos = absPos + windowStart + i; // Keep absolute positions only
 
