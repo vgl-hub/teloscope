@@ -7,34 +7,45 @@
 #include <stdint.h>
 #include <vector>
 #include <string>
-#include <memory>
-#include <unordered_map>
+#include <array>
 
 class Trie {
     struct TrieNode {
-        std::unordered_map<char, std::shared_ptr<TrieNode>> children;
+        std::array<int32_t, 4> children = {-1, -1, -1, -1}; // A=0, C=1, G=2, T=3
         bool isEndOfWord = false;
     };
 
-    std::shared_ptr<TrieNode> root;
-
+    std::vector<TrieNode> nodes;          // contiguous node pool
     unsigned short int longestPatternSize = 0;
 
+    // Map nucleotide to index (inline for speed)
+    static int8_t charToIndex(char c) {
+        switch (c) {
+            case 'A': return 0;
+            case 'C': return 1;
+            case 'G': return 2;
+            case 'T': return 3;
+            default:  return -1; // skip non-ACGT
+        }
+    }
+
 public:
-    Trie() : root(std::make_shared<TrieNode>()) {}
+    Trie() { nodes.emplace_back(); } // root at index 0
 
     void insertPattern(const std::string& pattern);
 
-    std::shared_ptr<TrieNode> getRoot() const {
-        return root;
+    // Return root index (always 0)
+    int32_t getRoot() const { return 0; }
+
+    // Fast child lookup: returns child index or -1
+    int32_t getChild(int32_t nodeIdx, char ch) const {
+        int8_t idx = charToIndex(ch);
+        return (idx >= 0) ? nodes[nodeIdx].children[idx] : -1;
     }
 
-    std::shared_ptr<TrieNode> getChild(const std::shared_ptr<TrieNode>& node, char ch) const {
-        auto it = node->children.find(ch);
-        if (it != node->children.end()) {
-            return it->second;
-        }
-        return nullptr;
+    // Check if node marks end of a pattern
+    bool isEnd(int32_t nodeIdx) const {
+        return nodes[nodeIdx].isEndOfWord;
     }
 
     unsigned short int getLongestPatternSize() const {

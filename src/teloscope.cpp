@@ -25,15 +25,21 @@
 #include "teloscope.h"
 #include "input.h"
 
+// Insert pattern into the flat node pool. Each char maps to index 0-3.
 void Trie::insertPattern(const std::string& pattern) {
-    auto current = root;
+    int32_t current = 0; // start at root
     for (char ch : pattern) {
-        if (current->children.find(ch) == current->children.end()) {
-            current->children[ch] = std::make_shared<TrieNode>();
+        int8_t idx = charToIndex(ch);
+        if (idx < 0) continue; // skip non-ACGT characters
+        
+        if (nodes[current].children[idx] < 0) {
+            // Allocate new node at end of pool
+            nodes[current].children[idx] = static_cast<int32_t>(nodes.size());
+            nodes.emplace_back();
         }
-        current = current->children[ch];
+        current = nodes[current].children[idx];
     }
-    current->isEndOfWord = true;
+    nodes[current].isEndOfWord = true;
 
     if (pattern.size() > longestPatternSize) {
         longestPatternSize = pattern.size();
@@ -556,15 +562,15 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
             } 
         }
 
-        // Pattern matching using Trie
-        auto current = trie.getRoot();
+        // Pattern matching using Trie (index-based, no pointer chasing)
+        int32_t current = trie.getRoot();
         uint32_t scanLimit = std::min(i + longestPatternSize, static_cast<uint32_t>(window.size()));
 
         for (uint32_t j = i; j < scanLimit; ++j) { // Scan positions until longest pattern
             current = trie.getChild(current, window[j]); // window[j] is a character
-            if (!current) break;
+            if (current < 0) break; // no child → stop
 
-            if (current->isEndOfWord) {                
+            if (trie.isEnd(current)) {                
                 std::string_view pattern(window.data() + i, (j - i + 1));
                 bool isTerminal = (windowStart + i <= terminalLimit || 
                                     windowStart + i >= segmentSize - terminalLimit); // Check i/j handles 
@@ -750,17 +756,17 @@ SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTelosc
     std::vector<MatchInfo> fwdMatches;
     std::vector<MatchInfo> revMatches;
     
-    // Helper function to match in range
+    // Helper function to match in range (index-based Trie)
     auto processRegion = [&](uint32_t start, uint32_t end) {
         for (uint32_t i = start; i < end; ++i) {
-            auto node = trie.getRoot();
+            int32_t node = trie.getRoot();
             uint32_t scanLimit = std::min(i + longestPatternSize, end);
 
             for (uint32_t j = i; j < scanLimit; ++j) { // Scan positions until longest pattern
                 node = trie.getChild(node, sequence[j]); // sequence[j] is a character
-                if (!node) break;
+                if (node < 0) break; // no child → stop
                 
-                if (node->isEndOfWord) {
+                if (trie.isEnd(node)) {
                     uint32_t len = j - i + 1;
                     std::string_view pattern(&sequence[i], len);
                     bool isForward = (len >= 3 && sequence[i] == 'C' && sequence[i+1] == 'C' && sequence[i+2] == 'C');
