@@ -14,6 +14,7 @@ class Trie {
     struct TrieNode {
         std::array<int32_t, 4> children = {-1, -1, -1, -1}; // A=0, C=1, G=2, T=3
         bool isEndOfWord = false;
+        bool isForward = false; // true if pattern is forward-oriented (closer to canonicalFwd)
     };
 
     std::vector<TrieNode> nodes;          // contiguous node pool
@@ -33,7 +34,7 @@ class Trie {
 public:
     Trie() { nodes.emplace_back(); } // root at index 0
 
-    void insertPattern(const std::string& pattern);
+    void insertPattern(const std::string& pattern, bool isForward);
 
     // Return root index (always 0)
     int32_t getRoot() const { return 0; }
@@ -47,6 +48,11 @@ public:
     // Check if node marks end of a pattern
     bool isEnd(int32_t nodeIdx) const {
         return nodes[nodeIdx].isEndOfWord;
+    }
+
+    // Check if pattern ending at this node is forward-oriented
+    bool isForward(int32_t nodeIdx) const {
+        return nodes[nodeIdx].isForward;
     }
 
     unsigned short int getLongestPatternSize() const {
@@ -199,8 +205,8 @@ public:
     Teloscope(UserInputTeloscope userInput) : userInput(userInput),
         canonicalFwdView(this->userInput.canonicalFwd),
         canonicalRevView(this->userInput.canonicalRev) {
-        for (const auto& pattern : this->userInput.patterns) {
-            trie.insertPattern(pattern);
+        for (const auto& [pattern, isForward] : this->userInput.patternInfo) {
+            trie.insertPattern(pattern, isForward);
         }
     }
 

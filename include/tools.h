@@ -23,4 +23,9 @@ std::vector<std::string> expandPatterns(
     const std::vector<std::string> &rawPatterns,
     uint8_t editDistance);
 
+std::vector<std::pair<std::string, bool>> expandPatternsWithOrientation(
+    const std::vector<std::string> &rawPatterns,
+    uint8_t editDistance,
+    const std::string &canonicalFwd);
+
 #endif // TOOLS_H

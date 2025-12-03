@@ -147,3 +147,92 @@ std::vector<std::string> expandPatterns(
 
     return preparedPatterns;
 }
+
+
+std::vector<std::pair<std::string, bool>> expandPatternsWithOrientation(
+    const std::vector<std::string> &rawPatterns,
+    uint8_t editDistance,
+    const std::string &canonicalFwd) {
+
+    // Helper: check if pattern is closer to canonicalFwd than canonicalRev
+    auto isCloserToFwd = [&](const std::string &pattern) -> bool {
+        std::string canonicalRev = revCom(canonicalFwd);
+        size_t patLen = pattern.size();
+        size_t canLen = canonicalFwd.size();
+        
+        // Same length: direct Hamming comparison
+        if (patLen == canLen) {
+            uint8_t distFwd = 0, distRev = 0;
+            for (size_t i = 0; i < patLen; ++i) {
+                if (pattern[i] != canonicalFwd[i]) ++distFwd;
+                if (pattern[i] != canonicalRev[i]) ++distRev;
+            }
+            // Tie-break: lexicographically smaller canonical wins (canonicalFwd is always lex-smaller)
+            return distFwd <= distRev;
+        }
+        
+        // Different lengths: find best alignment for each
+        const std::string &shorter = (patLen < canLen) ? pattern : canonicalFwd;
+        const std::string &longer = (patLen < canLen) ? canonicalFwd : pattern;
+        const std::string longerRev = (patLen < canLen) ? canonicalRev : revCom(pattern);
+        size_t shortLen = shorter.size();
+        size_t longLen = longer.size();
+        
+        uint8_t minDistFwd = 255, minDistRev = 255;
+        for (size_t offset = 0; offset <= longLen - shortLen; ++offset) {
+            uint8_t dist = 0;
+            for (size_t i = 0; i < shortLen; ++i) {
+                if (shorter[i] != longer[offset + i]) ++dist;
+            }
+            minDistFwd = std::min(minDistFwd, dist);
+        }
+        for (size_t offset = 0; offset <= longLen - shortLen; ++offset) {
+            uint8_t dist = 0;
+            for (size_t i = 0; i < shortLen; ++i) {
+                if (shorter[i] != longerRev[offset + i]) ++dist;
+            }
+            minDistRev = std::min(minDistRev, dist);
+        }
+        return minDistFwd <= minDistRev;
+    };
+
+    std::vector<std::pair<std::string, bool>> result;
+    
+    for (const auto &seed : rawPatterns) {
+        if (seed.empty()) continue;
+
+        std::vector<std::string> combinations;
+        std::string working = seed;
+        getCombinations(seed, working, 0, combinations);
+
+        for (const auto &combo : combinations) {
+            // Determine if this seed combo is forward-oriented
+            bool seedIsForward = isCloserToFwd(combo);
+            
+            std::vector<std::string> variants;
+            variants.push_back(combo);
+
+            if (editDistance > 0) {
+                auto edits = getEditVariants(combo, editDistance);
+                variants.insert(variants.end(), edits.begin(), edits.end());
+            }
+
+            for (const auto &variant : variants) {
+                // Forward variant inherits seed orientation
+                result.emplace_back(variant, seedIsForward);
+                // RevCom is opposite orientation
+                result.emplace_back(revCom(variant), !seedIsForward);
+            }
+        }
+    }
+
+    // Sort and deduplicate, keeping first occurrence (orientation consistent)
+    std::sort(result.begin(), result.end(), 
+        [](const auto &a, const auto &b) { return a.first < b.first; });
+    result.erase(
+        std::unique(result.begin(), result.end(),
+            [](const auto &a, const auto &b) { return a.first == b.first; }),
+        result.end());
+
+    return result;
+}

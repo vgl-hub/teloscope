@@ -158,10 +158,16 @@ int main(int argc, char **argv) {
                         exit(EXIT_FAILURE);
                     }
 
-                    // Store canonical pattern and its reverse complement
+                    // Store canonical pattern with lexicographically smaller as Fwd
                     userInput.canonicalSize = canonicalPattern.size();
-                    userInput.canonicalFwd = canonicalPattern;
-                    userInput.canonicalRev = revCom(canonicalPattern);
+                    std::string revComp = revCom(canonicalPattern);
+                    if (canonicalPattern <= revComp) {
+                        userInput.canonicalFwd = canonicalPattern;
+                        userInput.canonicalRev = revComp;
+                    } else {
+                        userInput.canonicalFwd = revComp;
+                        userInput.canonicalRev = canonicalPattern;
+                    }
                     fprintf(stderr, "Setting canonical pattern: %s and its reverse complement: %s\n", userInput.canonicalFwd.c_str(), userInput.canonicalRev.c_str());
                 }
                 break;
@@ -434,9 +440,17 @@ int main(int argc, char **argv) {
         userInput.rawPatterns = {"TTAGGG", "CCCTAA"};
     }
 
-    // Expand IUPAC + edit-distance variants once and log the result
+    // Expand IUPAC + edit-distance variants with orientation info
     lg.verbose("Input variables assigned");
-    userInput.patterns = expandPatterns(userInput.rawPatterns, userInput.editDistance);
+    userInput.patternInfo = expandPatternsWithOrientation(
+        userInput.rawPatterns, userInput.editDistance, userInput.canonicalFwd);
+    
+    // Also populate patterns vector for compatibility
+    userInput.patterns.clear();
+    userInput.patterns.reserve(userInput.patternInfo.size());
+    for (const auto& [pattern, isForward] : userInput.patternInfo) {
+        userInput.patterns.push_back(pattern);
+    }
 
     fprintf(stderr, "Scanning %zu telomeric variants (includes reverse complements).\n",
             userInput.patterns.size());

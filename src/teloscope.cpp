@@ -26,7 +26,7 @@
 #include "input.h"
 
 // Insert pattern into the flat node pool. Each char maps to index 0-3.
-void Trie::insertPattern(const std::string& pattern) {
+void Trie::insertPattern(const std::string& pattern, bool isForward) {
     int32_t current = 0; // start at root
     for (char ch : pattern) {
         int8_t idx = charToIndex(ch);
@@ -40,6 +40,7 @@ void Trie::insertPattern(const std::string& pattern) {
         current = nodes[current].children[idx];
     }
     nodes[current].isEndOfWord = true;
+    nodes[current].isForward = isForward;
 
     if (pattern.size() > longestPatternSize) {
         longestPatternSize = pattern.size();
@@ -485,7 +486,7 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                 std::string_view pattern(window.data() + i, (j - i + 1));
                 bool isTerminal = (windowStart + i <= terminalLimit || 
                                     windowStart + i >= segmentSize - terminalLimit); // Check i/j handles 
-                bool isForward = (pattern.size() >= 3 && pattern.compare(0, 3, "CCC") == 0);
+                bool isForward = trie.isForward(current); // O(1) lookup from Trie node
                 bool isCanonical = (pattern == canonicalFwdView || 
                                     pattern == canonicalRevView);
                 float densityGain = (static_cast<float>(pattern.size()) / window.size()) * 100.0f;

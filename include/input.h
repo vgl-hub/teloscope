@@ -16,6 +16,7 @@ struct UserInputTeloscope : UserInput {
     unsigned short int canonicalSize = 6;
     std::vector<std::string> rawPatterns = {"TTAGGG", "CCCTAA"};
     std::vector<std::string> patterns = {"TTAGGG", "CCCTAA"};
+    std::vector<std::pair<std::string, bool>> patternInfo; // (pattern, isForward)
 
     uint32_t windowSize = 1000;
     uint32_t step = 500;
