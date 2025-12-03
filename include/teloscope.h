@@ -218,15 +218,12 @@ public:
 
     void sortBySeqPos();
 
-    std::vector<TelomereBlock> getBlocksRecycle(
-        const std::vector<MatchInfo>& matches, 
+    std::vector<TelomereBlock> getTeloBlocks(
+        std::vector<MatchInfo>& matches, 
         uint16_t mergeDist,
-        std::vector<MatchInfo>& interstitialMatches,
-        bool recycleToStart);
-
-        std::vector<TelomereBlock> getBlocks(
-            std::vector<MatchInfo>& matches, 
-            uint16_t mergeDist, bool needsSorting);
+        bool needsSorting = false,
+        std::vector<MatchInfo>* recycleTarget = nullptr,
+        bool recycleToStart = false);
 
     std::vector<TelomereBlock> extendBlocks(std::vector<TelomereBlock> &blocks, 
     uint16_t maxBlockDist, float densityCutoff, uint32_t segmentSize, uint32_t absPos);

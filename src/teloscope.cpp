@@ -85,18 +85,29 @@ void Teloscope::sortBySeqPos() {
 }
 
 
-std::vector<TelomereBlock> Teloscope::getBlocksRecycle(
-    const std::vector<MatchInfo>& matches, 
+std::vector<TelomereBlock> Teloscope::getTeloBlocks(
+    std::vector<MatchInfo>& matches, 
     uint16_t mergeDist,
-    std::vector<MatchInfo>& interstitialMatches,
+    bool needsSorting,
+    std::vector<MatchInfo>* recycleTarget,
     bool recycleToStart) {
+
+    // Sort matches by position if needed
+    if (needsSorting) {
+        std::sort(matches.begin(), matches.end(), [](const MatchInfo &a, const MatchInfo &b) {
+            return a.position < b.position;
+        });
+    }
 
     std::vector<TelomereBlock> telomereBlocks;
     std::vector<MatchInfo> recycledMatches;
-    recycledMatches.reserve(matches.size());
+    const bool doRecycle = (recycleTarget != nullptr);
+    if (doRecycle) {
+        recycledMatches.reserve(matches.size());
+    }
     uint16_t minBlockCounts = userInput.minBlockCounts;
 
-    // Track block indices
+    // Track block indices (only needed for recycling)
     size_t blockStartIdx = 0;
     
     uint64_t blockStart = matches[0].position;
@@ -136,7 +147,7 @@ std::vector<TelomereBlock> Teloscope::getBlocksRecycle(
             }
 
             telomereBlocks.push_back(block);
-        } else {
+        } else if (doRecycle) {
             // Recycle all matches in this block
             for (size_t i = blockStartIdx; i < blockStartIdx + blockCounts; i++) {
                 recycledMatches.push_back(matches[i]);
@@ -153,7 +164,7 @@ std::vector<TelomereBlock> Teloscope::getBlocksRecycle(
             forwardCount += matches[i].isForward;
             canonicalCount += matches[i].isCanonical;
             
-            // Update covered nucleotides - more efficient using the boolean values
+            // Update covered nucleotides
             totalCovered += matches[i].matchSize;
             fwdCovered += matches[i].isForward * matches[i].matchSize;
             canCovered += matches[i].isCanonical * matches[i].matchSize;
@@ -184,115 +195,18 @@ std::vector<TelomereBlock> Teloscope::getBlocksRecycle(
     // Finalize the last block
     finalizeBlock(prevPosition);
 
-    // Efficient move-based insertion
-    if (!recycledMatches.empty()) {
-        if (recycleToStart)
-            interstitialMatches.insert(interstitialMatches.begin(),
-                                    std::make_move_iterator(recycledMatches.begin()),
-                                    std::make_move_iterator(recycledMatches.end()));
-        else
-            interstitialMatches.insert(interstitialMatches.end(),
-                                    std::make_move_iterator(recycledMatches.begin()),
-                                    std::make_move_iterator(recycledMatches.end()));
-    }
-
-    return telomereBlocks;
-}
-
-
-std::vector<TelomereBlock> Teloscope::getBlocks(
-    std::vector<MatchInfo>& matches, 
-    uint16_t mergeDist, bool needsSorting) {
-    
-    // Sort matches by position
-    if (needsSorting) {
-        std::sort(matches.begin(), matches.end(), [](const MatchInfo &a, const MatchInfo &b) {
-            return a.position < b.position;
-        });
-    }
-
-    std::vector<TelomereBlock> telomereBlocks;
-    uint16_t minBlockCounts = userInput.minBlockCounts;
-
-    // Initialize the first block
-    uint64_t blockStart = matches[0].position;
-    uint64_t prevPosition = blockStart;
-    uint16_t blockCounts = 1;
-    uint16_t forwardCount = matches[0].isForward;
-    uint16_t canonicalCount = matches[0].isCanonical;
-    uint64_t totalCovered = matches[0].matchSize;
-    uint64_t fwdCovered = matches[0].isForward * matches[0].matchSize;
-    uint64_t canCovered = matches[0].isCanonical * matches[0].matchSize;
-    uint16_t lastMatchSize = matches[0].matchSize;
-
-    auto finalizeBlock = [&](uint64_t endPosition) {
-        if (blockCounts >= minBlockCounts && canonicalCount > 0) {
-            TelomereBlock block;
-            block.start = blockStart;
-            block.blockLen = (endPosition - blockStart) + lastMatchSize;
-            
-            block.blockCounts = blockCounts;
-            block.forwardCount = forwardCount;
-            block.reverseCount = blockCounts - forwardCount;
-            block.canonicalCount = canonicalCount;
-            block.nonCanonicalCount = blockCounts - canonicalCount;
-            
-            block.totalCovered = totalCovered;
-            block.fwdCovered = fwdCovered;
-            block.canCovered = canCovered;
-
-            // p/q assignment based on forward percentage
-            float forwardRatio = (forwardCount * 100.0f) / blockCounts;
-            if (forwardRatio > 66.6f) {
-                block.blockLabel = 'p';
-            } else if (forwardRatio < 33.3f) {
-                block.blockLabel = 'q';
-            } else {
-                block.blockLabel = 'u';
-            }
-
-            telomereBlocks.push_back(block);
-        }
-    };
-
-    for (size_t i = 1; i < matches.size(); ++i) {
-        uint32_t distance = matches[i].position - prevPosition;
-        
-        if (distance <= mergeDist) {
-            // Continue current block
-            blockCounts++;
-            forwardCount += matches[i].isForward;
-            canonicalCount += matches[i].isCanonical;
-            
-            // Update covered nucleotides
-            totalCovered += matches[i].matchSize;
-            fwdCovered += matches[i].isForward * matches[i].matchSize;
-            canCovered += matches[i].isCanonical * matches[i].matchSize;
-            
-            prevPosition = matches[i].position;
-            lastMatchSize = matches[i].matchSize;
-
+    // Efficient move-based insertion for recycled matches
+    if (doRecycle && !recycledMatches.empty()) {
+        if (recycleToStart) {
+            recycleTarget->insert(recycleTarget->begin(),
+                                std::make_move_iterator(recycledMatches.begin()),
+                                std::make_move_iterator(recycledMatches.end()));
         } else {
-            // Finalize current block
-            finalizeBlock(prevPosition);
-
-            // Start new block
-            blockStart = matches[i].position;
-            prevPosition = blockStart;
-            blockCounts = 1;
-            forwardCount = matches[i].isForward;
-            canonicalCount = matches[i].isCanonical;
-            
-            // Reset covered nucleotides
-            totalCovered = matches[i].matchSize;
-            fwdCovered = matches[i].isForward * matches[i].matchSize;
-            canCovered = matches[i].isCanonical * matches[i].matchSize;
-            lastMatchSize = matches[i].matchSize;
+            recycleTarget->insert(recycleTarget->end(),
+                                std::make_move_iterator(recycledMatches.begin()),
+                                std::make_move_iterator(recycledMatches.end()));
         }
     }
-
-    // Finalize the last block
-    finalizeBlock(prevPosition);
 
     return telomereBlocks;
 }
@@ -717,12 +631,12 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
     std::vector<TelomereBlock> fwdBlocks, revBlocks;
 
     if (segmentData.terminalFwdMatches.size() >= 2) {
-        fwdBlocks = getBlocksRecycle(segmentData.terminalFwdMatches, mergeDist, segmentData.interstitialMatches, true);
+        fwdBlocks = getTeloBlocks(segmentData.terminalFwdMatches, mergeDist, false, &segmentData.interstitialMatches, true);
         fwdBlocks = extendBlocks(fwdBlocks, extendDist, densityCutoff, segmentSize, absPos);
     }
 
     if (segmentData.terminalRevMatches.size() >= 2) {
-        revBlocks = getBlocksRecycle(segmentData.terminalRevMatches, mergeDist, segmentData.interstitialMatches, false);
+        revBlocks = getTeloBlocks(segmentData.terminalRevMatches, mergeDist, false, &segmentData.interstitialMatches, false);
         revBlocks = extendBlocks(revBlocks, extendDist, densityCutoff, segmentSize, absPos);
     }
 
@@ -735,7 +649,7 @@ SegmentData Teloscope::analyzeSegment(std::string &sequence, UserInputTeloscope 
 
     // 3. Create interstitial blocks with stricter merge distance
     if (segmentData.interstitialMatches.size() >= 2) {
-        segmentData.interstitialBlocks = getBlocks(segmentData.interstitialMatches, mergeDist, true);
+        segmentData.interstitialBlocks = getTeloBlocks(segmentData.interstitialMatches, mergeDist, true);
     }
 
     segmentData.windows = windows;
@@ -803,7 +717,7 @@ SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTelosc
     std::vector<TelomereBlock> fwdBlocks, revBlocks;
     
     if (fwdMatches.size() >= 2) {
-        fwdBlocks = getBlocks(fwdMatches, mergeDist, false);
+        fwdBlocks = getTeloBlocks(fwdMatches, mergeDist, false);
         fwdBlocks = extendBlocks(fwdBlocks, extendDist, densityCutoff, segmentSize, absPos);
         segmentData.terminalBlocks.insert(
             segmentData.terminalBlocks.end(),
@@ -813,7 +727,7 @@ SegmentData Teloscope::analyzeSegmentTips(std::string &sequence, UserInputTelosc
     }
     
     if (revMatches.size() >= 2) {
-        revBlocks = getBlocks(revMatches, mergeDist, false);
+        revBlocks = getTeloBlocks(revMatches, mergeDist, false);
         revBlocks = extendBlocks(revBlocks, extendDist, densityCutoff, segmentSize, absPos);
         segmentData.terminalBlocks.insert(
             segmentData.terminalBlocks.end(),
