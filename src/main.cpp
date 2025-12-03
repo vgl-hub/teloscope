@@ -320,13 +320,13 @@ int main(int argc, char **argv) {
             case 'x': { // edit distance for pattern matching
                 try {
                     int v = std::stoi(optarg);
-                    if (v < 0 || v > 3) {
-                        fprintf(stderr, "Error: Edit distance (-x/--edit-distance) must be in the range [0,3].\n");
+                    if (v < 0 || v > 2) {
+                        fprintf(stderr, "Error: Edit distance (-x/--edit-distance) must be in the range [0,2].\n");
                         exit(EXIT_FAILURE);
                     }
                     userInput.editDistance = static_cast<uint8_t>(v);
                 } catch (...) {
-                    fprintf(stderr, "Error: Invalid edit distance '%s'. Must be a number [0,3].\n", optarg);
+                    fprintf(stderr, "Error: Invalid edit distance '%s'. Must be a number [0,2].\n", optarg);
                     exit(EXIT_FAILURE);
                 }
                 break;
@@ -406,7 +406,7 @@ int main(int argc, char **argv) {
                 printf("\t'-d'\t--max-block-distance\tSet maximum block distance for extension. [Default: 200]\n");
                 printf("\t'-l'\t--min-block-length\tSet minimum block length. [Default: 500]\n");
                 printf("\t'-y'\t--min-block-density\tSet minimum block density. [Default: 0.5]\n");
-                printf("\t'-x'\t--edit-distance\tSet edit distance for pattern matching (0-3). [Default: 0]\n");
+                printf("\t'-x'\t--edit-distance\tSet edit distance for pattern matching (0-2). [Default: 0]\n");
 
                 printf("\nOptional Parameters:\n");
                 printf("\t'-w'\t--window\tSet sliding window size. [Default: 1000]\n");
