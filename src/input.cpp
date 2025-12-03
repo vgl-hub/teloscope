@@ -88,7 +88,7 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
 
     // Initialize SegmentData for this segment
     SegmentData segmentData;
-    segmentData = analyzeSegmentTips(sequence, userInput, 0); // absPos = 0
+    segmentData = scanSegment(sequence, 0, true); // tipsOnly = true for GFA segments
     // segmentData.terminalBlocks = filterTerminalBlocks(segmentData.terminalBlocks); // TODO: extendBlocks???
     // char segOr = (block.blockLabel == 'p' ? '+' : '-'); // TODO
     // auto &adj = inSequences.getAdjEdgeList()[ segment->getuId() ];
@@ -179,12 +179,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
             unmaskSequence(sequence);
             
             if (component->orientation == '+') {
-                SegmentData segmentData;
-                if (userInput.ultraFastMode) {
-                    segmentData = analyzeSegmentTips(sequence, userInput, absPos);
-                } else {
-                    segmentData = analyzeSegment(sequence, userInput, absPos);
-                }
+                SegmentData segmentData = scanSegment(sequence, absPos, userInput.ultraFastMode);
 
                 // Collect window data
                 pathData.windows.insert(

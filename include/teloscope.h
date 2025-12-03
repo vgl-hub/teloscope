@@ -212,9 +212,7 @@ public:
                         WindowData& windowData, WindowData& nextOverlapData,
                         SegmentData& segmentData, uint32_t segmentSize, uint32_t absPos);
 
-    SegmentData analyzeSegment(std::string &sequence, UserInputTeloscope userInput, uint32_t absPos);
-
-    SegmentData analyzeSegmentTips(std::string &sequence, UserInputTeloscope &userInput, uint32_t absPos);
+    SegmentData scanSegment(std::string &sequence, uint32_t absPos, bool tipsOnly);
 
     void sortBySeqPos();
 
