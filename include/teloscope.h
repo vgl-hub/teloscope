@@ -243,7 +243,10 @@ public:
     
     std::string getChrType(const std::string& labels, uint16_t gaps);
     
-    void writeBEDFile(std::ofstream& windowMetricsFile,
+    void writeBEDFile(std::ofstream& windowCanonicalFile,
+                    std::ofstream& windowNoncanonicalFile,
+                    std::ofstream& windowGCFile,
+                    std::ofstream& windowEntropyFile,
                     std::ofstream& canonicalMatchFile,
                     std::ofstream& noncanonicalMatchFile,
                     std::ofstream& terminalBlocksFile,
