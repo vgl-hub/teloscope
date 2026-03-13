@@ -85,7 +85,7 @@ struct TelomereBlock {
     uint32_t canCovered;
     bool hasValidOr;
     bool isLongest;
-    char blockLabel; // 'p', 'q', 'u'
+    char blockLabel; // 'p', 'q', 'b' (balanced)
 
     TelomereBlock() : hasValidOr(true), isLongest(false) {}
 };
@@ -199,6 +199,10 @@ class Teloscope {
 
 
     Stats getStats(std::vector<float>& values);
+
+    static char computeBlockLabel(uint16_t forwardCount, uint16_t blockCounts);
+
+    void computeSummaryCounts();
 
 public:
 

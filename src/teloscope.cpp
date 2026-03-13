@@ -86,6 +86,14 @@ void Teloscope::sortBySeqPos() {
 }
 
 
+char Teloscope::computeBlockLabel(uint16_t forwardCount, uint16_t blockCounts) {
+    float forwardRatio = (forwardCount * 100.0f) / blockCounts;
+    if (forwardRatio > 66.6f) return 'p';
+    if (forwardRatio < 33.3f) return 'q';
+    return 'b';
+}
+
+
 std::vector<TelomereBlock> Teloscope::getTeloBlocks(
     std::vector<MatchInfo>& matches, 
     uint16_t mergeDist,
@@ -137,15 +145,7 @@ std::vector<TelomereBlock> Teloscope::getTeloBlocks(
             block.fwdCovered = fwdCovered;
             block.canCovered = canCovered;
 
-            // p/q assignment based on forward percentage
-            float forwardRatio = (forwardCount * 100.0f) / blockCounts;
-            if (forwardRatio > 66.6f) {
-                block.blockLabel = 'p';
-            } else if (forwardRatio < 33.3f) {
-                block.blockLabel = 'q';
-            } else {
-                block.blockLabel = 'u';
-            }
+            block.blockLabel = computeBlockLabel(forwardCount, blockCounts);
 
             telomereBlocks.push_back(block);
         } else if (doRecycle) {
@@ -245,6 +245,9 @@ std::vector<TelomereBlock> Teloscope::extendBlocks(std::vector<TelomereBlock> &b
             currentBlock.fwdCovered += nextBlock.fwdCovered;
             currentBlock.canCovered += nextBlock.canCovered;
 
+            // Recompute label from merged counts
+            currentBlock.blockLabel = computeBlockLabel(currentBlock.forwardCount, currentBlock.blockCounts);
+
         } else {
             // Calculate relative distances
             uint64_t relativeStart = currentBlock.start - absPos;
@@ -304,7 +307,6 @@ void Teloscope::labelTerminalBlocks(
     // If no blocks, set empty label and "none" type and return early
     if (blocks.empty()) {
         scaffoldType = gap_prefix + "none";
-        (hasGaps ? totalGappedNone : totalNone)++; // Summary counters
         return;
     }
 
@@ -363,7 +365,6 @@ void Teloscope::labelTerminalBlocks(
     // Check for discordant telomeres in longest blocks
     if ((has_P && !longest_p->hasValidOr) || (has_Q && !longest_q->hasValidOr)) {
         scaffoldType = gap_prefix + "discordant";
-        (hasGaps ? totalGappedDiscordant : totalDiscordant)++; // Summary counters
         return;
     }
     
@@ -372,15 +373,13 @@ void Teloscope::labelTerminalBlocks(
         // Check if P comes before Q in the sorted blocks
         if (longest_p->start < longest_q->start) {
             scaffoldType = gap_prefix + "t2t";
-            (hasGaps ? totalGappedT2T : totalT2T)++; // Summary counters
         } else {
             // QP, Qq, Pp cases
             scaffoldType = gap_prefix + "missassembly";
-            (hasGaps ? totalGappedMissassembly : totalMissassembly)++; // Summary counters
         }
         return;
     }
-    
+
     // Check for Pp and Qq missassemblies
     if (has_P) {
         // Check for lowercase p blocks that would indicate missassembly
@@ -393,11 +392,10 @@ void Teloscope::labelTerminalBlocks(
         }
         if (has_p_blocks) {
             scaffoldType = gap_prefix + "missassembly";
-            (hasGaps ? totalGappedMissassembly : totalMissassembly)++; // Summary counters
             return;
         }
     }
-    
+
     if (has_Q) {
         // Check for lowercase q blocks that would indicate missassembly
         bool has_q_blocks = false;
@@ -409,14 +407,12 @@ void Teloscope::labelTerminalBlocks(
         }
         if (has_q_blocks) {
             scaffoldType = gap_prefix + "missassembly";
-            (hasGaps ? totalGappedMissassembly : totalMissassembly)++; // Summary counters
             return;
         }
     }
     
     // Incomplete chromosome with a single telomere
     scaffoldType = gap_prefix + "incomplete";
-    hasGaps ? totalGappedIncomplete++ : totalIncomplete++;
 }
 
 
@@ -428,7 +424,7 @@ std::vector<TelomereBlock> Teloscope::filterITSBlocks(const std::vector<Telomere
     for (const auto& block : interstitialBlocks) {
         if (block.blockLen < minLength) continue;  // Length filter
         if (block.canonicalCount < minCanonicalCount) continue; // Minimal canonical count
-        if (block.blockLabel == 'u' && (block.forwardCount < 2 && block.reverseCount < 2)) continue; // U check
+        if (block.blockLabel == 'b' && (block.forwardCount < 2 && block.reverseCount < 2)) continue; // Balanced check
         filteredBlocks.push_back(block);
     }
 
@@ -934,7 +930,25 @@ void Teloscope::handleBEDFile() {
 }
 
 
+void Teloscope::computeSummaryCounts() {
+    for (const auto& pathData : allPathData) {
+        const std::string& type = pathData.scaffoldType;
+        if (type == "t2t") totalT2T++;
+        else if (type == "gapped_t2t") totalGappedT2T++;
+        else if (type == "missassembly") totalMissassembly++;
+        else if (type == "gapped_missassembly") totalGappedMissassembly++;
+        else if (type == "incomplete") totalIncomplete++;
+        else if (type == "gapped_incomplete") totalGappedIncomplete++;
+        else if (type == "none") totalNone++;
+        else if (type == "gapped_none") totalGappedNone++;
+        else if (type == "discordant") totalDiscordant++;
+        else if (type == "gapped_discordant") totalGappedDiscordant++;
+    }
+}
+
+
 void Teloscope::printSummary() {
+    computeSummaryCounts();
     std::cout << "\n+++ Assembly Summary Report +++\n";
     std::cout << "Total paths:\t" << totalPaths << "\n";
     std::cout << "Total gaps:\t" << totalGaps << "\n";
