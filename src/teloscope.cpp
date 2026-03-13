@@ -832,7 +832,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
                 windowMetricsBuffer << header << "\t" << window.windowStart << "\t" << windowEnd;
 
                 if (userInput.outWinRepeats) {
-                    windowMetricsBuffer << "\t" << window.fwdCounts << "\t" << window.revCounts << "\t"
+                    windowMetricsBuffer << "\t" << window.fwdCounts << "\t" << window.revCounts
                                         << "\t" << window.canonicalCounts << "\t" << window.nonCanonicalCounts;
                 }
                 if (userInput.outEntropy) {
