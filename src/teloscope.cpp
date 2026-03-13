@@ -597,7 +597,7 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint32_t absPos, bool 
                     if (trie.isEnd(node)) {
                         uint32_t len = j - i + 1;
                         std::string_view pattern(&sequence[i], len);
-                        bool isForward = (len >= 3 && sequence[i] == 'C' && sequence[i+1] == 'C' && sequence[i+2] == 'C');
+                        bool isForward = trie.isForward(node); // O(1) lookup from Trie node
                         bool isCanonical = (pattern == canonicalFwdView || pattern == canonicalRevView);
 
                         MatchInfo matchInfo;
