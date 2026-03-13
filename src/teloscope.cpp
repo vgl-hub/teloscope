@@ -766,22 +766,32 @@ void Teloscope::writeBEDFile(std::ofstream& windowMetricsFile,
         std::string labels;
         for (const auto& block : pathData.terminalBlocks) {
             uint64_t blockEnd = block.start + block.blockLen;
-            terminalBlocksBuffer << header << "\t"
-                                << block.start << "\t"
-                                << blockEnd << "\t"
-                                << block.blockLen << "\t"
-                                << block.blockLabel << "\t"
-                                << block.forwardCount << "\t"
-                                << block.reverseCount << "\t"
-                                << block.canonicalCount << "\t"
-                                << block.nonCanonicalCount << "\t"
-                                << pathSize << "\n";
+
+            // Determine if block is scaffold-terminal or contig-terminal
+            bool isScaffoldTerminal = (block.start < userInput.terminalLimit) ||
+                                      (blockEnd > pathSize - userInput.terminalLimit);
+            const char* terminality = isScaffoldTerminal ? "scaffold" : "contig";
+
+            // Default: only scaffold-terminal; --manual-curation: all
+            if (isScaffoldTerminal || userInput.manualCuration) {
+                terminalBlocksBuffer << header << "\t"
+                                    << block.start << "\t"
+                                    << blockEnd << "\t"
+                                    << block.blockLen << "\t"
+                                    << block.blockLabel << "\t"
+                                    << block.forwardCount << "\t"
+                                    << block.reverseCount << "\t"
+                                    << block.canonicalCount << "\t"
+                                    << block.nonCanonicalCount << "\t"
+                                    << pathSize << "\t"
+                                    << terminality << "\n";
+            }
 
             // Only count and include label if this is a longest block
             if (block.isLongest) {
                 longestCount++;
                 longestLabels += block.blockLabel;
-                telomereLengths.push_back(static_cast<float>(block.blockLen)); 
+                telomereLengths.push_back(static_cast<float>(block.blockLen));
             }
         }
 

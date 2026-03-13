@@ -19,7 +19,7 @@ struct UserInputTeloscope : UserInput {
     std::vector<std::pair<std::string, bool>> patternInfo; // (pattern, isForward)
 
     uint32_t windowSize = 1000;
-    uint32_t step = 500;
+    uint32_t step = 1000;
     uint32_t terminalLimit = 50000;
     uint8_t editDistance = 0;
     uint8_t kmerLen = 21;
@@ -37,6 +37,7 @@ struct UserInputTeloscope : UserInput {
     bool outMatches = false;
     bool outITS = false;
     bool ultraFastMode = true;
+    bool manualCuration = false;
     
     double maxMem = 0;
     std::string prefix = ".", outFile = ""; // JACK: CHECK

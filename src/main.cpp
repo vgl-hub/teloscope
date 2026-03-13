@@ -62,6 +62,7 @@ int main(int argc, char **argv) {
         {"out-matches", no_argument, 0, 'm'},
         {"out-its", no_argument, 0, 'i'},
         {"ultra-fast", no_argument, 0, 'u'},
+        {"manual-curation", no_argument, 0, 'n'},
         {"verbose", no_argument, &verbose_flag, 1},
         {"cmd", no_argument, &cmd_flag, 1},
         {"version", no_argument, 0, 'v'},
@@ -73,7 +74,7 @@ int main(int argc, char **argv) {
         
         int option_index = 0;
 
-        c = getopt_long(argc, argv, "-:f:j:o:p:s:w:c:t:k:d:l:y:x:argemivhu", long_options, &option_index);
+        c = getopt_long(argc, argv, "-:f:j:o:p:s:w:c:t:k:d:l:y:x:argemivhun", long_options, &option_index);
 
         if (c == -1) { // exit the loop if run out of options
             break;
@@ -391,6 +392,11 @@ int main(int argc, char **argv) {
             }
 
 
+            case 'n': // manual curation mode
+                userInput.manualCuration = true;
+                break;
+
+
             case 'v': // software version
                 printf("/// Teloscope v%s\n", version.c_str());
                 printf("\nDeveloped by:\nJack A. Medico amedico@rockefeller.edu\n");
@@ -423,6 +429,7 @@ int main(int argc, char **argv) {
                 printf("\t'-m'\t--out-matches\tOutput all canonical and terminal non-canonical matches. [Default: false]\n");
                 printf("\t'-i'\t--out-its\tOutput assembly interstitial telomere (ITSs) regions.[Default: false] \n");
                 printf("\t'-u'\t--ultra-fast\tUltra-fast mode. Only scans terminal telomeres at contig ends. [Default: true]\n");
+                printf("\t'-n'\t--manual-curation\tRetain all terminal telomeres (contig + scaffold) in BED output. [Default: scaffold only]\n");
 
                 printf("\t'-v'\t--version\tPrint current software version.\n");
                 printf("\t'-h'\t--help\tPrint current software options.\n");
