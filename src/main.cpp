@@ -459,11 +459,14 @@ int main(int argc, char **argv) {
     }
 
     // Finalize raw pattern seeds before expansion
+    // When -p is not provided, derive patterns from canonical (fixes #2)
+    if (!hasInputPatterns) {
+        userInput.rawPatterns = {userInput.canonicalFwd, userInput.canonicalRev};
+    }
     if (userInput.rawPatterns.empty()) {
-        if (hasInputPatterns) {
-            fprintf(stderr, "Warning: No valid patterns supplied via -p. Using defaults: TTAGGG, CCCTAA\n");
-        }
-        userInput.rawPatterns = {"TTAGGG", "CCCTAA"};
+        fprintf(stderr, "Warning: No valid patterns supplied via -p. Using canonical: %s, %s\n",
+                userInput.canonicalFwd.c_str(), userInput.canonicalRev.c_str());
+        userInput.rawPatterns = {userInput.canonicalFwd, userInput.canonicalRev};
     }
 
     // Expand IUPAC + edit-distance variants with orientation info

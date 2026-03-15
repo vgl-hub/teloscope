@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -8,7 +9,6 @@
 #include <string>
 #include <vector>
 #include <getopt.h>
-#include <sys/stat.h>
 
 // ── structs ──────────────────────────────────────────────────────────────────
 
@@ -52,10 +52,7 @@ static char mutateBase(char orig, std::mt19937_64 &rng) {
 }
 
 static void mkdirP(const std::string &path) {
-    size_t pos = 0;
-    while ((pos = path.find('/', pos + 1)) != std::string::npos)
-        mkdir(path.substr(0, pos).c_str(), 0755);
-    mkdir(path.c_str(), 0755);
+    std::filesystem::create_directories(path);
 }
 
 static void writeFastaEntry(std::ofstream &out, const std::string &name, const std::string &seq) {
