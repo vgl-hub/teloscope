@@ -25,6 +25,23 @@
 #include "teloscope.h"
 #include "input.h"
 
+const char* scaffoldTypeToString(ScaffoldType type) {
+    switch (type) {
+        case ScaffoldType::T2T:                   return "t2t";
+        case ScaffoldType::GAPPED_T2T:            return "gapped_t2t";
+        case ScaffoldType::MISSASSEMBLY:          return "missassembly";
+        case ScaffoldType::GAPPED_MISSASSEMBLY:   return "gapped_missassembly";
+        case ScaffoldType::INCOMPLETE:            return "incomplete";
+        case ScaffoldType::GAPPED_INCOMPLETE:     return "gapped_incomplete";
+        case ScaffoldType::NONE:                  return "none";
+        case ScaffoldType::GAPPED_NONE:           return "gapped_none";
+        case ScaffoldType::DISCORDANT:            return "discordant";
+        case ScaffoldType::GAPPED_DISCORDANT:     return "gapped_discordant";
+        default:                                  return "unknown";
+    }
+}
+
+
 // Insert pattern into the flat node pool. Each char maps to index 0-3.
 void Trie::insertPattern(const std::string& pattern, bool isForward) {
     int32_t current = 0; // start at root
@@ -293,7 +310,8 @@ std::vector<TelomereBlock> Teloscope::extendBlocks(std::vector<TelomereBlock> &b
 
 void Teloscope::labelTerminalBlocks(
     std::vector<TelomereBlock>& blocks, uint16_t gaps,
-    std::string& terminalLabel, std::string& scaffoldType) {
+    std::string& terminalLabel, ScaffoldType& scaffoldType,
+    uint64_t pathSize, uint32_t terminalLimit) {
     // Reset isLongest for all blocks
     for (auto& block : blocks) {
         block.isLongest = false;
@@ -302,11 +320,15 @@ void Teloscope::labelTerminalBlocks(
     // Initialize return values
     terminalLabel = "";
     bool hasGaps = (gaps > 0);
-    std::string gap_prefix = hasGaps ? "gapped_" : "";
+
+    // Helper to pick gapped vs non-gapped enum variant
+    auto pickType = [hasGaps](ScaffoldType plain, ScaffoldType gapped) {
+        return hasGaps ? gapped : plain;
+    };
 
     // If no blocks, set empty label and "none" type and return early
     if (blocks.empty()) {
-        scaffoldType = gap_prefix + "none";
+        scaffoldType = pickType(ScaffoldType::NONE, ScaffoldType::GAPPED_NONE);
         return;
     }
 
@@ -316,30 +338,37 @@ void Teloscope::labelTerminalBlocks(
                 return a.start < b.start;
             });
 
-    // Find longest 'p' and 'q' blocks and track error status
+    // Identify scaffold-terminal blocks (within terminalLimit of path ends)
+    std::vector<TelomereBlock*> scaffoldBlocks;
+    for (auto& block : blocks) {
+        uint64_t blockEnd = block.start + block.blockLen;
+        if (block.start < terminalLimit || blockEnd > pathSize - terminalLimit) {
+            scaffoldBlocks.push_back(&block);
+        }
+    }
+
+    // Build granular label from ALL blocks (for detailed annotation)
+    for (auto& block : blocks) {
+        terminalLabel += block.blockLabel;
+        if (!block.hasValidOr) {
+            terminalLabel += '*';
+        }
+    }
+
+    // Find longest 'p' and 'q' blocks among SCAFFOLD-TERMINAL blocks only
     TelomereBlock* longest_p = nullptr;
     TelomereBlock* longest_q = nullptr;
     uint64_t max_p_coverage = 0;
     uint64_t max_q_coverage = 0;
 
-    // Build granular label while finding longest blocks
-    for (auto& block : blocks) {
-        // Find longest blocks
-        if (block.blockLabel == 'p' && block.canCovered > max_p_coverage) {
-            longest_p = &block;
-            max_p_coverage = block.canCovered;
-        } 
-        else if (block.blockLabel == 'q' && block.canCovered > max_q_coverage) {
-            longest_q = &block;
-            max_q_coverage = block.canCovered;
+    for (auto* block : scaffoldBlocks) {
+        if (block->blockLabel == 'p' && block->canCovered > max_p_coverage) {
+            longest_p = block;
+            max_p_coverage = block->canCovered;
         }
-        
-        // Add to granular label (will update uppercase status later)
-        char label = block.blockLabel;
-        terminalLabel += label;
-        
-        if (!block.hasValidOr) {
-            terminalLabel += '*';
+        else if (block->blockLabel == 'q' && block->canCovered > max_q_coverage) {
+            longest_q = block;
+            max_q_coverage = block->canCovered;
         }
     }
 
@@ -357,62 +386,54 @@ void Teloscope::labelTerminalBlocks(
             j++; // Skip asterisk if present
         }
     }
-    
-    // Determine scaffold type directly from blocks info
+
+    // Determine scaffold type from scaffold-terminal blocks only
     bool has_P = (longest_p != nullptr);
     bool has_Q = (longest_q != nullptr);
-    
+
     // Check for discordant telomeres in longest blocks
     if ((has_P && !longest_p->hasValidOr) || (has_Q && !longest_q->hasValidOr)) {
-        scaffoldType = gap_prefix + "discordant";
+        scaffoldType = pickType(ScaffoldType::DISCORDANT, ScaffoldType::GAPPED_DISCORDANT);
         return;
     }
-    
+
     // Complete chromosome
     if (has_P && has_Q) {
-        // Check if P comes before Q in the sorted blocks
         if (longest_p->start < longest_q->start) {
-            scaffoldType = gap_prefix + "t2t";
+            scaffoldType = pickType(ScaffoldType::T2T, ScaffoldType::GAPPED_T2T);
         } else {
-            // QP, Qq, Pp cases
-            scaffoldType = gap_prefix + "missassembly";
+            scaffoldType = pickType(ScaffoldType::MISSASSEMBLY, ScaffoldType::GAPPED_MISSASSEMBLY);
         }
         return;
     }
 
-    // Check for Pp and Qq missassemblies
+    // Check for Pp and Qq missassemblies among scaffold-terminal blocks
     if (has_P) {
-        // Check for lowercase p blocks that would indicate missassembly
-        bool has_p_blocks = false;
-        for (const auto& block : blocks) {
-            if (block.blockLabel == 'p' && &block != longest_p && block.hasValidOr) {
-                has_p_blocks = true;
-                break;
+        for (const auto* block : scaffoldBlocks) {
+            if (block->blockLabel == 'p' && block != longest_p && block->hasValidOr) {
+                scaffoldType = pickType(ScaffoldType::MISSASSEMBLY, ScaffoldType::GAPPED_MISSASSEMBLY);
+                return;
             }
-        }
-        if (has_p_blocks) {
-            scaffoldType = gap_prefix + "missassembly";
-            return;
         }
     }
 
     if (has_Q) {
-        // Check for lowercase q blocks that would indicate missassembly
-        bool has_q_blocks = false;
-        for (const auto& block : blocks) {
-            if (block.blockLabel == 'q' && &block != longest_q && block.hasValidOr) {
-                has_q_blocks = true;
-                break;
+        for (const auto* block : scaffoldBlocks) {
+            if (block->blockLabel == 'q' && block != longest_q && block->hasValidOr) {
+                scaffoldType = pickType(ScaffoldType::MISSASSEMBLY, ScaffoldType::GAPPED_MISSASSEMBLY);
+                return;
             }
         }
-        if (has_q_blocks) {
-            scaffoldType = gap_prefix + "missassembly";
-            return;
-        }
     }
-    
-    // Incomplete chromosome with a single telomere
-    scaffoldType = gap_prefix + "incomplete";
+
+    // No scaffold-terminal telomeres found
+    if (!has_P && !has_Q) {
+        scaffoldType = pickType(ScaffoldType::NONE, ScaffoldType::GAPPED_NONE);
+        return;
+    }
+
+    // Incomplete chromosome with a single scaffold-terminal telomere
+    scaffoldType = pickType(ScaffoldType::INCOMPLETE, ScaffoldType::GAPPED_INCOMPLETE);
 }
 
 
@@ -710,7 +731,9 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint32_t absPos, bool 
 }
 
 
-void Teloscope::writeBEDFile(std::ofstream& windowCanonicalFile,
+void Teloscope::writeBEDFile(std::ofstream& windowFwdFile,
+                            std::ofstream& windowRevFile,
+                            std::ofstream& windowCanonicalFile,
                             std::ofstream& windowNoncanonicalFile,
                             std::ofstream& windowGCFile,
                             std::ofstream& windowEntropyFile,
@@ -720,6 +743,8 @@ void Teloscope::writeBEDFile(std::ofstream& windowCanonicalFile,
                             std::ofstream& interstitialBlocksFile) {
 
     // Create optimized buffers
+    std::ostringstream windowFwdBuffer;
+    std::ostringstream windowRevBuffer;
     std::ostringstream windowCanonicalBuffer;
     std::ostringstream windowNoncanonicalBuffer;
     std::ostringstream windowGCBuffer;
@@ -731,6 +756,8 @@ void Teloscope::writeBEDFile(std::ofstream& windowCanonicalFile,
 
     // Write BEDgraph headers
     if (userInput.outWinRepeats) {
+        windowFwdBuffer << "track type=bedGraph name=\"Forward Counts\" description=\"Forward repeat counts per window\"\n";
+        windowRevBuffer << "track type=bedGraph name=\"Reverse Counts\" description=\"Reverse repeat counts per window\"\n";
         windowCanonicalBuffer << "track type=bedGraph name=\"Canonical Counts\" description=\"Canonical repeat counts per window\"\n";
         windowNoncanonicalBuffer << "track type=bedGraph name=\"NonCanonical Counts\" description=\"NonCanonical repeat counts per window\"\n";
     }
@@ -836,6 +863,10 @@ void Teloscope::writeBEDFile(std::ofstream& windowCanonicalFile,
             uint32_t windowEnd = window.windowStart + window.currentWindowSize;
 
             if (userInput.outWinRepeats) {
+                windowFwdBuffer << header << "\t" << window.windowStart << "\t" << windowEnd
+                                << "\t" << window.fwdCounts << "\n";
+                windowRevBuffer << header << "\t" << window.windowStart << "\t" << windowEnd
+                                << "\t" << window.revCounts << "\n";
                 windowCanonicalBuffer << header << "\t" << window.windowStart << "\t" << windowEnd
                                       << "\t" << window.canonicalCounts << "\n";
                 windowNoncanonicalBuffer << header << "\t" << window.windowStart << "\t" << windowEnd
@@ -856,7 +887,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowCanonicalFile,
                 << longestCount << "\t"
                 << (longestLabels.empty() ? "none" : longestLabels) << "\t" 
                 << gaps << "\t" 
-                << pathData.scaffoldType << "\t"
+                << scaffoldTypeToString(pathData.scaffoldType) << "\t"
                 << pathData.terminalLabel;
         
         totalTelomeres += longestCount; // Update assembly summary with longest count
@@ -886,6 +917,8 @@ void Teloscope::writeBEDFile(std::ofstream& windowCanonicalFile,
     }
 
     // Single flush per file
+    windowFwdFile << windowFwdBuffer.str();
+    windowRevFile << windowRevBuffer.str();
     windowCanonicalFile << windowCanonicalBuffer.str();
     windowNoncanonicalFile << windowNoncanonicalBuffer.str();
     windowGCFile << windowGCBuffer.str();
@@ -900,6 +933,8 @@ void Teloscope::writeBEDFile(std::ofstream& windowCanonicalFile,
 void Teloscope::handleBEDFile() {
     lg.verbose("\nReporting window matches and metrics...");
 
+    std::ofstream windowFwdFile;
+    std::ofstream windowRevFile;
     std::ofstream windowCanonicalFile;
     std::ofstream windowNoncanonicalFile;
     std::ofstream windowGCFile;
@@ -911,36 +946,50 @@ void Teloscope::handleBEDFile() {
 
     std::string base = userInput.outRoute + "/" + userInput.inSequenceName;
 
+    // Helper to open a file and check success
+    auto openFile = [](std::ofstream& file, const std::string& path) {
+        file.open(path);
+        if (!file.is_open()) {
+            fprintf(stderr, "Error: Could not open '%s' for writing.\n", path.c_str());
+            exit(EXIT_FAILURE);
+        }
+    };
+
     // Open per-metric window files
     if (userInput.outWinRepeats) {
-        windowCanonicalFile.open(base + "_window_canonical.bedgraph");
-        windowNoncanonicalFile.open(base + "_window_noncanonical.bedgraph");
+        openFile(windowFwdFile, base + "_window_fwd.bedgraph");
+        openFile(windowRevFile, base + "_window_rev.bedgraph");
+        openFile(windowCanonicalFile, base + "_window_canonical.bedgraph");
+        openFile(windowNoncanonicalFile, base + "_window_noncanonical.bedgraph");
     }
     if (userInput.outGC) {
-        windowGCFile.open(base + "_window_gc.bedgraph");
+        openFile(windowGCFile, base + "_window_gc.bedgraph");
     }
     if (userInput.outEntropy) {
-        windowEntropyFile.open(base + "_window_entropy.bedgraph");
+        openFile(windowEntropyFile, base + "_window_entropy.bedgraph");
     }
 
     if (userInput.outMatches) {
-        canonicalMatchFile.open(base + "_canonical_matches.bed");
-        noncanonicalMatchFile.open(base + "_noncanonical_matches.bed");
+        openFile(canonicalMatchFile, base + "_canonical_matches.bed");
+        openFile(noncanonicalMatchFile, base + "_noncanonical_matches.bed");
     }
 
     if (userInput.outITS) {
-        interstitialBlocksFile.open(base + "_interstitial_telomeres.bed");
+        openFile(interstitialBlocksFile, base + "_interstitial_telomeres.bed");
     }
 
-    terminalBlocksFile.open(base + "_terminal_telomeres.bed");
+    openFile(terminalBlocksFile, base + "_terminal_telomeres.bed");
 
-    writeBEDFile(windowCanonicalFile, windowNoncanonicalFile,
+    writeBEDFile(windowFwdFile, windowRevFile,
+                windowCanonicalFile, windowNoncanonicalFile,
                 windowGCFile, windowEntropyFile,
                 canonicalMatchFile, noncanonicalMatchFile,
                 terminalBlocksFile, interstitialBlocksFile);
 
     // Close all files
     if (userInput.outWinRepeats) {
+        windowFwdFile.close();
+        windowRevFile.close();
         windowCanonicalFile.close();
         windowNoncanonicalFile.close();
     }
@@ -966,17 +1015,18 @@ void Teloscope::handleBEDFile() {
 
 void Teloscope::computeSummaryCounts() {
     for (const auto& pathData : allPathData) {
-        const std::string& type = pathData.scaffoldType;
-        if (type == "t2t") totalT2T++;
-        else if (type == "gapped_t2t") totalGappedT2T++;
-        else if (type == "missassembly") totalMissassembly++;
-        else if (type == "gapped_missassembly") totalGappedMissassembly++;
-        else if (type == "incomplete") totalIncomplete++;
-        else if (type == "gapped_incomplete") totalGappedIncomplete++;
-        else if (type == "none") totalNone++;
-        else if (type == "gapped_none") totalGappedNone++;
-        else if (type == "discordant") totalDiscordant++;
-        else if (type == "gapped_discordant") totalGappedDiscordant++;
+        switch (pathData.scaffoldType) {
+            case ScaffoldType::T2T:                   totalT2T++; break;
+            case ScaffoldType::GAPPED_T2T:            totalGappedT2T++; break;
+            case ScaffoldType::MISSASSEMBLY:          totalMissassembly++; break;
+            case ScaffoldType::GAPPED_MISSASSEMBLY:   totalGappedMissassembly++; break;
+            case ScaffoldType::INCOMPLETE:            totalIncomplete++; break;
+            case ScaffoldType::GAPPED_INCOMPLETE:     totalGappedIncomplete++; break;
+            case ScaffoldType::NONE:                  totalNone++; break;
+            case ScaffoldType::GAPPED_NONE:           totalGappedNone++; break;
+            case ScaffoldType::DISCORDANT:            totalDiscordant++; break;
+            case ScaffoldType::GAPPED_DISCORDANT:     totalGappedDiscordant++; break;
+        }
     }
 }
 

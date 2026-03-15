@@ -25,16 +25,17 @@ check_file_count() {
 }
 
 TMPDIR="testFiles/tmp"
+mkdir -p "$TMPDIR"
 
 # Test: default mode produces 1 file (terminal_telomeres.bed)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/bTaeGut7_chr33_mat.fa.gz -o "$TMPDIR" 2>/dev/null >/dev/null
 check_file_count "default mode file count" 1 "$TMPDIR"
 
-# Test: -r produces 3 files (terminal + canonical + noncanonical bedgraphs)
+# Test: -r produces 5 files (terminal + fwd + rev + canonical + noncanonical bedgraphs)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/bTaeGut7_chr33_mat.fa.gz -o "$TMPDIR" -r 2>/dev/null >/dev/null
-check_file_count "-r flag file count" 3 "$TMPDIR"
+check_file_count "-r flag file count" 5 "$TMPDIR"
 
 # Test: -g produces 2 files (terminal + gc bedgraph)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
@@ -46,10 +47,15 @@ rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/bTaeGut7_chr33_mat.fa.gz -o "$TMPDIR" -e 2>/dev/null >/dev/null
 check_file_count "-e flag file count" 2 "$TMPDIR"
 
-# Test: -r -g -e produces 5 files (terminal + 2 repeat + gc + entropy)
+# Test: -r -g -e produces 7 files (terminal + 4 repeat + gc + entropy)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/bTaeGut7_chr33_mat.fa.gz -o "$TMPDIR" -r -g -e 2>/dev/null >/dev/null
-check_file_count "-r -g -e flag file count" 5 "$TMPDIR"
+check_file_count "-r -g -e flag file count" 7 "$TMPDIR"
+
+# Test: positional argument works like -f
+rm -rf "$TMPDIR"/* 2>/dev/null || true
+build/bin/teloscope testFiles/bTaeGut7_chr33_mat.fa.gz -o "$TMPDIR" 2>/dev/null >/dev/null
+check_file_count "positional arg file count" 1 "$TMPDIR"
 
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 exit $EXIT

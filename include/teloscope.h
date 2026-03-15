@@ -10,6 +10,16 @@
 #include <string_view>
 #include <array>
 
+enum class ScaffoldType : uint8_t {
+    T2T, GAPPED_T2T,
+    MISSASSEMBLY, GAPPED_MISSASSEMBLY,
+    INCOMPLETE, GAPPED_INCOMPLETE,
+    NONE, GAPPED_NONE,
+    DISCORDANT, GAPPED_DISCORDANT
+};
+
+const char* scaffoldTypeToString(ScaffoldType type);
+
 class Trie {
     struct TrieNode {
         std::array<int32_t, 4> children = {-1, -1, -1, -1}; // A=0, C=1, G=2, T=3
@@ -133,7 +143,7 @@ struct PathData {
     std::vector<MatchInfo> canonicalMatches;
     std::vector<MatchInfo> nonCanonicalMatches;
     std::string terminalLabel;
-    std::string scaffoldType;
+    ScaffoldType scaffoldType = ScaffoldType::NONE;
 };
 
 
@@ -237,13 +247,16 @@ public:
     uint16_t maxBlockDist, float densityCutoff, uint32_t segmentSize, uint32_t absPos);
 
     void labelTerminalBlocks(std::vector<TelomereBlock>& blocks, uint16_t gaps,
-                        std::string& terminalLabel, std::string& scaffoldType);
+                        std::string& terminalLabel, ScaffoldType& scaffoldType,
+                        uint64_t pathSize, uint32_t terminalLimit);
     
     std::vector<TelomereBlock> filterITSBlocks(const std::vector<TelomereBlock>& interstitialBlocks);
     
     std::string getChrType(const std::string& labels, uint16_t gaps);
     
-    void writeBEDFile(std::ofstream& windowCanonicalFile,
+    void writeBEDFile(std::ofstream& windowFwdFile,
+                    std::ofstream& windowRevFile,
+                    std::ofstream& windowCanonicalFile,
                     std::ofstream& windowNoncanonicalFile,
                     std::ofstream& windowGCFile,
                     std::ofstream& windowEntropyFile,

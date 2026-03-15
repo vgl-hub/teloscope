@@ -34,11 +34,26 @@ int main(int argc, char **argv) {
     bool hasInputPatterns = false;
     
     if (argc == 1) { // case: with no arguments
-            
-        printf("teloscope -f input.[fa|fa.gz|gfa] -o /output/path/ \nUse -f to initiate the tool.\nUse -h for additional help.\n");
+
+        printf("teloscope input.[fa|fa.gz|gfa] [options]\nteloscope -f input.[fa|fa.gz|gfa] -o /output/path/\nUse -h for additional help.\n");
         exit(0);
-        
+
     }
+
+    // Helper to set input file from path string
+    auto setInputFile = [&](const char* path) {
+        if (isPipe && userInput.pipeType == 'n') {
+            userInput.pipeType = 'f';
+        } else {
+            ifFileExists(path);
+            userInput.inSequence = path;
+            const std::filesystem::path real = std::filesystem::canonical(userInput.inSequence);
+            userInput.inSequence       = real.string();
+            userInput.inSequencePrefix = real.parent_path().string();
+            userInput.inSequenceName   = real.filename().string();
+            userInput.outRoute         = userInput.inSequencePrefix;
+        }
+    };
     
     static struct option long_options[] = { // struct mapping long options
         {"input-sequence", required_argument, 0, 'f'},
@@ -102,21 +117,18 @@ int main(int argc, char **argv) {
                 break;
 
 
-            case 'f': // input sequence
-                if (isPipe && userInput.pipeType == 'n') { // check whether input is from pipe and that pipe input was not already set
-                    userInput.pipeType = 'f'; // pipe input is a sequence
-                    
-                } else { // input is a regular file
-                    ifFileExists(optarg);
-                    userInput.inSequence = optarg;
-
-                    const std::filesystem::path real = std::filesystem::canonical(userInput.inSequence);
-                    userInput.inSequence       = real.string();
-                    userInput.inSequencePrefix = real.parent_path().string();
-                    userInput.inSequenceName = real.filename().string();
-                    userInput.outRoute = userInput.inSequencePrefix;
+            case 1: // positional argument (non-option)
+                if (userInput.inSequence.empty()) {
+                    setInputFile(optarg);
+                } else {
+                    fprintf(stderr, "Warning: Ignoring extra positional argument '%s'\n", optarg);
                 }
-                
+                break;
+
+
+            case 'f': // input sequence
+                setInputFile(optarg);
+
                 if (userInput.inSequence.empty()) {
                     fprintf(stderr, "Error: Input sequence file is required. Use -f or --input-sequence.\n");
                     exit(EXIT_FAILURE);
@@ -406,9 +418,10 @@ int main(int argc, char **argv) {
                 break;
 
             case 'h': // help
-                printf("teloscope [commands]\n");
+                printf("teloscope input.[fa|fa.gz|gfa] [options]\n");
+                printf("teloscope -f input.[fa|fa.gz|gfa] [options]\n");
                 printf("\nRequired Parameters:\n");
-                printf("\t'-f'\t--input-sequence\tInitiate tool with fasta file.\n");
+                printf("\t'-f'\t--input-sequence\tInput fasta file (or pass as first positional argument).\n");
                 printf("\t'-o'\t--output\tSet output route. [Default: Input path]\n");
                 printf("\t'-c'\t--canonical\tSet canonical pattern. [Default: TTAGGG]\n");
                 printf("\t'-p'\t--patterns\tSet patterns to explore, separate them by commas [Default: TTAGGG]\n");
@@ -422,7 +435,7 @@ int main(int argc, char **argv) {
 
                 printf("\nOptional Parameters:\n");
                 printf("\t'-w'\t--window\tSet sliding window size. [Default: 1000]\n");
-                printf("\t'-s'\t--step\tSet sliding window step. [Default: 500]\n");
+                printf("\t'-s'\t--step\tSet sliding window step. [Default: 1000 (non-overlapping)]\n");
                 printf("\t'-r'\t--out-win-repeats\tOutput canonical/noncanonical repeats and density by window. [Default: false]\n");
                 printf("\t'-g'\t--out-gc\tOutput GC content for each window. [Default: false]\n");
                 printf("\t'-e'\t--out-entropy\tOutput Shannon entropy for each window. [Default: false]\n");
@@ -437,6 +450,12 @@ int main(int argc, char **argv) {
                 printf("\t--cmd\tPrint command line.\n");
                 exit(0);
         }
+    }
+
+    // Check that input file was provided
+    if (userInput.inSequence.empty() && userInput.pipeType == 'n') {
+        fprintf(stderr, "Error: No input file provided. Use -f or pass as positional argument.\n");
+        exit(EXIT_FAILURE);
     }
 
     // Finalize raw pattern seeds before expansion

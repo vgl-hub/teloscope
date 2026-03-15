@@ -19,7 +19,10 @@ make -j
 
 Usage
 ------------
+    teloscope input.[fa][.gz] [options]
     teloscope -f input.[fa][.gz] -o [output/dir] -j [threads] -c [canonical] -p [patterns] -w [window size] -s [step size] -d [max-block-dist] -l [min-block-len]
+
+The input file can be passed as the first positional argument or with `-f`.
 
 **Note:** Teloscope automatically explores the input repeats and their reverse complements. If none are provided, it will scan for the canonical CCCTAA/TTAGGG repeats. 
 
@@ -51,7 +54,7 @@ To check out all options and flags, please use:
 
 ```
 Required Parameters:
-        '-f'    --input-sequence        Initiate tool with fasta file.
+        '-f'    --input-sequence        Input fasta file (or pass as first positional argument).
         '-o'    --output        Set output route. [Default: Input path]
         '-c'    --canonical     Set canonical pattern. [Default: TTAGGG]
         '-p'    --patterns      Set patterns to explore, separate them by commas [Default: TTAGGG]
@@ -64,13 +67,14 @@ Required Parameters:
 
 Optional Parameters:
         '-w'    --window        Set sliding window size. [Default: 1000]
-        '-s'    --step  Set sliding window step. [Default: 500]
+        '-s'    --step  Set sliding window step. [Default: 1000 (non-overlapping)]
         '-r'    --out-win-repeats       Output canonical/noncanonical repeats and density by window. [Default: false]
         '-g'    --out-gc        Output GC content for each window. [Default: false]
         '-e'    --out-entropy   Output Shannon entropy for each window. [Default: false]
         '-m'    --out-matches   Output all canonical and terminal non-canonical matches. [Default: false]
         '-i'    --out-its       Output assembly interstitial telomere (ITSs) regions.[Default: false]
         '-u'    --ultra-fast    Ultra-fast mode. Only scans terminal telomeres at contig ends. [Default: true]
+        '-n'    --manual-curation    Retain all terminal telomeres (contig + scaffold) in BED output. [Default: scaffold only]
         '-v'    --version       Print current software version.
         '-h'    --help  Print current software options.
         --verbose       Verbose output.
@@ -81,14 +85,21 @@ Outputs
 ------------
 Teloscope outputs telomere annotations in BED format:
 
-* `terminal_telomeres.bed` Annotation of the full telomere in the assembly. This is made of canonical and non-canonical repeats. 
+* `terminal_telomeres.bed` Annotation of the full telomere in the assembly. Columns: chr, start, end, length, label, fwdCounts, revCounts, canCounts, nonCanCounts, chrSize, type (scaffold/contig). By default only scaffold-terminal telomeres are reported; use `--manual-curation` to include contig-terminal blocks.
 
 Additional optional outputs (Disabled with --ultra-fast):
 
 * `interstitial_telomeres.bed` Blocks of adjacent canonical repeat matches. Outside of the ends, it represents interstitial telomeres (ITSs).
-* `window_metrics.bedgraph` Tabulated file with calculated window metrics such as forward repeats, reverse repeats, canonical repeats, non-canonical repeats (-r), GC% (-g) and Shannon Entropy (-e) by window. 
-* `canonical_matches.bed` Coordinates of canonical repeats throughout the assembly. 
-* `noncanonical_matches.bed` Coordinates of non-canonical repeats in terminal regions of contigs. 
+* `window_fwd.bedgraph` Forward repeat counts per window (-r). IGV-compatible single-value BEDgraph.
+* `window_rev.bedgraph` Reverse repeat counts per window (-r).
+* `window_canonical.bedgraph` Canonical repeat counts per window (-r).
+* `window_noncanonical.bedgraph` NonCanonical repeat counts per window (-r).
+* `window_gc.bedgraph` GC content per window (-g).
+* `window_entropy.bedgraph` Shannon entropy per window (-e).
+* `canonical_matches.bed` Coordinates of canonical repeats throughout the assembly.
+* `noncanonical_matches.bed` Coordinates of non-canonical repeats in terminal regions of contigs.
+
+**Note:** Window step defaults to window size (non-overlapping windows). This produces valid single-value BEDgraph files compatible with IGV and UCSC genome browsers. Use `-s` to set a smaller step for overlapping windows if needed.
 
 How it works
 ------------
