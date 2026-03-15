@@ -111,7 +111,7 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
         std::cout << "Header: " << header << std::endl;
 
         // Placeholder node with tags: LN (unit length), RC (read count), TL (telomere length)
-        Sequence* teloSeq = new Sequence{ header, "", new std::string("*") }; // Empty sequence "*"
+        Sequence teloSeq{ header, "", new std::string("*") }; // Empty sequence "*"
         std::vector<Tag> tags = {
             Tag{'i', "LN", "6"},
             Tag{'i', "RC", "6000"},
@@ -120,7 +120,7 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
         std::cout << "Tags: " << tags[0].content << ", " << tags[1].content << ", " << tags[2].content << std::endl;
 
         // Create & hash the new telomere segment synchronously
-        inSequences.traverseInSegmentWrapper(teloSeq, tags);
+        inSequences.traverseInSegmentWrapper(&teloSeq, tags);
         unsigned int teloUid = inSequences.getHash1()->at(header);
         printf("Telomere node UID: %u\n", teloUid);
 

@@ -72,32 +72,28 @@ public:
 
 
 struct MatchInfo {
-    bool isCanonical;
-    bool isForward;
-    uint32_t position;
-    uint16_t matchSize;
+    bool isCanonical = false;
+    bool isForward = false;
+    uint32_t position = 0;
+    uint16_t matchSize = 0;
     std::string matchSeq;
-
-    MatchInfo() : isCanonical(false), isForward(false), matchSize(0) {}
 };
 
 
 struct TelomereBlock {
-    uint64_t start;
-    uint32_t blockLen; // End = start + blockLen
-    uint16_t blockCounts;
-    uint16_t forwardCount;
-    uint16_t reverseCount;
-    uint16_t canonicalCount;
-    uint16_t nonCanonicalCount;
-    uint32_t totalCovered;
-    uint32_t fwdCovered;
-    uint32_t canCovered;
-    bool hasValidOr;
-    bool isLongest;
-    char blockLabel; // 'p', 'q', 'b' (balanced)
-
-    TelomereBlock() : hasValidOr(true), isLongest(false) {}
+    uint64_t start = 0;
+    uint32_t blockLen = 0; // End = start + blockLen
+    uint16_t blockCounts = 0;
+    uint16_t forwardCount = 0;
+    uint16_t reverseCount = 0;
+    uint16_t canonicalCount = 0;
+    uint16_t nonCanonicalCount = 0;
+    uint32_t totalCovered = 0;
+    uint32_t fwdCovered = 0;
+    uint32_t canCovered = 0;
+    bool hasValidOr = true;
+    bool isLongest = false;
+    char blockLabel = '\0'; // 'p', 'q', 'b' (balanced)
 };
 
 struct WindowData {
@@ -148,10 +144,10 @@ struct PathData {
 
 
 struct Stats {
-    float min;
-    float max;
-    float mean;
-    float median;
+    float min = 0.0f;
+    float max = 0.0f;
+    float mean = 0.0f;
+    float median = 0.0f;
 };
 
 
