@@ -92,3 +92,5 @@ TODO.md
 out
 .vscode/*
 .vs/
+testFiles/simulate/
+testFiles/tmp/

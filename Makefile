@@ -26,7 +26,7 @@ debug: CXXFLAGS += -DDEBUG
 debug: CCFLAGS += -DDEBUG
 debug: head
 
-all: head validate regenerate
+all: head validate regenerate simulate
 
 $(OBJS): %: $(BINDIR)/%
 	@
@@ -43,7 +43,9 @@ validate: | $(BUILD)
 regenerate: | $(BUILD)
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/$(TARGET)-$(GENERATE_TARGET) $(SOURCE)/$(GENERATE_TARGET).cpp $(LIBS)
 
-	
+simulate: | $(BUILD)
+	$(CXX) $(CXXFLAGS) -o $(BUILD)/$(TARGET)-simulate $(SOURCE)/get-mock-chr.cpp
+
 $(BUILD):
 	-mkdir -p $@
 	
