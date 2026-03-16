@@ -692,7 +692,7 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint32_t absPos, bool 
 
             // Advance to the next window and check remaining sequence
             windowStart += step;
-            if (windowStart + step >= segmentSize) break;
+            if (windowStart >= segmentSize) break;
 
             // Prepare next window
             currentWindowSize = std::min(windowSize, segmentSize - windowStart);

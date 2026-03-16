@@ -94,3 +94,8 @@ out
 .vs/
 testFiles/simulate/
 testFiles/tmp/
+testFiles/*_terminal_telomeres.bed
+testFiles/*_canonical_matches.bed
+testFiles/*_noncanonical_matches.bed
+testFiles/*_interstitial_telomeres.bed
+testFiles/*_window_*.bedgraph

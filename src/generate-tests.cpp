@@ -30,14 +30,100 @@ int main(int, char **argv) {
     std::string exePath = getExePath(argv[0]);
 
     const std::map<std::set<std::string>, std::vector<std::string>> ext_args = {
-        {{"fasta", "fasta.gz"}, {""}}
+        {{"fasta", "fasta.gz", "fa", "fa.gz"}, {""}}
     //  {{set of test file extensions}, {list of command line args to run with}}
     };
 
     const std::map<std::set<std::string>, std::vector<std::string>> file_args = {
         {{"random1.fasta"}, {"-f testFiles/random1.fasta -w 3 -s 1"}},
         {{"random2.fasta"}, {"-f testFiles/random2.fasta -w 10 -s 5"}},
-        {{"random3.fasta"}, {"-f testFiles/random3.fasta -w 10 -s 5"}}
+        {{"random3.fasta"}, {"-f testFiles/random3.fasta -w 10 -s 5"}},
+        // Synthetic classification tests with flag combos
+        {{"t2t.fa"}, {
+            "-f testFiles/t2t.fa -w 500 -s 500",
+            "-f testFiles/t2t.fa -w 500 -s 250",
+            "-f testFiles/t2t.fa -w 100 -s 100",
+            "-f testFiles/t2t.fa -l 1000",
+            "-f testFiles/t2t.fa -l 100",
+            "-f testFiles/t2t.fa -t 100",
+            "-f testFiles/t2t.fa -t 3000",
+            "-f testFiles/t2t.fa -k 1",
+            "-f testFiles/t2t.fa -k 5",
+            "-f testFiles/t2t.fa -k 10",
+            "-f testFiles/t2t.fa -d 1",
+            "-f testFiles/t2t.fa -d 5",
+            "-f testFiles/t2t.fa -d 100",
+            "-f testFiles/t2t.fa -n",
+            "-f testFiles/t2t.fa -k 5 -d 5",
+            "-f testFiles/t2t.fa -r -o testFiles/tmp",
+            "-f testFiles/t2t.fa -w 200 -s 200 -r -o testFiles/tmp",
+            "-f testFiles/t2t.fa -r -g -e -o testFiles/tmp",
+            "-f testFiles/t2t.fa -i -o testFiles/tmp",
+            "-f testFiles/t2t.fa -m -n -o testFiles/tmp",
+            "-f testFiles/t2t.fa -y 0.99",
+            "-f testFiles/t2t.fa -t 700 -l 100"
+        }},
+        {{"plant.fa"}, {
+            "-f testFiles/plant.fa -c CCCTAAA",
+            "-f testFiles/plant.fa -c CCCTAAA -p CCCTAAA",
+            "-f testFiles/plant.fa -c CCCTAAA -p TTTAGGG,CCCTAAA"
+        }},
+        {{"edit_test.fa"}, {
+            "-f testFiles/edit_test.fa -x 1",
+            "-f testFiles/edit_test.fa -x 2",
+            "-f testFiles/edit_test.fa -x 1 -p CCCTAA,TTAGGG"
+        }},
+        {{"density_edge.fa"}, {
+            "-f testFiles/density_edge.fa -y 0.8",
+            "-f testFiles/density_edge.fa -y 0.3",
+            "-f testFiles/density_edge.fa -l 100 -y 0.3",
+            "-f testFiles/density_edge.fa -l 1000 -y 0.3",
+            "-f testFiles/density_edge.fa -d 1",
+            "-f testFiles/density_edge.fa -l 500 -y 0.4 -k 10"
+        }},
+        {{"its.fa"}, {
+            "-f testFiles/its.fa -t 100",
+            "-f testFiles/its.fa -i -o testFiles/tmp",
+            "-f testFiles/its.fa -m -i -o testFiles/tmp"
+        }},
+        {{"multi.fa"}, {
+            "-f testFiles/multi.fa -n",
+            "-f testFiles/multi.fa -l 100",
+            "-f testFiles/multi.fa -r -o testFiles/tmp",
+            "-f testFiles/multi.fa -k 5",
+            "-f testFiles/multi.fa -d 1",
+            "-f testFiles/multi.fa -m -o testFiles/tmp",
+            "-f testFiles/multi.fa -i -o testFiles/tmp"
+        }},
+        {{"incomplete_p.fa"}, {
+            "-f testFiles/incomplete_p.fa -k 1",
+            "-f testFiles/incomplete_p.fa -n"
+        }},
+        {{"incomplete_q.fa"}, {
+            "-f testFiles/incomplete_q.fa -m -o testFiles/tmp"
+        }},
+        {{"discordant.fa"}, {
+            "-f testFiles/discordant.fa -t 3000",
+            "-f testFiles/discordant.fa -n"
+        }},
+        {{"no_telo.fa"}, {
+            "-f testFiles/no_telo.fa -m -o testFiles/tmp"
+        }},
+        {{"misassembly.fa"}, {
+            "-f testFiles/misassembly.fa -m -o testFiles/tmp"
+        }},
+        {{"short_contig.fa"}, {
+            "-f testFiles/short_contig.fa -w 50 -s 50"
+        }},
+        {{"balanced.fa"}, {
+            "-f testFiles/balanced.fa -i -o testFiles/tmp"
+        }},
+        {{"gapped_t2t.fa"}, {
+            "-f testFiles/gapped_t2t.fa -r -o testFiles/tmp",
+            "-f testFiles/gapped_t2t.fa -l 100",
+            "-f testFiles/gapped_t2t.fa -n",
+            "-f testFiles/gapped_t2t.fa -r -g -e -o testFiles/tmp"
+        }}
     //  {{set of test file paths}, {list of command line args to run with}}
     };
 

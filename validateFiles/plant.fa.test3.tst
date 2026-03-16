@@ -1,23 +1,20 @@
--f testFiles/bTaeGut7_chr33_mat.fa.gz -o testFiles/tmp -r -g -e
+-f testFiles/plant.fa -c CCCTAAA -p CCCTAAA
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	granular	its	canonical	windows
-1	chr33_mat	2	pq	0	t2t	PQ	24	9400	4247
+pos	header	telomeres	labels	gaps	type	granular
+1	chr_plant	2	pq	0	t2t	PQ
 
 +++ Assembly Summary Report +++
 Total paths:	1
 Total gaps:	0
 Total telomeres:	2
-Total ITS blocks:	24
-Total canonical matches:	9400
-Total windows analyzed:	4247
 
 +++ Telomere Statistics +++
-Mean length:	20015.5
-Median length:	20015.5
-Min length:	13661
-Max length:	26370
+Mean length:	602
+Median length:	602
+Min length:	602
+Max length:	602
 
 +++ Chromosome Telomere Counts+++
 Two telomeres:	1
