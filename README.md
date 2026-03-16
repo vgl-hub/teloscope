@@ -112,7 +112,7 @@ Both the provided patterns and their reverse complements are searched automatica
 
 | Flag | Long form | Description | Default |
 |------|-----------|-------------|---------|
-| `-r` | `--out-win-repeats` | Output per-window repeat counts (forward, reverse, canonical, non-canonical) | `false` |
+| `-r` | `--out-win-repeats` | Output per-window repeat density, canonical ratio, and strand ratio | `false` |
 | `-g` | `--out-gc` | Output per-window GC content | `false` |
 | `-e` | `--out-entropy` | Output per-window Shannon entropy | `false` |
 | `-m` | `--out-matches` | Output individual match coordinates for canonical and terminal non-canonical repeats | `false` |
@@ -138,10 +138,9 @@ Teloscope always produces the following file:
 
 Additional optional outputs (disabled in ultra-fast mode):
 
-* `window_fwd.bedgraph` Forward-strand repeat counts per window (`-r`).
-* `window_rev.bedgraph` Reverse-strand repeat counts per window (`-r`).
-* `window_canonical.bedgraph` Canonical repeat counts per window (`-r`).
-* `window_noncanonical.bedgraph` Non-canonical repeat counts per window (`-r`).
+* `window_repeat_density.bedgraph` Fraction of each window covered by any repeat match, 0 to 1 (`-r`).
+* `window_canonical_ratio.bedgraph` Canonical share of repeat density per window, 0 to 1; -1 when no matches (`-r`).
+* `window_strand_ratio.bedgraph` Forward-strand share of repeat density per window, 0 to 1; -1 when no matches (`-r`).
 * `window_gc.bedgraph` GC content per window (`-g`).
 * `window_entropy.bedgraph` Shannon entropy per window (`-e`).
 * `canonical_matches.bed` Coordinates of every canonical repeat match in the assembly (`-m`).
@@ -172,9 +171,9 @@ Teloscope classifies each chromosome based on its terminal telomere blocks and w
 | `incomplete` | `gapped_incomplete` | Only one arm (p or q) has a scaffold-terminal telomere |
 | `none` | `gapped_none` | No scaffold-terminal telomeres detected |
 | `misassembly` | `gapped_misassembly` | Two telomeres detected but in the wrong order, or the same arm appears twice |
-| `discordant` | `gapped_discordant` | A terminal telomere with a mix of forward and reverse matches (ambiguous arm) |
+| `discordant` | `gapped_discordant` | A p-arm telomere positioned on the q-side of the chromosome, or vice versa. Not biological; cannot be resolved by curation |
 
-The `granular` column in the path summary shows the full block-by-block label for each sequence. Uppercase marks the longest block on each arm. For example, `Pq` means there is one large p-arm block (longest, uppercase) and one smaller q-arm block. An asterisk (`*`) after a label marks a block with mixed strand orientation.
+The `granular` column in the path summary shows the full block-by-block label for each sequence. Uppercase marks the longest block on each arm. For example, `Pq` means there is one large p-arm block (longest, uppercase) and one smaller q-arm block. An asterisk (`*`) after a label marks a block whose strand identity (p or q) does not match its position on the chromosome (positional discordance).
 
 How it works
 ------------
@@ -198,11 +197,11 @@ teloscope-simulate -n 1000 -r 1e-4 -s 42 -o testFiles/simulate/rate_1e-4
 
 Each synthetic sequence (~50 kbp) is built from five segments:
 
-1. **p-arm canonical** (12 kbp) -- 2000 exact copies of CCCTAA.
-2. **p-arm TVR** (600 bp) -- 100 copies of CCCTAA, each with one random substitution.
-3. **Central segment** (25 kbp) -- random nucleotides.
-4. **q-arm TVR** (600 bp) -- 100 copies of TTAGGG, each with one random substitution.
-5. **q-arm canonical** (12 kbp) -- 2000 exact copies of TTAGGG.
+1. **p-arm canonical** 12 kbp or 2000 exact copies of CCCTAA.
+2. **p-arm TVR** 600 bp or 100 copies of CCCTAA, each with one random substitution.
+3. **Central segment** 25 kbp of random nucleotides.
+4. **q-arm TVR** 600 bp or 100 copies of TTAGGG, each with one random substitution.
+5. **q-arm canonical** 12 kbp or 2000 exact copies of TTAGGG.
 
 After construction, per-base mutations are applied across the entire sequence at the specified rate (`-r`). The TVR regions have exactly one mismatch per repeat, so they are detectable at `-x 1` but not at `-x 0`. This tests both default and edit-distance modes.
 

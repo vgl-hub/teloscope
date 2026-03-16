@@ -731,10 +731,9 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint32_t absPos, bool 
 }
 
 
-void Teloscope::writeBEDFile(std::ofstream& windowFwdFile,
-                            std::ofstream& windowRevFile,
-                            std::ofstream& windowCanonicalFile,
-                            std::ofstream& windowNoncanonicalFile,
+void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
+                            std::ofstream& windowCanonicalRatioFile,
+                            std::ofstream& windowStrandRatioFile,
                             std::ofstream& windowGCFile,
                             std::ofstream& windowEntropyFile,
                             std::ofstream& canonicalMatchFile,
@@ -743,10 +742,9 @@ void Teloscope::writeBEDFile(std::ofstream& windowFwdFile,
                             std::ofstream& interstitialBlocksFile) {
 
     // Create optimized buffers
-    std::ostringstream windowFwdBuffer;
-    std::ostringstream windowRevBuffer;
-    std::ostringstream windowCanonicalBuffer;
-    std::ostringstream windowNoncanonicalBuffer;
+    std::ostringstream windowDensityBuffer;
+    std::ostringstream windowCanonicalRatioBuffer;
+    std::ostringstream windowStrandRatioBuffer;
     std::ostringstream windowGCBuffer;
     std::ostringstream windowEntropyBuffer;
     std::ostringstream canonicalMatchBuffer;
@@ -756,10 +754,9 @@ void Teloscope::writeBEDFile(std::ofstream& windowFwdFile,
 
     // Write BEDgraph headers
     if (userInput.outWinRepeats) {
-        windowFwdBuffer << "track type=bedGraph name=\"Forward Counts\" description=\"Forward repeat counts per window\"\n";
-        windowRevBuffer << "track type=bedGraph name=\"Reverse Counts\" description=\"Reverse repeat counts per window\"\n";
-        windowCanonicalBuffer << "track type=bedGraph name=\"Canonical Counts\" description=\"Canonical repeat counts per window\"\n";
-        windowNoncanonicalBuffer << "track type=bedGraph name=\"NonCanonical Counts\" description=\"NonCanonical repeat counts per window\"\n";
+        windowDensityBuffer << "track type=bedGraph name=\"Repeat Density\" description=\"Total repeat density per window\"\n";
+        windowCanonicalRatioBuffer << "track type=bedGraph name=\"Canonical Ratio\" description=\"Canonical fraction of repeat density per window\"\n";
+        windowStrandRatioBuffer << "track type=bedGraph name=\"Strand Ratio\" description=\"Forward-strand fraction of repeat density per window\"\n";
     }
     if (userInput.outEntropy) {
         windowEntropyBuffer << "track type=bedGraph name=\"Shannon Entropy\" description=\"Shannon entropy per window\"\n";
@@ -863,14 +860,20 @@ void Teloscope::writeBEDFile(std::ofstream& windowFwdFile,
             uint32_t windowEnd = window.windowStart + window.currentWindowSize;
 
             if (userInput.outWinRepeats) {
-                windowFwdBuffer << header << "\t" << window.windowStart << "\t" << windowEnd
-                                << "\t" << window.fwdCounts << "\n";
-                windowRevBuffer << header << "\t" << window.windowStart << "\t" << windowEnd
-                                << "\t" << window.revCounts << "\n";
-                windowCanonicalBuffer << header << "\t" << window.windowStart << "\t" << windowEnd
-                                      << "\t" << window.canonicalCounts << "\n";
-                windowNoncanonicalBuffer << header << "\t" << window.windowStart << "\t" << windowEnd
-                                         << "\t" << window.nonCanonicalCounts << "\n";
+                float totalDensity = window.fwdDensity + window.revDensity;
+                float canonRatio = (totalDensity > 0.0f)
+                    ? window.canonicalDensity / (window.canonicalDensity + window.nonCanonicalDensity)
+                    : -1.0f;
+                float strandRatio = (totalDensity > 0.0f)
+                    ? window.fwdDensity / (window.fwdDensity + window.revDensity)
+                    : -1.0f;
+
+                windowDensityBuffer << header << "\t" << window.windowStart << "\t" << windowEnd
+                                    << "\t" << totalDensity / 100.0f << "\n";
+                windowCanonicalRatioBuffer << header << "\t" << window.windowStart << "\t" << windowEnd
+                                           << "\t" << canonRatio << "\n";
+                windowStrandRatioBuffer << header << "\t" << window.windowStart << "\t" << windowEnd
+                                        << "\t" << strandRatio << "\n";
             }
             if (userInput.outEntropy) {
                 windowEntropyBuffer << header << "\t" << window.windowStart << "\t" << windowEnd
@@ -917,10 +920,9 @@ void Teloscope::writeBEDFile(std::ofstream& windowFwdFile,
     }
 
     // Single flush per file
-    windowFwdFile << windowFwdBuffer.str();
-    windowRevFile << windowRevBuffer.str();
-    windowCanonicalFile << windowCanonicalBuffer.str();
-    windowNoncanonicalFile << windowNoncanonicalBuffer.str();
+    windowDensityFile << windowDensityBuffer.str();
+    windowCanonicalRatioFile << windowCanonicalRatioBuffer.str();
+    windowStrandRatioFile << windowStrandRatioBuffer.str();
     windowGCFile << windowGCBuffer.str();
     windowEntropyFile << windowEntropyBuffer.str();
     canonicalMatchFile << canonicalMatchBuffer.str();
@@ -933,10 +935,9 @@ void Teloscope::writeBEDFile(std::ofstream& windowFwdFile,
 void Teloscope::handleBEDFile() {
     lg.verbose("\nReporting window matches and metrics...");
 
-    std::ofstream windowFwdFile;
-    std::ofstream windowRevFile;
-    std::ofstream windowCanonicalFile;
-    std::ofstream windowNoncanonicalFile;
+    std::ofstream windowDensityFile;
+    std::ofstream windowCanonicalRatioFile;
+    std::ofstream windowStrandRatioFile;
     std::ofstream windowGCFile;
     std::ofstream windowEntropyFile;
     std::ofstream canonicalMatchFile;
@@ -957,10 +958,9 @@ void Teloscope::handleBEDFile() {
 
     // Open per-metric window files
     if (userInput.outWinRepeats) {
-        openFile(windowFwdFile, base + "_window_fwd.bedgraph");
-        openFile(windowRevFile, base + "_window_rev.bedgraph");
-        openFile(windowCanonicalFile, base + "_window_canonical.bedgraph");
-        openFile(windowNoncanonicalFile, base + "_window_noncanonical.bedgraph");
+        openFile(windowDensityFile, base + "_window_repeat_density.bedgraph");
+        openFile(windowCanonicalRatioFile, base + "_window_canonical_ratio.bedgraph");
+        openFile(windowStrandRatioFile, base + "_window_strand_ratio.bedgraph");
     }
     if (userInput.outGC) {
         openFile(windowGCFile, base + "_window_gc.bedgraph");
@@ -980,18 +980,17 @@ void Teloscope::handleBEDFile() {
 
     openFile(terminalBlocksFile, base + "_terminal_telomeres.bed");
 
-    writeBEDFile(windowFwdFile, windowRevFile,
-                windowCanonicalFile, windowNoncanonicalFile,
+    writeBEDFile(windowDensityFile, windowCanonicalRatioFile,
+                windowStrandRatioFile,
                 windowGCFile, windowEntropyFile,
                 canonicalMatchFile, noncanonicalMatchFile,
                 terminalBlocksFile, interstitialBlocksFile);
 
     // Close all files
     if (userInput.outWinRepeats) {
-        windowFwdFile.close();
-        windowRevFile.close();
-        windowCanonicalFile.close();
-        windowNoncanonicalFile.close();
+        windowDensityFile.close();
+        windowCanonicalRatioFile.close();
+        windowStrandRatioFile.close();
     }
     if (userInput.outGC) {
         windowGCFile.close();

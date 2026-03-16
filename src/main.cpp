@@ -436,7 +436,7 @@ int main(int argc, char **argv) {
                 printf("\nOptional Parameters:\n");
                 printf("\t'-w'\t--window\tSet sliding window size. [Default: 1000]\n");
                 printf("\t'-s'\t--step\tSet sliding window step. [Default: 1000 (non-overlapping)]\n");
-                printf("\t'-r'\t--out-win-repeats\tOutput canonical/noncanonical repeats and density by window. [Default: false]\n");
+                printf("\t'-r'\t--out-win-repeats\tOutput per-window repeat density, canonical ratio, and strand ratio. [Default: false]\n");
                 printf("\t'-g'\t--out-gc\tOutput GC content for each window. [Default: false]\n");
                 printf("\t'-e'\t--out-entropy\tOutput Shannon entropy for each window. [Default: false]\n");
                 printf("\t'-m'\t--out-matches\tOutput all canonical and terminal non-canonical matches. [Default: false]\n");
