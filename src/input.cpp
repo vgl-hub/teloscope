@@ -157,7 +157,7 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
 
 bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps) {
     Log threadLog;
-    uint32_t absPos = 0;
+    uint64_t absPos = 0;
     unsigned int cUId = 0, gapLen = 0, seqPos = path->getSeqPos();
     std::vector<PathComponent> pathComponents = path->getComponents();
 

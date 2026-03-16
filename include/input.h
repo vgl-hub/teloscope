@@ -1,8 +1,16 @@
 #ifndef INPUT_H
 #define INPUT_H
 
-#include "main.h" // not in Mac's code
 #include <stdint.h>
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include <memory>
+
+#include "log.h"
+#include "struct.h"
+
+class InSequences;
 
 struct UserInputTeloscope : UserInput {
     

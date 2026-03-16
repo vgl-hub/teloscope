@@ -74,7 +74,7 @@ public:
 struct MatchInfo {
     bool isCanonical = false;
     bool isForward = false;
-    uint32_t position = 0;
+    uint64_t position = 0;
     uint16_t matchSize = 0;
     std::string matchSeq;
 };
@@ -97,7 +97,7 @@ struct TelomereBlock {
 };
 
 struct WindowData {
-    uint32_t windowStart;
+    uint64_t windowStart;
     uint32_t currentWindowSize;
     uint32_t nucleotideCounts[4] = {0, 0, 0, 0};
     float gcContent;
@@ -113,7 +113,7 @@ struct WindowData {
     float revDensity = 0.0f;
     bool hasCanDimer = false; 
     
-    WindowData() : windowStart(0), currentWindowSize(0), gcContent(0.0f), shannonEntropy(0.0f), hasCanDimer(false) {}
+    WindowData() : windowStart(0), currentWindowSize(0), gcContent(0.0f), shannonEntropy(0.0f) {}
 };
 
 struct SegmentData {
@@ -224,11 +224,11 @@ public:
 
     bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
 
-    void analyzeWindow(const std::string_view &window, uint32_t windowStart,
+    void analyzeWindow(const std::string_view &window, uint64_t windowStart,
                         WindowData& windowData, WindowData& nextOverlapData,
-                        SegmentData& segmentData, uint32_t segmentSize, uint32_t absPos);
+                        SegmentData& segmentData, uint64_t segmentSize, uint64_t absPos);
 
-    SegmentData scanSegment(std::string &sequence, uint32_t absPos, bool tipsOnly);
+    SegmentData scanSegment(std::string &sequence, uint64_t absPos, bool tipsOnly);
 
     void sortBySeqPos();
 
@@ -239,8 +239,8 @@ public:
         std::vector<MatchInfo>* recycleTarget = nullptr,
         bool recycleToStart = false);
 
-    std::vector<TelomereBlock> extendBlocks(std::vector<TelomereBlock> &blocks, 
-    uint16_t maxBlockDist, float densityCutoff, uint32_t segmentSize, uint32_t absPos);
+    std::vector<TelomereBlock> extendBlocks(std::vector<TelomereBlock> &blocks,
+    uint16_t maxBlockDist, float densityCutoff, uint64_t segmentSize, uint64_t absPos);
 
     void labelTerminalBlocks(std::vector<TelomereBlock>& blocks, uint16_t gaps,
                         std::string& terminalLabel, ScaffoldType& scaffoldType,

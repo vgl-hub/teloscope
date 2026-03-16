@@ -14,25 +14,12 @@
 #include <map>
 #include <set>
 
-
 #include <getopt.h>
 
 #include "log.h"
-
 #include "uid-generator.h"
-
 #include "bed.h"
-
-#include "global.h" // global variables
-#include "struct.h"
-#include "functions.h" // global functions
-
-
-#include "log.h"
 #include "global.h"
-#include "uid-generator.h"
-
-#include "bed.h"
 #include "struct.h"
 #include "functions.h"
 
@@ -46,7 +33,7 @@
 #include "input-filters.h"
 #include "input-gfa.h"
 
-#include "input.h" // was in Mac's code
+#include "input.h"
 #include "tools.h"
 
 #endif /* MAIN_H */

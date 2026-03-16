@@ -3,7 +3,7 @@ name: Create Release
 on:
   push:
     tags:
-      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+      - 'v*'
 
 jobs:
   create_release:
@@ -12,27 +12,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         submodules: recursive
     - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
+      uses: softprops/action-gh-release@v2
       with:
-        tag_name: ${{ github.ref }}
-        release_name: teloscope ${{ github.ref }}
+        name: teloscope ${{ github.ref_name }}
         body: |
           Changes in this Release
         draft: false
         prerelease: false
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
 
   add_resources:
     needs: create_release
     name: Add Resources
+    permissions: write-all
     strategy:
       matrix:
         OS: [macos-latest, ubuntu-latest, windows-2025]
@@ -46,46 +41,33 @@ jobs:
     runs-on: ${{ matrix.OS }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
             submodules: true
       - name: Build
         run: make
       - name: Zip
-        uses: papeloto/action-zip@v1
+        run: zip -j result.zip build/bin/teloscope*
+      - name: Upload binaries
+        uses: softprops/action-gh-release@v2
         with:
-          files: build/bin/teloscope
-          dest: result.zip
-      - name: Add binaries
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: result.zip
+          files: result.zip
           asset_name: teloscope.${{ github.ref_name }}-${{matrix.OS_NAME}}.zip
-          asset_content_type: application/zip
-          
+
   add_submodules:
     needs: create_release
     name: Source with submodules
+    permissions: write-all
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
             submodules: true
       - name: Zip
-        uses: papeloto/action-zip@v1
+        run: zip -r result.zip .
+      - name: Upload source
+        uses: softprops/action-gh-release@v2
         with:
-          files: .
-          dest: result.zip
-      - name: Add files
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: result.zip
+          files: result.zip
           asset_name: teloscope.${{ github.ref_name }}-with_submodules.zip
-          asset_content_type: application/zip
