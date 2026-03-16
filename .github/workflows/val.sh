@@ -1,4 +1,20 @@
 #!/bin/bash
+
+# Quick sanity check: can the binary start at all?
+echo "=== Diagnostic ==="
+echo "OS: $(uname -s) | Shell: $SHELL | COMSPEC: $COMSPEC"
+echo "PWD: $(pwd)"
+ls -la build/bin/teloscope* 2>&1 || true
+echo "--- Running teloscope -v ---"
+build/bin/teloscope -v 2>&1 || echo "teloscope -v EXIT CODE: $?"
+echo "--- Running teloscope directly ---"
+build/bin/teloscope -f testFiles/t2t.fa 2>diag_err.txt >diag_out.txt && echo "teloscope OK" || echo "teloscope EXIT CODE: $?"
+echo "STDOUT:"; cat diag_out.txt 2>/dev/null || true
+echo "STDERR:"; cat diag_err.txt 2>/dev/null || true
+echo "--- Testing system() path (simulating validate) ---"
+echo "validate argv0 would be: $(which build/bin/teloscope-validate 2>/dev/null || echo build/bin/teloscope-validate)"
+echo "=== End Diagnostic ==="
+
 set -e
 
 # Run standard .tst validation (53 tests)
