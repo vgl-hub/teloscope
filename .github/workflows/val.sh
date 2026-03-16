@@ -199,6 +199,46 @@ OUT=$(build/bin/teloscope -f testFiles/short_contig.fa 2>/dev/null)
 check_output_contains "short contig: no crash, type=none" "none" "$OUT"
 
 # =====================================================
+# GFA annotation tests
+# =====================================================
+
+rm -rf "$TMPDIR"/* 2>/dev/null || true
+build/bin/teloscope -f testFiles/gfa_telo.gfa -o "$TMPDIR" 2>/dev/null
+GFA_OUT="$TMPDIR/assembly.telo.annotated.gfa"
+
+# Check annotated GFA was produced
+if [ -f "$GFA_OUT" ]; then
+    echo -e "$PASS GFA annotation: output file created"
+else
+    echo -e "$FAIL GFA annotation: output file missing"
+    EXIT=1
+fi
+
+# Check telomere nodes exist for segments with telomeres
+check_output_contains "GFA: seg_t2t start node" "telomere_seg_t2t_start" "$(cat "$GFA_OUT")"
+check_output_contains "GFA: seg_t2t end node" "telomere_seg_t2t_end" "$(cat "$GFA_OUT")"
+check_output_contains "GFA: seg_ponly start node" "telomere_seg_ponly_start" "$(cat "$GFA_OUT")"
+check_output_contains "GFA: seg_qonly end node" "telomere_seg_qonly_end" "$(cat "$GFA_OUT")"
+
+# Check no telomere nodes for seg_none
+check_output_not_contains "GFA: no telomere for seg_none" "telomere_seg_none" "$(cat "$GFA_OUT")"
+
+# Check edge orientations: start → L telo + seg +, end → L telo + seg -
+GFA_CONTENT=$(cat "$GFA_OUT")
+check_output_contains "GFA: start edge orient (+)" "telomere_seg_t2t_start	+	seg_t2t	+" "$GFA_CONTENT"
+check_output_contains "GFA: end edge orient (-)" "telomere_seg_t2t_end	+	seg_t2t	-" "$GFA_CONTENT"
+check_output_contains "GFA: ponly start edge" "telomere_seg_ponly_start	+	seg_ponly	+" "$GFA_CONTENT"
+check_output_contains "GFA: qonly end edge" "telomere_seg_qonly_end	+	seg_qonly	-" "$GFA_CONTENT"
+
+# Check original edges are preserved
+check_output_contains "GFA: original edge preserved" "seg_t2t	+	seg_ponly	+	0M" "$GFA_CONTENT"
+
+# Check telomere node tags (LN, RC, TL)
+check_output_contains "GFA: telomere LN tag" "LN:i:6" "$GFA_CONTENT"
+check_output_contains "GFA: telomere RC tag" "RC:i:6000" "$GFA_CONTENT"
+check_output_contains "GFA: telomere TL tag" "TL:i:600" "$GFA_CONTENT"
+
+# =====================================================
 # Error handling
 # =====================================================
 

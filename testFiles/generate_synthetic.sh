@@ -257,4 +257,24 @@ make_filler() {
     echo "${head}${gap}${mid}${parm}"
 } > "$DIR/gapped_discordant.fa"
 
-echo "Generated $(ls -1 "$DIR"/*.fa 2>/dev/null | wc -l) synthetic FASTA files in $DIR/"
+# ============================================================
+# 20. gfa_telo.gfa — GFA with segments having telomeric tips
+# Four segments: t2t, p-only, q-only, no-telo
+# Plus edges between them (simulating a linear assembly graph)
+# ============================================================
+{
+    parm=$(repeat_motif "CCCTAA" 100)   # 600bp p-arm
+    qarm=$(repeat_motif "TTAGGG" 100)   # 600bp q-arm
+    filler=$(make_filler 2000)
+
+    echo "H	VN:Z:1.2"
+    echo "S	seg_t2t	${parm}${filler}${qarm}"
+    echo "S	seg_ponly	${parm}${filler}"
+    echo "S	seg_qonly	${filler}${qarm}"
+    echo "S	seg_none	${filler}"
+    echo "L	seg_t2t	+	seg_ponly	+	0M"
+    echo "L	seg_ponly	+	seg_qonly	+	0M"
+    echo "L	seg_qonly	+	seg_none	+	0M"
+} > "$DIR/gfa_telo.gfa"
+
+echo "Generated $(ls -1 "$DIR"/*.fa "$DIR"/*.gfa 2>/dev/null | wc -l) synthetic test files in $DIR/"

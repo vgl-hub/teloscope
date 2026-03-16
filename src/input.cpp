@@ -87,68 +87,79 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
     std::string sequence = segment->getInSequence(0, 0);
     unmaskSequence(sequence);
 
-    // Initialize SegmentData for this segment
-    SegmentData segmentData;
-    segmentData = scanSegment(sequence, 0, true); // tipsOnly = true for GFA segments
+    SegmentData segmentData = scanSegment(sequence, 0, true); // tipsOnly = true for GFA segments
 
-
-    std::cout << "Sequence: " << sequence.substr(0,1000) << std::endl;
-    std::cout << "Terminal blocks: " << segmentData.terminalBlocks.size() << std::endl;
+    // Collect annotations before locking to minimize critical section
+    struct TeloAnnotation {
+        std::string header;
+        std::vector<Tag> tags;
+        char segOrient; // orientation of the assembly segment in the edge
+    };
+    std::vector<TeloAnnotation> annotations;
 
     for (const TelomereBlock& block : segmentData.terminalBlocks) {
         uint64_t distToStart = block.start;
         uint64_t distToEnd   = sequence.size() - (block.start + block.blockLen);
         bool atStart = distToStart <= distToEnd;
-        char segOr = (block.blockLabel == 'p' ? '+' : '-'); 
 
-        // Build a unique header for new telomere node
         std::string header = "telomere_"
                         + segment->getSeqHeader()
-                        + segOr
                         + (atStart ? "_start" : "_end");
-        std::cout << "Header: " << header << std::endl;
 
-        // Placeholder node with tags: LN (unit length), RC (read count), TL (telomere length)
-        Sequence teloSeq{ header, "", new std::string("*") }; // Empty sequence "*"
-        std::vector<Tag> tags = {
+        // Skip duplicate telomere at the same end (e.g. overlapping fwd+rev blocks)
+        bool duplicate = false;
+        for (const auto& ann : annotations) {
+            if (ann.header == header) { duplicate = true; break; }
+        }
+        if (duplicate) continue;
+
+        // Edge orientation for BandageNG:
+        //   L telo + segment + 0M  →  telo at left (start) of segment
+        //   L telo + segment - 0M  →  telo at right (end) of segment
+        char segOrient = atStart ? '+' : '-';
+
+        annotations.push_back({header, {
             Tag{'i', "LN", "6"},
             Tag{'i', "RC", "6000"},
             Tag{'i', "TL", std::to_string(block.blockLen)}
-        };
-        std::cout << "Tags: " << tags[0].content << ", " << tags[1].content << ", " << tags[2].content << std::endl;
+        }, segOrient});
+    }
 
-        // Prepare edge orientation
-        char fromOrient = '+';
-        char toOrient   = atStart
-                            ? segOr
-                            : (segOr == '+' ? '-' : '+');
+    // Note: traverseInSegmentWrapper and appendEdge lock the global mtx internally.
+    // We must NOT hold mtx while calling them, or we deadlock.
+    for (auto& ann : annotations) {
+        // Create telomere segment (locks mtx internally)
+        Sequence teloSeq{ann.header, "", new std::string("*")};
+        inSequences.traverseInSegmentWrapper(&teloSeq, ann.tags);
 
-        // Guard all shared InSequences mutations
-        std::lock_guard<std::mutex> lck(mtx);
+        // Read back UID under lock (hash map is not thread-safe for concurrent R/W)
+        unsigned int teloUid;
+        {
+            std::lock_guard<std::mutex> lck(mtx);
+            teloUid = inSequences.getHash1()->at(ann.header);
+        }
 
-        // Create & hash the new telomere segment
-        inSequences.traverseInSegmentWrapper(&teloSeq, tags);
-        unsigned int teloUid = inSequences.getHash1()->at(header);
-
-        // Link telomere node back to our segment
+        // Create and append edge (locks mtx internally)
         InEdge inEdge;
         inEdge.newEdge(
-          inSequences.uId.next(),   // new edge UID
-          segment->getuId(),            // source = our contig
-          teloUid,                  // target = telomere node
-          fromOrient,                      // FromOrient
-          toOrient,                      // ToOrient
-          "0M",                      // no overlap
-          "",                       // no header
-          std::vector<Tag>{ Tag{'i',"RC","0"} } // no read counts
+          0,                      // auto-assign UID in appendEdge
+          teloUid,                // source = telomere node
+          segment->getuId(),      // target = assembly segment
+          '+',                    // telomere always + orientation
+          ann.segOrient,          // segment orient: + for start, - for end
+          "0M",
+          "",
+          std::vector<Tag>{ Tag{'i',"RC","0"} }
         );
-        inSequences.insertHash(inEdge.geteHeader(), inEdge.geteUId());
         inSequences.appendEdge(inEdge);
     }
 
     threadLog.add("\tCompleted walking segment:\t" + segment->getSeqHeader());
-    std::lock_guard<std::mutex> lck(mtx);
-    logs.push_back(threadLog);
+    {
+        std::lock_guard<std::mutex> lck(mtx);
+        logs.push_back(threadLog);
+    }
+
     return true;
 }
 
