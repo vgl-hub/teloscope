@@ -953,6 +953,13 @@ void Teloscope::handleBEDFile() {
 
     constexpr size_t ioBufSize = 1 << 20; // 1MB write buffer per file
 
+    // Buffers MUST be declared before ofstreams: C++ destroys locals in reverse
+    // declaration order, so buffers outlive the streams that reference them.
+    std::vector<char> densityBuf(ioBufSize), canonRatioBuf(ioBufSize), strandRatioBuf(ioBufSize);
+    std::vector<char> gcBuf(ioBufSize), entropyBuf(ioBufSize);
+    std::vector<char> canonMatchBuf(ioBufSize), noncanonMatchBuf(ioBufSize);
+    std::vector<char> termBlockBuf(ioBufSize), itsBlockBuf(ioBufSize);
+
     std::ofstream windowDensityFile;
     std::ofstream windowCanonicalRatioFile;
     std::ofstream windowStrandRatioFile;
@@ -962,11 +969,6 @@ void Teloscope::handleBEDFile() {
     std::ofstream noncanonicalMatchFile;
     std::ofstream terminalBlocksFile;
     std::ofstream interstitialBlocksFile;
-
-    std::vector<char> densityBuf(ioBufSize), canonRatioBuf(ioBufSize), strandRatioBuf(ioBufSize);
-    std::vector<char> gcBuf(ioBufSize), entropyBuf(ioBufSize);
-    std::vector<char> canonMatchBuf(ioBufSize), noncanonMatchBuf(ioBufSize);
-    std::vector<char> termBlockBuf(ioBufSize), itsBlockBuf(ioBufSize);
 
     std::string base = userInput.outRoute + "/" + userInput.inSequenceName;
 
