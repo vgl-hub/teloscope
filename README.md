@@ -58,6 +58,10 @@ Examples
 
         teloscope -f asm.fa -o results/ -j 16 -c TTAGGG -p NNNGGG -w 2000 -s 1000 -g -e -r --verbose
 
+* Example: GFA input. Annotates each segment with telomeric nodes and writes an annotated GFA.
+
+        teloscope -f asm.gfa -o results/
+
 * Example: All outputs enabled.
 
         teloscope -f asm.fa -o results/ -j 16 -c TTAGGG -p TBAGGG,TTRGGG,YTAGGG -w 2000 -s 1000 -d 200 -l 1000 -x 1 -r -g -e -m -i -n -t 50000 --verbose --cmd
@@ -128,6 +132,17 @@ Both the provided patterns and their reverse complements are searched automatica
 
 Outputs
 ------------
+
+### GFA mode
+
+When the input is a GFA file, Teloscope scans each segment for terminal telomeric repeats and writes an annotated GFA:
+
+* `assembly.telo.annotated.gfa` The original graph with synthetic telomere nodes appended. Each telomere node is a placeholder segment (`S telomere_<seg>_<start|end> * LN:i:6 RC:i:6000 TL:i:<len>`) linked to the parent assembly segment (`L telomere_... + <seg> <orient> 0M`). The `TL` tag records the actual telomere block length in bp. Designed for visualization in BandageNG.
+
+No BED or BEDgraph files are produced in GFA mode.
+
+### FASTA mode
+
 Teloscope always produces the following file:
 
 * `terminal_telomeres.bed` Telomere block annotations for the assembly.
