@@ -119,19 +119,20 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
         };
         std::cout << "Tags: " << tags[0].content << ", " << tags[1].content << ", " << tags[2].content << std::endl;
 
-        // Create & hash the new telomere segment synchronously
-        inSequences.traverseInSegmentWrapper(&teloSeq, tags);
-        unsigned int teloUid = inSequences.getHash1()->at(header);
-        printf("Telomere node UID: %u\n", teloUid);
-
         // Prepare edge orientation
         char fromOrient = '+';
         char toOrient   = atStart
                             ? segOr
                             : (segOr == '+' ? '-' : '+');
 
+        // Guard all shared InSequences mutations
+        std::lock_guard<std::mutex> lck(mtx);
+
+        // Create & hash the new telomere segment
+        inSequences.traverseInSegmentWrapper(&teloSeq, tags);
+        unsigned int teloUid = inSequences.getHash1()->at(header);
+
         // Link telomere node back to our segment
-        //    L telomere…      +   <seg>   <segOr>   0M   RC:i:0
         InEdge inEdge;
         inEdge.newEdge(
           inSequences.uId.next(),   // new edge UID
@@ -148,6 +149,7 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
     }
 
     threadLog.add("\tCompleted walking segment:\t" + segment->getSeqHeader());
+    std::lock_guard<std::mutex> lck(mtx);
     logs.push_back(threadLog);
     return true;
 }
@@ -238,10 +240,10 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
                         pathData.pathSize, userInput.terminalLimit);
     pathData.interstitialBlocks = filterITSBlocks(pathData.interstitialBlocks);
 
+    threadLog.add("\tCompleted walking path:\t" + path->getHeader());
+
     std::lock_guard<std::mutex> lck(mtx);
     allPathData.push_back(std::move(pathData));
-
-    threadLog.add("\tCompleted walking path:\t" + path->getHeader());
     logs.push_back(threadLog);
 
     return true;

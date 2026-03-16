@@ -29,8 +29,8 @@ const char* scaffoldTypeToString(ScaffoldType type) {
     switch (type) {
         case ScaffoldType::T2T:                   return "t2t";
         case ScaffoldType::GAPPED_T2T:            return "gapped_t2t";
-        case ScaffoldType::MISSASSEMBLY:          return "missassembly";
-        case ScaffoldType::GAPPED_MISSASSEMBLY:   return "gapped_missassembly";
+        case ScaffoldType::MISASSEMBLY:          return "misassembly";
+        case ScaffoldType::GAPPED_MISASSEMBLY:   return "gapped_misassembly";
         case ScaffoldType::INCOMPLETE:            return "incomplete";
         case ScaffoldType::GAPPED_INCOMPLETE:     return "gapped_incomplete";
         case ScaffoldType::NONE:                  return "none";
@@ -266,25 +266,28 @@ std::vector<TelomereBlock> Teloscope::extendBlocks(std::vector<TelomereBlock> &b
             currentBlock.blockLabel = computeBlockLabel(currentBlock.forwardCount, currentBlock.blockCounts);
 
         } else {
-            // Calculate relative distances
+            // Calculate relative distances (saturating to avoid underflow)
             uint64_t relativeStart = currentBlock.start - absPos;
             uint64_t leftDist = relativeStart;
-            uint64_t rightDist = segmentSize - (relativeStart + currentBlock.blockLen);
-            
+            uint64_t blockEnd = relativeStart + currentBlock.blockLen;
+            uint64_t rightDist = (blockEnd <= segmentSize) ? (segmentSize - blockEnd) : 0;
+
             // Apply overhang rules
             if ((currentBlock.blockLabel == 'p' && leftDist > rightDist) ||
                 (currentBlock.blockLabel == 'q' && leftDist < rightDist)) {
                 currentBlock.hasValidOr = false;
             }
-            
+
             // Push the finalized block
-            float density = static_cast<float>(currentBlock.canCovered) / currentBlock.blockLen;
+            float density = (currentBlock.blockLen > 0)
+                ? static_cast<float>(currentBlock.canCovered) / currentBlock.blockLen
+                : 0.0f;
             if (currentBlock.blockLen >= userInput.minBlockLen && density >= densityCutoff) {
                 extendedBlocks.push_back(currentBlock);
             }
-            
+
             // Start a new block
-            currentBlock = nextBlock;  
+            currentBlock = nextBlock;
             currentBlock.hasValidOr = true;  // Default is true for new blocks
         }
     }
@@ -292,14 +295,17 @@ std::vector<TelomereBlock> Teloscope::extendBlocks(std::vector<TelomereBlock> &b
     // Add the last block - also adjust coordinates
     uint64_t relativeStart = currentBlock.start - absPos;
     uint64_t leftDist = relativeStart;
-    uint64_t rightDist = segmentSize - (relativeStart + currentBlock.blockLen);
-    
+    uint64_t blockEnd = relativeStart + currentBlock.blockLen;
+    uint64_t rightDist = (blockEnd <= segmentSize) ? (segmentSize - blockEnd) : 0;
+
     if ((currentBlock.blockLabel == 'p' && leftDist > rightDist) ||
         (currentBlock.blockLabel == 'q' && leftDist < rightDist)) {
         currentBlock.hasValidOr = false;
     }
-    
-    float density = static_cast<float>(currentBlock.canCovered) / currentBlock.blockLen;
+
+    float density = (currentBlock.blockLen > 0)
+        ? static_cast<float>(currentBlock.canCovered) / currentBlock.blockLen
+        : 0.0f;
     if (currentBlock.blockLen >= userInput.minBlockLen && density >= densityCutoff) {
         extendedBlocks.push_back(currentBlock);
     }
@@ -402,16 +408,16 @@ void Teloscope::labelTerminalBlocks(
         if (longest_p->start < longest_q->start) {
             scaffoldType = pickType(ScaffoldType::T2T, ScaffoldType::GAPPED_T2T);
         } else {
-            scaffoldType = pickType(ScaffoldType::MISSASSEMBLY, ScaffoldType::GAPPED_MISSASSEMBLY);
+            scaffoldType = pickType(ScaffoldType::MISASSEMBLY, ScaffoldType::GAPPED_MISASSEMBLY);
         }
         return;
     }
 
-    // Check for Pp and Qq missassemblies among scaffold-terminal blocks
+    // Check for Pp and Qq misassemblies among scaffold-terminal blocks
     if (has_P) {
         for (const auto* block : scaffoldBlocks) {
             if (block->blockLabel == 'p' && block != longest_p && block->hasValidOr) {
-                scaffoldType = pickType(ScaffoldType::MISSASSEMBLY, ScaffoldType::GAPPED_MISSASSEMBLY);
+                scaffoldType = pickType(ScaffoldType::MISASSEMBLY, ScaffoldType::GAPPED_MISASSEMBLY);
                 return;
             }
         }
@@ -420,7 +426,7 @@ void Teloscope::labelTerminalBlocks(
     if (has_Q) {
         for (const auto* block : scaffoldBlocks) {
             if (block->blockLabel == 'q' && block != longest_q && block->hasValidOr) {
-                scaffoldType = pickType(ScaffoldType::MISSASSEMBLY, ScaffoldType::GAPPED_MISSASSEMBLY);
+                scaffoldType = pickType(ScaffoldType::MISASSEMBLY, ScaffoldType::GAPPED_MISASSEMBLY);
                 return;
             }
         }
@@ -514,7 +520,9 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint32_t windowSta
                 matchInfo.isCanonical = isCanonical;
                 matchInfo.isForward = isForward;
                 matchInfo.matchSize = pattern.size();
-                matchInfo.matchSeq = std::string(pattern);
+                if (userInput.outMatches) {
+                    matchInfo.matchSeq = std::string(pattern);
+                }
 
                 // Check dimers
                 if (isCanonical) {
@@ -622,7 +630,6 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint32_t absPos, bool 
                         matchInfo.isCanonical = isCanonical;
                         matchInfo.isForward = isForward;
                         matchInfo.matchSize = len;
-                        matchInfo.matchSeq = std::string(pattern);
 
                         if (isForward) {
                             segmentData.terminalFwdMatches.push_back(matchInfo);
@@ -1017,8 +1024,8 @@ void Teloscope::computeSummaryCounts() {
         switch (pathData.scaffoldType) {
             case ScaffoldType::T2T:                   totalT2T++; break;
             case ScaffoldType::GAPPED_T2T:            totalGappedT2T++; break;
-            case ScaffoldType::MISSASSEMBLY:          totalMissassembly++; break;
-            case ScaffoldType::GAPPED_MISSASSEMBLY:   totalGappedMissassembly++; break;
+            case ScaffoldType::MISASSEMBLY:          totalMisassembly++; break;
+            case ScaffoldType::GAPPED_MISASSEMBLY:   totalGappedMisassembly++; break;
             case ScaffoldType::INCOMPLETE:            totalIncomplete++; break;
             case ScaffoldType::GAPPED_INCOMPLETE:     totalGappedIncomplete++; break;
             case ScaffoldType::NONE:                  totalNone++; break;
@@ -1057,7 +1064,7 @@ void Teloscope::printSummary() {
 
     // Chromosomes by telomere numbers (excluding discordant telomeres)
     std::cout << "\n+++ Chromosome Telomere Counts+++\n";
-    std::cout << "Two telomeres:\t" << totalT2T + totalGappedT2T + totalMissassembly + totalGappedMissassembly << "\n";
+    std::cout << "Two telomeres:\t" << totalT2T + totalGappedT2T + totalMisassembly + totalGappedMisassembly << "\n";
     std::cout << "One telomere:\t" << totalIncomplete + totalGappedIncomplete << "\n";
     std::cout << "Zero telomeres:\t" << totalNone + totalGappedNone << "\n";
 
@@ -1066,8 +1073,8 @@ void Teloscope::printSummary() {
     std::cout << "T2T:\t" << totalT2T << "\n";
     std::cout << "Gapped T2T:\t" << totalGappedT2T << "\n";
     
-    std::cout << "Missassembled:\t" << totalMissassembly << "\n";
-    std::cout << "Gapped missassembled:\t" << totalGappedMissassembly << "\n";
+    std::cout << "Misassembled:\t" << totalMisassembly << "\n";
+    std::cout << "Gapped misassembled:\t" << totalGappedMisassembly << "\n";
     
     std::cout << "Incomplete:\t" << totalIncomplete << "\n";
     std::cout << "Gapped incomplete:\t" << totalGappedIncomplete << "\n";

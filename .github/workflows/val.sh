@@ -24,6 +24,30 @@ check_file_count() {
     fi
 }
 
+check_output_contains() {
+    local desc="$1"
+    local pattern="$2"
+    local output="$3"
+    if echo "$output" | grep -qF "$pattern"; then
+        echo -e "$PASS $desc"
+    else
+        echo -e "$FAIL $desc (pattern '$pattern' not found)"
+        EXIT=1
+    fi
+}
+
+check_output_not_contains() {
+    local desc="$1"
+    local pattern="$2"
+    local output="$3"
+    if echo "$output" | grep -qF "$pattern"; then
+        echo -e "$FAIL $desc (pattern '$pattern' should not appear)"
+        EXIT=1
+    else
+        echo -e "$PASS $desc"
+    fi
+}
+
 TMPDIR="testFiles/tmp"
 mkdir -p "$TMPDIR"
 
@@ -56,6 +80,17 @@ check_file_count "-r -g -e flag file count" 6 "$TMPDIR"
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope testFiles/bTaeGut7_chr33_mat.fa.gz -o "$TMPDIR" 2>/dev/null >/dev/null
 check_file_count "positional arg file count" 1 "$TMPDIR"
+
+# Test: -m produces 3 files (terminal + canonical_matches + noncanonical_matches)
+rm -rf "$TMPDIR"/* 2>/dev/null || true
+build/bin/teloscope -f testFiles/bTaeGut7_chr33_mat.fa.gz -o "$TMPDIR" -m 2>/dev/null >/dev/null
+check_file_count "-m flag file count" 3 "$TMPDIR"
+
+# Test: summary output uses correct spelling (misassembly, not missassembly)
+SUMMARY=$(build/bin/teloscope -f testFiles/bTaeGut7_chr33_mat.fa.gz 2>/dev/null)
+check_output_contains "summary has Misassembled" "Misassembled:" "$SUMMARY"
+check_output_contains "summary has Gapped misassembled" "Gapped misassembled:" "$SUMMARY"
+check_output_not_contains "no Missassembled typo" "Missassembled:" "$SUMMARY"
 
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 exit $EXIT

@@ -27,8 +27,8 @@ Zero telomeres:	0
 +++ Chromosome Telomere/Gap Completeness+++
 T2T:	1
 Gapped T2T:	0
-Missassembled:	0
-Gapped missassembled:	0
+Misassembled:	0
+Gapped misassembled:	0
 Incomplete:	0
 Gapped incomplete:	0
 No telomeres:	0

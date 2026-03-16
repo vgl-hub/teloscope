@@ -12,7 +12,7 @@
 
 enum class ScaffoldType : uint8_t {
     T2T, GAPPED_T2T,
-    MISSASSEMBLY, GAPPED_MISSASSEMBLY,
+    MISASSEMBLY, GAPPED_MISASSEMBLY,
     INCOMPLETE, GAPPED_INCOMPLETE,
     NONE, GAPPED_NONE,
     DISCORDANT, GAPPED_DISCORDANT
@@ -177,8 +177,8 @@ class Teloscope {
     // Chr/scaffold type summary
     uint32_t totalT2T = 0;
     uint32_t totalGappedT2T = 0;
-    uint32_t totalMissassembly = 0;
-    uint32_t totalGappedMissassembly = 0;
+    uint32_t totalMisassembly = 0;
+    uint32_t totalGappedMisassembly = 0;
     uint32_t totalIncomplete = 0;
     uint32_t totalGappedIncomplete = 0;
     uint32_t totalNone = 0;
