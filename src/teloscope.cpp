@@ -972,14 +972,9 @@ void Teloscope::handleBEDFile() {
 
     std::string base = userInput.outRoute + "/" + userInput.inSequenceName;
 
-    // Helper to open a file with I/O buffer and check success
-    // pubsetbuf with external buffers crashes on Windows (both MSVC and MinGW)
+    // Helper to open a file with 1MB write buffer and check success
     auto openFile = [&](std::ofstream& file, const std::string& path, std::vector<char>& buf) {
-#ifndef _WIN32
         file.rdbuf()->pubsetbuf(buf.data(), ioBufSize);
-#else
-        (void)buf;
-#endif
         file.open(path);
         if (!file.is_open()) {
             fprintf(stderr, "Error: Could not open '%s' for writing.\n", path.c_str());

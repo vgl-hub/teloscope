@@ -14,6 +14,11 @@ BINDIR := $(BUILD)/.o
 LIBS = -lz
 LDFLAGS = -pthread
 
+# Static linking on Windows to avoid DLL dependencies
+ifeq ($(OS),Windows_NT)
+    LDFLAGS += -static
+endif
+
 GFALIBS_DIR := $(CURDIR)/gfalibs
 
 OBJS := main teloscope input tools
