@@ -25,6 +25,7 @@ class Trie {
         std::array<int32_t, 4> children = {-1, -1, -1, -1}; // A=0, C=1, G=2, T=3
         bool isEndOfWord = false;
         bool isForward = false; // true if pattern is forward-oriented (closer to canonicalFwd)
+        bool isCanonical = false; // true if pattern is exactly canonicalFwd or canonicalRev
     };
 
     std::vector<TrieNode> nodes;          // contiguous node pool
@@ -44,7 +45,7 @@ class Trie {
 public:
     Trie() { nodes.emplace_back(); } // root at index 0
 
-    void insertPattern(const std::string& pattern, bool isForward);
+    void insertPattern(const std::string& pattern, bool isForward, bool isCanonical);
 
     // Return root index (always 0)
     int32_t getRoot() const { return 0; }
@@ -63,6 +64,11 @@ public:
     // Check if pattern ending at this node is forward-oriented
     bool isForward(int32_t nodeIdx) const {
         return nodes[nodeIdx].isForward;
+    }
+
+    // Check if pattern ending at this node is canonical (exact fwd or rev)
+    bool isCanonical(int32_t nodeIdx) const {
+        return nodes[nodeIdx].isCanonical;
     }
 
     unsigned short int getLongestPatternSize() const {
@@ -156,11 +162,7 @@ class Teloscope {
     UserInputTeloscope userInput; // Declare user input instance
     std::vector<PathData> allPathData; // Assembly data
     
-    // Cached string_views for canonical patterns (avoid reconstruction per window)
-    std::string_view canonicalFwdView;
-    std::string_view canonicalRevView;
-
-    // Assembly Summary 
+    // Assembly Summary
     uint32_t totalPaths = 0;
     uint32_t totalNWindows = 0;
     uint32_t totalTelomeres = 0;
@@ -212,11 +214,11 @@ class Teloscope {
 
 public:
 
-    Teloscope(UserInputTeloscope userInput) : userInput(userInput),
-        canonicalFwdView(this->userInput.canonicalFwd),
-        canonicalRevView(this->userInput.canonicalRev) {
+    Teloscope(UserInputTeloscope userInput) : userInput(userInput) {
         for (const auto& [pattern, isForward] : this->userInput.patternInfo) {
-            trie.insertPattern(pattern, isForward);
+            bool isCanonical = (pattern == this->userInput.canonicalFwd ||
+                                pattern == this->userInput.canonicalRev);
+            trie.insertPattern(pattern, isForward, isCanonical);
         }
     }
 

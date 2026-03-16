@@ -43,7 +43,7 @@ const char* scaffoldTypeToString(ScaffoldType type) {
 
 
 // Insert pattern into the flat node pool. Each char maps to index 0-3.
-void Trie::insertPattern(const std::string& pattern, bool isForward) {
+void Trie::insertPattern(const std::string& pattern, bool isForward, bool isCanonical) {
     int32_t current = 0; // start at root
     for (char ch : pattern) {
         int8_t idx = charToIndex(ch);
@@ -58,6 +58,7 @@ void Trie::insertPattern(const std::string& pattern, bool isForward) {
     }
     nodes[current].isEndOfWord = true;
     nodes[current].isForward = isForward;
+    nodes[current].isCanonical = isCanonical;
 
     if (pattern.size() > longestPatternSize) {
         longestPatternSize = pattern.size();
@@ -216,9 +217,13 @@ std::vector<TelomereBlock> Teloscope::getTeloBlocks(
     // Efficient move-based insertion for recycled matches
     if (doRecycle && !recycledMatches.empty()) {
         if (recycleToStart) {
-            recycleTarget->insert(recycleTarget->begin(),
+            size_t oldSize = recycleTarget->size();
+            recycleTarget->insert(recycleTarget->end(),
                                 std::make_move_iterator(recycledMatches.begin()),
                                 std::make_move_iterator(recycledMatches.end()));
+            std::rotate(recycleTarget->begin(),
+                        recycleTarget->begin() + oldSize,
+                        recycleTarget->end());
         } else {
             recycleTarget->insert(recycleTarget->end(),
                                 std::make_move_iterator(recycledMatches.begin()),
@@ -472,10 +477,28 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
     bool computeEntropy = userInput.outEntropy;
     bool hasLastCanonical = false;
     uint64_t lastCanonicalPos = 0;
+    bool needMatchSeq = userInput.outMatches;
+
+    // Precompute densityGain lookup by match length (avoids float division per match)
+    float densityByLen[256] = {};
+    float invWindowSize = 100.0f / window.size();
+    for (uint16_t len = 0; len <= longestPatternSize; ++len) {
+        densityByLen[len] = len * invWindowSize;
+    }
+
+    // Precompute terminal status for this window (most windows are fully one or the other)
+    uint64_t windowEnd = windowStart + window.size();
+    uint64_t terminalEnd = (segmentSize > terminalLimit) ? (segmentSize - terminalLimit) : 0;
+    bool windowFullyTerminal = (windowEnd <= terminalLimit) || (windowStart >= terminalEnd);
+    bool windowFullyInterstitial = (windowStart > terminalLimit) && (windowEnd < terminalEnd);
+
+    // Precompute overlap conditions (constant per window)
+    bool alwaysMainWindow = (overlapSize == 0 || windowStart == 0);
+    bool hasOverlap = (overlapSize != 0);
 
     // Determine starting index for Trie scanning
-    uint32_t startIndex = (windowStart == 0 || overlapSize == 0)
-                            ? 0 
+    uint32_t startIndex = alwaysMainWindow
+                            ? 0
                             : std::min(step - longestPatternSize, overlapSize - longestPatternSize);
 
     for (uint32_t i = startIndex; i < window.size(); ++i) {
@@ -490,12 +513,12 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                 default: continue;
             }
 
-            if (i >= overlapSize || overlapSize == 0 || windowStart == 0) {
+            if (alwaysMainWindow || i >= overlapSize) {
                 windowData.nucleotideCounts[index]++;
             }
-            if (i >= step && overlapSize != 0) {
+            if (hasOverlap && i >= step) {
                 nextOverlapData.nucleotideCounts[index]++;
-            } 
+            }
         }
 
         // Pattern matching using Trie (index-based, no pointer chasing)
@@ -506,32 +529,39 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
             current = trie.getChild(current, window[j]); // window[j] is a character
             if (current < 0) break; // no child → stop
 
-            if (trie.isEnd(current)) {                
-                std::string_view pattern(window.data() + i, (j - i + 1));
-                bool isTerminal = (windowStart + i <= terminalLimit || 
-                                    windowStart + i >= segmentSize - terminalLimit); // Check i/j handles 
-                bool isForward = trie.isForward(current); // O(1) lookup from Trie node
-                bool isCanonical = (pattern == canonicalFwdView || 
-                                    pattern == canonicalRevView);
-                float densityGain = (static_cast<float>(pattern.size()) / window.size()) * 100.0f;
+            if (trie.isEnd(current)) {
+                uint16_t matchLen = static_cast<uint16_t>(j - i + 1);
+                bool isForward = trie.isForward(current);
+                bool isCanonical = trie.isCanonical(current);
+                float densityGain = densityByLen[matchLen];
                 uint64_t matchPos = absPos + windowStart + i;
+
+                bool isTerminal;
+                if (windowFullyTerminal) {
+                    isTerminal = true;
+                } else if (windowFullyInterstitial) {
+                    isTerminal = false;
+                } else {
+                    uint64_t absI = windowStart + i;
+                    isTerminal = (absI <= terminalLimit || absI >= terminalEnd);
+                }
 
                 MatchInfo matchInfo;
                 matchInfo.position = matchPos;
                 matchInfo.isCanonical = isCanonical;
                 matchInfo.isForward = isForward;
-                matchInfo.matchSize = pattern.size();
-                if (userInput.outMatches) {
-                    matchInfo.matchSeq = std::string(pattern);
+                matchInfo.matchSize = matchLen;
+                if (needMatchSeq) {
+                    matchInfo.matchSeq = std::string(window.data() + i, matchLen);
                 }
 
                 // Check dimers
                 if (isCanonical) {
                     if (hasLastCanonical && (matchPos - lastCanonicalPos) <= userInput.canonicalSize) {
-                        if (!windowData.hasCanDimer && (j >= overlapSize || overlapSize == 0 || windowStart == 0)) {
+                        if (!windowData.hasCanDimer && (alwaysMainWindow || j >= overlapSize)) {
                             windowData.hasCanDimer = true;
                         }
-                        if (!nextOverlapData.hasCanDimer && i >= step && overlapSize != 0) {
+                        if (!nextOverlapData.hasCanDimer && hasOverlap && i >= step) {
                             nextOverlapData.hasCanDimer = true;
                         }
                     }
@@ -540,7 +570,7 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                 }
 
                 // Update windowData with new classification approach
-                if (j >= overlapSize || overlapSize == 0 || windowStart == 0) {
+                if (alwaysMainWindow || j >= overlapSize) {
                     if (isCanonical) { // C__
                         windowData.canonicalCounts++;
                         windowData.canonicalDensity += densityGain;
@@ -574,7 +604,7 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                 }
 
                 // Update nextOverlapData
-                if (i >= step && overlapSize != 0) {
+                if (hasOverlap && i >= step) {
                     if (isCanonical) {
                         nextOverlapData.canonicalCounts++;
                         nextOverlapData.canonicalDensity += densityGain;
@@ -620,9 +650,8 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
 
                     if (trie.isEnd(node)) {
                         uint16_t len = static_cast<uint16_t>(j - i + 1);
-                        std::string_view pattern(&sequence[i], len);
                         bool isForward = trie.isForward(node);
-                        bool isCanonical = (pattern == canonicalFwdView || pattern == canonicalRevView);
+                        bool isCanonical = trie.isCanonical(node);
 
                         MatchInfo matchInfo;
                         matchInfo.position = absPos + i;
@@ -654,8 +683,10 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
         uint32_t windowSize = userInput.windowSize;
         uint32_t step = userInput.step;
 
-        segmentData.canonicalMatches.reserve(segmentSize / 6);
-        segmentData.nonCanonicalMatches.reserve(segmentSize / 6);
+        // Reserve with cap to avoid OOM on large contigs (e.g. 14GB plant chromosomes)
+        constexpr uint64_t maxMatchReserve = 1000000;
+        segmentData.canonicalMatches.reserve(std::min(segmentSize / 6, maxMatchReserve));
+        segmentData.nonCanonicalMatches.reserve(std::min(segmentSize / 6, maxMatchReserve));
         segmentData.windows.reserve((segmentSize - windowSize) / step + 2);
 
         WindowData prevOverlapData; // Data from previous overlap
@@ -920,6 +951,8 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
 void Teloscope::handleBEDFile() {
     lg.verbose("\nReporting window matches and metrics...");
 
+    constexpr size_t ioBufSize = 1 << 20; // 1MB write buffer per file
+
     std::ofstream windowDensityFile;
     std::ofstream windowCanonicalRatioFile;
     std::ofstream windowStrandRatioFile;
@@ -930,10 +963,16 @@ void Teloscope::handleBEDFile() {
     std::ofstream terminalBlocksFile;
     std::ofstream interstitialBlocksFile;
 
+    std::vector<char> densityBuf(ioBufSize), canonRatioBuf(ioBufSize), strandRatioBuf(ioBufSize);
+    std::vector<char> gcBuf(ioBufSize), entropyBuf(ioBufSize);
+    std::vector<char> canonMatchBuf(ioBufSize), noncanonMatchBuf(ioBufSize);
+    std::vector<char> termBlockBuf(ioBufSize), itsBlockBuf(ioBufSize);
+
     std::string base = userInput.outRoute + "/" + userInput.inSequenceName;
 
-    // Helper to open a file and check success
-    auto openFile = [](std::ofstream& file, const std::string& path) {
+    // Helper to open a file with 1MB write buffer and check success
+    auto openFile = [&](std::ofstream& file, const std::string& path, std::vector<char>& buf) {
+        file.rdbuf()->pubsetbuf(buf.data(), ioBufSize);
         file.open(path);
         if (!file.is_open()) {
             fprintf(stderr, "Error: Could not open '%s' for writing.\n", path.c_str());
@@ -943,27 +982,27 @@ void Teloscope::handleBEDFile() {
 
     // Open per-metric window files
     if (userInput.outWinRepeats) {
-        openFile(windowDensityFile, base + "_window_repeat_density.bedgraph");
-        openFile(windowCanonicalRatioFile, base + "_window_canonical_ratio.bedgraph");
-        openFile(windowStrandRatioFile, base + "_window_strand_ratio.bedgraph");
+        openFile(windowDensityFile, base + "_window_repeat_density.bedgraph", densityBuf);
+        openFile(windowCanonicalRatioFile, base + "_window_canonical_ratio.bedgraph", canonRatioBuf);
+        openFile(windowStrandRatioFile, base + "_window_strand_ratio.bedgraph", strandRatioBuf);
     }
     if (userInput.outGC) {
-        openFile(windowGCFile, base + "_window_gc.bedgraph");
+        openFile(windowGCFile, base + "_window_gc.bedgraph", gcBuf);
     }
     if (userInput.outEntropy) {
-        openFile(windowEntropyFile, base + "_window_entropy.bedgraph");
+        openFile(windowEntropyFile, base + "_window_entropy.bedgraph", entropyBuf);
     }
 
     if (userInput.outMatches) {
-        openFile(canonicalMatchFile, base + "_canonical_matches.bed");
-        openFile(noncanonicalMatchFile, base + "_noncanonical_matches.bed");
+        openFile(canonicalMatchFile, base + "_canonical_matches.bed", canonMatchBuf);
+        openFile(noncanonicalMatchFile, base + "_noncanonical_matches.bed", noncanonMatchBuf);
     }
 
     if (userInput.outITS) {
-        openFile(interstitialBlocksFile, base + "_interstitial_telomeres.bed");
+        openFile(interstitialBlocksFile, base + "_interstitial_telomeres.bed", itsBlockBuf);
     }
 
-    openFile(terminalBlocksFile, base + "_terminal_telomeres.bed");
+    openFile(terminalBlocksFile, base + "_terminal_telomeres.bed", termBlockBuf);
 
     writeBEDFile(windowDensityFile, windowCanonicalRatioFile,
                 windowStrandRatioFile,

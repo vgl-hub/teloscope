@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string>
+#include <unordered_map>
 #include <stdexcept> // jack: std::runtime_error
 
 #include "log.h"
@@ -169,12 +170,21 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     pathData.pathSize = path->getLen();
     // pathData.windows.reserve(inSegments.size()); NumWindows = ceil((L - W) / S) + 1
 
+    // Build index for O(1) lookups instead of O(N) find_if per component
+    std::unordered_map<unsigned int, InSegment*> segmentIndex;
+    segmentIndex.reserve(inSegments.size());
+    for (auto* seg : inSegments) segmentIndex[seg->getuId()] = seg;
+
+    std::unordered_map<unsigned int, InGap*> gapIndex;
+    gapIndex.reserve(inGaps.size());
+    for (auto& gap : inGaps) gapIndex[gap.getuId()] = &gap;
+
     for (std::vector<PathComponent>::iterator component = pathComponents.begin(); component != pathComponents.end(); component++) {
         cUId = component->id;
-    
+
         if (component->componentType == SEGMENT) {
-            auto inSegment = find_if(inSegments.begin(), inSegments.end(), [cUId](InSegment* obj) {return obj->getuId() == cUId;}); // given a node Uid, find it
-            std::string sequence = (*inSegment)->getInSequence(component->start, component->end);
+            auto inSegment = segmentIndex.find(cUId)->second;
+            std::string sequence = inSegment->getInSequence(component->start, component->end);
             unmaskSequence(sequence);
             
             if (component->orientation == '+') {
@@ -220,7 +230,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
             
         }else if (component->componentType == GAP){
             
-            auto inGap = find_if(inGaps.begin(), inGaps.end(), [cUId](InGap& obj) {return obj.getuId() == cUId;}); // given a node Uid, find it
+            auto inGap = gapIndex.find(cUId)->second;
             gapLen = inGap->getDist(component->start - component->end);
 
             absPos += gapLen;
