@@ -38,7 +38,7 @@ struct UserInputTeloscope : UserInput {
     unsigned short int minBlockCounts = 2;
     float minBlockDensity = 0.5f;
 
-    bool outFasta = false; // TODO
+    bool outFasta = false;
     bool outWinRepeats = false;
     bool outGC = false;
     bool outEntropy = false;
@@ -48,7 +48,7 @@ struct UserInputTeloscope : UserInput {
     bool manualCuration = false;
     
     double maxMem = 0;
-    std::string prefix = ".", outFile = ""; // JACK: CHECK
+    std::string prefix = ".", outFile = "";
 };
 
 class Input {

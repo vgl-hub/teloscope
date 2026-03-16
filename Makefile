@@ -22,8 +22,7 @@ BINS := $(addprefix $(BINDIR)/, $(OBJS))
 head: $(BINS) gfalibs | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $(BUILD)/$(TARGET) $(wildcard $(BINDIR)/*) $(GFALIBS_DIR)/*.o $(LIBS)
 	
-debug: CXXFLAGS += -DDEBUG
-debug: CCFLAGS += -DDEBUG
+debug: CXXFLAGS += -DDEBUG -O0
 debug: head
 
 all: head validate regenerate simulate
@@ -51,9 +50,6 @@ $(BUILD):
 	
 $(BINDIR):
 	-mkdir -p $@
-          
-debug: CXXFLAGS += -DDEBUG -O0
-debug: head
 
 clean:
 	$(RM) -r build

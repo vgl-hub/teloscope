@@ -1,5 +1,5 @@
 #include "main.h"
-#include <input.h> // check
+#include <input.h>
 #include <iostream>
 
 

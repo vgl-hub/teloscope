@@ -1,13 +1,13 @@
 #include <iostream>
 #include <fstream>
-#include <sstream> // check
-#include <stdint.h> // what's this for?
+#include <sstream>
+#include <stdint.h>
 #include <vector>
 #include <algorithm>
-#include <array> // check
+#include <array>
 #include <cmath>
 #include <type_traits> // handlesBEDFile
-#include <chrono> // check
+#include <chrono>
 
 #include "log.h"
 #include "global.h"

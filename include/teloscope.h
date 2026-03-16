@@ -1,7 +1,7 @@
 #ifndef TELOSCOPE_H
 #define TELOSCOPE_H
 
-#include "input.h" // not in Mac's code
+#include "input.h"
 #include <iostream>
 #include <map>
 #include <stdint.h>
