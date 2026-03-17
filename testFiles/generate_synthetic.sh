@@ -411,4 +411,107 @@ make_filler() {
     echo "${clust1}${gap}${clust2}${tail}"
 } > "$DIR/mirror_no_merge.fa"
 
+# ============================================================
+# 31. boundary_no_terminal.fa — Matches outside terminal zones
+# With -t 500: no matches in [0,500) or [6700,7200)
+# → no terminal blocks → fwdBoundary=0 revBoundary=7200
+# → ITS covers everything → 2 ITS blocks
+# ============================================================
+{
+    echo ">chr_boundary_no_term"
+    head=$(make_filler 2000)
+    fwd_mid=$(repeat_motif "CCCTAA" 100)    # 600bp at pos 2000
+    gap=$(make_filler 2000)
+    rev_mid=$(repeat_motif "TTAGGG" 100)    # 600bp at pos 4600
+    tail=$(make_filler 2000)
+    echo "${head}${fwd_mid}${gap}${rev_mid}${tail}"
+} > "$DIR/boundary_no_terminal.fa"
+
+# ============================================================
+# 32. boundary_fail_filter.fa — Terminal block too short
+# 20 CCCTAA at start = 120bp block. Passes Phase 1 (counts≥2,
+# canonical>0) but fails Phase 2 (blockLen=120 < minBlockLen=500).
+# Boundary stays at 0 → matches available for ITS.
+# ============================================================
+{
+    echo ">chr_boundary_fail"
+    short_telo=$(repeat_motif "CCCTAA" 20)  # 120bp at start
+    tail=$(make_filler 3000)
+    echo "${short_telo}${tail}"
+} > "$DIR/boundary_fail_filter.fa"
+
+# ============================================================
+# 33. boundary_cross.fa — Boundaries meet, no ITS
+# Dense adjacent p/q blocks: fwdBoundary=1200, revBoundary=1200.
+# 1200 < 1200 is false → ITS condition fails → 0 ITS blocks.
+# ============================================================
+{
+    echo ">chr_boundary_cross"
+    parm=$(repeat_motif "CCCTAA" 200)       # 1200bp p-arm
+    qarm=$(repeat_motif "TTAGGG" 200)       # 1200bp q-arm
+    echo "${parm}${qarm}"
+} > "$DIR/boundary_cross.fa"
+
+# ============================================================
+# 34. boundary_zone_shift.fa — Zone size controls terminal vs ITS
+# Telomere blocks at offset 500 and offset 3100.
+# -t 1200: both in zone → terminal (t2t)
+# -t 400: both outside zone → ITS only (none)
+# ============================================================
+{
+    echo ">chr_boundary_zone"
+    head=$(make_filler 500)
+    parm=$(repeat_motif "CCCTAA" 100)       # 600bp at pos 500
+    mid=$(make_filler 2000)
+    qarm=$(repeat_motif "TTAGGG" 100)       # 600bp at pos 3100
+    tail=$(make_filler 500)
+    echo "${head}${parm}${mid}${qarm}${tail}"
+} > "$DIR/boundary_zone_shift.fa"
+
+# ============================================================
+# 35. boundary_its_at_edge.fa — ITS starts exactly at fwdBoundary
+# p-block at 0-600 → fwdBoundary=600.
+# Small TTAGGG cluster at 600-660 right at boundary → ITS picks it up.
+# Large TTAGGG at end → q-block, revBoundary well before mid.
+# ============================================================
+{
+    echo ">chr_boundary_edge"
+    parm=$(repeat_motif "CCCTAA" 100)       # 600bp p-arm
+    its_cluster=$(repeat_motif "TTAGGG" 10) # 60bp at pos 600
+    mid=$(make_filler 2200)
+    qarm=$(repeat_motif "TTAGGG" 100)       # 600bp q-arm
+    echo "${parm}${its_cluster}${mid}${qarm}"
+} > "$DIR/boundary_its_at_edge.fa"
+
+# ============================================================
+# 36. boundary_multiple_p.fa — Two separate p-blocks
+# Gap=300 > blockDist=200 → no Phase 2 merge → 2 terminal blocks.
+# fwdBoundary moves to end of outermost block (1500).
+# ITS starts at 1500, nothing there → 0 ITS.
+# ============================================================
+{
+    echo ">chr_boundary_multi_p"
+    clust1=$(repeat_motif "CCCTAA" 100)     # 600bp at pos 0
+    gap=$(make_filler 300)                  # 300bp gap > blockDist
+    clust2=$(repeat_motif "CCCTAA" 100)     # 600bp at pos 900
+    tail=$(make_filler 2000)
+    echo "${clust1}${gap}${clust2}${tail}"
+} > "$DIR/boundary_multiple_p.fa"
+
+# ============================================================
+# 37. boundary_extend_its.fa — Terminal extends past zone + ITS
+# With -t 300: p-block starts in [0,300) zone, extends to 600.
+# q-block starts in [4200,4500) zone, extends left to 3900.
+# ITS region [600,3900) contains TTAGGG cluster at 2600.
+# ============================================================
+{
+    echo ">chr_boundary_ext_its"
+    parm=$(repeat_motif "CCCTAA" 100)       # 600bp p-arm
+    mid1=$(make_filler 2000)
+    its_telo=$(repeat_motif "TTAGGG" 50)    # 300bp ITS at pos 2600
+    mid2=$(make_filler 1000)
+    qarm=$(repeat_motif "TTAGGG" 100)       # 600bp q-arm
+    echo "${parm}${mid1}${its_telo}${mid2}${qarm}"
+} > "$DIR/boundary_extend_its.fa"
+
 echo "Generated $(ls -1 "$DIR"/*.fa "$DIR"/*.gfa 2>/dev/null | wc -l) synthetic test files in $DIR/"

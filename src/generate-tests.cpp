@@ -161,6 +161,36 @@ int main(int, char **argv) {
         }},
         {{"mirror_no_merge.fa"}, {
             "-f testFiles/mirror_no_merge.fa -n"
+        }},
+        // Boundary logic: terminal/ITS boundary placement
+        {{"boundary_no_terminal.fa"}, {
+            "-f testFiles/boundary_no_terminal.fa -t 500 -n",
+            "-f testFiles/boundary_no_terminal.fa -t 500 -i -o testFiles/tmp"
+        }},
+        {{"boundary_fail_filter.fa"}, {
+            "-f testFiles/boundary_fail_filter.fa -n",
+            "-f testFiles/boundary_fail_filter.fa -i -o testFiles/tmp"
+        }},
+        {{"boundary_cross.fa"}, {
+            "-f testFiles/boundary_cross.fa -n",
+            "-f testFiles/boundary_cross.fa -i -o testFiles/tmp"
+        }},
+        {{"boundary_zone_shift.fa"}, {
+            "-f testFiles/boundary_zone_shift.fa -t 1200 -n",
+            "-f testFiles/boundary_zone_shift.fa -t 400 -n",
+            "-f testFiles/boundary_zone_shift.fa -t 400 -i -o testFiles/tmp"
+        }},
+        {{"boundary_its_at_edge.fa"}, {
+            "-f testFiles/boundary_its_at_edge.fa -n",
+            "-f testFiles/boundary_its_at_edge.fa -i -o testFiles/tmp"
+        }},
+        {{"boundary_multiple_p.fa"}, {
+            "-f testFiles/boundary_multiple_p.fa -n",
+            "-f testFiles/boundary_multiple_p.fa -i -o testFiles/tmp"
+        }},
+        {{"boundary_extend_its.fa"}, {
+            "-f testFiles/boundary_extend_its.fa -t 300 -n",
+            "-f testFiles/boundary_extend_its.fa -t 300 -i -o testFiles/tmp"
         }}
     //  {{set of test file paths}, {list of command line args to run with}}
     };
