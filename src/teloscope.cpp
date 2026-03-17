@@ -35,7 +35,8 @@ uint64_t Teloscope::getTerminalBlocks(
     int64_t n = static_cast<int64_t>(matches.size());
 
     uint32_t terminalLimit = userInput.terminalLimit;
-    uint16_t mergeDist = userInput.maxBlockDist;
+    uint16_t matchDist = userInput.maxMatchDist;
+    uint16_t blockDist = userInput.maxBlockDist;
     uint16_t minBlockCounts = userInput.minBlockCounts;
     uint16_t minBlockLen = userInput.minBlockLen;
     float minBlockDensity = userInput.minBlockDensity;
@@ -44,16 +45,19 @@ uint64_t Teloscope::getTerminalBlocks(
     int64_t endIdx   = fromStart ? n : -1;
     int64_t step     = fromStart ? 1 : -1;
 
-    bool inBlock = false;
-    uint64_t blockStart = 0, blockEnd = 0, prevPosition = 0;
-    uint16_t blockCounts = 0, forwardCount = 0, canonicalCount = 0;
-    uint32_t totalCovered = 0, fwdCovered = 0, canCovered = 0;
-
     auto inZone = [&](uint64_t pos) -> bool {
         uint64_t rel = pos - absPos;
         if (segmentSize <= terminalLimit) return true;
         return fromStart ? (rel < terminalLimit) : (rel >= segmentSize - terminalLimit);
     };
+
+    // --- Phase 1: Directional scan → high-quality sub-blocks (matchDist) ---
+    std::vector<TelomereBlock> subBlocks;
+
+    bool inBlock = false;
+    uint64_t blockStart = 0, blockEnd = 0, prevPosition = 0;
+    uint16_t blockCounts = 0, forwardCount = 0, canonicalCount = 0;
+    uint32_t totalCovered = 0, fwdCovered = 0, canCovered = 0;
 
     auto startNewBlock = [&](const MatchInfo& m) {
         blockStart = m.position;
@@ -68,16 +72,11 @@ uint64_t Teloscope::getTerminalBlocks(
         inBlock = true;
     };
 
-    auto finalizeBlock = [&]() {
-        uint32_t blockLen = static_cast<uint32_t>(blockEnd - blockStart);
-        float density = (blockLen > 0) ? static_cast<float>(canCovered) / blockLen : 0.0f;
-
-        if (blockCounts >= minBlockCounts && canonicalCount > 0 &&
-            blockLen >= minBlockLen && density >= minBlockDensity) {
-
+    auto finalizeSubBlock = [&]() {
+        if (blockCounts >= minBlockCounts && canonicalCount > 0) {
             TelomereBlock block;
             block.start = blockStart;
-            block.blockLen = blockLen;
+            block.blockLen = static_cast<uint32_t>(blockEnd - blockStart);
             block.blockCounts = blockCounts;
             block.forwardCount = forwardCount;
             block.reverseCount = blockCounts - forwardCount;
@@ -86,16 +85,7 @@ uint64_t Teloscope::getTerminalBlocks(
             block.totalCovered = totalCovered;
             block.fwdCovered = fwdCovered;
             block.canCovered = canCovered;
-            block.blockLabel = fromStart ? 'p' : 'q';
-
-            uint64_t relStart = blockStart - absPos;
-            uint64_t relEnd = relStart + blockLen;
-            uint64_t leftDist = relStart;
-            uint64_t rightDist = (relEnd <= segmentSize) ? (segmentSize - relEnd) : 0;
-            block.hasValidOr = fromStart ? (leftDist <= rightDist) : (leftDist >= rightDist);
-
-            outBlocks.push_back(block);
-            boundary = fromStart ? blockEnd : blockStart;
+            subBlocks.push_back(block);
         }
         inBlock = false;
     };
@@ -111,7 +101,7 @@ uint64_t Teloscope::getTerminalBlocks(
             }
         } else {
             uint64_t gap = fromStart ? (m.position - prevPosition) : (prevPosition - m.position);
-            if (gap <= mergeDist) {
+            if (gap <= matchDist) {
                 if (fromStart) blockEnd = m.position + m.matchSize;
                 else blockStart = m.position;
                 blockCounts++;
@@ -122,7 +112,7 @@ uint64_t Teloscope::getTerminalBlocks(
                 canCovered += m.isCanonical * m.matchSize;
                 prevPosition = m.position;
             } else {
-                finalizeBlock();
+                finalizeSubBlock();
                 if (inZone(m.position)) {
                     startNewBlock(m);
                 } else {
@@ -132,7 +122,58 @@ uint64_t Teloscope::getTerminalBlocks(
         }
     }
 
-    if (inBlock) finalizeBlock();
+    if (inBlock) finalizeSubBlock();
+    if (subBlocks.empty()) return boundary;
+
+    // --- Phase 2: Merge adjacent sub-blocks within blockDist, apply filters ---
+    TelomereBlock current = subBlocks[0];
+
+    auto finalizeExtended = [&]() {
+        float density = (current.blockLen > 0)
+            ? static_cast<float>(current.canCovered) / current.blockLen : 0.0f;
+
+        if (current.blockLen >= minBlockLen && density >= minBlockDensity) {
+            current.blockLabel = fromStart ? 'p' : 'q';
+
+            uint64_t relStart = current.start - absPos;
+            uint64_t relEnd = relStart + current.blockLen;
+            uint64_t leftDist = relStart;
+            uint64_t rightDist = (relEnd <= segmentSize) ? (segmentSize - relEnd) : 0;
+            current.hasValidOr = fromStart ? (leftDist <= rightDist) : (leftDist >= rightDist);
+
+            outBlocks.push_back(current);
+            boundary = fromStart ? (current.start + current.blockLen) : current.start;
+        }
+    };
+
+    for (size_t i = 1; i < subBlocks.size(); ++i) {
+        TelomereBlock& next = subBlocks[i];
+        uint64_t gap = fromStart
+            ? (next.start - (current.start + current.blockLen))
+            : (current.start - (next.start + next.blockLen));
+
+        if (gap <= blockDist) {
+            if (fromStart) {
+                current.blockLen = (next.start + next.blockLen) - current.start;
+            } else {
+                current.blockLen = (current.start + current.blockLen) - next.start;
+                current.start = next.start;
+            }
+            current.blockCounts += next.blockCounts;
+            current.forwardCount += next.forwardCount;
+            current.reverseCount += next.reverseCount;
+            current.canonicalCount += next.canonicalCount;
+            current.nonCanonicalCount += next.nonCanonicalCount;
+            current.totalCovered += next.totalCovered;
+            current.fwdCovered += next.fwdCovered;
+            current.canCovered += next.canCovered;
+        } else {
+            finalizeExtended();
+            current = next;
+        }
+    }
+
+    finalizeExtended();
     return boundary;
 }
 
