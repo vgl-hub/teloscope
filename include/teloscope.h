@@ -119,9 +119,8 @@ struct SegmentData {
     std::vector<TelomereBlock> interstitialBlocks;
     std::vector<MatchInfo> canonicalMatches;
     std::vector<MatchInfo> nonCanonicalMatches;
-    std::vector<MatchInfo> terminalFwdMatches;
-    std::vector<MatchInfo> terminalRevMatches;
-    std::vector<MatchInfo> interstitialMatches;
+    std::vector<MatchInfo> fwdMatches;
+    std::vector<MatchInfo> revMatches;
 };
 
 
@@ -216,11 +215,12 @@ public:
     void sortBySeqPos();
 
     std::vector<TelomereBlock> getTeloBlocks(
-        std::vector<MatchInfo>& matches, 
+        std::vector<MatchInfo>& matches,
         uint16_t mergeDist,
-        bool needsSorting = false,
-        std::vector<MatchInfo>* recycleTarget = nullptr,
-        bool recycleToStart = false);
+        bool needsSorting = false);
+
+    std::vector<TelomereBlock> mergeNearbyBlocks(
+        std::vector<TelomereBlock>& blocks, uint16_t maxDist);
 
     std::vector<TelomereBlock> extendBlocks(std::vector<TelomereBlock> &blocks,
     uint16_t maxBlockDist, float densityCutoff, uint64_t segmentSize, uint64_t absPos);
