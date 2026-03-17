@@ -241,19 +241,19 @@ public:
         });
     }
 
-    std::vector<TelomereBlock> getTeloBlocks(
-        std::vector<MatchInfo>& matches,
-        uint16_t mergeDist,
-        bool needsSorting = false);
+    uint64_t getTerminalBlocks(
+        const std::vector<MatchInfo>& matches,
+        std::vector<TelomereBlock>& outBlocks,
+        uint64_t segmentSize, uint64_t absPos, bool fromStart);
 
-    std::vector<TelomereBlock> extendBlocks(std::vector<TelomereBlock> &blocks,
-    uint16_t maxBlockDist, float densityCutoff, uint64_t segmentSize, uint64_t absPos);
+    void getInterstitialBlocks(
+        const std::vector<MatchInfo>& allMatches,
+        std::vector<TelomereBlock>& outBlocks,
+        uint64_t fwdBoundary, uint64_t revBoundary);
 
     void labelTerminalBlocks(std::vector<TelomereBlock>& blocks, uint16_t gaps,
                         std::string& terminalLabel, ScaffoldType& scaffoldType,
                         uint64_t pathSize, uint32_t terminalLimit);
-    
-    std::vector<TelomereBlock> filterITSBlocks(const std::vector<TelomereBlock>& interstitialBlocks);
     
     std::string getChrType(const std::string& labels, uint16_t gaps);
     

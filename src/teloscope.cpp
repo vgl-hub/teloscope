@@ -26,170 +26,194 @@
 #include "input.h"
 
 
-std::vector<TelomereBlock> Teloscope::getTeloBlocks(
-    std::vector<MatchInfo>& matches,
-    uint16_t mergeDist,
-    bool needsSorting) {
+uint64_t Teloscope::getTerminalBlocks(
+    const std::vector<MatchInfo>& matches,
+    std::vector<TelomereBlock>& outBlocks,
+    uint64_t segmentSize, uint64_t absPos, bool fromStart) {
 
-    if (needsSorting) {
-        std::sort(matches.begin(), matches.end(), [](const MatchInfo &a, const MatchInfo &b) {
-            return a.position < b.position;
-        });
-    }
+    uint64_t boundary = fromStart ? absPos : (absPos + segmentSize);
+    int64_t n = static_cast<int64_t>(matches.size());
 
-    std::vector<TelomereBlock> telomereBlocks;
+    uint32_t terminalLimit = userInput.terminalLimit;
+    uint16_t mergeDist = userInput.maxBlockDist;
     uint16_t minBlockCounts = userInput.minBlockCounts;
+    uint16_t minBlockLen = userInput.minBlockLen;
+    float minBlockDensity = userInput.minBlockDensity;
 
-    uint64_t blockStart = matches[0].position;
-    uint64_t prevPosition = blockStart;
-    uint16_t blockCounts = 1;
-    uint16_t forwardCount = matches[0].isForward;
-    uint16_t canonicalCount = matches[0].isCanonical;
-    uint64_t totalCovered = matches[0].matchSize;
-    uint64_t fwdCovered = matches[0].isForward * matches[0].matchSize;
-    uint64_t canCovered = matches[0].isCanonical * matches[0].matchSize;
-    uint16_t lastMatchSize = matches[0].matchSize;
+    int64_t startIdx = fromStart ? 0 : n - 1;
+    int64_t endIdx   = fromStart ? n : -1;
+    int64_t step     = fromStart ? 1 : -1;
 
-    auto finalizeBlock = [&](uint64_t endPosition) {
-        if (blockCounts >= minBlockCounts && canonicalCount > 0) {
+    bool inBlock = false;
+    uint64_t blockStart = 0, blockEnd = 0, prevPosition = 0;
+    uint16_t blockCounts = 0, forwardCount = 0, canonicalCount = 0;
+    uint32_t totalCovered = 0, fwdCovered = 0, canCovered = 0;
+
+    auto inZone = [&](uint64_t pos) -> bool {
+        uint64_t rel = pos - absPos;
+        if (segmentSize <= terminalLimit) return true;
+        return fromStart ? (rel < terminalLimit) : (rel >= segmentSize - terminalLimit);
+    };
+
+    auto startNewBlock = [&](const MatchInfo& m) {
+        blockStart = m.position;
+        blockEnd = m.position + m.matchSize;
+        prevPosition = m.position;
+        blockCounts = 1;
+        forwardCount = m.isForward;
+        canonicalCount = m.isCanonical;
+        totalCovered = m.matchSize;
+        fwdCovered = m.isForward * m.matchSize;
+        canCovered = m.isCanonical * m.matchSize;
+        inBlock = true;
+    };
+
+    auto finalizeBlock = [&]() {
+        uint32_t blockLen = static_cast<uint32_t>(blockEnd - blockStart);
+        float density = (blockLen > 0) ? static_cast<float>(canCovered) / blockLen : 0.0f;
+
+        if (blockCounts >= minBlockCounts && canonicalCount > 0 &&
+            blockLen >= minBlockLen && density >= minBlockDensity) {
+
             TelomereBlock block;
             block.start = blockStart;
-            block.blockLen = (endPosition - blockStart) + lastMatchSize;
-
+            block.blockLen = blockLen;
             block.blockCounts = blockCounts;
             block.forwardCount = forwardCount;
             block.reverseCount = blockCounts - forwardCount;
             block.canonicalCount = canonicalCount;
             block.nonCanonicalCount = blockCounts - canonicalCount;
-
             block.totalCovered = totalCovered;
             block.fwdCovered = fwdCovered;
             block.canCovered = canCovered;
+            block.blockLabel = fromStart ? 'p' : 'q';
 
-            block.blockLabel = computeBlockLabel(forwardCount, blockCounts);
+            uint64_t relStart = blockStart - absPos;
+            uint64_t relEnd = relStart + blockLen;
+            uint64_t leftDist = relStart;
+            uint64_t rightDist = (relEnd <= segmentSize) ? (segmentSize - relEnd) : 0;
+            block.hasValidOr = fromStart ? (leftDist <= rightDist) : (leftDist >= rightDist);
 
-            telomereBlocks.push_back(block);
+            outBlocks.push_back(block);
+            boundary = fromStart ? blockEnd : blockStart;
         }
+        inBlock = false;
     };
 
-    for (size_t i = 1; i < matches.size(); ++i) {
-        uint64_t distance = matches[i].position - prevPosition;
+    for (int64_t idx = startIdx; idx != endIdx; idx += step) {
+        const MatchInfo& m = matches[idx];
 
-        if (distance <= mergeDist) {
-            blockCounts++;
-            forwardCount += matches[i].isForward;
-            canonicalCount += matches[i].isCanonical;
-
-            totalCovered += matches[i].matchSize;
-            fwdCovered += matches[i].isForward * matches[i].matchSize;
-            canCovered += matches[i].isCanonical * matches[i].matchSize;
-
-            prevPosition = matches[i].position;
-            lastMatchSize = matches[i].matchSize;
-
+        if (!inBlock) {
+            if (inZone(m.position)) {
+                startNewBlock(m);
+            } else {
+                break;
+            }
         } else {
-            finalizeBlock(prevPosition);
-
-            blockStart = matches[i].position;
-            prevPosition = blockStart;
-            blockCounts = 1;
-            forwardCount = matches[i].isForward;
-            canonicalCount = matches[i].isCanonical;
-
-            totalCovered = matches[i].matchSize;
-            fwdCovered = matches[i].isForward * matches[i].matchSize;
-            canCovered = matches[i].isCanonical * matches[i].matchSize;
-            lastMatchSize = matches[i].matchSize;
+            uint64_t gap = fromStart ? (m.position - prevPosition) : (prevPosition - m.position);
+            if (gap <= mergeDist) {
+                if (fromStart) blockEnd = m.position + m.matchSize;
+                else blockStart = m.position;
+                blockCounts++;
+                forwardCount += m.isForward;
+                canonicalCount += m.isCanonical;
+                totalCovered += m.matchSize;
+                fwdCovered += m.isForward * m.matchSize;
+                canCovered += m.isCanonical * m.matchSize;
+                prevPosition = m.position;
+            } else {
+                finalizeBlock();
+                if (inZone(m.position)) {
+                    startNewBlock(m);
+                } else {
+                    break;
+                }
+            }
         }
     }
 
-    finalizeBlock(prevPosition);
-    return telomereBlocks;
+    if (inBlock) finalizeBlock();
+    return boundary;
 }
 
 
+void Teloscope::getInterstitialBlocks(
+    const std::vector<MatchInfo>& allMatches,
+    std::vector<TelomereBlock>& outBlocks,
+    uint64_t fwdBoundary, uint64_t revBoundary) {
 
-std::vector<TelomereBlock> Teloscope::extendBlocks(std::vector<TelomereBlock> &blocks,
-    uint16_t maxBlockDist, float densityCutoff, uint64_t segmentSize, uint64_t absPos) {
-    std::vector<TelomereBlock> extendedBlocks;
-    if (blocks.empty()) {
-        return extendedBlocks;
-    }
+    uint16_t mergeDist = userInput.maxMatchDist;
+    uint16_t minLength = 2 * userInput.patterns.front().size();
+    constexpr uint16_t minCanonicalCount = 4;
 
-    extendedBlocks.reserve(blocks.size());
+    auto it = std::lower_bound(allMatches.begin(), allMatches.end(), fwdBoundary,
+        [](const MatchInfo& m, uint64_t val) { return m.position < val; });
 
-    TelomereBlock currentBlock = blocks[0];
-    currentBlock.hasValidOr = true; // Default
+    if (it == allMatches.end() || it->position >= revBoundary) return;
 
-    for (size_t i = 1; i < blocks.size(); ++i) {
-        TelomereBlock &nextBlock = blocks[i];
-        uint64_t gap = nextBlock.start - (currentBlock.start + currentBlock.blockLen);
+    bool inBlock = false;
+    uint64_t blockStart = 0, blockEnd = 0, prevPosition = 0;
+    uint16_t blockCounts = 0, forwardCount = 0, canonicalCount = 0;
+    uint32_t totalCovered = 0, fwdCovered = 0, canCovered = 0;
 
-        if (gap <= maxBlockDist) {
-            // Extend the current block
-            currentBlock.blockLen = (nextBlock.start + nextBlock.blockLen) - currentBlock.start;
+    auto startNewBlock = [&](const MatchInfo& m) {
+        blockStart = m.position;
+        blockEnd = m.position + m.matchSize;
+        prevPosition = m.position;
+        blockCounts = 1;
+        forwardCount = m.isForward;
+        canonicalCount = m.isCanonical;
+        totalCovered = m.matchSize;
+        fwdCovered = m.isForward * m.matchSize;
+        canCovered = m.isCanonical * m.matchSize;
+        inBlock = true;
+    };
 
-            // Update counts
-            currentBlock.blockCounts += nextBlock.blockCounts;
-            currentBlock.forwardCount += nextBlock.forwardCount;
-            currentBlock.reverseCount += nextBlock.reverseCount;
-            currentBlock.canonicalCount += nextBlock.canonicalCount;
-            currentBlock.nonCanonicalCount += nextBlock.nonCanonicalCount;
+    auto finalizeBlock = [&]() {
+        uint32_t blockLen = static_cast<uint32_t>(blockEnd - blockStart);
+        char label = computeBlockLabel(forwardCount, blockCounts);
 
-            // Update coverage metrics
-            currentBlock.totalCovered += nextBlock.totalCovered;
-            currentBlock.fwdCovered += nextBlock.fwdCovered;
-            currentBlock.canCovered += nextBlock.canCovered;
+        if (blockLen >= minLength && canonicalCount >= minCanonicalCount &&
+            !(label == 'b' && forwardCount < 2 && (blockCounts - forwardCount) < 2)) {
 
-            // Recompute label from merged counts
-            currentBlock.blockLabel = computeBlockLabel(currentBlock.forwardCount, currentBlock.blockCounts);
+            TelomereBlock block;
+            block.start = blockStart;
+            block.blockLen = blockLen;
+            block.blockCounts = blockCounts;
+            block.forwardCount = forwardCount;
+            block.reverseCount = blockCounts - forwardCount;
+            block.canonicalCount = canonicalCount;
+            block.nonCanonicalCount = blockCounts - canonicalCount;
+            block.totalCovered = totalCovered;
+            block.fwdCovered = fwdCovered;
+            block.canCovered = canCovered;
+            block.blockLabel = label;
+            outBlocks.push_back(block);
+        }
+        inBlock = false;
+    };
 
+    for (; it != allMatches.end() && it->position < revBoundary; ++it) {
+        const MatchInfo& m = *it;
+
+        if (!inBlock) {
+            startNewBlock(m);
+        } else if (m.position - prevPosition <= mergeDist) {
+            blockEnd = m.position + m.matchSize;
+            blockCounts++;
+            forwardCount += m.isForward;
+            canonicalCount += m.isCanonical;
+            totalCovered += m.matchSize;
+            fwdCovered += m.isForward * m.matchSize;
+            canCovered += m.isCanonical * m.matchSize;
+            prevPosition = m.position;
         } else {
-            // Calculate relative distances (saturating to avoid underflow)
-            uint64_t relativeStart = currentBlock.start - absPos;
-            uint64_t leftDist = relativeStart;
-            uint64_t blockEnd = relativeStart + currentBlock.blockLen;
-            uint64_t rightDist = (blockEnd <= segmentSize) ? (segmentSize - blockEnd) : 0;
-
-            // Apply overhang rules
-            if ((currentBlock.blockLabel == 'p' && leftDist > rightDist) ||
-                (currentBlock.blockLabel == 'q' && leftDist < rightDist)) {
-                currentBlock.hasValidOr = false;
-            }
-
-            // Push the finalized block
-            float density = (currentBlock.blockLen > 0)
-                ? static_cast<float>(currentBlock.canCovered) / currentBlock.blockLen
-                : 0.0f;
-            if (currentBlock.blockLen >= userInput.minBlockLen && density >= densityCutoff) {
-                extendedBlocks.push_back(currentBlock);
-            }
-
-            // Start a new block
-            currentBlock = nextBlock;
-            currentBlock.hasValidOr = true;  // Default is true for new blocks
+            finalizeBlock();
+            startNewBlock(m);
         }
     }
 
-    // Add the last block - also adjust coordinates
-    uint64_t relativeStart = currentBlock.start - absPos;
-    uint64_t leftDist = relativeStart;
-    uint64_t blockEnd = relativeStart + currentBlock.blockLen;
-    uint64_t rightDist = (blockEnd <= segmentSize) ? (segmentSize - blockEnd) : 0;
-
-    if ((currentBlock.blockLabel == 'p' && leftDist > rightDist) ||
-        (currentBlock.blockLabel == 'q' && leftDist < rightDist)) {
-        currentBlock.hasValidOr = false;
-    }
-
-    float density = (currentBlock.blockLen > 0)
-        ? static_cast<float>(currentBlock.canCovered) / currentBlock.blockLen
-        : 0.0f;
-    if (currentBlock.blockLen >= userInput.minBlockLen && density >= densityCutoff) {
-        extendedBlocks.push_back(currentBlock);
-    }
-
-    return extendedBlocks;
+    if (inBlock) finalizeBlock();
 }
 
 
@@ -321,21 +345,6 @@ void Teloscope::labelTerminalBlocks(
     scaffoldType = pickType(ScaffoldType::INCOMPLETE, ScaffoldType::GAPPED_INCOMPLETE);
 }
 
-
-std::vector<TelomereBlock> Teloscope::filterITSBlocks(const std::vector<TelomereBlock>& interstitialBlocks) {
-    std::vector<TelomereBlock> filteredBlocks;
-    uint16_t minLength = 2 * userInput.patterns.front().size();
-    constexpr uint16_t minCanonicalCount = 4;
-
-    for (const auto& block : interstitialBlocks) {
-        if (block.blockLen < minLength) continue;  // Length filter
-        if (block.canonicalCount < minCanonicalCount) continue; // Minimal canonical count
-        if (block.blockLabel == 'b' && (block.forwardCount < 2 && block.reverseCount < 2)) continue; // Balanced check
-        filteredBlocks.push_back(block);
-    }
-
-    return filteredBlocks;
-}
 
 
 void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowStart,
@@ -604,54 +613,19 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
     }
 
     // ========== Block creation ==========
-    uint16_t mergeDist = userInput.maxMatchDist;
-    uint16_t extendDist = userInput.maxBlockDist;
-    float densityCutoff = userInput.minBlockDensity;
+    uint64_t fwdBoundary = absPos;
+    uint64_t revBoundary = absPos + segmentSize;
 
-    // 1. Build strand-pure blocks
-    std::vector<TelomereBlock> fwdBlocks, revBlocks;
     if (segmentData.fwdMatches.size() >= 2)
-        fwdBlocks = getTeloBlocks(segmentData.fwdMatches, mergeDist);
+        fwdBoundary = getTerminalBlocks(segmentData.fwdMatches, segmentData.terminalBlocks,
+                                         segmentSize, absPos, true);
     if (segmentData.revMatches.size() >= 2)
-        revBlocks = getTeloBlocks(segmentData.revMatches, mergeDist);
+        revBoundary = getTerminalBlocks(segmentData.revMatches, segmentData.terminalBlocks,
+                                         segmentSize, absPos, false);
 
-    // 2. Classify by position, then extend terminal blocks only
-    auto isTerminalBlock = [&](const TelomereBlock& block) -> bool {
-        uint64_t relStart = block.start - absPos;
-        uint64_t relEnd = relStart + block.blockLen;
-        return (relStart < terminalLimit || relEnd > segmentSize - terminalLimit);
-    };
-
-    std::vector<TelomereBlock> termFwd, termRev;
-    for (auto& b : fwdBlocks) {
-        if (isTerminalBlock(b)) termFwd.push_back(std::move(b));
-    }
-    for (auto& b : revBlocks) {
-        if (isTerminalBlock(b)) termRev.push_back(std::move(b));
-    }
-
-    if (!termFwd.empty()) {
-        auto ext = extendBlocks(termFwd, extendDist, densityCutoff, segmentSize, absPos);
-        segmentData.terminalBlocks.insert(segmentData.terminalBlocks.end(),
-            std::make_move_iterator(ext.begin()), std::make_move_iterator(ext.end()));
-    }
-    if (!termRev.empty()) {
-        auto ext = extendBlocks(termRev, extendDist, densityCutoff, segmentSize, absPos);
-        segmentData.terminalBlocks.insert(segmentData.terminalBlocks.end(),
-            std::make_move_iterator(ext.begin()), std::make_move_iterator(ext.end()));
-    }
-
-    // 3. ITS: strand-mixed blocks from allMatches (naturally sorted by scan order)
-    if (!tipsOnly && segmentData.allMatches.size() >= 2) {
-        auto allBlocks = getTeloBlocks(segmentData.allMatches, mergeDist);
-        std::vector<TelomereBlock> itsCandidates;
-        for (auto& b : allBlocks) {
-            if (!isTerminalBlock(b)) itsCandidates.push_back(std::move(b));
-        }
-        if (!itsCandidates.empty()) {
-            segmentData.interstitialBlocks = filterITSBlocks(itsCandidates);
-        }
-    }
+    if (!tipsOnly && fwdBoundary < revBoundary && segmentData.allMatches.size() >= 2)
+        getInterstitialBlocks(segmentData.allMatches, segmentData.interstitialBlocks,
+                              fwdBoundary, revBoundary);
 
     return segmentData;
 }
