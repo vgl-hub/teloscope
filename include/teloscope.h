@@ -2,6 +2,7 @@
 #define TELOSCOPE_H
 
 #include "input.h"
+#include "tools.h"
 #include <iostream>
 #include <map>
 #include <stdint.h>
@@ -9,16 +10,6 @@
 #include <string>
 #include <string_view>
 #include <array>
-
-enum class ScaffoldType : uint8_t {
-    T2T, GAPPED_T2T,
-    MISASSEMBLY, GAPPED_MISASSEMBLY,
-    INCOMPLETE, GAPPED_INCOMPLETE,
-    NONE, GAPPED_NONE,
-    DISCORDANT, GAPPED_DISCORDANT
-};
-
-const char* scaffoldTypeToString(ScaffoldType type);
 
 class Trie {
     struct TrieNode {
@@ -149,14 +140,6 @@ struct PathData {
 };
 
 
-struct Stats {
-    float min = 0.0f;
-    float max = 0.0f;
-    float mean = 0.0f;
-    float median = 0.0f;
-};
-
-
 class Teloscope {
     Trie trie; // Declare trie instance
     UserInputTeloscope userInput; // Declare user input instance
@@ -205,8 +188,6 @@ class Teloscope {
         return static_cast<float>(gcCount) / windowSize * 100.0;
     }
 
-
-    Stats getStats(std::vector<float>& values);
 
     static char computeBlockLabel(uint16_t forwardCount, uint16_t blockCounts);
 

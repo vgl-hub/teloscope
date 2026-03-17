@@ -1,6 +1,56 @@
 #include "tools.h"
 #include "functions.h"
 
+
+const char* scaffoldTypeToString(ScaffoldType type) {
+    switch (type) {
+        case ScaffoldType::T2T:                   return "t2t";
+        case ScaffoldType::GAPPED_T2T:            return "gapped_t2t";
+        case ScaffoldType::MISASSEMBLY:          return "misassembly";
+        case ScaffoldType::GAPPED_MISASSEMBLY:   return "gapped_misassembly";
+        case ScaffoldType::INCOMPLETE:            return "incomplete";
+        case ScaffoldType::GAPPED_INCOMPLETE:     return "gapped_incomplete";
+        case ScaffoldType::NONE:                  return "none";
+        case ScaffoldType::GAPPED_NONE:           return "gapped_none";
+        case ScaffoldType::DISCORDANT:            return "discordant";
+        case ScaffoldType::GAPPED_DISCORDANT:     return "gapped_discordant";
+        default:                                  return "unknown";
+    }
+}
+
+
+Stats getStats(std::vector<float>& values) {
+    Stats stats;
+    if (values.empty()) {
+        return stats;
+    }
+
+    float sum = 0.0f;
+    stats.min = values[0];
+    stats.max = values[0];
+    for (float val : values) {
+        if (val < stats.min) stats.min = val;
+        if (val > stats.max) stats.max = val;
+        sum += val;
+    }
+    stats.mean = sum / values.size();
+
+    size_t size = values.size();
+    size_t mid = size / 2;
+    std::nth_element(values.begin(), values.begin() + mid, values.end());
+
+    if (size % 2 == 0) {
+        float median1 = values[mid];
+        float median2 = *std::max_element(values.begin(), values.begin() + mid);
+        stats.median = (median1 + median2) / 2;
+    } else {
+        stats.median = values[mid];
+    }
+
+    return stats;
+}
+
+
 std::unordered_map<char, std::vector<char>> IUPAC = {
     {'A', {'A'}},
     {'C', {'C'}},

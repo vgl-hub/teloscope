@@ -25,23 +25,6 @@
 #include "teloscope.h"
 #include "input.h"
 
-const char* scaffoldTypeToString(ScaffoldType type) {
-    switch (type) {
-        case ScaffoldType::T2T:                   return "t2t";
-        case ScaffoldType::GAPPED_T2T:            return "gapped_t2t";
-        case ScaffoldType::MISASSEMBLY:          return "misassembly";
-        case ScaffoldType::GAPPED_MISASSEMBLY:   return "gapped_misassembly";
-        case ScaffoldType::INCOMPLETE:            return "incomplete";
-        case ScaffoldType::GAPPED_INCOMPLETE:     return "gapped_incomplete";
-        case ScaffoldType::NONE:                  return "none";
-        case ScaffoldType::GAPPED_NONE:           return "gapped_none";
-        case ScaffoldType::DISCORDANT:            return "discordant";
-        case ScaffoldType::GAPPED_DISCORDANT:     return "gapped_discordant";
-        default:                                  return "unknown";
-    }
-}
-
-
 // Insert pattern into the flat node pool. Each char maps to index 0-3.
 void Trie::insertPattern(const std::string& pattern, bool isForward, bool isCanonical) {
     int32_t current = 0; // start at root
@@ -64,38 +47,6 @@ void Trie::insertPattern(const std::string& pattern, bool isForward, bool isCano
         longestPatternSize = pattern.size();
     }
 }
-
-Stats Teloscope::getStats(std::vector<float>& values) {
-    Stats stats;
-    if (values.empty()) {
-        return stats;
-    }
-
-    float sum = 0.0f;
-    stats.min = values[0];
-    stats.max = values[0];
-    for (float val : values) {
-        if (val < stats.min) stats.min = val;
-        if (val > stats.max) stats.max = val;
-        sum += val;
-    }
-    stats.mean = sum / values.size();
-
-    size_t size = values.size();
-    size_t mid = size / 2;
-    std::nth_element(values.begin(), values.begin() + mid, values.end());
-
-    if (size % 2 == 0) {
-        float median1 = values[mid];
-        float median2 = *std::max_element(values.begin(), values.begin() + mid);
-        stats.median = (median1 + median2) / 2;
-    } else {
-        stats.median = values[mid];
-    }
-
-    return stats;
-}
-
 
 void Teloscope::sortBySeqPos() {
     std::sort(allPathData.begin(), allPathData.end(), [](const PathData& one, const PathData& two) {
@@ -687,7 +638,9 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
         constexpr uint64_t maxMatchReserve = 1000000;
         segmentData.canonicalMatches.reserve(std::min(segmentSize / 6, maxMatchReserve));
         segmentData.nonCanonicalMatches.reserve(std::min(segmentSize / 6, maxMatchReserve));
-        segmentData.windows.reserve((segmentSize - windowSize) / step + 2);
+        if (segmentSize > windowSize) {
+            segmentData.windows.reserve((segmentSize - windowSize) / step + 2);
+        }
 
         WindowData prevOverlapData; // Data from previous overlap
         WindowData nextOverlapData; // Data for next overlap
@@ -757,6 +710,48 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
         segmentData.terminalBlocks.insert(segmentData.terminalBlocks.end(),
                                         std::make_move_iterator(revBlocks.begin()),
                                         std::make_move_iterator(revBlocks.end()));
+    }
+
+    // Reclaim interstitial matches that are adjacent to terminal blocks.
+    // A long telomere tract crossing the terminalLimit boundary would otherwise
+    // be split: matches within the limit become terminal, overflow matches become
+    // interstitial. This absorbs the overflow back into the nearest terminal block.
+    if (!tipsOnly && !segmentData.terminalBlocks.empty() && !segmentData.interstitialMatches.empty()) {
+        auto& itsMatches = segmentData.interstitialMatches;
+        for (auto& block : segmentData.terminalBlocks) {
+            bool absorbed;
+            do {
+                absorbed = false;
+                uint64_t blockEnd = block.start + block.blockLen;
+                auto it = itsMatches.begin();
+                while (it != itsMatches.end()) {
+                    uint64_t matchEnd = it->position + it->matchSize;
+                    // Match overlaps or is within mergeDist of the block span.
+                    // Repeating until stable handles unsorted matches and chaining.
+                    bool adjacent = (it->position <= blockEnd + mergeDist && matchEnd + mergeDist >= block.start);
+                    if (adjacent) {
+                        uint64_t newEnd = std::max(blockEnd, matchEnd);
+                        uint64_t newStart = std::min(block.start, it->position);
+                        block.blockLen = newEnd - newStart;
+                        block.start = newStart;
+                        block.blockCounts++;
+                        block.forwardCount += it->isForward;
+                        block.reverseCount += !it->isForward;
+                        block.canonicalCount += it->isCanonical;
+                        block.nonCanonicalCount += !it->isCanonical;
+                        block.totalCovered += it->matchSize;
+                        block.fwdCovered += it->isForward * it->matchSize;
+                        block.canCovered += it->isCanonical * it->matchSize;
+                        blockEnd = block.start + block.blockLen;
+                        it = itsMatches.erase(it);
+                        absorbed = true;
+                    } else {
+                        ++it;
+                    }
+                }
+            } while (absorbed);
+            block.blockLabel = computeBlockLabel(block.forwardCount, block.blockCounts);
+        }
     }
 
     // Create interstitial blocks (only in full mode with sufficient matches)

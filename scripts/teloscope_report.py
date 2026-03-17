@@ -171,7 +171,18 @@ def parse_bedgraph(path):
 # ---------------------------------------------------------------------------
 
 def classify_chromosomes(blocks, all_chroms=None):
-    """Classify chromosomes based on terminal telomere blocks."""
+    """Classify chromosomes based on terminal telomere blocks.
+
+    Replicates the C++ labelTerminalBlocks decision tree:
+      1. Only scaffold-terminal blocks count for classification.
+      2. Find the longest p block and longest q block (by canonical count).
+      3. Check orientation validity: p must be closer to the left end,
+         q must be closer to the right end. If violated -> Discordant.
+      4. Both p and q present: p before q -> T2T, else -> Misassembly.
+      5. Single label with duplicates -> Misassembly.
+      6. Single block -> Incomplete.
+      7. No scaffold-terminal blocks -> No telomeres.
+    """
     cats = OrderedDict([
         ("T2T",          []),
         ("Incomplete",   []),
@@ -182,18 +193,51 @@ def classify_chromosomes(blocks, all_chroms=None):
 
     classified = set()
     for chrom, blist in blocks.items():
-        labels = sorted(b["label"] for b in blist)
-        n = len(blist)
         classified.add(chrom)
 
-        if n >= 2 and set(labels) == {"p", "q"}:
-            cats["T2T"].append(chrom)
-        elif n >= 2 and len(set(labels)) == 1:
-            cats["Misassembly"].append(chrom)
-        elif n == 1:
-            cats["Incomplete"].append(chrom)
-        elif n >= 2:
+        # Only consider scaffold-terminal blocks
+        sblocks = [b for b in blist if b.get("term", "") == "scaffold"]
+        if not sblocks:
+            cats["No telomeres"].append(chrom)
+            continue
+
+        # Find longest p and q blocks by canonical count
+        p_blocks = [b for b in sblocks if b["label"] == "p"]
+        q_blocks = [b for b in sblocks if b["label"] == "q"]
+
+        best_p = max(p_blocks, key=lambda b: b["can"]) if p_blocks else None
+        best_q = max(q_blocks, key=lambda b: b["can"]) if q_blocks else None
+
+        # Check orientation validity (discordant takes priority)
+        has_invalid = False
+        if best_p:
+            left_dist = best_p["start"]
+            right_dist = best_p["pathSize"] - (best_p["start"] + best_p["length"])
+            if left_dist > right_dist:
+                has_invalid = True
+        if best_q:
+            left_dist = best_q["start"]
+            right_dist = best_q["pathSize"] - (best_q["start"] + best_q["length"])
+            if left_dist < right_dist:
+                has_invalid = True
+
+        if has_invalid:
             cats["Discordant"].append(chrom)
+        elif best_p and best_q:
+            if best_p["start"] < best_q["start"]:
+                cats["T2T"].append(chrom)
+            else:
+                cats["Misassembly"].append(chrom)
+        elif best_p:
+            if len(p_blocks) > 1:
+                cats["Misassembly"].append(chrom)
+            else:
+                cats["Incomplete"].append(chrom)
+        elif best_q:
+            if len(q_blocks) > 1:
+                cats["Misassembly"].append(chrom)
+            else:
+                cats["Incomplete"].append(chrom)
         else:
             cats["No telomeres"].append(chrom)
 
