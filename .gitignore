@@ -89,6 +89,7 @@ fastlane/test_output
 tmp.txt
 err.txt
 TODO.md
+CLAUDE.md
 out
 .vscode/*
 .vs/

@@ -36,7 +36,24 @@ class Trie {
 public:
     Trie() { nodes.emplace_back(); } // root at index 0
 
-    void insertPattern(const std::string& pattern, bool isForward, bool isCanonical);
+    inline void insertPattern(const std::string& pattern, bool isForward, bool isCanonical) {
+        int32_t current = 0;
+        for (char ch : pattern) {
+            int8_t idx = charToIndex(ch);
+            if (idx < 0) continue;
+            if (nodes[current].children[idx] < 0) {
+                nodes[current].children[idx] = static_cast<int32_t>(nodes.size());
+                nodes.emplace_back();
+            }
+            current = nodes[current].children[idx];
+        }
+        nodes[current].isEndOfWord = true;
+        nodes[current].isForward = isForward;
+        nodes[current].isCanonical = isCanonical;
+        if (pattern.size() > longestPatternSize) {
+            longestPatternSize = pattern.size();
+        }
+    }
 
     // Return root index (always 0)
     int32_t getRoot() const { return 0; }
@@ -189,7 +206,12 @@ class Teloscope {
     }
 
 
-    static char computeBlockLabel(uint16_t forwardCount, uint16_t blockCounts);
+    static inline char computeBlockLabel(uint16_t forwardCount, uint16_t blockCounts) {
+        float forwardRatio = (forwardCount * 100.0f) / blockCounts;
+        if (forwardRatio > 66.6f) return 'p';
+        if (forwardRatio < 33.3f) return 'q';
+        return 'b';
+    }
 
     void computeSummaryCounts();
 
@@ -213,15 +235,16 @@ public:
 
     SegmentData scanSegment(std::string &sequence, uint64_t absPos, bool tipsOnly);
 
-    void sortBySeqPos();
+    inline void sortBySeqPos() {
+        std::sort(allPathData.begin(), allPathData.end(), [](const PathData& one, const PathData& two) {
+            return one.seqPos < two.seqPos;
+        });
+    }
 
     std::vector<TelomereBlock> getTeloBlocks(
         std::vector<MatchInfo>& matches,
         uint16_t mergeDist,
         bool needsSorting = false);
-
-    std::vector<TelomereBlock> mergeNearbyBlocks(
-        std::vector<TelomereBlock>& blocks, uint16_t maxDist);
 
     std::vector<TelomereBlock> extendBlocks(std::vector<TelomereBlock> &blocks,
     uint16_t maxBlockDist, float densityCutoff, uint64_t segmentSize, uint64_t absPos);

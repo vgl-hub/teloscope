@@ -25,43 +25,6 @@
 #include "teloscope.h"
 #include "input.h"
 
-// Insert pattern into the flat node pool. Each char maps to index 0-3.
-void Trie::insertPattern(const std::string& pattern, bool isForward, bool isCanonical) {
-    int32_t current = 0; // start at root
-    for (char ch : pattern) {
-        int8_t idx = charToIndex(ch);
-        if (idx < 0) continue; // skip non-ACGT characters
-        
-        if (nodes[current].children[idx] < 0) {
-            // Allocate new node at end of pool
-            nodes[current].children[idx] = static_cast<int32_t>(nodes.size());
-            nodes.emplace_back();
-        }
-        current = nodes[current].children[idx];
-    }
-    nodes[current].isEndOfWord = true;
-    nodes[current].isForward = isForward;
-    nodes[current].isCanonical = isCanonical;
-
-    if (pattern.size() > longestPatternSize) {
-        longestPatternSize = pattern.size();
-    }
-}
-
-void Teloscope::sortBySeqPos() {
-    std::sort(allPathData.begin(), allPathData.end(), [](const PathData& one, const PathData& two) {
-        return one.seqPos < two.seqPos;
-    });
-}
-
-
-char Teloscope::computeBlockLabel(uint16_t forwardCount, uint16_t blockCounts) {
-    float forwardRatio = (forwardCount * 100.0f) / blockCounts;
-    if (forwardRatio > 66.6f) return 'p';
-    if (forwardRatio < 33.3f) return 'q';
-    return 'b';
-}
-
 
 std::vector<TelomereBlock> Teloscope::getTeloBlocks(
     std::vector<MatchInfo>& matches,
@@ -144,38 +107,6 @@ std::vector<TelomereBlock> Teloscope::getTeloBlocks(
     return telomereBlocks;
 }
 
-
-std::vector<TelomereBlock> Teloscope::mergeNearbyBlocks(
-    std::vector<TelomereBlock>& blocks, uint16_t maxDist) {
-
-    if (blocks.empty()) return {};
-
-    std::vector<TelomereBlock> merged;
-    merged.reserve(blocks.size());
-    TelomereBlock current = blocks[0];
-
-    for (size_t i = 1; i < blocks.size(); ++i) {
-        uint64_t gap = blocks[i].start - (current.start + current.blockLen);
-        if (gap <= maxDist) {
-            current.blockLen = (blocks[i].start + blocks[i].blockLen) - current.start;
-            current.blockCounts += blocks[i].blockCounts;
-            current.forwardCount += blocks[i].forwardCount;
-            current.reverseCount += blocks[i].reverseCount;
-            current.canonicalCount += blocks[i].canonicalCount;
-            current.nonCanonicalCount += blocks[i].nonCanonicalCount;
-            current.totalCovered += blocks[i].totalCovered;
-            current.fwdCovered += blocks[i].fwdCovered;
-            current.canCovered += blocks[i].canCovered;
-        } else {
-            current.blockLabel = computeBlockLabel(current.forwardCount, current.blockCounts);
-            merged.push_back(current);
-            current = blocks[i];
-        }
-    }
-    current.blockLabel = computeBlockLabel(current.forwardCount, current.blockCounts);
-    merged.push_back(current);
-    return merged;
-}
 
 
 std::vector<TelomereBlock> Teloscope::extendBlocks(std::vector<TelomereBlock> &blocks,
@@ -619,11 +550,12 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
         uint32_t windowSize = userInput.windowSize;
         uint32_t step = userInput.step;
 
-        // Reserve with cap to avoid OOM on large contigs (e.g. 14GB plant chromosomes)
+        // Reserve with cap to avoid OOM on large contigs
         constexpr uint64_t maxMatchReserve = 1000000;
         segmentData.canonicalMatches.reserve(std::min(segmentSize / 6, maxMatchReserve));
         segmentData.nonCanonicalMatches.reserve(std::min(segmentSize / 6, maxMatchReserve));
         segmentData.allMatches.reserve(std::min(segmentSize / 3, maxMatchReserve));
+
         if (segmentSize > windowSize) {
             segmentData.windows.reserve((segmentSize - windowSize) / step + 2);
         }
@@ -671,23 +603,19 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
         segmentData.windows = std::move(windows);
     }
 
-    // ========== Block creation from ALL matches ==========
+    // ========== Block creation ==========
     uint16_t mergeDist = userInput.maxMatchDist;
     uint16_t extendDist = userInput.maxBlockDist;
     float densityCutoff = userInput.minBlockDensity;
 
-    // 1. Create strand-pure blocks from ALL matches, merge nearby
+    // 1. Build strand-pure blocks
     std::vector<TelomereBlock> fwdBlocks, revBlocks;
-    if (segmentData.fwdMatches.size() >= 2) {
+    if (segmentData.fwdMatches.size() >= 2)
         fwdBlocks = getTeloBlocks(segmentData.fwdMatches, mergeDist);
-        fwdBlocks = mergeNearbyBlocks(fwdBlocks, extendDist);
-    }
-    if (segmentData.revMatches.size() >= 2) {
+    if (segmentData.revMatches.size() >= 2)
         revBlocks = getTeloBlocks(segmentData.revMatches, mergeDist);
-        revBlocks = mergeNearbyBlocks(revBlocks, extendDist);
-    }
 
-    // 2. Classify merged blocks by position → terminal (strand-pure)
+    // 2. Classify by position, then extend terminal blocks only
     auto isTerminalBlock = [&](const TelomereBlock& block) -> bool {
         uint64_t relStart = block.start - absPos;
         uint64_t relEnd = relStart + block.blockLen;
@@ -702,7 +630,6 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
         if (isTerminalBlock(b)) termRev.push_back(std::move(b));
     }
 
-    // 3. Terminal: apply density/orientation/length filters per strand
     if (!termFwd.empty()) {
         auto ext = extendBlocks(termFwd, extendDist, densityCutoff, segmentSize, absPos);
         segmentData.terminalBlocks.insert(segmentData.terminalBlocks.end(),
@@ -714,7 +641,7 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
             std::make_move_iterator(ext.begin()), std::make_move_iterator(ext.end()));
     }
 
-    // 4. ITS: build strand-mixed blocks from allMatches (naturally sorted by scan order)
+    // 3. ITS: strand-mixed blocks from allMatches (naturally sorted by scan order)
     if (!tipsOnly && segmentData.allMatches.size() >= 2) {
         auto allBlocks = getTeloBlocks(segmentData.allMatches, mergeDist);
         std::vector<TelomereBlock> itsCandidates;
