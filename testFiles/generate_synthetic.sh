@@ -277,4 +277,138 @@ make_filler() {
     echo "L	seg_qonly	+	seg_none	+	0M"
 } > "$DIR/gfa_telo.gfa"
 
+# ============================================================
+# 21. mirror_inverted_short.fa — Swapped arms on short contig
+# TTAGGG (rev/q-pattern) at start + CCCTAA (fwd/p-pattern) at end.
+# Short contig: entire sequence within terminalLimit → both found.
+# Both at wrong end → both hasValidOr=false → discordant.
+# ============================================================
+{
+    echo ">chr_mirror_inv_short"
+    rev_at_start=$(repeat_motif "TTAGGG" 100)   # 600bp q-pattern at p-side
+    mid=$(make_filler 2000)
+    fwd_at_end=$(repeat_motif "CCCTAA" 100)     # 600bp p-pattern at q-side
+    echo "${rev_at_start}${mid}${fwd_at_end}"
+} > "$DIR/mirror_inverted_short.fa"
+
+# ============================================================
+# 22. mirror_rev_start.fa — q-pattern at p-side (mirror of discordant.fa)
+# discordant.fa places CCCTAA (p) at q-side; this places
+# TTAGGG (q) at p-side. Verifies symmetric discordant detection.
+# ============================================================
+{
+    echo ">chr_mirror_rev_start"
+    qarm=$(repeat_motif "TTAGGG" 100)   # 600bp q-pattern at start
+    tail=$(make_filler 2400)
+    echo "${qarm}${tail}"
+} > "$DIR/mirror_rev_start.fa"
+
+# ============================================================
+# 23. mirror_inverted_long.fa — Swapped arms on long contig
+# Same as mirror_inverted_short but contig exceeds 2*terminalLimit.
+# Directional scan: fwd scans from start (finds nothing),
+# rev scans from end (finds nothing) → none.
+# Uses -t 1000 to keep file small.
+# ============================================================
+{
+    echo ">chr_mirror_inv_long"
+    rev_at_start=$(repeat_motif "TTAGGG" 100)   # 600bp q-pattern at p-side
+    mid=$(make_filler 4000)
+    fwd_at_end=$(repeat_motif "CCCTAA" 100)     # 600bp p-pattern at q-side
+    echo "${rev_at_start}${mid}${fwd_at_end}"
+} > "$DIR/mirror_inverted_long.fa"
+
+# ============================================================
+# 24. mirror_fwd_end_long.fa — p-pattern only at q-side, long contig
+# CCCTAA at far end, nothing at start. Directional scan from start
+# finds no fwd matches in zone → no blocks → none.
+# Uses -t 1000.
+# ============================================================
+{
+    echo ">chr_mirror_fwd_end_long"
+    head=$(make_filler 4600)
+    fwd_at_end=$(repeat_motif "CCCTAA" 100)     # 600bp at end
+    echo "${head}${fwd_at_end}"
+} > "$DIR/mirror_fwd_end_long.fa"
+
+# ============================================================
+# 25. mirror_rev_start_long.fa — q-pattern only at p-side, long contig
+# TTAGGG at start, nothing at end. Directional scan from end
+# finds no rev matches in zone → no blocks → none.
+# Uses -t 1000.
+# ============================================================
+{
+    echo ">chr_mirror_rev_start_long"
+    rev_at_start=$(repeat_motif "TTAGGG" 100)   # 600bp at start
+    tail=$(make_filler 4600)
+    echo "${rev_at_start}${tail}"
+} > "$DIR/mirror_rev_start_long.fa"
+
+# ============================================================
+# 26. mirror_both_start.fa — Both strands at p-side
+# CCCTAA (p) + TTAGGG (q) both at start. p-block valid at start,
+# q-block invalid at start (hasValidOr=false) → discordant.
+# ============================================================
+{
+    echo ">chr_mirror_both_start"
+    parm=$(repeat_motif "CCCTAA" 100)    # 600bp fwd at start
+    qarm=$(repeat_motif "TTAGGG" 100)    # 600bp rev right after
+    tail=$(make_filler 2000)
+    echo "${parm}${qarm}${tail}"
+} > "$DIR/mirror_both_start.fa"
+
+# ============================================================
+# 27. mirror_both_end.fa — Both strands at q-side
+# filler + CCCTAA (p) + TTAGGG (q) at end. q-block valid at end,
+# p-block invalid at end (hasValidOr=false) → discordant.
+# ============================================================
+{
+    echo ">chr_mirror_both_end"
+    head=$(make_filler 2000)
+    parm=$(repeat_motif "CCCTAA" 100)    # 600bp fwd near end
+    qarm=$(repeat_motif "TTAGGG" 100)    # 600bp rev at end
+    echo "${head}${parm}${qarm}"
+} > "$DIR/mirror_both_end.fa"
+
+# ============================================================
+# 28. mirror_extend.fa — Terminal block extending past zone
+# Dense CCCTAA from start, length > terminalLimit.
+# Block starts in zone and extends past it.
+# Uses -t 300.
+# ============================================================
+{
+    echo ">chr_mirror_extend"
+    parm=$(repeat_motif "CCCTAA" 100)    # 600bp p-arm (exceeds -t 300 zone)
+    tail=$(make_filler 2400)
+    echo "${parm}${tail}"
+} > "$DIR/mirror_extend.fa"
+
+# ============================================================
+# 29. mirror_merge.fa — Sub-block merging via blockDist
+# Two CCCTAA clusters separated by 100bp filler (> matchDist=50,
+# < blockDist=200). Phase 1 creates 2 sub-blocks, Phase 2 merges.
+# ============================================================
+{
+    echo ">chr_mirror_merge"
+    clust1=$(repeat_motif "CCCTAA" 50)   # 300bp cluster
+    gap=$(make_filler 100)               # 100bp gap (50 < 100 < 200)
+    clust2=$(repeat_motif "CCCTAA" 50)   # 300bp cluster
+    tail=$(make_filler 2000)
+    echo "${clust1}${gap}${clust2}${tail}"
+} > "$DIR/mirror_merge.fa"
+
+# ============================================================
+# 30. mirror_no_merge.fa — Sub-blocks too far apart to merge
+# Two CCCTAA clusters separated by 300bp filler (> blockDist=200).
+# Each sub-block has blockLen=240 < minBlockLen=500 → both fail.
+# ============================================================
+{
+    echo ">chr_mirror_no_merge"
+    clust1=$(repeat_motif "CCCTAA" 40)   # 240bp cluster
+    gap=$(make_filler 300)               # 300bp gap (> 200)
+    clust2=$(repeat_motif "CCCTAA" 40)   # 240bp cluster
+    tail=$(make_filler 2000)
+    echo "${clust1}${gap}${clust2}${tail}"
+} > "$DIR/mirror_no_merge.fa"
+
 echo "Generated $(ls -1 "$DIR"/*.fa "$DIR"/*.gfa 2>/dev/null | wc -l) synthetic test files in $DIR/"

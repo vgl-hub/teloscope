@@ -123,6 +123,44 @@ int main(int, char **argv) {
             "-f testFiles/gapped_t2t.fa -l 100",
             "-f testFiles/gapped_t2t.fa -n",
             "-f testFiles/gapped_t2t.fa -r -g -e -o testFiles/tmp"
+        }},
+        // Directional scanning: mirrored/inverted p/q edge cases
+        {{"mirror_inverted_short.fa"}, {
+            "-f testFiles/mirror_inverted_short.fa -n",
+            "-f testFiles/mirror_inverted_short.fa -r -o testFiles/tmp"
+        }},
+        {{"mirror_rev_start.fa"}, {
+            "-f testFiles/mirror_rev_start.fa -n",
+            "-f testFiles/mirror_rev_start.fa -r -o testFiles/tmp"
+        }},
+        {{"mirror_inverted_long.fa"}, {
+            "-f testFiles/mirror_inverted_long.fa -t 1000 -n",
+            "-f testFiles/mirror_inverted_long.fa -t 1000 -r -o testFiles/tmp"
+        }},
+        {{"mirror_fwd_end_long.fa"}, {
+            "-f testFiles/mirror_fwd_end_long.fa -t 1000 -n"
+        }},
+        {{"mirror_rev_start_long.fa"}, {
+            "-f testFiles/mirror_rev_start_long.fa -t 1000 -n"
+        }},
+        {{"mirror_both_start.fa"}, {
+            "-f testFiles/mirror_both_start.fa -n",
+            "-f testFiles/mirror_both_start.fa -r -o testFiles/tmp"
+        }},
+        {{"mirror_both_end.fa"}, {
+            "-f testFiles/mirror_both_end.fa -n",
+            "-f testFiles/mirror_both_end.fa -r -o testFiles/tmp"
+        }},
+        {{"mirror_extend.fa"}, {
+            "-f testFiles/mirror_extend.fa -t 300 -n",
+            "-f testFiles/mirror_extend.fa -t 300 -r -o testFiles/tmp"
+        }},
+        {{"mirror_merge.fa"}, {
+            "-f testFiles/mirror_merge.fa -n",
+            "-f testFiles/mirror_merge.fa -r -o testFiles/tmp"
+        }},
+        {{"mirror_no_merge.fa"}, {
+            "-f testFiles/mirror_no_merge.fa -n"
         }}
     //  {{set of test file paths}, {list of command line args to run with}}
     };
