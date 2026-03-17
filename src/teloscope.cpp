@@ -155,8 +155,8 @@ std::vector<TelomereBlock> Teloscope::mergeNearbyBlocks(
     TelomereBlock current = blocks[0];
 
     for (size_t i = 1; i < blocks.size(); ++i) {
-        uint64_t currentEnd = current.start + current.blockLen;
-        if (blocks[i].start <= currentEnd + maxDist) {
+        uint64_t gap = blocks[i].start - (current.start + current.blockLen);
+        if (gap <= maxDist) {
             current.blockLen = (blocks[i].start + blocks[i].blockLen) - current.start;
             current.blockCounts += blocks[i].blockCounts;
             current.forwardCount += blocks[i].forwardCount;
@@ -526,7 +526,7 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                         }
                     }
 
-                    // Route by strand for block creation (no terminal/interstitial split)
+                    // Route by strand for terminal block creation
                     if (isForward) {
                         windowData.fwdCounts++;
                         windowData.fwdDensity += densityGain;
@@ -536,6 +536,7 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                         windowData.revDensity += densityGain;
                         segmentData.revMatches.push_back(matchInfo);
                     }
+                    segmentData.allMatches.push_back(matchInfo);
                 }
 
                 // Update nextOverlapData
@@ -622,6 +623,7 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
         constexpr uint64_t maxMatchReserve = 1000000;
         segmentData.canonicalMatches.reserve(std::min(segmentSize / 6, maxMatchReserve));
         segmentData.nonCanonicalMatches.reserve(std::min(segmentSize / 6, maxMatchReserve));
+        segmentData.allMatches.reserve(std::min(segmentSize / 3, maxMatchReserve));
         if (segmentSize > windowSize) {
             segmentData.windows.reserve((segmentSize - windowSize) / step + 2);
         }
@@ -685,21 +687,19 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
         revBlocks = mergeNearbyBlocks(revBlocks, extendDist);
     }
 
-    // 2. Classify merged blocks by position
-    std::vector<TelomereBlock> termFwd, termRev, itsCandidates;
+    // 2. Classify merged blocks by position → terminal (strand-pure)
     auto isTerminalBlock = [&](const TelomereBlock& block) -> bool {
         uint64_t relStart = block.start - absPos;
         uint64_t relEnd = relStart + block.blockLen;
         return (relStart < terminalLimit || relEnd > segmentSize - terminalLimit);
     };
 
+    std::vector<TelomereBlock> termFwd, termRev;
     for (auto& b : fwdBlocks) {
         if (isTerminalBlock(b)) termFwd.push_back(std::move(b));
-        else if (!tipsOnly)     itsCandidates.push_back(std::move(b));
     }
     for (auto& b : revBlocks) {
         if (isTerminalBlock(b)) termRev.push_back(std::move(b));
-        else if (!tipsOnly)     itsCandidates.push_back(std::move(b));
     }
 
     // 3. Terminal: apply density/orientation/length filters per strand
@@ -714,12 +714,16 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
             std::make_move_iterator(ext.begin()), std::make_move_iterator(ext.end()));
     }
 
-    // 4. ITS: merge non-terminal fwd+rev blocks by proximity, then filter
-    if (!tipsOnly && !itsCandidates.empty()) {
-        std::sort(itsCandidates.begin(), itsCandidates.end(),
-                  [](const auto& a, const auto& b) { return a.start < b.start; });
-        itsCandidates = mergeNearbyBlocks(itsCandidates, extendDist);
-        segmentData.interstitialBlocks = filterITSBlocks(itsCandidates);
+    // 4. ITS: build strand-mixed blocks from allMatches (naturally sorted by scan order)
+    if (!tipsOnly && segmentData.allMatches.size() >= 2) {
+        auto allBlocks = getTeloBlocks(segmentData.allMatches, mergeDist);
+        std::vector<TelomereBlock> itsCandidates;
+        for (auto& b : allBlocks) {
+            if (!isTerminalBlock(b)) itsCandidates.push_back(std::move(b));
+        }
+        if (!itsCandidates.empty()) {
+            segmentData.interstitialBlocks = filterITSBlocks(itsCandidates);
+        }
     }
 
     return segmentData;

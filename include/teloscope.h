@@ -121,6 +121,7 @@ struct SegmentData {
     std::vector<MatchInfo> nonCanonicalMatches;
     std::vector<MatchInfo> fwdMatches;
     std::vector<MatchInfo> revMatches;
+    std::vector<MatchInfo> allMatches;
 };
 
 
