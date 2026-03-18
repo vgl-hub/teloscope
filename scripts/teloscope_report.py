@@ -7,8 +7,8 @@ Usage:
     python teloscope_report.py <output_directory> --png
 
 Reads Teloscope output files from the given directory and generates:
-  Page 1: Assembly overview (classification donut + telomere length distribution)
-  Page 2+: Per-chromosome terminal zoom figures (blocks, density, strand ratio)
+  Page 1: Assembly overview (classification summary + telomere length distribution)
+  Page 2+: Per-chromosome terminal zoom figures (blocks, density, canonical ratio, strand ratio)
 
 Requires: Python 3.6+, matplotlib, numpy, pandas
 """
@@ -52,6 +52,7 @@ COLORS = {
     "q":            "#FF2C00",
     "b":            "#845B97",
     "density":      "#0C5DA5",
+    "canonical":    "#007B5F",
     "fwd":          "#0C5DA5",
     "rev":          "#FF2C00",
     "no_data":      "#e0e0e0",
@@ -387,6 +388,16 @@ def _fmt_bp(bp):
     return f"{bp:,} bp"
 
 
+def _fmt_kbp(bp):
+    """Format a base-pair distance as compact kbp text."""
+    kbp = bp / 1e3
+    if kbp >= 100:
+        return f"{kbp:.0f}"
+    if kbp >= 10:
+        return f"{kbp:.1f}".rstrip("0").rstrip(".")
+    return f"{kbp:.2f}".rstrip("0").rstrip(".")
+
+
 def _median(values):
     """Median via numpy."""
     return float(np.median(values))
@@ -400,7 +411,7 @@ def _bedgraph_to_step(starts, ends, values):
     xs = np.empty(n + 1)
     ys = np.empty(n + 1)
     xs[:n] = starts
-    ys[:n] = np.maximum(values, 0)
+    ys[:n] = np.clip(values, 0, 1)
     xs[n] = ends[-1]
     ys[n] = 0
     return xs, ys
@@ -448,6 +459,69 @@ def _sanitize_filename(name):
     """Convert a chromosome name into a filesystem-safe stem."""
     safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name)
     return safe.strip("._") or "unnamed"
+
+
+def _hide_x_axis(ax):
+    """Hide x-axis ticks and labels for non-bottom tracks."""
+    ax.tick_params(axis="x", bottom=False, labelbottom=False)
+    ax.spines["bottom"].set_visible(False)
+
+
+def _style_fraction_axis(ax, label=None):
+    """Style 0..1 quantitative tracks with minimal ticks."""
+    ax.set_ylim(0, 1.02)
+    ax.set_yticks([0.0, 0.5, 1.0])
+    ax.set_yticklabels(["0", "0.5", "1"])
+    ax.tick_params(axis="y", length=2.0, width=0.45, pad=1.5,
+                   labelsize=5.5, colors="#555555")
+    ax.spines["left"].set_visible(True)
+    ax.spines["left"].set_linewidth(0.45)
+    ax.spines["left"].set_color("#bcbcbc")
+    if label:
+        ax.set_ylabel(label, fontsize=6.3, labelpad=3)
+    else:
+        ax.set_ylabel("")
+    _hide_x_axis(ax)
+
+
+def _apply_terminal_x_axis(ax, view_start, view_end, arm):
+    """Apply a minimal end-relative x-axis for p/q panels."""
+    if view_end <= view_start:
+        return
+
+    tick_pos = np.linspace(view_start, view_end, 3)
+    if arm == "q":
+        tick_labels = [_fmt_kbp(view_end - pos) for pos in tick_pos]
+        xlabel = "Distance to end (kbp)"
+    elif arm == "p":
+        tick_labels = [_fmt_kbp(pos - view_start) for pos in tick_pos]
+        xlabel = "Distance to end (kbp)"
+    else:
+        tick_labels = [_fmt_kbp(pos) for pos in tick_pos]
+        xlabel = "Position along scaffold (kbp)"
+
+    ax.set_xticks(tick_pos)
+    ax.set_xticklabels(tick_labels)
+    ax.tick_params(axis="x", bottom=True, labelbottom=True,
+                   length=2.3, width=0.45, pad=1.5)
+    ax.spines["bottom"].set_visible(True)
+    ax.spines["bottom"].set_linewidth(0.45)
+    ax.spines["bottom"].set_color("#bcbcbc")
+    ax.set_xlabel(xlabel, fontsize=6.3, labelpad=2.5)
+    ax.minorticks_off()
+
+
+def _iter_true_runs(mask):
+    """Yield contiguous [start, stop) runs where mask is true."""
+    run_start = None
+    for idx, flag in enumerate(mask):
+        if flag and run_start is None:
+            run_start = idx
+        elif not flag and run_start is not None:
+            yield run_start, idx
+            run_start = None
+    if run_start is not None:
+        yield run_start, len(mask)
 
 
 def _short_exception(exc):
@@ -498,52 +572,69 @@ def _save_figure_with_fallback(save_figure, build_figure, title, message_prefix)
 # ---------------------------------------------------------------------------
 
 def plot_assembly_overview(classifications, blocks, chrom_sizes):
-    """Two-panel overview: (a) classification donut, (b) telomere length histogram."""
-    fig, (ax_donut, ax_hist) = plt.subplots(
-        1, 2, figsize=(FIG_WIDTH_DOUBLE, 2.6),
+    """Overview page with classification summary and telomere length histogram."""
+    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 3.2))
+    gs = fig.add_gridspec(
+        2, 2,
+        height_ratios=[0.95, 1.85],
+        width_ratios=[1.55, 0.95],
+        hspace=0.42,
+        wspace=0.22,
     )
-    fig.subplots_adjust(wspace=0.45, left=0.06, right=0.97, top=0.85, bottom=0.18)
+    ax_class = fig.add_subplot(gs[0, 0])
+    ax_stats = fig.add_subplot(gs[0, 1])
+    ax_hist = fig.add_subplot(gs[1, :])
+    fig.subplots_adjust(left=0.07, right=0.97, top=0.9, bottom=0.14)
 
-    # ---- Panel a: Classification donut ----
-    _panel_label(ax_donut, "a")
+    _panel_label(ax_class, "a")
+    _panel_label(ax_hist, "b")
 
     cat_labels = list(classifications.keys())
     cat_counts = [len(v) for v in classifications.values()]
     cat_colors = [COLORS.get(c, "#aaaaaa") for c in cat_labels]
     total = sum(cat_counts)
 
+    # ---- Panel a: Classification composition ----
+    ax_class.set_title("Assembly classification", loc="left", fontsize=8, pad=4)
     if total > 0:
-        wedges, _, autotexts = ax_donut.pie(
-            cat_counts,
-            labels=None,
-            colors=cat_colors,
-            autopct=lambda p: f"{int(round(p * total / 100))}",
-            pctdistance=0.78,
-            startangle=90,
-            counterclock=False,
-            wedgeprops=dict(width=0.45, edgecolor="white", linewidth=0.8),
-            textprops=dict(fontsize=7, fontweight="bold", color="white"),
-        )
-        for w in wedges:
-            w.set_rasterized(True)
-        for at in autotexts:
-            at.set_fontsize(7)
-            at.set_fontweight("bold")
+        left = 0
+        for lab, cnt, color in zip(cat_labels, cat_counts, cat_colors):
+            bar = ax_class.barh(
+                0, cnt, left=left, height=0.42,
+                color=color, edgecolor="white", linewidth=0.8,
+                rasterized=True,
+            )[0]
+            if cnt / total >= 0.1:
+                ax_class.text(
+                    left + cnt / 2, 0, f"{cnt}",
+                    ha="center", va="center", fontsize=6,
+                    color="white", fontweight="bold",
+                )
+            left += cnt
 
-        legend_labels = [f"{lab} ({cnt})" for lab, cnt in zip(cat_labels, cat_counts)]
-        ax_donut.legend(
-            wedges, legend_labels, loc="center left",
-            bbox_to_anchor=(-0.12, 0.5), fontsize=6, frameon=False,
-            handlelength=0.8, handleheight=0.8,
-        )
-        ax_donut.set_title(f"Chromosome classification (n={total})", fontsize=8, pad=8)
+        ax_class.set_xlim(0, total)
+        ax_class.set_ylim(-0.7, 0.7)
+        ax_class.set_xlabel("Chromosomes", fontsize=6.3, labelpad=2)
+        ax_class.set_yticks([])
+        ax_class.xaxis.set_major_locator(ticker.MaxNLocator(integer=True, nbins=4))
+        ax_class.grid(axis="x", color="#ececec", linewidth=0.45)
+        ax_class.spines["left"].set_visible(False)
+        ax_class.spines["bottom"].set_visible(True)
+        ax_class.spines["bottom"].set_color("#bcbcbc")
+        ax_class.spines["bottom"].set_linewidth(0.45)
     else:
-        ax_donut.text(0.5, 0.5, "No data", ha="center", va="center",
-                      transform=ax_donut.transAxes, fontsize=7, color="#999999")
-        ax_donut.set_title("Chromosome classification", fontsize=8, pad=8)
+        ax_class.text(
+            0.5, 0.5, "No classification data",
+            ha="center", va="center", transform=ax_class.transAxes,
+            fontsize=7, color="#999999",
+        )
+        ax_class.set_xticks([])
+        ax_class.set_yticks([])
+        ax_class.spines["left"].set_visible(False)
+        ax_class.spines["bottom"].set_visible(False)
 
-    # ---- Panel b: Telomere length distribution ----
-    _panel_label(ax_hist, "b")
+    # ---- Stats panel ----
+    ax_stats.axis("off")
 
     lengths, arm_labels = [], []
     for blist in blocks.values():
@@ -555,9 +646,46 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     q_len = [l for l, a in zip(lengths, arm_labels) if a == "q"]
     b_len = [l for l, a in zip(lengths, arm_labels) if a == "b"]
     all_len = p_len + q_len + b_len
+    total_blocks = sum(len(blist) for blist in blocks.values())
+    total_paths = total if total > 0 else max(len(chrom_sizes), len(blocks))
+    median_text = _fmt_bp(int(round(_median(all_len)))) if all_len else "NA"
 
+    summary_rows = [
+        ("Chromosomes", f"{total_paths}"),
+        ("Terminal blocks", f"{total_blocks}"),
+        ("Median block", median_text),
+    ]
+    y = 0.96
+    for label, value in summary_rows:
+        ax_stats.text(0.0, y, label, transform=ax_stats.transAxes,
+                      ha="left", va="top", fontsize=6, color="#666666")
+        ax_stats.text(1.0, y, value, transform=ax_stats.transAxes,
+                      ha="right", va="top", fontsize=7.2, fontweight="bold",
+                      color="#222222")
+        y -= 0.2
+
+    y -= 0.06
+    if total > 0:
+        for lab, cnt, color in zip(cat_labels, cat_counts, cat_colors):
+            pct = 100.0 * cnt / total
+            ax_stats.add_patch(Rectangle(
+                (0.0, y - 0.028), 0.04, 0.04,
+                transform=ax_stats.transAxes,
+                facecolor=color, edgecolor="none",
+            ))
+            ax_stats.text(0.07, y, lab, transform=ax_stats.transAxes,
+                          ha="left", va="center", fontsize=6.1, color="#333333")
+            ax_stats.text(1.0, y, f"{cnt} ({pct:.0f}%)", transform=ax_stats.transAxes,
+                          ha="right", va="center", fontsize=6.1, color="#333333")
+            y -= 0.14
+    else:
+        ax_stats.text(0.0, y, "Classification report unavailable",
+                      transform=ax_stats.transAxes, ha="left", va="center",
+                      fontsize=6.1, color="#999999")
+
+    # ---- Panel b: Telomere length distribution ----
+    ax_hist.set_title("Telomere block length distribution", loc="left", fontsize=8, pad=4)
     if all_len:
-
         n_bins = min(max(8, len(all_len) // 3), 30)
         lo, hi = min(all_len), max(all_len)
         if lo == hi:
@@ -568,8 +696,8 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
 
         data_stack, colors_stack, labels_stack = [], [], []
         for data, color, label in [
-            (p_len, COLORS["p"], "p-arm (fwd)"),
-            (q_len, COLORS["q"], "q-arm (rev)"),
+            (p_len, COLORS["p"], "p arm"),
+            (q_len, COLORS["q"], "q arm"),
             (b_len, COLORS["b"], "balanced"),
         ]:
             if data:
@@ -578,28 +706,32 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
                 labels_stack.append(label)
 
         if data_stack:
-            _, _, patches = ax_hist.hist(
+            ax_hist.hist(
                 data_stack, bins=bins, stacked=True,
                 color=colors_stack, label=labels_stack,
-                edgecolor="white", linewidth=0.4, alpha=0.85,
+                edgecolor="white", linewidth=0.4, alpha=0.95,
                 rasterized=True,
             )
 
         median_len = _median(all_len)
+        ax_hist.axvline(median_len, color="#555555", linestyle="--", linewidth=0.7)
         ax_hist.text(
-            0.97, 0.93, f"n={len(all_len)}  median={median_len:,.0f} bp",
+            0.99, 0.95, f"n={len(all_len)}   median={_fmt_bp(int(round(median_len)))}",
             transform=ax_hist.transAxes, ha="right", va="top", fontsize=6,
             bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#cccccc",
                       alpha=0.9, linewidth=0.4),
         )
         ax_hist.set_ylabel("Count")
         ax_hist.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
-        ax_hist.legend(fontsize=6, frameon=False, loc="upper left")
+        ax_hist.grid(axis="y", color="#ececec", linewidth=0.45)
+        ax_hist.legend(fontsize=5.8, frameon=False, loc="upper left",
+                       ncol=min(3, len(labels_stack)), handlelength=1.0,
+                       columnspacing=0.8, handletextpad=0.4)
 
         if hi >= 5000:
             ax_hist.xaxis.set_major_formatter(
-                ticker.FuncFormatter(lambda x, _: f"{x/1e3:.1f}"))
-            ax_hist.set_xlabel("Telomere block length (kb)")
+                ticker.FuncFormatter(lambda x, _: _fmt_kbp(max(x, 0))))
+            ax_hist.set_xlabel("Telomere block length (kbp)")
         else:
             ax_hist.set_xlabel("Telomere block length (bp)")
     else:
@@ -609,7 +741,6 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         ax_hist.set_xlabel("Telomere block length")
         ax_hist.set_ylabel("Count")
 
-    ax_hist.set_title("Telomere block lengths", fontsize=8, pad=8)
     return fig
 
 
@@ -660,11 +791,11 @@ def clip_bedgraph(bg_tuple, view_start, view_end):
     return cs, ce, values[mask]
 
 
-def _draw_blocks_track(ax, blocks_list, view_start, view_end):
-    """Draw telomere blocks as rectangles on a backbone line."""
+def _draw_blocks_track(ax, blocks_list, view_start, view_end, label=None):
+    """Draw telomere blocks as a thin track on a backbone line."""
     backbone_y = 0.5
     ax.plot([view_start, view_end], [backbone_y, backbone_y],
-            color="#d0d0d0", linewidth=2.5, solid_capstyle="round",
+            color="#d6d6d6", linewidth=1.4, solid_capstyle="round",
             zorder=1, rasterized=True)
 
     for b in blocks_list:
@@ -674,56 +805,80 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end):
         ce = min(b["end"], view_end)
         color = COLORS.get(b["label"], "#999999")
         rect = Rectangle(
-            (cs, backbone_y - 0.3), ce - cs, 0.6,
-            facecolor=color, edgecolor="none", alpha=0.85, zorder=2,
+            (cs, backbone_y - 0.18), ce - cs, 0.36,
+            facecolor=color, edgecolor="none", alpha=0.96, zorder=2,
         )
         rect.set_rasterized(True)
         ax.add_patch(rect)
 
-    ax.set_ylim(-0.1, 1.1)
-    ax.set_ylabel("Blocks", fontsize=7)
+    ax.set_ylim(0.12, 0.88)
     ax.set_yticks([])
-    ax.spines["bottom"].set_visible(False)
     ax.spines["left"].set_visible(False)
-    ax.tick_params(bottom=False)
+    ax.spines["bottom"].set_visible(False)
+    if label:
+        ax.set_ylabel(label, fontsize=6.3, labelpad=3)
+    else:
+        ax.set_ylabel("")
+    _hide_x_axis(ax)
+    return True
 
 
-def _draw_density_track(ax, density_data, view_start, view_end):
-    """Draw repeat density as a filled step plot."""
-    starts, ends, values = clip_bedgraph(density_data, view_start, view_end)
+def _draw_fraction_track(ax, track_data, view_start, view_end, color, label=None):
+    """Draw a quantitative 0..1 track as a thin step plot with light fill."""
+    starts, ends, values = clip_bedgraph(track_data, view_start, view_end)
     if len(starts) == 0:
         ax.set_visible(False)
-        return
-    xs, ys = _bedgraph_to_step(starts, ends, values)
-    ax.fill_between(xs, ys, step="post", color=COLORS["density"],
-                    alpha=0.35, linewidth=0, rasterized=True)
-    ax.plot(xs, ys, drawstyle="steps-post", color=COLORS["density"],
-            linewidth=0.6, rasterized=True)
-    ax.set_ylabel("Repeat\ndensity", fontsize=7)
-    ax.set_ylim(0, 1.05)
-    ax.tick_params(bottom=False)
-    ax.spines["bottom"].set_visible(False)
+        return False
+
+    valid = np.isfinite(values) & (values >= 0)
+    no_data = ~valid
+
+    if np.any(no_data):
+        for start, end in zip(starts[no_data], ends[no_data]):
+            ax.axvspan(start, end, ymin=0, ymax=1,
+                       facecolor=COLORS["no_data"], alpha=0.22,
+                       linewidth=0, zorder=0)
+
+    for run_start, run_end in _iter_true_runs(valid):
+        xs, ys = _bedgraph_to_step(
+            starts[run_start:run_end],
+            ends[run_start:run_end],
+            values[run_start:run_end],
+        )
+        ax.fill_between(xs, ys, step="post", color=color,
+                        alpha=0.16, linewidth=0, rasterized=True)
+        ax.plot(xs, ys, drawstyle="steps-post", color=color,
+                linewidth=0.6, rasterized=True)
+
+    _style_fraction_axis(ax, label)
+    return True
 
 
-def _draw_strand_track(ax, strand_data, view_start, view_end):
-    """Draw strand ratio as colored bars (vectorized)."""
+def _draw_strand_track(ax, strand_data, view_start, view_end, label=None):
+    """Draw strand ratio as a thin color band."""
     starts, ends, values = clip_bedgraph(strand_data, view_start, view_end)
     if len(starts) == 0:
         ax.set_visible(False)
-        return
+        return False
 
     lefts = starts
     widths = ends - starts
     rgba = _blend_colors_array(values)
 
     ax.barh(
-        np.full(len(lefts), 0.5), widths, left=lefts, height=1.0,
+        np.full(len(lefts), 0.5), widths, left=lefts, height=0.64,
         color=rgba, edgecolor="none", rasterized=True,
     )
 
-    ax.set_ylim(0, 1)
+    ax.set_ylim(0.1, 0.9)
     ax.set_yticks([])
-    ax.set_ylabel("Strand\nratio", fontsize=7)
+    ax.spines["left"].set_visible(False)
+    if label:
+        ax.set_ylabel(label, fontsize=6.3, labelpad=3)
+    else:
+        ax.set_ylabel("")
+    _hide_x_axis(ax)
+    return True
 
 
 def _hide_panel(ax, message="No telomere"):
@@ -740,13 +895,14 @@ def _hide_panel(ax, message="No telomere"):
 
 
 def plot_terminal_zoom(chrom, chrom_size, blocks_list,
-                       density_data=None, strand_data=None):
+                       density_data=None, canonical_data=None, strand_data=None):
     """Two-column terminal zoom: p-end (left) and q-end (right).
 
-    Each column shows up to 3 tracks (blocks, density, strand ratio).
+    Each column shows up to 4 tracks (blocks, density, canonical ratio, strand ratio).
     If windows overlap on a short chromosome, a single merged panel is used.
     """
     has_density = density_data is not None and len(density_data[0]) > 0
+    has_canonical = canonical_data is not None and len(canonical_data[0]) > 0
     has_strand = strand_data is not None and len(strand_data[0]) > 0
 
     p_window, q_window = compute_view_windows(blocks_list, chrom_size)
@@ -759,69 +915,104 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
         any(b["label"] in ("p", "b") for b in blocks_list)
     )
 
-    n_tracks = 1
+    track_specs = [("blocks", None)]
     if has_density:
-        n_tracks += 1
+        track_specs.append(("density", density_data))
+    if has_canonical:
+        track_specs.append(("canonical", canonical_data))
     if has_strand:
-        n_tracks += 1
+        track_specs.append(("strand", strand_data))
+
+    n_tracks = len(track_specs)
 
     n_cols = 1 if merged else 2
-    height_ratios = [0.35]
-    if has_density:
-        height_ratios.append(1.0)
-    if has_strand:
-        height_ratios.append(0.5)
+    height_map = {
+        "blocks": 0.28,
+        "density": 0.42,
+        "canonical": 0.42,
+        "strand": 0.18,
+    }
+    height_ratios = [height_map[name] for name, _ in track_specs]
 
-    fig_height = 0.8 + 0.9 * (n_tracks - 1)
+    fig_height = 1.15 + 1.0 * sum(height_ratios)
     fig, axes = plt.subplots(
         n_tracks, n_cols,
         figsize=(FIG_WIDTH_DOUBLE, fig_height),
         gridspec_kw={"height_ratios": height_ratios, "hspace": 0.08,
-                     "wspace": 0.25},
+                     "wspace": 0.18},
         squeeze=False,
         sharey="row",
     )
 
-    fig.subplots_adjust(left=0.08, right=0.97, top=0.86, bottom=0.18)
+    fig.subplots_adjust(left=0.09, right=0.97, top=0.82, bottom=0.16)
 
     # Determine which columns to draw
     if merged:
         # Single merged panel
-        columns = [(0, p_window)]
+        columns = [(0, p_window, "full")]
     else:
         columns = []
         if p_window:
-            columns.append((0, p_window))
+            columns.append((0, p_window, "p"))
         if q_window:
-            columns.append((1 if n_cols == 2 else 0, q_window))
+            columns.append((1 if n_cols == 2 else 0, q_window, "q"))
+
+    label_col = columns[0][0] if columns else 0
 
     # Track which column indices are actually drawn
     drawn_cols = set()
-    for col_idx, window in columns:
+    strand_has_no_data = False
+    for _, window, _ in columns:
+        if has_strand:
+            _, _, values = clip_bedgraph(strand_data, window[0], window[1])
+            if np.any(values < 0):
+                strand_has_no_data = True
+
+    for col_idx, window, arm in columns:
         drawn_cols.add(col_idx)
         view_start, view_end = window
-        row = 0
+        visible_rows = []
 
-        # Blocks track
-        _draw_blocks_track(axes[row][col_idx], blocks_list, view_start, view_end)
-        axes[row][col_idx].set_xlim(view_start, view_end)
-        row += 1
+        for row, (track_name, track_data) in enumerate(track_specs):
+            ax = axes[row][col_idx]
+            show_label = col_idx == label_col
 
-        # Density track
-        if has_density:
-            _draw_density_track(axes[row][col_idx], density_data, view_start, view_end)
-            axes[row][col_idx].set_xlim(view_start, view_end)
-            row += 1
+            if track_name == "blocks":
+                visible = _draw_blocks_track(
+                    ax, blocks_list, view_start, view_end,
+                    label="Blocks" if show_label else None,
+                )
+            elif track_name == "density":
+                visible = _draw_fraction_track(
+                    ax, track_data, view_start, view_end,
+                    COLORS["density"],
+                    label="Repeat\ndensity" if show_label else None,
+                )
+            elif track_name == "canonical":
+                visible = _draw_fraction_track(
+                    ax, track_data, view_start, view_end,
+                    COLORS["canonical"],
+                    label="Canonical\nratio" if show_label else None,
+                )
+            else:
+                visible = _draw_strand_track(
+                    ax, track_data, view_start, view_end,
+                    label="Strand\nratio" if show_label else None,
+                )
 
-        # Strand ratio track
-        if has_strand:
-            _draw_strand_track(axes[row][col_idx], strand_data, view_start, view_end)
-            axes[row][col_idx].set_xlim(view_start, view_end)
-            row += 1
+            if visible:
+                ax.set_xlim(view_start, view_end)
+                visible_rows.append(row)
 
-        # Format x-axis on the bottom track
-        view_span = view_end - view_start
-        _format_bp_axis(axes[n_tracks - 1][col_idx], view_span)
+        if visible_rows:
+            for row in visible_rows[:-1]:
+                _hide_x_axis(axes[row][col_idx])
+            _apply_terminal_x_axis(
+                axes[visible_rows[-1]][col_idx],
+                view_start,
+                view_end,
+                arm,
+            )
 
     # Hide columns with no telomere
     if n_cols == 2 and not merged:
@@ -832,46 +1023,45 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
 
     # Column titles
     if merged:
-        axes[0][0].set_title("Full chromosome", fontsize=7, pad=4)
+        axes[0][0].set_title("Full scaffold", fontsize=7, pad=3)
     else:
         if n_cols == 2:
-            p_title = "p-end (5')" if p_window or 0 not in drawn_cols else "p-end (5')"
-            q_title = "q-end (3')" if q_window or 1 not in drawn_cols else "q-end (3')"
-            axes[0][0].set_title(p_title, fontsize=7, pad=4)
-            axes[0][1].set_title(q_title, fontsize=7, pad=4)
+            axes[0][0].set_title("p-end (5')", fontsize=7, pad=3)
+            axes[0][1].set_title("q-end (3')", fontsize=7, pad=3)
 
-    # Block legend on top-left panel
-    labels_present = set(b["label"] for b in blocks_list)
-    legend_elements = []
-    for lab, name in [("p", "p-arm (fwd)"), ("q", "q-arm (rev)"), ("b", "balanced")]:
-        if lab in labels_present:
-            legend_elements.append(
-                Line2D([0], [0], marker="s", color="w", markerfacecolor=COLORS[lab],
-                       markersize=5, linestyle="none", label=name))
-    if legend_elements:
-        first_drawn_col = min(drawn_cols)
-        axes[0][first_drawn_col].legend(
-            handles=legend_elements, loc="upper right", fontsize=6,
-            frameon=False, ncol=len(legend_elements), handletextpad=0.2,
+    labels_present = [lab for lab in ("p", "q", "b") if any(b["label"] == lab for b in blocks_list)]
+    block_handles = [
+        Line2D([0], [0], marker="s", color="w", markerfacecolor=COLORS[lab],
+               markersize=4.5, linestyle="none",
+               label={"p": "p arm", "q": "q arm", "b": "balanced"}[lab])
+        for lab in labels_present
+    ]
+    if block_handles and (merged or "b" in labels_present):
+        fig.legend(
+            handles=block_handles, loc="upper left",
+            bbox_to_anchor=(0.09, 0.925), fontsize=5.6,
+            frameon=False, ncol=len(block_handles),
+            handletextpad=0.3, columnspacing=0.8,
         )
 
-    # Strand ratio legend
     if has_strand:
-        strand_row = n_tracks - 1
-        first_drawn_col = min(drawn_cols)
-        axes[strand_row][first_drawn_col].legend(
-            handles=[
-                Patch(facecolor=COLORS["fwd"], label="Forward"),
-                Patch(facecolor="#808080", label="Mixed"),
-                Patch(facecolor=COLORS["rev"], label="Reverse"),
-                Patch(facecolor=COLORS["no_data"], alpha=0.6, label="No data"),
-            ],
-            loc="upper right", fontsize=5.5, frameon=False, ncol=4,
-            handlelength=0.8, handleheight=0.7, handletextpad=0.2,
+        strand_handles = [
+            Patch(facecolor=COLORS["rev"], label="Rev"),
+            Patch(facecolor="#808080", label="Mix"),
+            Patch(facecolor=COLORS["fwd"], label="Fwd"),
+        ]
+        if strand_has_no_data:
+            strand_handles.append(Patch(facecolor=COLORS["no_data"], alpha=0.6, label="No data"))
+        fig.legend(
+            handles=strand_handles, loc="upper right",
+            bbox_to_anchor=(0.97, 0.925), fontsize=5.4,
+            frameon=False, ncol=len(strand_handles),
+            handlelength=0.8, handleheight=0.6,
+            handletextpad=0.3, columnspacing=0.75,
         )
 
     fig.suptitle(f"{chrom}  ({_fmt_bp(chrom_size)})",
-                 fontsize=8, fontweight="bold", y=0.95)
+                 fontsize=8, fontweight="bold", y=0.965, x=0.09, ha="left")
     return fig
 
 
@@ -912,9 +1102,10 @@ def main():
 
     blocks = parse_terminal_bed(files["terminal"])
     density_data = parse_bedgraph(files["density"]) if "density" in files else None
+    canonical_data = parse_bedgraph(files["canonical_ratio"]) if "canonical_ratio" in files else None
     strand_data  = parse_bedgraph(files["strand_ratio"]) if "strand_ratio" in files else None
 
-    chrom_sizes = get_chrom_sizes(blocks, density_data, strand_data)
+    chrom_sizes = get_chrom_sizes(blocks, density_data, canonical_data, strand_data)
 
     classifications = parse_report(files["report"]) if "report" in files else OrderedDict()
     total_chroms = sum(len(v) for v in classifications.values())
@@ -961,14 +1152,15 @@ def main():
                 continue
             blist = blocks.get(chrom, [])
             den = density_data.get(chrom) if density_data else None
+            can = canonical_data.get(chrom) if canonical_data else None
             strand = strand_data.get(chrom) if strand_data else None
 
             safe_name = _sanitize_filename(chrom)
             path = os.path.join(out_dir, f"teloscope_{safe_name}.png")
             ok, error_text = _save_figure_with_fallback(
                 lambda fig, path=path: fig.savefig(path, dpi=args.dpi, bbox_inches="tight"),
-                lambda chrom=chrom, csize=csize, blist=blist, den=den, strand=strand:
-                    plot_terminal_zoom(chrom, csize, blist, den, strand),
+                lambda chrom=chrom, csize=csize, blist=blist, den=den, can=can, strand=strand:
+                    plot_terminal_zoom(chrom, csize, blist, den, can, strand),
                 chrom,
                 f"Failed to render the terminal zoom for {chrom}. A placeholder image was written instead.",
             )
@@ -1001,12 +1193,13 @@ def main():
                     continue
                 blist = blocks.get(chrom, [])
                 den = density_data.get(chrom) if density_data else None
+                can = canonical_data.get(chrom) if canonical_data else None
                 strand = strand_data.get(chrom) if strand_data else None
 
                 ok, error_text = _save_figure_with_fallback(
                     lambda fig: pdf.savefig(fig, bbox_inches="tight"),
-                    lambda chrom=chrom, csize=csize, blist=blist, den=den, strand=strand:
-                        plot_terminal_zoom(chrom, csize, blist, den, strand),
+                    lambda chrom=chrom, csize=csize, blist=blist, den=den, can=can, strand=strand:
+                        plot_terminal_zoom(chrom, csize, blist, den, can, strand),
                     chrom,
                     f"Failed to render the terminal zoom for {chrom}. A placeholder page was written instead.",
                 )

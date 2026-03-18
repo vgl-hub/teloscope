@@ -9,13 +9,13 @@ A companion Python script generates publication-ready figures from Teloscope out
 python scripts/teloscope_report.py output/dir/ -o report.pdf
 ```
 
-This produces a multi-page PDF with an assembly overview (chromosome classification donut and telomere length distribution) followed by terminal zoom figures for each chromosome that has telomere blocks. Each figure shows two side-by-side panels (p-end and q-end) with block locations, repeat density, and strand ratio tracks zoomed into the terminal regions. Individual PNGs can be generated instead:
+This produces a multi-page PDF with an assembly overview (chromosome classification summary and telomere length distribution) followed by terminal zoom figures for each chromosome that has telomere blocks. Each figure shows two side-by-side panels (p-end and q-end) with block locations, repeat density, canonical ratio, and strand ratio tracks zoomed into the terminal regions. Individual PNGs can be generated instead:
 
 ```sh
 python scripts/teloscope_report.py output/dir/ --png -o figures/
 ```
 
-The script auto-detects all Teloscope output files in the given directory. At minimum it needs the `*_terminal_telomeres.bed` file; repeat density and strand ratio BEDgraph files are used when available. All rendering is rasterized for speed, and figures are saved and closed one at a time to keep memory usage low. Figures follow Nature journal specifications (Arial, 7 pt, 183 mm width, 450 DPI, colorblind-safe palette).
+The script auto-detects all Teloscope output files in the given directory. At minimum it needs the `*_terminal_telomeres.bed` file; repeat density, canonical ratio, and strand ratio BEDgraph files are used when available. All rendering is rasterized for speed, and figures are saved and closed one at a time to keep memory usage low. Figures follow Nature journal specifications (Arial, 7 pt, 183 mm width, 450 DPI, colorblind-safe palette).
 
 | Flag | Description | Default |
 |------|-------------|---------|
