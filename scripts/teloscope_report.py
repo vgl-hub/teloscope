@@ -16,7 +16,9 @@ Requires: Python 3.6+, matplotlib, numpy, pandas
 import sys
 import os
 import glob
+import re
 import argparse
+import textwrap
 from collections import defaultdict, OrderedDict
 
 import numpy as np
@@ -96,6 +98,11 @@ def _apply_nature_style():
 
 _apply_nature_style()
 
+
+def _warn(message):
+    """Emit a warning message to stderr."""
+    print(f"Warning: {message}", file=sys.stderr)
+
 # ---------------------------------------------------------------------------
 # Parsing helpers
 # ---------------------------------------------------------------------------
@@ -114,8 +121,10 @@ def find_files(directory):
         "report":          "*_report.tsv",
     }
     for key, pat in patterns.items():
-        hits = glob.glob(os.path.join(directory, pat))
+        hits = sorted(glob.glob(os.path.join(directory, pat)))
         if hits:
+            if len(hits) > 1:
+                _warn(f"Multiple matches for '{pat}' in '{directory}'; using '{hits[0]}'.")
             files[key] = hits[0]
     return files
 
@@ -126,28 +135,110 @@ def parse_terminal_bed(path):
     Columns: chrom start end length label fwdCount revCount canCount nonCanCount pathSize terminality
     """
     blocks = defaultdict(list)
+    malformed = 0
     with open(path) as fh:
-        for line in fh:
+        for lineno, line in enumerate(fh, start=1):
             line = line.strip()
             if not line or line.startswith("#") or line.startswith("track"):
                 continue
             parts = line.split("\t")
             if len(parts) < 10:
+                malformed += 1
+                if malformed <= 3:
+                    _warn(f"{path}:{lineno}: expected at least 10 BED columns, found {len(parts)}; skipping.")
                 continue
+            try:
+                start = int(parts[1])
+                end = int(parts[2])
+                length = int(parts[3])
+                fwd = int(parts[5])
+                rev = int(parts[6])
+                can = int(parts[7])
+                noncan = int(parts[8])
+                path_size = int(parts[9]) if parts[9] else 0
+            except ValueError as exc:
+                malformed += 1
+                if malformed <= 3:
+                    _warn(f"{path}:{lineno}: invalid numeric field ({exc}); skipping.")
+                continue
+
+            if end <= start or length <= 0:
+                malformed += 1
+                if malformed <= 3:
+                    _warn(f"{path}:{lineno}: invalid interval start={start} end={end} length={length}; skipping.")
+                continue
+
             chrom = parts[0]
             blocks[chrom].append({
-                "start":    int(parts[1]),
-                "end":      int(parts[2]),
-                "length":   int(parts[3]),
+                "start":    start,
+                "end":      end,
+                "length":   length,
                 "label":    parts[4],
-                "fwd":      int(parts[5]),
-                "rev":      int(parts[6]),
-                "can":      int(parts[7]),
-                "noncan":   int(parts[8]),
-                "pathSize": int(parts[9]),
+                "fwd":      fwd,
+                "rev":      rev,
+                "can":      can,
+                "noncan":   noncan,
+                "pathSize": path_size,
                 "term":     parts[10] if len(parts) > 10 else "",
             })
+    if malformed:
+        suffix = " (first 3 shown above)" if malformed > 3 else ""
+        _warn(f"Skipped {malformed} malformed terminal BED line(s) from '{path}'{suffix}.")
     return dict(blocks)
+
+
+def _parse_bedgraph_fallback(path):
+    """Robust line-by-line BEDgraph parser used if pandas parsing fails."""
+    per_chrom = OrderedDict()
+    malformed = 0
+    with open(path) as fh:
+        for lineno, line in enumerate(fh, start=1):
+            line = line.strip()
+            if not line or line.startswith("#") or line.startswith("track"):
+                continue
+
+            parts = line.split("\t")
+            if len(parts) < 4:
+                malformed += 1
+                if malformed <= 3:
+                    _warn(f"{path}:{lineno}: expected 4 BEDgraph columns, found {len(parts)}; skipping.")
+                continue
+
+            try:
+                chrom = parts[0]
+                start = int(parts[1])
+                end = int(parts[2])
+                value = float(parts[3])
+            except ValueError as exc:
+                malformed += 1
+                if malformed <= 3:
+                    _warn(f"{path}:{lineno}: invalid BEDgraph value ({exc}); skipping.")
+                continue
+
+            if end <= start or not np.isfinite(value):
+                malformed += 1
+                if malformed <= 3:
+                    _warn(f"{path}:{lineno}: invalid interval/value start={start} end={end} value={value}; skipping.")
+                continue
+
+            if chrom not in per_chrom:
+                per_chrom[chrom] = [[], [], []]
+            per_chrom[chrom][0].append(start)
+            per_chrom[chrom][1].append(end)
+            per_chrom[chrom][2].append(value)
+
+    if malformed:
+        suffix = " (first 3 shown above)" if malformed > 3 else ""
+        _warn(f"Skipped {malformed} malformed BEDgraph line(s) from '{path}'{suffix}.")
+
+    data = OrderedDict()
+    for chrom, (starts, ends, values) in per_chrom.items():
+        data[chrom] = (
+            np.asarray(starts, dtype=np.int64),
+            np.asarray(ends, dtype=np.int64),
+            np.asarray(values, dtype=np.float64),
+        )
+    return data
 
 
 def parse_bedgraph(path):
@@ -165,11 +256,18 @@ def parse_bedgraph(path):
             else:
                 break
 
-    df = pd.read_csv(path, sep="\t", header=None, skiprows=skip,
-                     names=["chrom", "start", "end", "value"],
-                     dtype={"chrom": str, "start": np.int64,
-                            "end": np.int64, "value": np.float64},
-                     engine="c")
+    try:
+        df = pd.read_csv(path, sep="\t", header=None, skiprows=skip,
+                         names=["chrom", "start", "end", "value"],
+                         dtype={"chrom": str, "start": np.int64,
+                                "end": np.int64, "value": np.float64},
+                         engine="c", on_bad_lines="skip")
+    except pd.errors.EmptyDataError:
+        _warn(f"BEDgraph file '{path}' is empty; skipping.")
+        return OrderedDict()
+    except Exception as exc:
+        _warn(f"Fast BEDgraph parse failed for '{path}' ({exc}); retrying line-by-line.")
+        return _parse_bedgraph_fallback(path)
 
     data = OrderedDict()
     for chrom, grp in df.groupby("chrom", sort=False):
@@ -207,8 +305,9 @@ def parse_report(path):
     header_idx = None
     type_col = None
     header_col = None
+    parsed_rows = 0
     with open(path) as fh:
-        for line in fh:
+        for lineno, line in enumerate(fh, start=1):
             line = line.rstrip("\n")
             if not line or line.startswith("+++"):
                 header_idx = None  # reset on section break
@@ -217,16 +316,26 @@ def parse_report(path):
             if header_idx is None:
                 # First non-empty, non-+++ line is the TSV header
                 if parts[0] == "pos":
-                    header_col = parts.index("header")
-                    type_col = parts.index("type")
+                    try:
+                        header_col = parts.index("header")
+                        type_col = parts.index("type")
+                    except ValueError:
+                        _warn(f"{path}:{lineno}: report header is missing required 'header'/'type' columns; skipping section.")
+                        header_col = None
+                        type_col = None
+                        continue
                     header_idx = 0
                 continue
-            if type_col is None or len(parts) <= max(header_col, type_col):
+            if type_col is None or header_col is None or len(parts) <= max(header_col, type_col):
                 continue
             chrom = parts[header_col]
             cat = _TYPE_MAP.get(parts[type_col].lower())
             if cat and cat in cats:
                 cats[cat].append(chrom)
+                parsed_rows += 1
+
+    if parsed_rows == 0:
+        _warn(f"No usable classification rows were parsed from '{path}'; the overview donut will show no data.")
 
     return OrderedDict((k, v) for k, v in cats.items() if v)
 
@@ -236,16 +345,20 @@ def parse_report(path):
 # ---------------------------------------------------------------------------
 
 
-def get_chrom_sizes(blocks, bedgraph_data=None):
-    """Get chromosome sizes from BED pathSize or BEDgraph extents."""
+def get_chrom_sizes(blocks, *bedgraph_datasets):
+    """Get chromosome sizes from BED pathSize, block ends, or BEDgraph extents."""
     sizes = {}
     for chrom, blist in blocks.items():
         if blist:
-            sizes[chrom] = blist[0]["pathSize"]
-    if bedgraph_data:
-        for chrom, (starts, ends, values) in bedgraph_data.items():
-            if len(ends) > 0:
-                sizes[chrom] = max(sizes.get(chrom, 0), int(ends.max()))
+            path_sizes = [b["pathSize"] for b in blist if b.get("pathSize", 0) > 0]
+            max_end = max(b["end"] for b in blist)
+            sizes[chrom] = max(path_sizes) if path_sizes else max_end
+            sizes[chrom] = max(sizes[chrom], max_end)
+    for bedgraph_data in bedgraph_datasets:
+        if bedgraph_data:
+            for chrom, (_, ends, _) in bedgraph_data.items():
+                if len(ends) > 0:
+                    sizes[chrom] = max(sizes.get(chrom, 0), int(ends.max()))
     return sizes
 
 
@@ -312,8 +425,8 @@ def _blend_colors_array(values):
     """
     n = len(values)
     rgba = np.empty((n, 4))
-    no_data = values < 0
-    frac = values.copy()
+    no_data = (~np.isfinite(values)) | (values < 0)
+    frac = np.clip(values.copy(), 0, 1)
     frac[no_data] = 0  # placeholder, overwritten below
 
     # Blend fwd/rev by fraction
@@ -329,6 +442,55 @@ def _panel_label(ax, label):
     """Add Nature-style panel label (bold lowercase letter, top-left)."""
     ax.text(-0.05, 1.15, label, transform=ax.transAxes,
             fontsize=8, fontweight="bold", va="top", ha="left")
+
+
+def _sanitize_filename(name):
+    """Convert a chromosome name into a filesystem-safe stem."""
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name)
+    return safe.strip("._") or "unnamed"
+
+
+def _short_exception(exc):
+    """Compact exception string for warnings and placeholder figures."""
+    message = str(exc).strip()
+    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+
+
+def _placeholder_figure(title, message):
+    """Simple fallback figure used when a panel cannot be rendered."""
+    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 1.8))
+    ax = fig.add_subplot(111)
+    ax.axis("off")
+    ax.text(0.01, 0.92, title, transform=ax.transAxes,
+            fontsize=8, fontweight="bold", va="top", ha="left")
+    ax.text(0.01, 0.72, textwrap.fill(message, width=95), transform=ax.transAxes,
+            fontsize=6.5, va="top", ha="left", color="#444444")
+    fig.subplots_adjust(left=0.03, right=0.98, top=0.95, bottom=0.08)
+    return fig
+
+
+def _save_figure_with_fallback(save_figure, build_figure, title, message_prefix):
+    """Build and save a figure, falling back to a placeholder page on render errors."""
+    fig = None
+    try:
+        fig = build_figure()
+        save_figure(fig)
+        return True, None
+    except Exception as exc:
+        error_text = _short_exception(exc)
+        _warn(f"{title}: {error_text}")
+        if fig is not None:
+            plt.close(fig)
+            fig = None
+        fallback = _placeholder_figure(title, f"{message_prefix}\n\n{error_text}")
+        try:
+            save_figure(fallback)
+        finally:
+            plt.close(fallback)
+        return False, error_text
+    finally:
+        if fig is not None:
+            plt.close(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -389,11 +551,12 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
             lengths.append(b["length"])
             arm_labels.append(b["label"])
 
-    if lengths:
-        p_len = [l for l, a in zip(lengths, arm_labels) if a == "p"]
-        q_len = [l for l, a in zip(lengths, arm_labels) if a == "q"]
-        b_len = [l for l, a in zip(lengths, arm_labels) if a == "b"]
-        all_len = p_len + q_len + b_len
+    p_len = [l for l, a in zip(lengths, arm_labels) if a == "p"]
+    q_len = [l for l, a in zip(lengths, arm_labels) if a == "q"]
+    b_len = [l for l, a in zip(lengths, arm_labels) if a == "b"]
+    all_len = p_len + q_len + b_len
+
+    if all_len:
 
         n_bins = min(max(8, len(all_len) // 3), 30)
         lo, hi = min(all_len), max(all_len)
@@ -440,7 +603,8 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         else:
             ax_hist.set_xlabel("Telomere block length (bp)")
     else:
-        ax_hist.text(0.5, 0.5, "No telomere blocks", ha="center", va="center",
+        label = "No labeled telomere blocks" if lengths else "No telomere blocks"
+        ax_hist.text(0.5, 0.5, label, ha="center", va="center",
                      transform=ax_hist.transAxes, fontsize=7, color="#999999")
         ax_hist.set_xlabel("Telomere block length")
         ax_hist.set_ylabel("Count")
@@ -552,7 +716,7 @@ def _draw_strand_track(ax, strand_data, view_start, view_end):
     widths = ends - starts
     rgba = _blend_colors_array(values)
 
-    bars = ax.barh(
+    ax.barh(
         np.full(len(lefts), 0.5), widths, left=lefts, height=1.0,
         color=rgba, edgecolor="none", rasterized=True,
     )
@@ -586,9 +750,14 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
     has_strand = strand_data is not None and len(strand_data[0]) > 0
 
     p_window, q_window = compute_view_windows(blocks_list, chrom_size)
-    merged = (p_window is not None and q_window is None and
-              any(b["label"] in ("q", "b") for b in blocks_list) and
-              any(b["label"] in ("p", "b") for b in blocks_list))
+    fallback_full_chrom = p_window is None and q_window is None
+    if fallback_full_chrom:
+        p_window = (0, chrom_size)
+    merged = fallback_full_chrom or (
+        p_window is not None and q_window is None and
+        any(b["label"] in ("q", "b") for b in blocks_list) and
+        any(b["label"] in ("p", "b") for b in blocks_list)
+    )
 
     n_tracks = 1
     if has_density:
@@ -610,6 +779,7 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
         gridspec_kw={"height_ratios": height_ratios, "hspace": 0.08,
                      "wspace": 0.25},
         squeeze=False,
+        sharey="row",
     )
 
     fig.subplots_adjust(left=0.08, right=0.97, top=0.86, bottom=0.18)
@@ -652,11 +822,6 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
         # Format x-axis on the bottom track
         view_span = view_end - view_start
         _format_bp_axis(axes[n_tracks - 1][col_idx], view_span)
-
-    # Share Y axes between columns in the same row
-    if n_cols == 2 and len(drawn_cols) == 2:
-        for row in range(n_tracks):
-            axes[row][0].get_shared_y_axes().join(axes[row][0], axes[row][1])
 
     # Hide columns with no telomere
     if n_cols == 2 and not merged:
@@ -737,9 +902,11 @@ def main():
         sys.exit(f"Error: '{args.directory}' is not a directory.")
 
     files = find_files(args.directory)
-    if "terminal" not in files or "report" not in files:
+    if "terminal" not in files:
         sys.exit(f"Error: Missing teloscope output files in '{args.directory}'.\n"
                  f"Run teloscope first to generate output files.")
+    if "report" not in files:
+        _warn(f"No '*_report.tsv' file found in '{args.directory}'; overview classification donut will show no data.")
 
     print(f"Found files: {', '.join(files.keys())}", file=sys.stderr)
 
@@ -747,20 +914,27 @@ def main():
     density_data = parse_bedgraph(files["density"]) if "density" in files else None
     strand_data  = parse_bedgraph(files["strand_ratio"]) if "strand_ratio" in files else None
 
-    chrom_sizes = get_chrom_sizes(blocks, density_data)
+    chrom_sizes = get_chrom_sizes(blocks, density_data, strand_data)
 
-    classifications = parse_report(files["report"])
+    classifications = parse_report(files["report"]) if "report" in files else OrderedDict()
     total_chroms = sum(len(v) for v in classifications.values())
     total_telo = sum(len(blist) for blist in blocks.values())
+    cat_summary = ", ".join(f"{k}={len(v)}" for k, v in classifications.items()) or "none"
     print(f"Chromosomes: {total_chroms}  |  Telomere blocks: {total_telo}  |  "
-          f"Categories: {', '.join(f'{k}={len(v)}' for k, v in classifications.items())}",
+          f"Categories: {cat_summary}",
           file=sys.stderr)
 
     # Only generate figures for chromosomes that have telomere blocks
-    profile_chroms = sorted(blocks.keys(),
-                            key=lambda c: chrom_sizes.get(c, 0), reverse=True)
+    profile_chroms = [chrom for chrom in sorted(blocks.keys(),
+                                                key=lambda c: chrom_sizes.get(c, 0), reverse=True)
+                      if chrom_sizes.get(chrom, 0) > 0]
+    skipped_no_size = sorted(set(blocks) - set(profile_chroms))
+    if skipped_no_size:
+        _warn(f"Skipping {len(skipped_no_size)} chromosome(s) with no usable size: {', '.join(skipped_no_size[:5])}"
+              f"{' ...' if len(skipped_no_size) > 5 else ''}.")
 
     n_figures = len(profile_chroms) + 1  # +1 for overview
+    fallback_pages = []
 
     # --- Write-and-close pattern: one figure in memory at a time ---
     if args.png:
@@ -768,11 +942,17 @@ def main():
         os.makedirs(out_dir, exist_ok=True)
 
         # Overview figure
-        fig_overview = plot_assembly_overview(classifications, blocks, chrom_sizes)
         overview_path = os.path.join(out_dir, "teloscope_overview.png")
-        fig_overview.savefig(overview_path, dpi=args.dpi, bbox_inches="tight")
-        plt.close(fig_overview)
-        print(f"[1/{n_figures}] overview", file=sys.stderr)
+        overview_ok, overview_err = _save_figure_with_fallback(
+            lambda fig: fig.savefig(overview_path, dpi=args.dpi, bbox_inches="tight"),
+            lambda: plot_assembly_overview(classifications, blocks, chrom_sizes),
+            "Assembly overview",
+            "Failed to render the assembly overview. A placeholder image was written instead.",
+        )
+        if not overview_ok:
+            fallback_pages.append(("overview", overview_err))
+        overview_suffix = " [warning]" if not overview_ok else ""
+        print(f"[1/{n_figures}] overview{overview_suffix}", file=sys.stderr)
 
         # Per-chromosome terminal zoom figures
         for i, chrom in enumerate(profile_chroms, start=2):
@@ -783,12 +963,19 @@ def main():
             den = density_data.get(chrom) if density_data else None
             strand = strand_data.get(chrom) if strand_data else None
 
-            fig = plot_terminal_zoom(chrom, csize, blist, den, strand)
-            safe_name = chrom.replace("/", "_").replace("\\", "_")
+            safe_name = _sanitize_filename(chrom)
             path = os.path.join(out_dir, f"teloscope_{safe_name}.png")
-            fig.savefig(path, dpi=args.dpi, bbox_inches="tight")
-            plt.close(fig)
-            print(f"[{i}/{n_figures}] {chrom}", file=sys.stderr)
+            ok, error_text = _save_figure_with_fallback(
+                lambda fig, path=path: fig.savefig(path, dpi=args.dpi, bbox_inches="tight"),
+                lambda chrom=chrom, csize=csize, blist=blist, den=den, strand=strand:
+                    plot_terminal_zoom(chrom, csize, blist, den, strand),
+                chrom,
+                f"Failed to render the terminal zoom for {chrom}. A placeholder image was written instead.",
+            )
+            if not ok:
+                fallback_pages.append((chrom, error_text))
+            suffix = " [warning]" if not ok else ""
+            print(f"[{i}/{n_figures}] {chrom}{suffix}", file=sys.stderr)
 
         print(f"Figures saved to {out_dir}/", file=sys.stderr)
 
@@ -796,10 +983,16 @@ def main():
         out_path = args.output or os.path.join(args.directory, "teloscope_report.pdf")
         with PdfPages(out_path) as pdf:
             # Overview figure
-            fig_overview = plot_assembly_overview(classifications, blocks, chrom_sizes)
-            pdf.savefig(fig_overview, bbox_inches="tight")
-            plt.close(fig_overview)
-            print(f"[1/{n_figures}] overview", file=sys.stderr)
+            overview_ok, overview_err = _save_figure_with_fallback(
+                lambda fig: pdf.savefig(fig, bbox_inches="tight"),
+                lambda: plot_assembly_overview(classifications, blocks, chrom_sizes),
+                "Assembly overview",
+                "Failed to render the assembly overview. A placeholder page was written instead.",
+            )
+            if not overview_ok:
+                fallback_pages.append(("overview", overview_err))
+            overview_suffix = " [warning]" if not overview_ok else ""
+            print(f"[1/{n_figures}] overview{overview_suffix}", file=sys.stderr)
 
             # Per-chromosome terminal zoom figures
             for i, chrom in enumerate(profile_chroms, start=2):
@@ -810,12 +1003,24 @@ def main():
                 den = density_data.get(chrom) if density_data else None
                 strand = strand_data.get(chrom) if strand_data else None
 
-                fig = plot_terminal_zoom(chrom, csize, blist, den, strand)
-                pdf.savefig(fig, bbox_inches="tight")
-                plt.close(fig)
-                print(f"[{i}/{n_figures}] {chrom}", file=sys.stderr)
+                ok, error_text = _save_figure_with_fallback(
+                    lambda fig: pdf.savefig(fig, bbox_inches="tight"),
+                    lambda chrom=chrom, csize=csize, blist=blist, den=den, strand=strand:
+                        plot_terminal_zoom(chrom, csize, blist, den, strand),
+                    chrom,
+                    f"Failed to render the terminal zoom for {chrom}. A placeholder page was written instead.",
+                )
+                if not ok:
+                    fallback_pages.append((chrom, error_text))
+                suffix = " [warning]" if not ok else ""
+                print(f"[{i}/{n_figures}] {chrom}{suffix}", file=sys.stderr)
 
         print(f"Report saved to {out_path}", file=sys.stderr)
+
+    if fallback_pages:
+        preview = ", ".join(f"{name} ({err})" for name, err in fallback_pages[:5])
+        more = " ..." if len(fallback_pages) > 5 else ""
+        _warn(f"Report generation completed with {len(fallback_pages)} placeholder figure(s): {preview}{more}")
 
 
 if __name__ == "__main__":
