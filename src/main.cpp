@@ -44,7 +44,6 @@ int main(int argc, char **argv) {
 
     }
 
-    // Helper to set input file from path string
     auto setInputFile = [&](const char* path) {
         ifFileExists(path);
         userInput.inSequence = path;
@@ -164,20 +163,19 @@ int main(int argc, char **argv) {
                 break;
 
 
-            case 'c': { // Handle canonical pattern
+            case 'c': { // canonical pattern
                 if (!optarg || strlen(optarg) == 0) {
                     fprintf(stderr, "Warning: Empty canonical pattern provided, using default vertebrate TTAGGG.\n");
                 } else {
                     std::string canonicalPattern = optarg;
                     unmaskSequence(canonicalPattern);
 
-                    // Check for numerical characters
                     if (std::any_of(canonicalPattern.begin(), canonicalPattern.end(), ::isdigit)) {
                         fprintf(stderr, "Error: Canonical pattern '%s' contains numerical characters.\n", canonicalPattern.c_str());
                         exit(EXIT_FAILURE);
                     }
 
-                    // Store canonical pattern with lexicographically smaller as Fwd
+                    // lex-smaller = Fwd
                     userInput.canonicalSize = canonicalPattern.size();
                     std::string revComp = revCom(canonicalPattern);
                     if (canonicalPattern <= revComp) {
@@ -193,7 +191,7 @@ int main(int argc, char **argv) {
             }
 
             
-            case 'p': { // Handle search patterns
+            case 'p': { // search patterns
                 hasInputPatterns = true;
                 if (!optarg || strlen(optarg) == 0) {
                     fprintf(stderr, "Warning: Empty pattern list provided, using default: TTAGGG, CCCTAA\n");
@@ -266,7 +264,7 @@ int main(int argc, char **argv) {
             }
 
 
-            case 'k': { // max match distance (merge distance for matches)
+            case 'k': { // max match distance
                 try {
                     int v = std::stoi(optarg);
                     if (v <= 0) {
@@ -314,7 +312,7 @@ int main(int argc, char **argv) {
             }
 
 
-            case 'y': { // min block density (fraction 0–1)
+            case 'y': { // min block density
                 try {
                     float v = std::stof(optarg);
                     if (v < 0.0f || v > 1.0f) {
@@ -330,7 +328,7 @@ int main(int argc, char **argv) {
             }
 
 
-            case 'x': { // edit distance for pattern matching
+            case 'x': { // edit distance
                 try {
                     int v = std::stoi(optarg);
                     if (v < 0 || v > 2) {
@@ -386,11 +384,11 @@ int main(int argc, char **argv) {
                 if (userInput.outWinRepeats || userInput.outGC ||
                     userInput.outEntropy   || userInput.outITS ||
                     userInput.outMatches) {
-                    // Conflicts present → keep genome-wide, ignore -u
+                    // conflicts with genome-wide flags, ignore -u
                     userInput.ultraFastMode = false;
                     fprintf(stderr, "Ignoring -u: -r/-g/-e/-i/-m request genome-wide scanning.\n");
                 } else {
-                    // No conflicts seen so far → enable terminal-only
+                    // terminal-only mode
                     userInput.ultraFastMode = true;
                     fprintf(stderr, "Fast mode: Only scanning terminal regions.\n");
                 }
@@ -446,7 +444,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    // Handle pipe-only invocation (no -f, no positional arg, but stdin is piped)
+    // pipe-only invocation
     if (userInput.inSequence.empty() && isPipe) {
         userInput.pipeType = 'f';
         userInput.inSequenceName = "stdin";
@@ -454,7 +452,7 @@ int main(int argc, char **argv) {
             userInput.outRoute = ".";
     }
 
-    // Reject gzipped stdin (not supported by gfalibs stream layer)
+    // gzipped stdin not supported
     if (isPipe && userInput.pipeType == 'f') {
         int b = std::cin.peek();
         if (b == 0x1f) {
@@ -464,13 +462,13 @@ int main(int argc, char **argv) {
         }
     }
 
-    // Check that input file was provided
+    // no input
     if (userInput.inSequence.empty() && userInput.pipeType == 'n') {
         fprintf(stderr, "Error: No input file provided. Use -f or pass as positional argument.\n");
         exit(EXIT_FAILURE);
     }
 
-    // Validate step <= window (deferred from getopt so flag order doesn't matter)
+    // step must be <= window
     if (userInput.step > userInput.windowSize) {
         fprintf(stderr, "Error: Step size (%d) cannot be larger than window size (%d).\n",
                 userInput.step, userInput.windowSize);
@@ -480,7 +478,7 @@ int main(int argc, char **argv) {
                 userInput.windowSize, userInput.step);
     }
 
-    // Check output directory is writable before processing
+    // writable check
     if (!userInput.outRoute.empty()) {
         std::string testPath = userInput.outRoute + "/.teloscope_write_test";
         std::ofstream test(testPath);
@@ -493,8 +491,7 @@ int main(int argc, char **argv) {
         std::filesystem::remove(testPath);
     }
 
-    // Finalize raw pattern seeds before expansion
-    // When -p is not provided, derive patterns from canonical (fixes #2)
+    // default to canonical if -p not provided
     if (!hasInputPatterns) {
         userInput.rawPatterns = {userInput.canonicalFwd, userInput.canonicalRev};
     }
@@ -504,12 +501,10 @@ int main(int argc, char **argv) {
         userInput.rawPatterns = {userInput.canonicalFwd, userInput.canonicalRev};
     }
 
-    // Expand IUPAC + edit-distance variants with orientation info
     lg.verbose("Input variables assigned");
     userInput.patternInfo = expandPatternsWithOrientation(
         userInput.rawPatterns, userInput.editDistance, userInput.canonicalFwd);
     
-    // Also populate patterns vector for compatibility
     userInput.patterns.clear();
     userInput.patterns.reserve(userInput.patternInfo.size());
     for (const auto& [pattern, isForward] : userInput.patternInfo) {
@@ -529,7 +524,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "  Consider fewer IUPAC wildcards or a lower -x value.\n");
     }
 
-    // Summarize requested outputs in a single line for normal runs
+    // output summary
     std::string outputSummary;
     auto appendOutput = [&](const char *label) {
         if (!outputSummary.empty()) {
@@ -546,7 +541,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Outputs: %s.\n", outputSummary.c_str());
     }
 
-    // Optional command echo for reproducibility
+    // command echo
     if (cmd_flag) {
         for (unsigned short int arg_counter = 0; arg_counter < argc; arg_counter++) {
             printf("%s ", argv[arg_counter]);

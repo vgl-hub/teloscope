@@ -22,7 +22,7 @@ class Trie {
     std::vector<TrieNode> nodes;          // contiguous node pool
     unsigned short int longestPatternSize = 0;
 
-    // Map nucleotide to index (inline for speed)
+    // nucleotide to index
     static int8_t charToIndex(char c) {
         switch (c) {
             case 'A': return 0;
@@ -55,26 +55,26 @@ public:
         }
     }
 
-    // Return root index (always 0)
+    // root index
     int32_t getRoot() const { return 0; }
 
-    // Fast child lookup: returns child index or -1
+    // child index or -1
     int32_t getChild(int32_t nodeIdx, char ch) const {
         int8_t idx = charToIndex(ch);
         return (idx >= 0) ? nodes[nodeIdx].children[idx] : -1;
     }
 
-    // Check if node marks end of a pattern
+    // end of pattern
     bool isEnd(int32_t nodeIdx) const {
         return nodes[nodeIdx].isEndOfWord;
     }
 
-    // Check if pattern ending at this node is forward-oriented
+    // forward-oriented
     bool isForward(int32_t nodeIdx) const {
         return nodes[nodeIdx].isForward;
     }
 
-    // Check if pattern ending at this node is canonical (exact fwd or rev)
+    // canonical (exact fwd or rev)
     bool isCanonical(int32_t nodeIdx) const {
         return nodes[nodeIdx].isCanonical;
     }

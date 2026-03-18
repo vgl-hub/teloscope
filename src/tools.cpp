@@ -131,7 +131,6 @@ std::unordered_map<std::string, uint8_t> getHammingDistances(
     const std::vector<std::string> &patterns,
     const std::pair<std::string, std::string> &canonicalPatterns
 ) {
-    // Helper lambda to get hDist
     auto hDist = [](const std::string &str1, const std::string &str2) -> uint8_t {
         if (str1.length() != str2.length()) {
             throw std::invalid_argument("Strings must be of equal length to compute Hamming distance.");
@@ -204,24 +203,23 @@ std::vector<std::pair<std::string, bool>> expandPatternsWithOrientation(
     uint8_t editDistance,
     const std::string &canonicalFwd) {
 
-    // Helper: check if pattern is closer to canonicalFwd than canonicalRev
     auto isCloserToFwd = [&](const std::string &pattern) -> bool {
         std::string canonicalRev = revCom(canonicalFwd);
         size_t patLen = pattern.size();
         size_t canLen = canonicalFwd.size();
         
-        // Same length: direct Hamming comparison
+        // same length: Hamming
         if (patLen == canLen) {
             uint8_t distFwd = 0, distRev = 0;
             for (size_t i = 0; i < patLen; ++i) {
                 if (pattern[i] != canonicalFwd[i]) ++distFwd;
                 if (pattern[i] != canonicalRev[i]) ++distRev;
             }
-            // Tie-break: lexicographically smaller canonical wins (canonicalFwd is always lex-smaller)
+            // tie-break: lex-smaller canonical wins
             return distFwd <= distRev;
         }
         
-        // Different lengths: find best alignment for each
+        // different lengths: best alignment
         const std::string &shorter = (patLen < canLen) ? pattern : canonicalFwd;
         const std::string &longer = (patLen < canLen) ? canonicalFwd : pattern;
         const std::string longerRev = (patLen < canLen) ? canonicalRev : revCom(pattern);
@@ -256,7 +254,6 @@ std::vector<std::pair<std::string, bool>> expandPatternsWithOrientation(
         getCombinations(seed, working, 0, combinations);
 
         for (const auto &combo : combinations) {
-            // Determine if this seed combo is forward-oriented
             bool seedIsForward = isCloserToFwd(combo);
             
             std::vector<std::string> variants;
@@ -268,15 +265,13 @@ std::vector<std::pair<std::string, bool>> expandPatternsWithOrientation(
             }
 
             for (const auto &variant : variants) {
-                // Forward variant inherits seed orientation
                 result.emplace_back(variant, seedIsForward);
-                // RevCom is opposite orientation
                 result.emplace_back(revCom(variant), !seedIsForward);
             }
         }
     }
 
-    // Sort and deduplicate, keeping first occurrence (orientation consistent)
+    // sort and deduplicate
     std::sort(result.begin(), result.end(), 
         [](const auto &a, const auto &b) { return a.first < b.first; });
     result.erase(

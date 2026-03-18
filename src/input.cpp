@@ -30,7 +30,6 @@ void Input::load(UserInputTeloscope userInput) {
 
 
 void Input::read(InSequences &inSequences) {
-    // Load sequences (FA, FQ, or GFA) into inSequences and prepare handlers
     loadGenome(userInput, inSequences);
     lg.verbose("Finished loading genome assembly");
 
@@ -59,7 +58,7 @@ void Input::read(InSequences &inSequences) {
         return;
     }
 
-    // Path-based annotation and BED export
+    // path-based annotation
     for (InPath& inPath : inPaths) {
         threadPool.queueJob([&inPath, this, inSegments, inGaps, &teloscope]() {
             return teloscope.walkPath(&inPath, *inSegments, *inGaps);
@@ -89,7 +88,7 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
 
     SegmentData segmentData = scanSegment(sequence, 0, true); // tipsOnly = true for GFA segments
 
-    // Collect annotations before locking to minimize critical section
+    // collect annotations before locking
     struct TeloAnnotation {
         std::string header;
         std::vector<Tag> tags;
@@ -106,16 +105,14 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
                         + segment->getSeqHeader()
                         + (atStart ? "_start" : "_end");
 
-        // Skip duplicate telomere at the same end (e.g. overlapping fwd+rev blocks)
+        // skip duplicate
         bool duplicate = false;
         for (const auto& ann : annotations) {
             if (ann.header == header) { duplicate = true; break; }
         }
         if (duplicate) continue;
 
-        // Edge orientation for BandageNG:
-        //   L telo + segment + 0M  →  telo at left (start) of segment
-        //   L telo + segment - 0M  →  telo at right (end) of segment
+        // edge orientation: + = start, - = end
         char segOrient = atStart ? '+' : '-';
 
         annotations.push_back({header, {
@@ -125,21 +122,19 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
         }, segOrient});
     }
 
-    // Note: traverseInSegmentWrapper and appendEdge lock the global mtx internally.
-    // We must NOT hold mtx while calling them, or we deadlock.
+    // traverseInSegmentWrapper and appendEdge lock mtx internally
     for (auto& ann : annotations) {
-        // Create telomere segment (locks mtx internally)
         Sequence teloSeq{ann.header, "", new std::string("*")};
         inSequences.traverseInSegmentWrapper(&teloSeq, ann.tags);
 
-        // Read back UID under lock (hash map is not thread-safe for concurrent R/W)
+        // read UID under lock
         unsigned int teloUid;
         {
             std::lock_guard<std::mutex> lck(mtx);
             teloUid = inSequences.getHash1()->at(ann.header);
         }
 
-        // Create and append edge (locks mtx internally)
+        // edge
         InEdge inEdge;
         inEdge.newEdge(
           0,                      // auto-assign UID in appendEdge
@@ -181,7 +176,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     pathData.pathSize = path->getLen();
     // pathData.windows.reserve(inSegments.size()); NumWindows = ceil((L - W) / S) + 1
 
-    // Build index for O(1) lookups instead of O(N) find_if per component
+    // index for O(1) lookups
     std::unordered_map<unsigned int, InSegment*> segmentIndex;
     segmentIndex.reserve(inSegments.size());
     for (auto* seg : inSegments) segmentIndex[seg->getuId()] = seg;

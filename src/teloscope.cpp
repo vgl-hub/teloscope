@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <type_traits> // handlesBEDFile
+#include <type_traits>
 #include <chrono>
 
 #include "log.h"
@@ -51,7 +51,7 @@ uint64_t Teloscope::getTerminalBlocks(
         return fromStart ? (rel < terminalLimit) : (rel >= segmentSize - terminalLimit);
     };
 
-    // --- Phase 1: Directional scan → high-quality sub-blocks (matchDist) ---
+    // Phase 1: directional scan for sub-blocks
     std::vector<TelomereBlock> subBlocks;
 
     bool inBlock = false;
@@ -125,7 +125,7 @@ uint64_t Teloscope::getTerminalBlocks(
     if (inBlock) finalizeSubBlock();
     if (subBlocks.empty()) return boundary;
 
-    // --- Phase 2: Merge adjacent sub-blocks within blockDist, apply filters ---
+    // Phase 2: merge sub-blocks within blockDist
     TelomereBlock current = subBlocks[0];
 
     auto finalizeExtended = [&]() {
@@ -271,24 +271,22 @@ void Teloscope::labelTerminalBlocks(
     terminalLabel = "";
     bool hasGaps = (gaps > 0);
 
-    // Helper to pick gapped vs non-gapped enum variant
     auto pickType = [hasGaps](ScaffoldType plain, ScaffoldType gapped) {
         return hasGaps ? gapped : plain;
     };
 
-    // If no blocks, set empty label and "none" type and return early
     if (blocks.empty()) {
         scaffoldType = pickType(ScaffoldType::NONE, ScaffoldType::GAPPED_NONE);
         return;
     }
 
-    // Sort blocks by coordinates for consistent ordering
+    // sort by coordinates
     std::sort(blocks.begin(), blocks.end(),
             [](const TelomereBlock &a, const TelomereBlock &b) {
                 return a.start < b.start;
             });
 
-    // Identify scaffold-terminal blocks (within terminalLimit of path ends)
+    // scaffold-terminal blocks
     std::vector<TelomereBlock*> scaffoldBlocks;
     for (auto& block : blocks) {
         uint64_t blockEnd = block.start + block.blockLen;
@@ -297,7 +295,7 @@ void Teloscope::labelTerminalBlocks(
         }
     }
 
-    // Build granular label from ALL blocks (for detailed annotation)
+    // granular label from all blocks
     for (auto& block : blocks) {
         terminalLabel += block.blockLabel;
         if (!block.hasValidOr) {
@@ -305,7 +303,7 @@ void Teloscope::labelTerminalBlocks(
         }
     }
 
-    // Find longest 'p' and 'q' blocks among SCAFFOLD-TERMINAL blocks only
+    // longest p and q among scaffold-terminal blocks
     TelomereBlock* longest_p = nullptr;
     TelomereBlock* longest_q = nullptr;
     uint64_t max_p_coverage = 0;
@@ -326,7 +324,7 @@ void Teloscope::labelTerminalBlocks(
     if (longest_p) longest_p->isLongest = true;
     if (longest_q) longest_q->isLongest = true;
 
-    // Update granular label with uppercase for longest blocks
+    // uppercase for longest blocks
     for (size_t i = 0, j = 0; i < blocks.size(); i++) {
         if (blocks[i].isLongest) {
             terminalLabel[j] = std::toupper(terminalLabel[j]);
@@ -337,11 +335,11 @@ void Teloscope::labelTerminalBlocks(
         }
     }
 
-    // Determine scaffold type from scaffold-terminal blocks only
+    // scaffold type
     bool has_P = (longest_p != nullptr);
     bool has_Q = (longest_q != nullptr);
 
-    // Check for discordant telomeres in longest blocks
+    // discordant
     if ((has_P && !longest_p->hasValidOr) || (has_Q && !longest_q->hasValidOr)) {
         scaffoldType = pickType(ScaffoldType::DISCORDANT, ScaffoldType::GAPPED_DISCORDANT);
         return;
@@ -357,7 +355,7 @@ void Teloscope::labelTerminalBlocks(
         return;
     }
 
-    // Check for Pp and Qq misassemblies among scaffold-terminal blocks
+    // Pp/Qq misassemblies
     if (has_P) {
         for (const auto* block : scaffoldBlocks) {
             if (block->blockLabel == 'p' && block != longest_p && block->hasValidOr) {
@@ -382,7 +380,7 @@ void Teloscope::labelTerminalBlocks(
         return;
     }
 
-    // Incomplete chromosome with a single scaffold-terminal telomere
+    // single telomere = incomplete
     scaffoldType = pickType(ScaffoldType::INCOMPLETE, ScaffoldType::GAPPED_INCOMPLETE);
 }
 
@@ -403,24 +401,24 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
     uint64_t lastCanonicalPos = 0;
     bool needMatchSeq = userInput.outMatches;
 
-    // Precompute densityGain lookup by match length (avoids float division per match)
+    // density lookup by match length
     float densityByLen[256] = {};
     float invWindowSize = 100.0f / window.size();
     for (uint16_t len = 0; len <= longestPatternSize; ++len) {
         densityByLen[len] = len * invWindowSize;
     }
 
-    // Precompute terminal status for this window (most windows are fully one or the other)
+    // terminal status
     uint64_t windowEnd = windowStart + window.size();
     uint64_t terminalEnd = (segmentSize > terminalLimit) ? (segmentSize - terminalLimit) : 0;
     bool windowFullyTerminal = (windowEnd <= terminalLimit) || (windowStart >= terminalEnd);
     bool windowFullyInterstitial = (windowStart > terminalLimit) && (windowEnd < terminalEnd);
 
-    // Precompute overlap conditions (constant per window)
+    // overlap conditions
     bool alwaysMainWindow = (overlapSize == 0 || windowStart == 0);
     bool hasOverlap = (overlapSize != 0);
 
-    // Determine starting index for Trie scanning
+    // trie scan start index
     uint32_t startIndex = alwaysMainWindow
                             ? 0
                             : std::min(step - longestPatternSize, overlapSize - longestPatternSize);
@@ -445,13 +443,13 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
             }
         }
 
-        // Pattern matching using Trie (index-based, no pointer chasing)
+        // trie pattern matching
         int32_t current = trie.getRoot();
         uint32_t scanLimit = std::min(i + longestPatternSize, static_cast<uint32_t>(window.size()));
 
-        for (uint32_t j = i; j < scanLimit; ++j) { // Scan positions until longest pattern
-            current = trie.getChild(current, window[j]); // window[j] is a character
-            if (current < 0) break; // no child → stop
+        for (uint32_t j = i; j < scanLimit; ++j) {
+            current = trie.getChild(current, window[j]);
+            if (current < 0) break;
 
             if (trie.isEnd(current)) {
                 uint16_t matchLen = static_cast<uint16_t>(j - i + 1);
@@ -507,7 +505,7 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                         }
                     }
 
-                    // Route by strand for terminal block creation
+                    // route by strand
                     if (isForward) {
                         windowData.fwdCounts++;
                         windowData.fwdDensity += densityGain;
@@ -530,7 +528,7 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                         nextOverlapData.nonCanonicalDensity += densityGain;
                     }
 
-                    // Track forward/reverse metrics for overlap window
+                    // fwd/rev overlap metrics
                     if (isForward) {
                         nextOverlapData.fwdCounts++;
                         nextOverlapData.fwdDensity += densityGain;
@@ -553,8 +551,7 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
     unsigned short int longestPatternSize = this->trie.getLongestPatternSize();
 
     if (tipsOnly) {
-        // ========== FAST PATH: Direct terminal region scan ==========
-        // No windows, no GC/entropy, no overlap handling - maximum speed
+        // ========== Fast path: terminal scan only ==========
         
         auto processRegion = [&](uint64_t start, uint64_t end) {
             for (uint64_t i = start; i < end; ++i) {
@@ -596,11 +593,11 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
         }
 
     } else {
-        // ========== FULL PATH: Window-based scan with metrics ==========
+        // ========== Full path: window-based scan ==========
         uint32_t windowSize = userInput.windowSize;
         uint32_t step = userInput.step;
 
-        // Reserve with cap to avoid OOM on large contigs
+        // capped reserve
         constexpr uint64_t maxMatchReserve = 1000000;
         segmentData.canonicalMatches.reserve(std::min(segmentSize / 6, maxMatchReserve));
         segmentData.nonCanonicalMatches.reserve(std::min(segmentSize / 6, maxMatchReserve));
@@ -638,10 +635,9 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
             windowData.currentWindowSize = currentWindowSize;
             windows.emplace_back(windowData);
 
-            prevOverlapData = nextOverlapData; // Pass and reset overlap data
-            nextOverlapData = WindowData(); // Reset for next iteration
+            prevOverlapData = nextOverlapData;
+            nextOverlapData = WindowData();
 
-            // Advance to the next window and check remaining sequence
             windowStart += step;
             if (windowStart >= segmentSize) break;
 
@@ -682,7 +678,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
                             std::ofstream& terminalBlocksFile,
                             std::ofstream& interstitialBlocksFile) {
 
-    // Write BEDgraph headers directly to files
+    // BEDgraph headers
     if (userInput.outWinRepeats) {
         windowDensityFile << "track type=bedGraph name=\"Repeat Density\" description=\"Total repeat density per window\"\n";
         windowCanonicalRatioFile << "track type=bedGraph name=\"Canonical Ratio\" description=\"Canonical fraction of repeat density per window\"\n";
@@ -705,7 +701,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
 
     // Processing paths
     totalPaths = allPathData.size();
-    std::vector<float> telomereLengths; //  vector of floats for getStats
+    std::vector<float> telomereLengths; // for getStats
 
     for (const auto& pathData : allPathData) {
         const auto& header = pathData.header;
@@ -723,12 +719,11 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
         for (const auto& block : pathData.terminalBlocks) {
             uint64_t blockEnd = block.start + block.blockLen;
 
-            // Determine if block is scaffold-terminal or contig-terminal
             bool isScaffoldTerminal = (block.start < userInput.terminalLimit) ||
                                       (blockEnd > pathSize - userInput.terminalLimit);
             const char* terminality = isScaffoldTerminal ? "scaffold" : "contig";
 
-            // Default: only scaffold-terminal; --manual-curation: all
+            // scaffold-terminal only, unless --manual-curation
             if (isScaffoldTerminal || userInput.manualCuration) {
                 terminalBlocksFile << header << "\t"
                                     << block.start << "\t"
@@ -743,7 +738,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
                                     << terminality << "\n";
             }
 
-            // Only count and include label if this is a longest block
+            // longest block only
             if (block.isLongest) {
                 longestCount++;
                 longestLabels += block.blockLabel;
@@ -823,7 +818,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
                 << scaffoldTypeToString(pathData.scaffoldType) << "\t"
                 << pathData.terminalLabel;
         
-        totalTelomeres += longestCount; // Update assembly summary with longest count
+        totalTelomeres += longestCount;
         totalGaps += gaps;
 
         // Expand path summary
@@ -833,7 +828,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
                     << pathData.canonicalMatches.size() << "\t"
                     << windows.size();
             
-            totalNWindows += windows.size(); // Update assembly summary
+            totalNWindows += windows.size();
             totalITS += pathData.interstitialBlocks.size();
             totalCanMatches += pathData.canonicalMatches.size();
         }
@@ -857,8 +852,7 @@ void Teloscope::handleBEDFile() {
 
     constexpr size_t ioBufSize = 1 << 20; // 1MB write buffer per file
 
-    // Buffers MUST be declared before ofstreams: C++ destroys locals in reverse
-    // declaration order, so buffers outlive the streams that reference them.
+    // buffers must outlive the ofstreams that reference them
     std::vector<char> densityBuf(ioBufSize), canonRatioBuf(ioBufSize), strandRatioBuf(ioBufSize);
     std::vector<char> gcBuf(ioBufSize), entropyBuf(ioBufSize);
     std::vector<char> canonMatchBuf(ioBufSize), noncanonMatchBuf(ioBufSize);
@@ -876,7 +870,6 @@ void Teloscope::handleBEDFile() {
 
     std::string base = userInput.outRoute + "/" + userInput.inSequenceName;
 
-    // Helper to open a file with 1MB write buffer and check success
     auto openFile = [&](std::ofstream& file, const std::string& path, std::vector<char>& buf) {
         file.rdbuf()->pubsetbuf(buf.data(), ioBufSize);
         file.open(path);
@@ -886,7 +879,6 @@ void Teloscope::handleBEDFile() {
         }
     };
 
-    // Open per-metric window files
     if (userInput.outWinRepeats) {
         openFile(windowDensityFile, base + "_window_repeat_density.bedgraph", densityBuf);
         openFile(windowCanonicalRatioFile, base + "_window_canonical_ratio.bedgraph", canonRatioBuf);
