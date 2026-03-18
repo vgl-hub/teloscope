@@ -494,22 +494,36 @@ def _project_terminal_series(starts, ends, values, chrom_size, arm):
 
 
 def _apply_terminal_x_axis(ax, view_start, view_end, arm):
-    """Apply a minimal end-relative x-axis for p/q panels."""
+    """Apply end-relative x-axis with adaptive units (bp / kbp / Mbp)."""
     if view_end <= view_start:
         return
 
-    if arm == "q":
-        tick_pos = np.linspace(view_end, view_start, 3)
-        tick_labels = [_fmt_kbp(max(pos, 0)) for pos in tick_pos]
-        xlabel = "Distance to end (kbp)"
-    elif arm == "p":
-        tick_pos = np.linspace(view_start, view_end, 3)
-        tick_labels = [_fmt_kbp(max(pos, 0)) for pos in tick_pos]
-        xlabel = "Distance to end (kbp)"
+    span = view_end - view_start
+
+    # Adaptive unit selection
+    if span >= 2_000_000:
+        fmt = lambda x: f"{x / 1e6:.1f}"
+        unit = "Mbp"
+    elif span >= 2_000:
+        fmt = lambda x: _fmt_kbp(max(x, 0))
+        unit = "kbp"
     else:
-        tick_pos = np.linspace(view_start, view_end, 3)
-        tick_labels = [_fmt_kbp(pos) for pos in tick_pos]
-        xlabel = "Position along scaffold (kbp)"
+        fmt = lambda x: f"{max(x, 0):.0f}"
+        unit = "bp"
+
+    n_ticks = 4 if span >= 50_000 else 3
+
+    if arm == "q":
+        tick_pos = np.linspace(view_end, view_start, n_ticks)
+    else:
+        tick_pos = np.linspace(view_start, view_end, n_ticks)
+
+    tick_labels = [fmt(pos) for pos in tick_pos]
+
+    if arm in ("p", "q"):
+        xlabel = f"Distance to end ({unit})"
+    else:
+        xlabel = f"Position along scaffold ({unit})"
 
     ax.set_xticks(tick_pos)
     ax.set_xticklabels(tick_labels)
@@ -980,37 +994,50 @@ def compute_view_windows(blocks_list, chrom_size):
     """Compute (p_window, q_window) for terminal zoom panels.
 
     Each window is (start, end) or None if no blocks at that end.
-    If both windows overlap on a short chromosome, returns a single merged window.
+    Target: ~50% telomeric content per panel (PADDING_FACTOR = 2.0).
+    When both arms exist and extents are within MAX_RATIO, a common limit
+    is used so arm lengths can be compared directly; otherwise independent
+    per-arm limits preserve detail for the smaller arm.
     """
-    def _window_for_arm(arm_blocks, arm):
+    PADDING_FACTOR = 2.0
+    MIN_WINDOW = 1_000
+    MAX_RATIO = 5.0
+
+    def _arm_limit(arm_blocks, arm):
         if not arm_blocks:
             return None
-
-        local_intervals = [
+        intervals = [
             _terminal_distance_interval(
                 int(b["start"]), int(b["end"]), int(chrom_size), arm)
             for b in arm_blocks
         ]
-        local_end = max(max(start, end) for start, end in local_intervals)
-        return min(int(chrom_size), max(int(round(local_end * 2.0)), 1_000))
+        furthest = max(max(s, e) for s, e in intervals)
+        return min(int(chrom_size),
+                    max(int(round(furthest * PADDING_FACTOR)), MIN_WINDOW))
 
     p_blocks = [b for b in blocks_list if b["label"] in ("p", "b")]
     q_blocks = [b for b in blocks_list if b["label"] in ("q", "b")]
-    p_limit = _window_for_arm(p_blocks, "p")
-    q_limit = _window_for_arm(q_blocks, "q")
+    p_limit = _arm_limit(p_blocks, "p")
+    q_limit = _arm_limit(q_blocks, "q")
 
     if p_limit is not None and q_limit is not None:
-        common_limit = max(p_limit, q_limit)
-        p_window = (0, common_limit)
-        q_window = (max(0, int(chrom_size) - common_limit), chrom_size)
+        bigger = max(p_limit, q_limit)
+        smaller = max(min(p_limit, q_limit), 1)
+        if bigger / smaller <= MAX_RATIO:
+            # Similar scale: common limit for direct visual comparison
+            p_window = (0, bigger)
+            q_window = (max(0, int(chrom_size) - bigger), chrom_size)
+        else:
+            # Very different scales: independent limits to preserve detail
+            p_window = (0, p_limit)
+            q_window = (max(0, int(chrom_size) - q_limit), chrom_size)
     else:
         p_window = (0, p_limit) if p_limit is not None else None
         q_window = (max(0, int(chrom_size) - q_limit), chrom_size) if q_limit is not None else None
 
     # If windows overlap, merge into a single full-width window
     if p_window and q_window and p_window[1] >= q_window[0]:
-        merged = (0, chrom_size)
-        return merged, None
+        return (0, chrom_size), None
 
     return p_window, q_window
 
