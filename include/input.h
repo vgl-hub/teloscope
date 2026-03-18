@@ -29,7 +29,7 @@ struct UserInputTeloscope : UserInput {
     uint32_t windowSize = 1000;
     uint32_t step = 1000;
     uint32_t terminalLimit = 50000;
-    uint8_t editDistance = 0;
+    uint8_t editDistance = 1;
     uint8_t kmerLen = 21;
 
     unsigned short int maxMatchDist = 50;

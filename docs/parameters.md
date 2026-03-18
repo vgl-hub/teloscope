@@ -20,7 +20,7 @@ To check out all options and flags, please use:
 |------|-----------|-------------|---------|
 | `-c` | `--canonical` | Canonical telomere repeat used as the reference motif | `TTAGGG` |
 | `-p` | `--patterns` | Comma-separated list of repeat patterns to search for | Canonical and its reverse complement |
-| `-x` | `--edit-distance` | Allow up to this many mismatches per repeat (0, 1, or 2). Generates all substitution variants of each input pattern. | `0` |
+| `-x` | `--edit-distance` | Allow up to this many mismatches per repeat (0, 1, or 2). Generates all substitution variants of each input pattern. | `1` |
 
 Both the provided patterns and their reverse complements are searched automatically.
 
@@ -63,3 +63,18 @@ Both the provided patterns and their reverse complements are searched automatica
 | | `--cmd` | Print command line | |
 
 **Note:** Enabling any genome-wide output flag (`-r`, `-g`, `-e`, `-m`, `-i`) automatically disables ultra-fast mode.
+
+### Piping from stdin
+
+Teloscope accepts input from stdin when no file is given. Gzipped input must be decompressed first (`zcat`).
+
+```sh
+cat asm.fa | teloscope -o results/
+zcat asm.fa.gz | teloscope -o results/
+```
+
+Download and analyze directly from NCBI:
+```sh
+datasets download genome accession GCF_000001405.40 --include genome --filename ncbi.zip
+unzip -p ncbi.zip '*.fna' | teloscope -o results/
+```

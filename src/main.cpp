@@ -30,10 +30,14 @@ int main(int argc, char **argv) {
     
     std::string cmd;
 
-    bool isPipe = false; // to check if input is from pipe
+#ifdef _WIN32
+    bool isPipe = !_isatty(_fileno(stdin));
+#else
+    bool isPipe = !isatty(STDIN_FILENO);
+#endif
     bool hasInputPatterns = false;
     
-    if (argc == 1) { // case: with no arguments
+    if (argc == 1 && !isPipe) { // case: with no arguments and no pipe
 
         printf("teloscope input.[fa|fa.gz|gfa] [options]\nteloscope -f input.[fa|fa.gz|gfa] -o /output/path/\nUse -h for additional help.\n");
         exit(0);
@@ -42,17 +46,13 @@ int main(int argc, char **argv) {
 
     // Helper to set input file from path string
     auto setInputFile = [&](const char* path) {
-        if (isPipe && userInput.pipeType == 'n') {
-            userInput.pipeType = 'f';
-        } else {
-            ifFileExists(path);
-            userInput.inSequence = path;
-            const std::filesystem::path real = std::filesystem::canonical(userInput.inSequence);
-            userInput.inSequence       = real.string();
-            userInput.inSequencePrefix = real.parent_path().string();
-            userInput.inSequenceName   = real.filename().string();
-            userInput.outRoute         = userInput.inSequencePrefix;
-        }
+        ifFileExists(path);
+        userInput.inSequence = path;
+        const std::filesystem::path real = std::filesystem::canonical(userInput.inSequence);
+        userInput.inSequence       = real.string();
+        userInput.inSequencePrefix = real.parent_path().string();
+        userInput.inSequenceName   = real.filename().string();
+        userInput.outRoute         = userInput.inSequencePrefix;
     };
     
     static struct option long_options[] = { // struct mapping long options
@@ -431,7 +431,7 @@ int main(int argc, char **argv) {
                 printf("\t'-d'\t--max-block-distance\tSet maximum block distance for extension. [Default: 200]\n");
                 printf("\t'-l'\t--min-block-length\tSet minimum block length. [Default: 500]\n");
                 printf("\t'-y'\t--min-block-density\tSet minimum block density. [Default: 0.5]\n");
-                printf("\t'-x'\t--edit-distance\tSet edit distance for pattern matching (0-2). [Default: 0]\n");
+                printf("\t'-x'\t--edit-distance\tSet edit distance for pattern matching (0-2). [Default: 1]\n");
 
                 printf("\nOptional Parameters:\n");
                 printf("\t'-w'\t--window\tSet sliding window size. [Default: 1000]\n");
@@ -450,6 +450,14 @@ int main(int argc, char **argv) {
                 printf("\t--cmd\tPrint command line.\n");
                 exit(0);
         }
+    }
+
+    // Handle pipe-only invocation (no -f, no positional arg, but stdin is piped)
+    if (userInput.inSequence.empty() && isPipe) {
+        userInput.pipeType = 'f';
+        userInput.inSequenceName = "stdin";
+        if (userInput.outRoute.empty())
+            userInput.outRoute = ".";
     }
 
     // Check that input file was provided

@@ -14,6 +14,12 @@
 #include <map>
 #include <set>
 
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+
 #include <getopt.h>
 
 #include "log.h"
