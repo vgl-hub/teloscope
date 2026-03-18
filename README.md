@@ -36,7 +36,8 @@ Quick start
 ### Non-default organisms
     teloscope asm.fa -c CCCTAAA
 
-### Explicit pattern variants
+### IUPAC and explicit pattern variants
+    teloscope asm.fa -p TBAGGG,TTRGGG,YTAGGG
     teloscope asm.fa -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG
 
 ### Full analysis
@@ -45,6 +46,8 @@ Quick start
 ### Piping from stdin
     cat asm.fa | teloscope -o results/
     zcat asm.fa.gz | teloscope -o results/
+
+Teloscope reads `.fa.gz` files directly (`teloscope asm.fa.gz`). When piping, gzipped input must be decompressed first with `zcat`.
 
 **Note:** Teloscope always searches for both the input patterns and their reverse complements. If no patterns are provided (`-p`), it defaults to the canonical repeat (`-c`) and its reverse complement. Patterns accept IUPAC ambiguity codes (e.g., `NNNGGG` expands to all 64 combinations of `[ACGT][ACGT][ACGT]GGG`).
 
