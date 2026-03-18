@@ -55,50 +55,50 @@ mkdir -p "$TMPDIR"
 # File count tests (output flag combinations)
 # =====================================================
 
-# Test: default mode produces 1 file (terminal_telomeres.bed)
+# Test: default mode produces 2 files (terminal_telomeres.bed + report.tsv)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" 2>/dev/null >/dev/null
-check_file_count "default mode file count" 1 "$TMPDIR"
+check_file_count "default mode file count" 2 "$TMPDIR"
 
-# Test: -r produces 4 files (terminal + density + canonical_ratio + strand_ratio)
+# Test: -r produces 5 files (terminal + report + density + canonical_ratio + strand_ratio)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" -r 2>/dev/null >/dev/null
-check_file_count "-r flag file count" 4 "$TMPDIR"
+check_file_count "-r flag file count" 5 "$TMPDIR"
 
-# Test: -g produces 2 files (terminal + gc)
+# Test: -g produces 3 files (terminal + report + gc)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" -g 2>/dev/null >/dev/null
-check_file_count "-g flag file count" 2 "$TMPDIR"
+check_file_count "-g flag file count" 3 "$TMPDIR"
 
-# Test: -e produces 2 files (terminal + entropy)
+# Test: -e produces 3 files (terminal + report + entropy)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" -e 2>/dev/null >/dev/null
-check_file_count "-e flag file count" 2 "$TMPDIR"
+check_file_count "-e flag file count" 3 "$TMPDIR"
 
-# Test: -m produces 3 files (terminal + canonical_matches + noncanonical_matches)
+# Test: -m produces 4 files (terminal + report + canonical_matches + noncanonical_matches)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" -m 2>/dev/null >/dev/null
-check_file_count "-m flag file count" 3 "$TMPDIR"
+check_file_count "-m flag file count" 4 "$TMPDIR"
 
-# Test: -i produces 2 files (terminal + interstitial_telomeres)
+# Test: -i produces 3 files (terminal + report + interstitial_telomeres)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" -i 2>/dev/null >/dev/null
-check_file_count "-i flag file count" 2 "$TMPDIR"
+check_file_count "-i flag file count" 3 "$TMPDIR"
 
-# Test: -r -g -e produces 6 files
+# Test: -r -g -e produces 7 files
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" -r -g -e 2>/dev/null >/dev/null
-check_file_count "-r -g -e file count" 6 "$TMPDIR"
+check_file_count "-r -g -e file count" 7 "$TMPDIR"
 
-# Test: -r -m -g -e -i produces 9 files (terminal + 3 repeat + 2 match + its + gc + entropy)
+# Test: -r -m -g -e -i produces 10 files (terminal + report + 3 repeat + 2 match + its + gc + entropy)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" -r -m -g -e -i 2>/dev/null >/dev/null
-check_file_count "-r -m -g -e -i file count" 9 "$TMPDIR"
+check_file_count "-r -m -g -e -i file count" 10 "$TMPDIR"
 
 # Test: positional argument works like -f
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope testFiles/t2t.fa -o "$TMPDIR" 2>/dev/null >/dev/null
-check_file_count "positional arg file count" 1 "$TMPDIR"
+check_file_count "positional arg file count" 2 "$TMPDIR"
 
 # =====================================================
 # Classification consistency: default vs -r/-m/-i

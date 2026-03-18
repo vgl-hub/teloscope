@@ -975,51 +975,54 @@ void Teloscope::computeSummaryCounts() {
 void Teloscope::printSummary(std::ofstream& reportFile) {
     computeSummaryCounts();
 
-    auto out = [&](const std::string& s) {
+    auto out = [&](const auto&... args) {
+        std::ostringstream ss;
+        (ss << ... << args);
+        std::string s = ss.str();
         std::cout << s;
         reportFile << s;
     };
 
     out("\n+++ Assembly Summary Report +++\n");
-    out("Total paths:\t" + std::to_string(totalPaths) + "\n");
-    out("Total gaps:\t" + std::to_string(totalGaps) + "\n");
-    out("Total telomeres:\t" + std::to_string(totalTelomeres) + "\n");
+    out("Total paths:\t", totalPaths, "\n");
+    out("Total gaps:\t", totalGaps, "\n");
+    out("Total telomeres:\t", totalTelomeres, "\n");
 
     if (!userInput.ultraFastMode) {
-        out("Total ITS blocks:\t" + std::to_string(totalITS) + "\n");
-        out("Total canonical matches:\t" + std::to_string(totalCanMatches) + "\n");
-        out("Total windows analyzed:\t" + std::to_string(totalNWindows) + "\n");
+        out("Total ITS blocks:\t", totalITS, "\n");
+        out("Total canonical matches:\t", totalCanMatches, "\n");
+        out("Total windows analyzed:\t", totalNWindows, "\n");
     }
 
     out("\n+++ Telomere Statistics +++\n");
     if (totalTelomeres > 0) {
-        out("Mean length:\t" + std::to_string(teloMean) + "\n");
-        out("Median length:\t" + std::to_string(teloMedian) + "\n");
-        out("Min length:\t" + std::to_string(teloMin) + "\n");
-        out("Max length:\t" + std::to_string(teloMax) + "\n");
+        out("Mean length:\t", teloMean, "\n");
+        out("Median length:\t", teloMedian, "\n");
+        out("Min length:\t", teloMin, "\n");
+        out("Max length:\t", teloMax, "\n");
     }
     else {
         out("No telomeres found for statistics.\n");
     }
 
     out("\n+++ Chromosome Telomere Counts+++\n");
-    out("Two telomeres:\t" + std::to_string(totalT2T + totalGappedT2T + totalMisassembly + totalGappedMisassembly) + "\n");
-    out("One telomere:\t" + std::to_string(totalIncomplete + totalGappedIncomplete) + "\n");
-    out("Zero telomeres:\t" + std::to_string(totalNone + totalGappedNone) + "\n");
+    out("Two telomeres:\t", totalT2T + totalGappedT2T + totalMisassembly + totalGappedMisassembly, "\n");
+    out("One telomere:\t", totalIncomplete + totalGappedIncomplete, "\n");
+    out("Zero telomeres:\t", totalNone + totalGappedNone, "\n");
 
     out("\n+++ Chromosome Telomere/Gap Completeness+++\n");
-    out("T2T:\t" + std::to_string(totalT2T) + "\n");
-    out("Gapped T2T:\t" + std::to_string(totalGappedT2T) + "\n");
+    out("T2T:\t", totalT2T, "\n");
+    out("Gapped T2T:\t", totalGappedT2T, "\n");
 
-    out("Misassembled:\t" + std::to_string(totalMisassembly) + "\n");
-    out("Gapped misassembled:\t" + std::to_string(totalGappedMisassembly) + "\n");
+    out("Misassembled:\t", totalMisassembly, "\n");
+    out("Gapped misassembled:\t", totalGappedMisassembly, "\n");
 
-    out("Incomplete:\t" + std::to_string(totalIncomplete) + "\n");
-    out("Gapped incomplete:\t" + std::to_string(totalGappedIncomplete) + "\n");
+    out("Incomplete:\t", totalIncomplete, "\n");
+    out("Gapped incomplete:\t", totalGappedIncomplete, "\n");
 
-    out("No telomeres:\t" + std::to_string(totalNone) + "\n");
-    out("Gapped no telomeres:\t" + std::to_string(totalGappedNone) + "\n");
+    out("No telomeres:\t", totalNone, "\n");
+    out("Gapped no telomeres:\t", totalGappedNone, "\n");
 
-    out("Discordant:\t" + std::to_string(totalDiscordant) + "\n");
-    out("Gapped discordant:\t" + std::to_string(totalGappedDiscordant) + "\n");
+    out("Discordant:\t", totalDiscordant, "\n");
+    out("Gapped discordant:\t", totalGappedDiscordant, "\n");
 }
