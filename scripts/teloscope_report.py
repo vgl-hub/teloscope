@@ -111,6 +111,7 @@ def find_files(directory):
         "strand_ratio":    "*_window_strand_ratio.bedgraph",
         "gc":              "*_window_gc.bedgraph",
         "entropy":         "*_window_entropy.bedgraph",
+        "report":          "*_report.tsv",
     }
     for key, pat in patterns.items():
         hits = glob.glob(os.path.join(directory, pat))
@@ -176,22 +177,25 @@ def parse_bedgraph(path):
     return data
 
 
-# ---------------------------------------------------------------------------
-# Classification logic
-# ---------------------------------------------------------------------------
+_TYPE_MAP = {
+    "t2t":                "T2T",
+    "gapped_t2t":         "T2T",
+    "misassembly":        "Misassembly",
+    "gapped_misassembly": "Misassembly",
+    "incomplete":         "Incomplete",
+    "gapped_incomplete":  "Incomplete",
+    "none":               "No telomeres",
+    "gapped_none":        "No telomeres",
+    "discordant":         "Discordant",
+    "gapped_discordant":  "Discordant",
+}
 
-def classify_chromosomes(blocks, all_chroms=None):
-    """Classify chromosomes based on terminal telomere blocks.
 
-    Replicates the C++ labelTerminalBlocks decision tree:
-      1. Only scaffold-terminal blocks count for classification.
-      2. Find the longest p block and longest q block (by canonical count).
-      3. Check orientation validity: p must be closer to the left end,
-         q must be closer to the right end. If violated -> Discordant.
-      4. Both p and q present: p before q -> T2T, else -> Misassembly.
-      5. Single label with duplicates -> Misassembly.
-      6. Single block -> Incomplete.
-      7. No scaffold-terminal blocks -> No telomeres.
+def parse_report(path):
+    """Parse *_report.tsv -> OrderedDict[category -> list of chrom names].
+
+    Reads the type column from the Path Summary table written by the C++ tool.
+    Skips the Assembly Summary sections (lines starting with +++).
     """
     cats = OrderedDict([
         ("T2T",          []),
@@ -200,63 +204,36 @@ def classify_chromosomes(blocks, all_chroms=None):
         ("Discordant",   []),
         ("No telomeres", []),
     ])
-
-    classified = set()
-    for chrom, blist in blocks.items():
-        classified.add(chrom)
-
-        # Only consider scaffold-terminal blocks
-        sblocks = [b for b in blist if b.get("term", "") == "scaffold"]
-        if not sblocks:
-            cats["No telomeres"].append(chrom)
-            continue
-
-        # Find longest p and q blocks by canonical count
-        p_blocks = [b for b in sblocks if b["label"] == "p"]
-        q_blocks = [b for b in sblocks if b["label"] == "q"]
-
-        best_p = max(p_blocks, key=lambda b: b["can"]) if p_blocks else None
-        best_q = max(q_blocks, key=lambda b: b["can"]) if q_blocks else None
-
-        # Check orientation validity (discordant takes priority)
-        has_invalid = False
-        if best_p:
-            left_dist = best_p["start"]
-            right_dist = best_p["pathSize"] - (best_p["start"] + best_p["length"])
-            if left_dist > right_dist:
-                has_invalid = True
-        if best_q:
-            left_dist = best_q["start"]
-            right_dist = best_q["pathSize"] - (best_q["start"] + best_q["length"])
-            if left_dist < right_dist:
-                has_invalid = True
-
-        if has_invalid:
-            cats["Discordant"].append(chrom)
-        elif best_p and best_q:
-            if best_p["start"] < best_q["start"]:
-                cats["T2T"].append(chrom)
-            else:
-                cats["Misassembly"].append(chrom)
-        elif best_p:
-            if len(p_blocks) > 1:
-                cats["Misassembly"].append(chrom)
-            else:
-                cats["Incomplete"].append(chrom)
-        elif best_q:
-            if len(q_blocks) > 1:
-                cats["Misassembly"].append(chrom)
-            else:
-                cats["Incomplete"].append(chrom)
-        else:
-            cats["No telomeres"].append(chrom)
-
-    if all_chroms:
-        for ch in all_chroms:
-            if ch not in classified:
-                cats["No telomeres"].append(ch)
+    header_idx = None
+    type_col = None
+    header_col = None
+    with open(path) as fh:
+        for line in fh:
+            line = line.rstrip("\n")
+            if not line or line.startswith("+++"):
+                header_idx = None  # reset on section break
+                continue
+            parts = line.split("\t")
+            if header_idx is None:
+                # First non-empty, non-+++ line is the TSV header
+                if parts[0] == "pos":
+                    header_col = parts.index("header")
+                    type_col = parts.index("type")
+                    header_idx = 0
+                continue
+            if type_col is None or len(parts) <= max(header_col, type_col):
+                continue
+            chrom = parts[header_col]
+            cat = _TYPE_MAP.get(parts[type_col].lower())
+            if cat and cat in cats:
+                cats[cat].append(chrom)
 
     return OrderedDict((k, v) for k, v in cats.items() if v)
+
+
+# ---------------------------------------------------------------------------
+# Classification logic
+# ---------------------------------------------------------------------------
 
 
 def get_chrom_sizes(blocks, bedgraph_data=None):
@@ -760,8 +737,8 @@ def main():
         sys.exit(f"Error: '{args.directory}' is not a directory.")
 
     files = find_files(args.directory)
-    if "terminal" not in files:
-        sys.exit(f"Error: No *_terminal_telomeres.bed found in '{args.directory}'.\n"
+    if "terminal" not in files or "report" not in files:
+        sys.exit(f"Error: Missing teloscope output files in '{args.directory}'.\n"
                  f"Run teloscope first to generate output files.")
 
     print(f"Found files: {', '.join(files.keys())}", file=sys.stderr)
@@ -770,10 +747,9 @@ def main():
     density_data = parse_bedgraph(files["density"]) if "density" in files else None
     strand_data  = parse_bedgraph(files["strand_ratio"]) if "strand_ratio" in files else None
 
-    all_chroms = list(density_data.keys()) if density_data else None
     chrom_sizes = get_chrom_sizes(blocks, density_data)
 
-    classifications = classify_chromosomes(blocks, all_chroms)
+    classifications = parse_report(files["report"])
     total_chroms = sum(len(v) for v in classifications.values())
     total_telo = sum(len(blist) for blist in blocks.values())
     print(f"Chromosomes: {total_chroms}  |  Telomere blocks: {total_telo}  |  "
