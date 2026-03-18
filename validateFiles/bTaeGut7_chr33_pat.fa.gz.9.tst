@@ -11,9 +11,9 @@ Total gaps:	0
 Total telomeres:	2
 
 +++ Telomere Statistics +++
-Mean length:	14413
-Median length:	14413
-Min length:	9984
+Mean length:	14436
+Median length:	14436
+Min length:	10030
 Max length:	18842
 
 +++ Chromosome Telomere Counts+++

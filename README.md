@@ -36,12 +36,15 @@ Quick start
 ### Non-default organisms
     teloscope asm.fa -c CCCTAAA
 
-### Fuzzy matching
-    teloscope asm.fa -x 1
+### Explicit pattern variants
     teloscope asm.fa -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG
 
 ### Full analysis
     teloscope -f asm.fa -o results/ -r -g -e -m -i -n
+
+### Piping from stdin
+    cat asm.fa | teloscope -o results/
+    zcat asm.fa.gz | teloscope -o results/
 
 **Note:** Teloscope always searches for both the input patterns and their reverse complements. If no patterns are provided (`-p`), it defaults to the canonical repeat (`-c`) and its reverse complement. Patterns accept IUPAC ambiguity codes (e.g., `NNNGGG` expands to all 64 combinations of `[ACGT][ACGT][ACGT]GGG`).
 
