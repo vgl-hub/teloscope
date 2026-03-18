@@ -141,12 +141,18 @@ int main(int argc, char **argv) {
                     userInput.outRoute = optarg;
 
                     if (userInput.outRoute.empty()) {
-                        userInput.outRoute = userInput.inSequencePrefix; 
+                        userInput.outRoute = userInput.inSequencePrefix;
                         exit(EXIT_FAILURE);
                     }
 
-                    if (!std::filesystem::exists(userInput.outRoute)) {
-                        std::filesystem::create_directories(userInput.outRoute); // create directory if it doesn't exist
+                    try {
+                        if (!std::filesystem::exists(userInput.outRoute)) {
+                            std::filesystem::create_directories(userInput.outRoute);
+                        }
+                    } catch (const std::filesystem::filesystem_error& e) {
+                        fprintf(stderr, "Error: Cannot create output directory '%s': %s\n",
+                                userInput.outRoute.c_str(), e.code().message().c_str());
+                        exit(EXIT_FAILURE);
                     }
                 }
                 break;
@@ -231,19 +237,7 @@ int main(int argc, char **argv) {
             case 's': {
                 try {
                     userInput.step = std::stoi(optarg);
-                    
-                    if (userInput.step > userInput.windowSize) {
-                        fprintf(stderr, "Error: Step size (%d) cannot be larger than window size (%d)!\n", userInput.step, userInput.windowSize);
-                        exit(EXIT_FAILURE);
-                        
-                    } else if (userInput.step == userInput.windowSize) {
-                        fprintf(stderr, "Warning: Equal step and window sizes will bin the sequence.\n");
-                        fprintf(stderr, "Tip: Large sizes are recommended to avoid missing matches between windows.\n");
-                        
-                    } else {
-                        fprintf(stderr, "Sliding with window size (%d) and step size (%d). \n", userInput.windowSize, userInput.step);
-                    }
-                    
+
                     if (userInput.step <= 0) {
                         fprintf(stderr, "Error: Step size (-s or --step) must be > 0.\n");
                         exit(EXIT_FAILURE);
@@ -460,10 +454,43 @@ int main(int argc, char **argv) {
             userInput.outRoute = ".";
     }
 
+    // Reject gzipped stdin (not supported by gfalibs stream layer)
+    if (isPipe && userInput.pipeType == 'f') {
+        int b = std::cin.peek();
+        if (b == 0x1f) {
+            fprintf(stderr, "Error: Compressed input on stdin is not supported. Decompress first:\n");
+            fprintf(stderr, "  zcat file.fa.gz | teloscope -o results/\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+
     // Check that input file was provided
     if (userInput.inSequence.empty() && userInput.pipeType == 'n') {
         fprintf(stderr, "Error: No input file provided. Use -f or pass as positional argument.\n");
         exit(EXIT_FAILURE);
+    }
+
+    // Validate step <= window (deferred from getopt so flag order doesn't matter)
+    if (userInput.step > userInput.windowSize) {
+        fprintf(stderr, "Error: Step size (%d) cannot be larger than window size (%d).\n",
+                userInput.step, userInput.windowSize);
+        exit(EXIT_FAILURE);
+    } else if (userInput.step < userInput.windowSize) {
+        fprintf(stderr, "Sliding with window size (%d) and step size (%d).\n",
+                userInput.windowSize, userInput.step);
+    }
+
+    // Check output directory is writable before processing
+    if (!userInput.outRoute.empty()) {
+        std::string testPath = userInput.outRoute + "/.teloscope_write_test";
+        std::ofstream test(testPath);
+        if (!test.is_open()) {
+            fprintf(stderr, "Error: Output directory '%s' is not writable.\n",
+                    userInput.outRoute.c_str());
+            exit(EXIT_FAILURE);
+        }
+        test.close();
+        std::filesystem::remove(testPath);
     }
 
     // Finalize raw pattern seeds before expansion
@@ -495,6 +522,11 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Edit distance enabled: up to %u substitution%s per seed.\n",
                 userInput.editDistance,
                 userInput.editDistance > 1 ? "s" : "");
+    }
+    if (userInput.patterns.size() > 500) {
+        fprintf(stderr, "Warning: %zu patterns is unusually high and may be slow on large genomes.\n",
+                userInput.patterns.size());
+        fprintf(stderr, "  Consider fewer IUPAC wildcards or a lower -x value.\n");
     }
 
     // Summarize requested outputs in a single line for normal runs

@@ -58,6 +58,7 @@ Documentation
 - [Report generation](docs/report.md) - figures from Teloscope output
 - [Simulation](docs/simulation.md) - accuracy benchmarking
 - [Testing](docs/testing.md) - `make validate`, `make regenerate`
+- [Troubleshooting](docs/troubleshooting.md) - common errors and performance tips
 
 How to cite
 ------------
