@@ -8,7 +8,7 @@ Usage:
 
 Reads Teloscope output files from the given directory and generates:
   Page 1: Assembly overview (classification donut + telomere length distribution)
-  Page 2+: Per-chromosome telomere profiles (blocks, density, strand ratio)
+  Page 2+: Per-chromosome terminal zoom figures (blocks, density, strand ratio)
 
 Requires: Python 3.6+, matplotlib
 """
@@ -82,7 +82,7 @@ def _apply_nature_style():
         "legend.frameon":     False,
         # Figure
         "figure.dpi":         150,
-        "savefig.dpi":        600,
+        "savefig.dpi":        450,
         "savefig.bbox":       "tight",
         "savefig.pad_inches": 0.02,
         "savefig.transparent": False,
@@ -355,6 +355,8 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
             wedgeprops=dict(width=0.45, edgecolor="white", linewidth=0.8),
             textprops=dict(fontsize=7, fontweight="bold", color="white"),
         )
+        for w in wedges:
+            w.set_rasterized(True)
         for at in autotexts:
             at.set_fontsize(7)
             at.set_fontweight("bold")
@@ -406,10 +408,11 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
                 labels_stack.append(label)
 
         if data_stack:
-            ax_hist.hist(
+            _, _, patches = ax_hist.hist(
                 data_stack, bins=bins, stacked=True,
                 color=colors_stack, label=labels_stack,
                 edgecolor="white", linewidth=0.4, alpha=0.85,
+                rasterized=True,
             )
 
         median_len = _median(all_len)
@@ -440,59 +443,246 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
 
 
 # ---------------------------------------------------------------------------
-# Tier 2: Per-chromosome profile
+# Tier 2: Terminal zoom figures
 # ---------------------------------------------------------------------------
 
-def plot_chromosome_profile(chrom, chrom_size, blocks_list,
-                            density_data=None, strand_data=None):
-    """Multi-track chromosome plot: blocks, repeat density, strand ratio."""
+def compute_view_windows(blocks_list, chrom_size):
+    """Compute (p_window, q_window) for terminal zoom panels.
+
+    Each window is (start, end) or None if no blocks at that end.
+    If both windows overlap on a short chromosome, returns a single merged window.
+    """
+    p_blocks = [b for b in blocks_list if b["label"] in ("p", "b")]
+    q_blocks = [b for b in blocks_list if b["label"] in ("q", "b")]
+
+    p_window = None
+    q_window = None
+
+    if p_blocks:
+        p_max_end = max(b["end"] for b in p_blocks)
+        extent = p_max_end
+        flanking = max(extent * 2, 20_000)
+        flanking = min(flanking, 500_000)
+        p_window = (0, min(p_max_end + flanking, chrom_size))
+
+    if q_blocks:
+        q_min_start = min(b["start"] for b in q_blocks)
+        extent = chrom_size - q_min_start
+        flanking = max(extent * 2, 20_000)
+        flanking = min(flanking, 500_000)
+        q_window = (max(q_min_start - flanking, 0), chrom_size)
+
+    # If windows overlap, merge into a single full-width window
+    if p_window and q_window and p_window[1] >= q_window[0]:
+        merged = (0, chrom_size)
+        return merged, None
+
+    return p_window, q_window
+
+
+def clip_bedgraph(intervals, view_start, view_end):
+    """Return intervals overlapping [view_start, view_end), trimmed to bounds."""
+    clipped = []
+    for start, end, val in intervals:
+        if end <= view_start or start >= view_end:
+            continue
+        cs = max(start, view_start)
+        ce = min(end, view_end)
+        clipped.append((cs, ce, val))
+    return clipped
+
+
+def _draw_blocks_track(ax, blocks_list, view_start, view_end):
+    """Draw telomere blocks as rectangles on a backbone line."""
+    backbone_y = 0.5
+    ax.plot([view_start, view_end], [backbone_y, backbone_y],
+            color="#d0d0d0", linewidth=2.5, solid_capstyle="round",
+            zorder=1, rasterized=True)
+
+    for b in blocks_list:
+        if b["end"] <= view_start or b["start"] >= view_end:
+            continue
+        cs = max(b["start"], view_start)
+        ce = min(b["end"], view_end)
+        color = COLORS.get(b["label"], "#999999")
+        rect = Rectangle(
+            (cs, backbone_y - 0.3), ce - cs, 0.6,
+            facecolor=color, edgecolor="none", alpha=0.85, zorder=2,
+        )
+        rect.set_rasterized(True)
+        ax.add_patch(rect)
+
+    ax.set_ylim(-0.1, 1.1)
+    ax.set_ylabel("Blocks", fontsize=7)
+    ax.set_yticks([])
+    ax.spines["bottom"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.tick_params(bottom=False)
+
+
+def _draw_density_track(ax, density_intervals, view_start, view_end):
+    """Draw repeat density as a filled step plot."""
+    clipped = clip_bedgraph(density_intervals, view_start, view_end)
+    if not clipped:
+        ax.set_visible(False)
+        return
+    xs, ys = _bedgraph_to_step(clipped)
+    ax.fill_between(xs, ys, step="post", color=COLORS["density"],
+                    alpha=0.35, linewidth=0, rasterized=True)
+    ax.plot(xs, ys, drawstyle="steps-post", color=COLORS["density"],
+            linewidth=0.6, rasterized=True)
+    ax.set_ylabel("Repeat\ndensity", fontsize=7)
+    ax.set_ylim(0, 1.05)
+    ax.tick_params(bottom=False)
+    ax.spines["bottom"].set_visible(False)
+
+
+def _draw_strand_track(ax, strand_intervals, view_start, view_end):
+    """Draw strand ratio as colored bars (single bar() call)."""
+    clipped = clip_bedgraph(strand_intervals, view_start, view_end)
+    if not clipped:
+        ax.set_visible(False)
+        return
+
+    lefts = []
+    widths = []
+    facecolors = []
+    for start, end, val in clipped:
+        lefts.append(start)
+        widths.append(end - start)
+        if val < 0:
+            facecolors.append(COLORS["no_data"])
+        else:
+            facecolors.append(_blend_color(COLORS["fwd"], COLORS["rev"], val))
+
+    alphas = [0.3 if v < 0 else 0.7 for _, _, v in clipped]
+    # Draw all bars in one call for performance
+    bars = ax.barh(
+        [0.5] * len(lefts), widths, left=lefts, height=1.0,
+        color=facecolors, edgecolor="none", rasterized=True,
+    )
+    for bar_patch, alpha in zip(bars, alphas):
+        bar_patch.set_alpha(alpha)
+
+    ax.set_ylim(0, 1)
+    ax.set_yticks([])
+    ax.set_ylabel("Strand\nratio", fontsize=7)
+
+
+def _hide_panel(ax, message="No telomere"):
+    """Hide axes and show a centered gray label."""
+    ax.set_visible(True)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.text(0.5, 0.5, message, transform=ax.transAxes,
+            ha="center", va="center", fontsize=7, color="#bbbbbb")
+
+
+def plot_terminal_zoom(chrom, chrom_size, blocks_list,
+                       density_data=None, strand_data=None):
+    """Two-column terminal zoom: p-end (left) and q-end (right).
+
+    Each column shows up to 3 tracks (blocks, density, strand ratio).
+    If windows overlap on a short chromosome, a single merged panel is used.
+    """
     has_density = density_data is not None and len(density_data) > 0
     has_strand = strand_data is not None and len(strand_data) > 0
 
+    p_window, q_window = compute_view_windows(blocks_list, chrom_size)
+    merged = (p_window is not None and q_window is None and
+              any(b["label"] in ("q", "b") for b in blocks_list) and
+              any(b["label"] in ("p", "b") for b in blocks_list))
+
     n_tracks = 1
-    height_ratios = [0.35]
     if has_density:
         n_tracks += 1
-        height_ratios.append(1.0)
     if has_strand:
         n_tracks += 1
+
+    n_cols = 1 if merged else 2
+    height_ratios = [0.35]
+    if has_density:
+        height_ratios.append(1.0)
+    if has_strand:
         height_ratios.append(0.5)
 
     fig_height = 0.8 + 0.9 * (n_tracks - 1)
     fig, axes = plt.subplots(
-        n_tracks, 1, figsize=(FIG_WIDTH_DOUBLE, fig_height),
-        gridspec_kw={"height_ratios": height_ratios, "hspace": 0.08},
-        sharex=True,
+        n_tracks, n_cols,
+        figsize=(FIG_WIDTH_DOUBLE, fig_height),
+        gridspec_kw={"height_ratios": height_ratios, "hspace": 0.08,
+                     "wspace": 0.25},
+        squeeze=False,
     )
-    if n_tracks == 1:
-        axes = [axes]
 
     fig.subplots_adjust(left=0.08, right=0.97, top=0.86, bottom=0.18)
-    ax_idx = 0
 
-    # ---- Track: Telomere blocks ----
-    ax_blocks = axes[ax_idx]
-    ax_idx += 1
+    # Determine which columns to draw
+    if merged:
+        # Single merged panel
+        columns = [(0, p_window)]
+    else:
+        columns = []
+        if p_window:
+            columns.append((0, p_window))
+        if q_window:
+            columns.append((1 if n_cols == 2 else 0, q_window))
 
-    backbone_y = 0.5
-    ax_blocks.plot([0, chrom_size], [backbone_y, backbone_y],
-                   color="#d0d0d0", linewidth=2.5, solid_capstyle="round", zorder=1)
+    # Track which column indices are actually drawn
+    drawn_cols = set()
+    for col_idx, window in columns:
+        drawn_cols.add(col_idx)
+        view_start, view_end = window
+        row = 0
 
-    for b in blocks_list:
-        color = COLORS.get(b["label"], "#999999")
-        rect = Rectangle(
-            (b["start"], backbone_y - 0.3), b["length"], 0.6,
-            facecolor=color, edgecolor="none", alpha=0.85, zorder=2,
-        )
-        ax_blocks.add_patch(rect)
+        # Blocks track
+        _draw_blocks_track(axes[row][col_idx], blocks_list, view_start, view_end)
+        axes[row][col_idx].set_xlim(view_start, view_end)
+        row += 1
 
-    ax_blocks.set_ylim(-0.1, 1.1)
-    ax_blocks.set_ylabel("Blocks", fontsize=7)
-    ax_blocks.set_yticks([])
-    ax_blocks.spines["bottom"].set_visible(False)
-    ax_blocks.spines["left"].set_visible(False)
-    ax_blocks.tick_params(bottom=False)
+        # Density track
+        if has_density:
+            _draw_density_track(axes[row][col_idx], density_data, view_start, view_end)
+            axes[row][col_idx].set_xlim(view_start, view_end)
+            row += 1
 
+        # Strand ratio track
+        if has_strand:
+            _draw_strand_track(axes[row][col_idx], strand_data, view_start, view_end)
+            axes[row][col_idx].set_xlim(view_start, view_end)
+            row += 1
+
+        # Format x-axis on the bottom track
+        view_span = view_end - view_start
+        _format_bp_axis(axes[n_tracks - 1][col_idx], view_span)
+
+    # Share Y axes between columns in the same row
+    if n_cols == 2 and len(drawn_cols) == 2:
+        for row in range(n_tracks):
+            axes[row][0].get_shared_y_axes().join(axes[row][0], axes[row][1])
+
+    # Hide columns with no telomere
+    if n_cols == 2 and not merged:
+        for col_idx in range(n_cols):
+            if col_idx not in drawn_cols:
+                for row in range(n_tracks):
+                    _hide_panel(axes[row][col_idx])
+
+    # Column titles
+    if merged:
+        axes[0][0].set_title("Full chromosome", fontsize=7, pad=4)
+    else:
+        if n_cols == 2:
+            p_title = "p-end (5')" if p_window or 0 not in drawn_cols else "p-end (5')"
+            q_title = "q-end (3')" if q_window or 1 not in drawn_cols else "q-end (3')"
+            axes[0][0].set_title(p_title, fontsize=7, pad=4)
+            axes[0][1].set_title(q_title, fontsize=7, pad=4)
+
+    # Block legend on top-left panel
     labels_present = set(b["label"] for b in blocks_list)
     legend_elements = []
     for lab, name in [("p", "p-arm (fwd)"), ("q", "q-arm (rev)"), ("b", "balanced")]:
@@ -501,43 +691,17 @@ def plot_chromosome_profile(chrom, chrom_size, blocks_list,
                 Line2D([0], [0], marker="s", color="w", markerfacecolor=COLORS[lab],
                        markersize=5, linestyle="none", label=name))
     if legend_elements:
-        ax_blocks.legend(
+        first_drawn_col = min(drawn_cols)
+        axes[0][first_drawn_col].legend(
             handles=legend_elements, loc="upper right", fontsize=6,
             frameon=False, ncol=len(legend_elements), handletextpad=0.2,
         )
 
-    # ---- Track: Repeat density ----
-    if has_density:
-        ax_den = axes[ax_idx]
-        ax_idx += 1
-        xs, ys = _bedgraph_to_step(density_data)
-        ax_den.fill_between(xs, ys, step="post", color=COLORS["density"],
-                            alpha=0.35, linewidth=0)
-        ax_den.plot(xs, ys, drawstyle="steps-post", color=COLORS["density"],
-                    linewidth=0.6)
-        ax_den.set_ylabel("Repeat\ndensity", fontsize=7)
-        ax_den.set_ylim(0, 1.05)
-        ax_den.tick_params(bottom=False)
-        ax_den.spines["bottom"].set_visible(False)
-
-    # ---- Track: Strand ratio ----
+    # Strand ratio legend
     if has_strand:
-        ax_str = axes[ax_idx]
-        ax_idx += 1
-        for start, end, val in strand_data:
-            if val < 0:
-                ax_str.barh(0.5, end - start, left=start, height=1.0,
-                            color=COLORS["no_data"], edgecolor="none", alpha=0.3)
-            else:
-                color = _blend_color(COLORS["fwd"], COLORS["rev"], val)
-                ax_str.barh(0.5, end - start, left=start, height=1.0,
-                            color=color, edgecolor="none", alpha=0.7)
-
-        ax_str.set_ylim(0, 1)
-        ax_str.set_yticks([])
-        ax_str.set_ylabel("Strand\nratio", fontsize=7)
-
-        ax_str.legend(
+        strand_row = n_tracks - 1
+        first_drawn_col = min(drawn_cols)
+        axes[strand_row][first_drawn_col].legend(
             handles=[
                 Patch(facecolor=COLORS["fwd"], label="Forward"),
                 Patch(facecolor="#808080", label="Mixed"),
@@ -547,9 +711,6 @@ def plot_chromosome_profile(chrom, chrom_size, blocks_list,
             loc="upper right", fontsize=5.5, frameon=False, ncol=4,
             handlelength=0.8, handleheight=0.7, handletextpad=0.2,
         )
-
-    axes[-1].set_xlim(0, chrom_size)
-    _format_bp_axis(axes[-1], chrom_size)
 
     fig.suptitle(f"{chrom}  ({_fmt_bp(chrom_size)})",
                  fontsize=8, fontweight="bold", y=0.95)
@@ -570,8 +731,8 @@ def main():
                         help="Output path (default: <directory>/teloscope_report.pdf)")
     parser.add_argument("--png", action="store_true",
                         help="Save individual PNG files instead of a single PDF")
-    parser.add_argument("--dpi", type=int, default=600,
-                        help="DPI for raster output (default: 600)")
+    parser.add_argument("--dpi", type=int, default=450,
+                        help="DPI for raster output (default: 450)")
     args = parser.parse_args()
 
     if not os.path.isdir(args.directory):
@@ -582,7 +743,7 @@ def main():
         sys.exit(f"Error: No *_terminal_telomeres.bed found in '{args.directory}'.\n"
                  f"Run teloscope first to generate output files.")
 
-    print(f"Found files: {', '.join(files.keys())}")
+    print(f"Found files: {', '.join(files.keys())}", file=sys.stderr)
 
     blocks = parse_terminal_bed(files["terminal"])
     density_data = parse_bedgraph(files["density"]) if "density" in files else None
@@ -595,53 +756,69 @@ def main():
     total_chroms = sum(len(v) for v in classifications.values())
     total_telo = sum(len(blist) for blist in blocks.values())
     print(f"Chromosomes: {total_chroms}  |  Telomere blocks: {total_telo}  |  "
-          f"Categories: {', '.join(f'{k}={len(v)}' for k, v in classifications.items())}")
+          f"Categories: {', '.join(f'{k}={len(v)}' for k, v in classifications.items())}",
+          file=sys.stderr)
 
+    # Only generate figures for chromosomes that have telomere blocks
     profile_chroms = sorted(blocks.keys(),
                             key=lambda c: chrom_sizes.get(c, 0), reverse=True)
-    if density_data:
-        no_telo = [c for c in density_data.keys() if c not in blocks]
-        no_telo.sort(key=lambda c: chrom_sizes.get(c, 0), reverse=True)
-        if len(profile_chroms) + len(no_telo) <= 40:
-            profile_chroms.extend(no_telo)
-        else:
-            profile_chroms.extend(no_telo[:5])
 
-    figures = []
-    fig_overview = plot_assembly_overview(classifications, blocks, chrom_sizes)
-    figures.append(("overview", fig_overview))
+    n_figures = len(profile_chroms) + 1  # +1 for overview
 
-    for chrom in profile_chroms:
-        csize = chrom_sizes.get(chrom, 0)
-        if csize == 0:
-            continue
-        blist = blocks.get(chrom, [])
-        den = density_data.get(chrom) if density_data else None
-        strand = strand_data.get(chrom) if strand_data else None
-        if not blist and den is None:
-            continue
-        fig_chr = plot_chromosome_profile(chrom, csize, blist, den, strand)
-        figures.append((chrom, fig_chr))
-
-    if not figures:
-        sys.exit("No figures generated.")
-
+    # --- Write-and-close pattern: one figure in memory at a time ---
     if args.png:
         out_dir = args.output or args.directory
         os.makedirs(out_dir, exist_ok=True)
-        for name, fig in figures:
-            safe_name = name.replace("/", "_").replace("\\", "_")
+
+        # Overview figure
+        fig_overview = plot_assembly_overview(classifications, blocks, chrom_sizes)
+        overview_path = os.path.join(out_dir, "teloscope_overview.png")
+        fig_overview.savefig(overview_path, dpi=args.dpi, bbox_inches="tight")
+        plt.close(fig_overview)
+        print(f"[1/{n_figures}] overview", file=sys.stderr)
+
+        # Per-chromosome terminal zoom figures
+        for i, chrom in enumerate(profile_chroms, start=2):
+            csize = chrom_sizes.get(chrom, 0)
+            if csize == 0:
+                continue
+            blist = blocks.get(chrom, [])
+            den = density_data.get(chrom) if density_data else None
+            strand = strand_data.get(chrom) if strand_data else None
+
+            fig = plot_terminal_zoom(chrom, csize, blist, den, strand)
+            safe_name = chrom.replace("/", "_").replace("\\", "_")
             path = os.path.join(out_dir, f"teloscope_{safe_name}.png")
             fig.savefig(path, dpi=args.dpi, bbox_inches="tight")
-            print(f"  Saved {path}")
             plt.close(fig)
+            print(f"[{i}/{n_figures}] {chrom}", file=sys.stderr)
+
+        print(f"Figures saved to {out_dir}/", file=sys.stderr)
+
     else:
         out_path = args.output or os.path.join(args.directory, "teloscope_report.pdf")
         with PdfPages(out_path) as pdf:
-            for name, fig in figures:
+            # Overview figure
+            fig_overview = plot_assembly_overview(classifications, blocks, chrom_sizes)
+            pdf.savefig(fig_overview, bbox_inches="tight")
+            plt.close(fig_overview)
+            print(f"[1/{n_figures}] overview", file=sys.stderr)
+
+            # Per-chromosome terminal zoom figures
+            for i, chrom in enumerate(profile_chroms, start=2):
+                csize = chrom_sizes.get(chrom, 0)
+                if csize == 0:
+                    continue
+                blist = blocks.get(chrom, [])
+                den = density_data.get(chrom) if density_data else None
+                strand = strand_data.get(chrom) if strand_data else None
+
+                fig = plot_terminal_zoom(chrom, csize, blist, den, strand)
                 pdf.savefig(fig, bbox_inches="tight")
                 plt.close(fig)
-        print(f"Report saved to {out_path}")
+                print(f"[{i}/{n_figures}] {chrom}", file=sys.stderr)
+
+        print(f"Report saved to {out_path}", file=sys.stderr)
 
 
 if __name__ == "__main__":
