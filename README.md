@@ -48,13 +48,13 @@ Quick start
 Documentation
 ------------
 
-- [Parameters](docs/parameters.md) — all flags with defaults, `-c` vs `-p` explainer
-- [Outputs](docs/outputs.md) — output files, column specs, console summary
-- [Classification](docs/classification.md) — chromosome classification table and decision logic
-- [Algorithm](docs/algorithm.md) — how Teloscope works under the hood
-- [Report generation](docs/report.md) — publication-ready figures from Teloscope output
-- [Simulation](docs/simulation.md) — benchmarking framework for detection accuracy
-- [Testing](docs/testing.md) — test suite, `make validate`, `make regenerate`
+- [Parameters](docs/parameters.md) - all flags and defaults
+- [Outputs](docs/outputs.md) - output files and column specs
+- [Classification](docs/classification.md) - chromosome classification logic
+- [Algorithm](docs/algorithm.md) - how it works
+- [Report generation](docs/report.md) - figures from Teloscope output
+- [Simulation](docs/simulation.md) - accuracy benchmarking
+- [Testing](docs/testing.md) - `make validate`, `make regenerate`
 
 How to cite
 ------------
