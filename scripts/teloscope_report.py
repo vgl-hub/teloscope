@@ -589,7 +589,7 @@ def _draw_raincloud_group(ax, values, position, color, rng):
         verts = body.get_paths()[0].vertices
         verts[:, 1] = np.maximum(verts[:, 1], position)
 
-    jitter = rng.uniform(-0.08, -0.02, size=len(values))
+    jitter = rng.uniform(-0.15, -0.08, size=len(values))
     filled_mask = ~outliers
     if np.any(filled_mask):
         ax.scatter(
@@ -607,10 +607,10 @@ def _draw_raincloud_group(ax, values, position, color, rng):
         ax.scatter(
             values[outliers],
             np.full(np.sum(outliers), position) + jitter[outliers],
-            s=11,
+            s=7,
             facecolors="none",
             edgecolors=color,
-            linewidths=0.6,
+            linewidths=0.55,
             rasterized=True,
             zorder=4,
         )
@@ -755,22 +755,22 @@ def _save_figure_with_fallback(save_figure, build_figure, title, message_prefix)
 
 def plot_assembly_overview(classifications, blocks, chrom_sizes):
     """Overview page with classification summary and telomere block distributions."""
-    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 5.12))
+    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 5.04))
     outer = fig.add_gridspec(
         2, 2,
         height_ratios=[0.98, 1.08],
-        hspace=0.28,
-        wspace=0.18,
+        hspace=0.18,
+        wspace=0.12,
     )
     abs_spec = outer[0, 0].subgridspec(
         2, 1,
-        height_ratios=[1.0, 0.78],
-        hspace=0.16,
+        height_ratios=[1.0, 0.62],
+        hspace=0.24,
     )
     rel_spec = outer[0, 1].subgridspec(
         2, 1,
-        height_ratios=[1.0, 0.78],
-        hspace=0.16,
+        height_ratios=[1.0, 0.62],
+        hspace=0.24,
     )
     ax_abs = fig.add_subplot(abs_spec[0])
     ax_abs_leg = fig.add_subplot(abs_spec[1])
@@ -778,7 +778,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     ax_rel_leg = fig.add_subplot(rel_spec[1])
     ax_rain = fig.add_subplot(outer[1, 0])
     ax_scatter = fig.add_subplot(outer[1, 1])
-    fig.subplots_adjust(left=0.12, right=0.98, top=0.86, bottom=0.10)
+    fig.subplots_adjust(left=0.09, right=0.985, top=0.865, bottom=0.10)
 
     _panel_label(ax_abs, "a")
     _panel_label(ax_rel, "b")
@@ -843,7 +843,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     _draw_summary_bar(
         ax_abs,
         absolute_segments,
-        "Absolute classification",
+        "Scaffold classification (all)",
         "Sequences (n)",
         fmt_value=lambda value: f"{int(round(value))}",
     )
@@ -852,7 +852,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     _draw_summary_bar(
         ax_rel,
         relative_segments,
-        "Relative classification",
+        "Scaffold classification (with telomeres)",
         "Sequences (%)",
         fmt_value=lambda value: f"{int(round(value))}",
         x_formatter=ticker.FuncFormatter(lambda x, _: f"{x:.0f}%"),
@@ -862,11 +862,6 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     rel_handles = [Patch(facecolor=color, label=lab) for lab, _, color in telomeric_segments]
     _draw_balanced_legend(ax_abs_leg, abs_handles)
     _draw_balanced_legend(ax_rel_leg, rel_handles)
-    ax_rel_leg.text(
-        0.0, 1.06, "* excluding No telomeres classes",
-        transform=ax_rel_leg.transAxes,
-        ha="left", va="bottom", fontsize=5.2, color="#666666",
-    )
 
     # ---- Panel c: Raincloud plot ----
     ax_rain.set_title("Length by arm", loc="center", fontsize=8, pad=4)
@@ -886,32 +881,25 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         for position, (label, values, color) in zip(positions, groups):
             _draw_raincloud_group(ax_rain, values, position, color, rng)
 
+        y_labels = [f"{label}\n(n={len(values)})" for label, values, _ in groups]
         ax_rain.set_yticks(positions)
-        ax_rain.set_yticklabels([])
-        ax_rain.tick_params(axis="y", length=0, pad=0)
+        ax_rain.set_yticklabels(y_labels)
+        ax_rain.tick_params(axis="y", length=0, pad=4)
+        for tick in ax_rain.get_yticklabels():
+            tick.set_horizontalalignment("right")
+            tick.set_multialignment("center")
         ax_rain.spines["left"].set_visible(False)
-        ax_rain.set_ylim(positions.min() - 0.26, positions.max() + 0.26)
-        ax_rain.set_box_aspect(0.78)
+        ax_rain.set_ylim(positions.min() - 0.34, positions.max() + 0.30)
+        ax_rain.set_box_aspect(0.62)
 
         median_len = _median(all_len)
         ax_rain.axvline(median_len, color="#555555", linestyle="--", linewidth=0.7)
+        median_trans = transforms.blended_transform_factory(ax_rain.transData, ax_rain.transAxes)
         ax_rain.text(
-            0.99, 1.005, f"median={median_text}",
-            transform=ax_rain.transAxes, ha="right", va="bottom",
+            median_len, 1.01, f"median={median_text}",
+            transform=median_trans, ha="center", va="bottom",
             fontsize=6, color="#555555",
         )
-        label_trans = transforms.blended_transform_factory(ax_rain.transAxes, ax_rain.transData)
-        for position, (label, values, _) in zip(positions, groups):
-            ax_rain.text(
-                -0.10, position + 0.055, label,
-                transform=label_trans, ha="center", va="center",
-                fontsize=6.0, color="#222222", clip_on=False,
-            )
-            ax_rain.text(
-                -0.10, position - 0.085, f"n={len(values)}",
-                transform=label_trans, ha="center", va="center",
-                fontsize=5.5, color="#666666", clip_on=False,
-            )
 
         hi = max(all_len)
         if hi >= 1000:
@@ -927,7 +915,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
                      transform=ax_rain.transAxes, fontsize=7, color="#999999")
         ax_rain.set_xlabel("Telomere length")
         ax_rain.set_yticks([])
-        ax_rain.set_box_aspect(0.78)
+        ax_rain.set_box_aspect(0.62)
 
     # ---- Panel d: Terminal offset versus block length ----
     ax_scatter.set_title("Telomere positioning", loc="center", fontsize=8, pad=4)
@@ -950,7 +938,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
                 x, y,
                 s=13,
                 color=color,
-                alpha=0.78,
+                alpha=0.55,
                 edgecolors="white",
                 linewidths=0.28,
                 rasterized=True,
@@ -959,14 +947,10 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
 
         ax_scatter.set_xlabel("Distance to end (log10bp)")
         ax_scatter.set_ylabel("Telomere length (kbp)")
-        if max_log <= 1.2:
-            xticks = np.linspace(0, max(1.0, max_log), 3)
-        else:
-            xticks = np.arange(0, int(np.ceil(max_log)) + 1, 1)
-        ax_scatter.set_xticks(xticks)
-        ax_scatter.set_xlim(-0.04, max(0.25, max_log + 0.08))
-        ax_scatter.set_ylim(bottom=0)
-        ax_scatter.xaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
+        ax_scatter.set_xticks([0, 1, 2, 3, 4])
+        ax_scatter.set_xlim(-0.05, max(4.05, max_log + 0.10))
+        y_max = max(float(np.max(np.asarray([row["length"] / 1e3 for row in scatter_rows], dtype=np.float64))), 0.0)
+        ax_scatter.set_ylim(-0.3, max(1.0, y_max * 1.08))
         ax_scatter.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
         ax_scatter.set_box_aspect(1.0)
         ax_scatter.legend(
@@ -1007,20 +991,21 @@ def compute_view_windows(blocks_list, chrom_size):
                 int(b["start"]), int(b["end"]), int(chrom_size), arm)
             for b in arm_blocks
         ]
-        local_start = min(min(start, end) for start, end in local_intervals)
         local_end = max(max(start, end) for start, end in local_intervals)
-        block_span = max(local_end - local_start, 1)
-        context = max(int(round(block_span * 0.25)), 500)
-        local_limit = min(int(chrom_size), int(round(local_end + context)))
-        if arm == "p":
-            return 0, local_limit
-
-        return max(0, int(chrom_size) - local_limit), chrom_size
+        return min(int(chrom_size), max(int(round(local_end * 2.0)), 1_000))
 
     p_blocks = [b for b in blocks_list if b["label"] in ("p", "b")]
     q_blocks = [b for b in blocks_list if b["label"] in ("q", "b")]
-    p_window = _window_for_arm(p_blocks, "p")
-    q_window = _window_for_arm(q_blocks, "q")
+    p_limit = _window_for_arm(p_blocks, "p")
+    q_limit = _window_for_arm(q_blocks, "q")
+
+    if p_limit is not None and q_limit is not None:
+        common_limit = max(p_limit, q_limit)
+        p_window = (0, common_limit)
+        q_window = (max(0, int(chrom_size) - common_limit), chrom_size)
+    else:
+        p_window = (0, p_limit) if p_limit is not None else None
+        q_window = (max(0, int(chrom_size) - q_limit), chrom_size) if q_limit is not None else None
 
     # If windows overlap, merge into a single full-width window
     if p_window and q_window and p_window[1] >= q_window[0]:
@@ -1280,8 +1265,8 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
         axes[0][0].set_title("Full scaffold", fontsize=7, pad=3)
     else:
         if n_cols == 2:
-            axes[0][0].set_title("p-end (5')", fontsize=7, pad=3)
-            axes[0][1].set_title("q-end (3')", fontsize=7, pad=3)
+            axes[0][0].set_title("p-arm", fontsize=7, pad=3)
+            axes[0][1].set_title("q-arm", fontsize=7, pad=3)
 
     labels_present = [lab for lab in ("p", "q", "b") if any(b["label"] == lab for b in blocks_list)]
     block_handles = [
