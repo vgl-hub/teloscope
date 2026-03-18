@@ -265,12 +265,13 @@ public:
                     std::ofstream& canonicalMatchFile,
                     std::ofstream& noncanonicalMatchFile,
                     std::ofstream& terminalBlocksFile,
-                    std::ofstream& interstitialBlocksFile);
+                    std::ofstream& interstitialBlocksFile,
+                    std::ofstream& reportFile);
 
 
     void handleBEDFile();
 
-    void printSummary();
+    void printSummary(std::ofstream& reportFile);
 };
 
 #endif // TELOSCOPE_H/

@@ -676,7 +676,8 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
                             std::ofstream& canonicalMatchFile,
                             std::ofstream& noncanonicalMatchFile,
                             std::ofstream& terminalBlocksFile,
-                            std::ofstream& interstitialBlocksFile) {
+                            std::ofstream& interstitialBlocksFile,
+                            std::ofstream& reportFile) {
 
     // BEDgraph headers
     if (userInput.outWinRepeats) {
@@ -691,12 +692,14 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
         windowGCFile << "track type=bedGraph name=\"GC Content\" description=\"GC content per window\"\n";
     }
 
-    // Console report header
+    // Report header (console + file)
     std::cout << "\n+++ Path Summary Report +++\n";
     if (!userInput.ultraFastMode) {
         std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular\tits\tcanonical\twindows\n";
+        reportFile << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular\tits\tcanonical\twindows\n";
     } else {
         std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular\n";
+        reportFile << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular\n";
     }
 
     // Processing paths
@@ -810,29 +813,39 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
             }
         }
 
-        // Output path summary
-        std::cout << pos + 1 << "\t" << header << "\t" 
-                << longestCount << "\t"
-                << (longestLabels.empty() ? "none" : longestLabels) << "\t" 
-                << gaps << "\t" 
-                << scaffoldTypeToString(pathData.scaffoldType) << "\t"
+        // Output path summary (console + file)
+        const char* typeStr = scaffoldTypeToString(pathData.scaffoldType);
+        const char* labelsStr = longestLabels.empty() ? "none" : longestLabels.c_str();
+
+        std::cout << pos + 1 << "\t" << header << "\t"
+                << longestCount << "\t" << labelsStr << "\t"
+                << gaps << "\t" << typeStr << "\t"
                 << pathData.terminalLabel;
-        
+        reportFile << pos + 1 << "\t" << header << "\t"
+                << longestCount << "\t" << labelsStr << "\t"
+                << gaps << "\t" << typeStr << "\t"
+                << pathData.terminalLabel;
+
         totalTelomeres += longestCount;
         totalGaps += gaps;
 
         // Expand path summary
         if (!userInput.ultraFastMode) {
-            std::cout << "\t" 
+            std::cout << "\t"
                     << pathData.interstitialBlocks.size() << "\t"
                     << pathData.canonicalMatches.size() << "\t"
                     << windows.size();
-            
+            reportFile << "\t"
+                    << pathData.interstitialBlocks.size() << "\t"
+                    << pathData.canonicalMatches.size() << "\t"
+                    << windows.size();
+
             totalNWindows += windows.size();
             totalITS += pathData.interstitialBlocks.size();
             totalCanMatches += pathData.canonicalMatches.size();
         }
-        std::cout << "\n"; // Finish path summary
+        std::cout << "\n";
+        reportFile << "\n";
     }
 
     // Calculate telomere statistics
@@ -857,6 +870,7 @@ void Teloscope::handleBEDFile() {
     std::vector<char> gcBuf(ioBufSize), entropyBuf(ioBufSize);
     std::vector<char> canonMatchBuf(ioBufSize), noncanonMatchBuf(ioBufSize);
     std::vector<char> termBlockBuf(ioBufSize), itsBlockBuf(ioBufSize);
+    std::vector<char> reportBuf(ioBufSize);
 
     std::ofstream windowDensityFile;
     std::ofstream windowCanonicalRatioFile;
@@ -867,6 +881,7 @@ void Teloscope::handleBEDFile() {
     std::ofstream noncanonicalMatchFile;
     std::ofstream terminalBlocksFile;
     std::ofstream interstitialBlocksFile;
+    std::ofstream reportFile;
 
     std::string base = userInput.outRoute + "/" + userInput.inSequenceName;
 
@@ -901,12 +916,17 @@ void Teloscope::handleBEDFile() {
     }
 
     openFile(terminalBlocksFile, base + "_terminal_telomeres.bed", termBlockBuf);
+    openFile(reportFile, base + "_report.tsv", reportBuf);
 
     writeBEDFile(windowDensityFile, windowCanonicalRatioFile,
                 windowStrandRatioFile,
                 windowGCFile, windowEntropyFile,
                 canonicalMatchFile, noncanonicalMatchFile,
-                terminalBlocksFile, interstitialBlocksFile);
+                terminalBlocksFile, interstitialBlocksFile,
+                reportFile);
+
+    printSummary(reportFile);
+    reportFile.close();
 
     // Close all files
     if (userInput.outWinRepeats) {
@@ -952,51 +972,54 @@ void Teloscope::computeSummaryCounts() {
 }
 
 
-void Teloscope::printSummary() {
+void Teloscope::printSummary(std::ofstream& reportFile) {
     computeSummaryCounts();
-    std::cout << "\n+++ Assembly Summary Report +++\n";
-    std::cout << "Total paths:\t" << totalPaths << "\n";
-    std::cout << "Total gaps:\t" << totalGaps << "\n";
-    std::cout << "Total telomeres:\t" << totalTelomeres << "\n";
-    
+
+    auto out = [&](const std::string& s) {
+        std::cout << s;
+        reportFile << s;
+    };
+
+    out("\n+++ Assembly Summary Report +++\n");
+    out("Total paths:\t" + std::to_string(totalPaths) + "\n");
+    out("Total gaps:\t" + std::to_string(totalGaps) + "\n");
+    out("Total telomeres:\t" + std::to_string(totalTelomeres) + "\n");
+
     if (!userInput.ultraFastMode) {
-        std::cout << "Total ITS blocks:\t" << totalITS << "\n";
-        std::cout << "Total canonical matches:\t" << totalCanMatches << "\n";
-        std::cout << "Total windows analyzed:\t" << totalNWindows << "\n";
+        out("Total ITS blocks:\t" + std::to_string(totalITS) + "\n");
+        out("Total canonical matches:\t" + std::to_string(totalCanMatches) + "\n");
+        out("Total windows analyzed:\t" + std::to_string(totalNWindows) + "\n");
     }
-    
-    // Telomere statistics
-    std::cout << "\n+++ Telomere Statistics +++\n";
+
+    out("\n+++ Telomere Statistics +++\n");
     if (totalTelomeres > 0) {
-        std::cout << "Mean length:\t" << teloMean << "\n";
-        std::cout << "Median length:\t" << teloMedian << "\n";
-        std::cout << "Min length:\t" << teloMin << "\n";
-        std::cout << "Max length:\t" << teloMax << "\n";
+        out("Mean length:\t" + std::to_string(teloMean) + "\n");
+        out("Median length:\t" + std::to_string(teloMedian) + "\n");
+        out("Min length:\t" + std::to_string(teloMin) + "\n");
+        out("Max length:\t" + std::to_string(teloMax) + "\n");
     }
     else {
-        std::cout << "No telomeres found for statistics.\n";
+        out("No telomeres found for statistics.\n");
     }
 
-    // Chromosomes by telomere numbers (excluding discordant telomeres)
-    std::cout << "\n+++ Chromosome Telomere Counts+++\n";
-    std::cout << "Two telomeres:\t" << totalT2T + totalGappedT2T + totalMisassembly + totalGappedMisassembly << "\n";
-    std::cout << "One telomere:\t" << totalIncomplete + totalGappedIncomplete << "\n";
-    std::cout << "Zero telomeres:\t" << totalNone + totalGappedNone << "\n";
+    out("\n+++ Chromosome Telomere Counts+++\n");
+    out("Two telomeres:\t" + std::to_string(totalT2T + totalGappedT2T + totalMisassembly + totalGappedMisassembly) + "\n");
+    out("One telomere:\t" + std::to_string(totalIncomplete + totalGappedIncomplete) + "\n");
+    out("Zero telomeres:\t" + std::to_string(totalNone + totalGappedNone) + "\n");
 
-    // Chromosomes by telomere completeness
-    std::cout << "\n+++ Chromosome Telomere/Gap Completeness+++\n";
-    std::cout << "T2T:\t" << totalT2T << "\n";
-    std::cout << "Gapped T2T:\t" << totalGappedT2T << "\n";
-    
-    std::cout << "Misassembled:\t" << totalMisassembly << "\n";
-    std::cout << "Gapped misassembled:\t" << totalGappedMisassembly << "\n";
-    
-    std::cout << "Incomplete:\t" << totalIncomplete << "\n";
-    std::cout << "Gapped incomplete:\t" << totalGappedIncomplete << "\n";
-    
-    std::cout << "No telomeres:\t" << totalNone << "\n";
-    std::cout << "Gapped no telomeres:\t" << totalGappedNone << "\n";
-    
-    std::cout << "Discordant:\t" << totalDiscordant << "\n";
-    std::cout << "Gapped discordant:\t" << totalGappedDiscordant << "\n";
+    out("\n+++ Chromosome Telomere/Gap Completeness+++\n");
+    out("T2T:\t" + std::to_string(totalT2T) + "\n");
+    out("Gapped T2T:\t" + std::to_string(totalGappedT2T) + "\n");
+
+    out("Misassembled:\t" + std::to_string(totalMisassembly) + "\n");
+    out("Gapped misassembled:\t" + std::to_string(totalGappedMisassembly) + "\n");
+
+    out("Incomplete:\t" + std::to_string(totalIncomplete) + "\n");
+    out("Gapped incomplete:\t" + std::to_string(totalGappedIncomplete) + "\n");
+
+    out("No telomeres:\t" + std::to_string(totalNone) + "\n");
+    out("Gapped no telomeres:\t" + std::to_string(totalGappedNone) + "\n");
+
+    out("Discordant:\t" + std::to_string(totalDiscordant) + "\n");
+    out("Gapped discordant:\t" + std::to_string(totalGappedDiscordant) + "\n");
 }

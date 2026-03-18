@@ -72,10 +72,7 @@ void Input::read(InSequences &inSequences) {
     lg.verbose("\nPaths sorted by original position.");
 
     teloscope.handleBEDFile();
-    lg.verbose("\nBED/BEDgraph files generated.");
-
-    teloscope.printSummary();
-    lg.verbose("\nSummary printed.");
+    lg.verbose("\nReport and BED/BEDgraph files generated.");
 }
 
 
