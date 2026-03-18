@@ -10,7 +10,7 @@ Reads Teloscope output files from the given directory and generates:
   Page 1: Assembly overview (classification donut + telomere length distribution)
   Page 2+: Per-chromosome terminal zoom figures (blocks, density, strand ratio)
 
-Requires: Python 3.6+, matplotlib
+Requires: Python 3.6+, matplotlib, numpy, pandas
 """
 
 import sys
@@ -18,6 +18,9 @@ import os
 import glob
 import argparse
 from collections import defaultdict, OrderedDict
+
+import numpy as np
+import pandas as pd
 
 import matplotlib
 matplotlib.use("Agg")
@@ -148,21 +151,28 @@ def parse_terminal_bed(path):
 
 def parse_bedgraph(path):
     """
-    Parse a BEDgraph file -> OrderedDict[chrom -> list of (start, end, value)].
+    Parse a BEDgraph file -> OrderedDict[chrom -> (starts, ends, values)].
+
+    Returns numpy arrays per chromosome for fast downstream processing.
     """
-    data = OrderedDict()
+    # Count header lines to skip (track/comment lines)
+    skip = 0
     with open(path) as fh:
         for line in fh:
-            line = line.strip()
-            if not line or line.startswith("#") or line.startswith("track"):
-                continue
-            parts = line.split("\t")
-            if len(parts) < 4:
-                continue
-            chrom = parts[0]
-            if chrom not in data:
-                data[chrom] = []
-            data[chrom].append((int(parts[1]), int(parts[2]), float(parts[3])))
+            if line.startswith("#") or line.startswith("track"):
+                skip += 1
+            else:
+                break
+
+    df = pd.read_csv(path, sep="\t", header=None, skiprows=skip,
+                     names=["chrom", "start", "end", "value"],
+                     dtype={"chrom": str, "start": np.int64,
+                            "end": np.int64, "value": np.float64},
+                     engine="c")
+
+    data = OrderedDict()
+    for chrom, grp in df.groupby("chrom", sort=False):
+        data[chrom] = (grp["start"].values, grp["end"].values, grp["value"].values)
     return data
 
 
@@ -256,9 +266,9 @@ def get_chrom_sizes(blocks, bedgraph_data=None):
         if blist:
             sizes[chrom] = blist[0]["pathSize"]
     if bedgraph_data:
-        for chrom, intervals in bedgraph_data.items():
-            if intervals:
-                sizes[chrom] = max(sizes.get(chrom, 0), max(e for _, e, _ in intervals))
+        for chrom, (starts, ends, values) in bedgraph_data.items():
+            if len(ends) > 0:
+                sizes[chrom] = max(sizes.get(chrom, 0), int(ends.max()))
     return sizes
 
 
@@ -288,34 +298,54 @@ def _fmt_bp(bp):
 
 
 def _median(values):
-    """Proper median calculation."""
-    s = sorted(values)
-    n = len(s)
-    if n % 2 == 1:
-        return s[n // 2]
-    return (s[n // 2 - 1] + s[n // 2]) / 2
+    """Median via numpy."""
+    return float(np.median(values))
 
 
-def _bedgraph_to_step(intervals):
-    """Convert BEDgraph intervals to step-plot coordinates."""
-    xs, ys = [], []
-    for start, end, val in intervals:
-        xs.append(start)
-        ys.append(max(val, 0))
-    if intervals:
-        xs.append(intervals[-1][1])
-        ys.append(0)
+def _bedgraph_to_step(starts, ends, values):
+    """Convert BEDgraph arrays to step-plot coordinates."""
+    n = len(starts)
+    if n == 0:
+        return np.array([]), np.array([])
+    xs = np.empty(n + 1)
+    ys = np.empty(n + 1)
+    xs[:n] = starts
+    ys[:n] = np.maximum(values, 0)
+    xs[n] = ends[-1]
+    ys[n] = 0
     return xs, ys
 
 
-def _blend_color(hex1, hex2, frac):
-    """Blend hex1 and hex2 by *frac* (1=hex1, 0=hex2)."""
-    r1, g1, b1 = int(hex1[1:3], 16), int(hex1[3:5], 16), int(hex1[5:7], 16)
-    r2, g2, b2 = int(hex2[1:3], 16), int(hex2[3:5], 16), int(hex2[5:7], 16)
-    r = int(r1 * frac + r2 * (1 - frac))
-    g = int(g1 * frac + g2 * (1 - frac))
-    b = int(b1 * frac + b2 * (1 - frac))
-    return f"#{r:02x}{g:02x}{b:02x}"
+def _hex_to_rgb(hex_color):
+    """Convert '#RRGGBB' to (r, g, b) floats in [0, 1]."""
+    return (int(hex_color[1:3], 16) / 255.0,
+            int(hex_color[3:5], 16) / 255.0,
+            int(hex_color[5:7], 16) / 255.0)
+
+# Pre-compute RGB tuples for strand blending
+_FWD_RGB = np.array(_hex_to_rgb(COLORS["fwd"]))
+_REV_RGB = np.array(_hex_to_rgb(COLORS["rev"]))
+_NODATA_RGBA = np.array((*_hex_to_rgb(COLORS["no_data"]), 0.3))
+
+
+def _blend_colors_array(values):
+    """Vectorized strand color blending -> (N, 4) RGBA array.
+
+    values: numpy array of strand ratios (1=fwd, 0=rev, <0=no data).
+    """
+    n = len(values)
+    rgba = np.empty((n, 4))
+    no_data = values < 0
+    frac = values.copy()
+    frac[no_data] = 0  # placeholder, overwritten below
+
+    # Blend fwd/rev by fraction
+    rgba[:, :3] = np.outer(frac, _FWD_RGB) + np.outer(1 - frac, _REV_RGB)
+    rgba[:, 3] = 0.7
+
+    # Override no-data entries
+    rgba[no_data] = _NODATA_RGBA
+    return rgba
 
 
 def _panel_label(ax, label):
@@ -480,16 +510,13 @@ def compute_view_windows(blocks_list, chrom_size):
     return p_window, q_window
 
 
-def clip_bedgraph(intervals, view_start, view_end):
-    """Return intervals overlapping [view_start, view_end), trimmed to bounds."""
-    clipped = []
-    for start, end, val in intervals:
-        if end <= view_start or start >= view_end:
-            continue
-        cs = max(start, view_start)
-        ce = min(end, view_end)
-        clipped.append((cs, ce, val))
-    return clipped
+def clip_bedgraph(bg_tuple, view_start, view_end):
+    """Return (starts, ends, values) arrays clipped to [view_start, view_end)."""
+    starts, ends, values = bg_tuple
+    mask = (ends > view_start) & (starts < view_end)
+    cs = np.maximum(starts[mask], view_start)
+    ce = np.minimum(ends[mask], view_end)
+    return cs, ce, values[mask]
 
 
 def _draw_blocks_track(ax, blocks_list, view_start, view_end):
@@ -520,13 +547,13 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end):
     ax.tick_params(bottom=False)
 
 
-def _draw_density_track(ax, density_intervals, view_start, view_end):
+def _draw_density_track(ax, density_data, view_start, view_end):
     """Draw repeat density as a filled step plot."""
-    clipped = clip_bedgraph(density_intervals, view_start, view_end)
-    if not clipped:
+    starts, ends, values = clip_bedgraph(density_data, view_start, view_end)
+    if len(starts) == 0:
         ax.set_visible(False)
         return
-    xs, ys = _bedgraph_to_step(clipped)
+    xs, ys = _bedgraph_to_step(starts, ends, values)
     ax.fill_between(xs, ys, step="post", color=COLORS["density"],
                     alpha=0.35, linewidth=0, rasterized=True)
     ax.plot(xs, ys, drawstyle="steps-post", color=COLORS["density"],
@@ -537,32 +564,21 @@ def _draw_density_track(ax, density_intervals, view_start, view_end):
     ax.spines["bottom"].set_visible(False)
 
 
-def _draw_strand_track(ax, strand_intervals, view_start, view_end):
-    """Draw strand ratio as colored bars (single bar() call)."""
-    clipped = clip_bedgraph(strand_intervals, view_start, view_end)
-    if not clipped:
+def _draw_strand_track(ax, strand_data, view_start, view_end):
+    """Draw strand ratio as colored bars (vectorized)."""
+    starts, ends, values = clip_bedgraph(strand_data, view_start, view_end)
+    if len(starts) == 0:
         ax.set_visible(False)
         return
 
-    lefts = []
-    widths = []
-    facecolors = []
-    for start, end, val in clipped:
-        lefts.append(start)
-        widths.append(end - start)
-        if val < 0:
-            facecolors.append(COLORS["no_data"])
-        else:
-            facecolors.append(_blend_color(COLORS["fwd"], COLORS["rev"], val))
+    lefts = starts
+    widths = ends - starts
+    rgba = _blend_colors_array(values)
 
-    alphas = [0.3 if v < 0 else 0.7 for _, _, v in clipped]
-    # Draw all bars in one call for performance
     bars = ax.barh(
-        [0.5] * len(lefts), widths, left=lefts, height=1.0,
-        color=facecolors, edgecolor="none", rasterized=True,
+        np.full(len(lefts), 0.5), widths, left=lefts, height=1.0,
+        color=rgba, edgecolor="none", rasterized=True,
     )
-    for bar_patch, alpha in zip(bars, alphas):
-        bar_patch.set_alpha(alpha)
 
     ax.set_ylim(0, 1)
     ax.set_yticks([])
@@ -589,8 +605,8 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
     Each column shows up to 3 tracks (blocks, density, strand ratio).
     If windows overlap on a short chromosome, a single merged panel is used.
     """
-    has_density = density_data is not None and len(density_data) > 0
-    has_strand = strand_data is not None and len(strand_data) > 0
+    has_density = density_data is not None and len(density_data[0]) > 0
+    has_strand = strand_data is not None and len(strand_data[0]) > 0
 
     p_window, q_window = compute_view_windows(blocks_list, chrom_size)
     merged = (p_window is not None and q_window is None and
@@ -733,7 +749,12 @@ def main():
                         help="Save individual PNG files instead of a single PDF")
     parser.add_argument("--dpi", type=int, default=450,
                         help="DPI for raster output (default: 450)")
+    parser.add_argument("--draft", action="store_true",
+                        help="Draft mode: render at 150 DPI for fast iteration")
     args = parser.parse_args()
+
+    if args.draft:
+        args.dpi = 150
 
     if not os.path.isdir(args.directory):
         sys.exit(f"Error: '{args.directory}' is not a directory.")
