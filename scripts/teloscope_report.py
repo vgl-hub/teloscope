@@ -59,7 +59,7 @@ COLORS = {
     "b":            "#FFC754",
     "density":      "#2A9D59",
     "canonical":    "#1B9ECA",
-    "strand_bias":  "#FF5353",
+    "strand_bias":  "#8D80C6",
     "no_data":      "#e0e0e0",
 }
 
@@ -428,9 +428,9 @@ def _bedgraph_to_step(starts, ends, values):
     return xs, ys
 
 
-def _panel_label(ax, label):
+def _panel_label(ax, label, x=-0.05, y=1.15):
     """Add Nature-style panel label (bold lowercase letter, top-left)."""
-    ax.text(-0.05, 1.15, label, transform=ax.transAxes,
+    ax.text(x, y, label, transform=ax.transAxes,
             fontsize=8, fontweight="bold", va="top", ha="left")
 
 
@@ -463,19 +463,51 @@ def _style_fraction_axis(ax, label=None):
     _hide_x_axis(ax)
 
 
+def _terminal_distance_interval(start, end, chrom_size, arm):
+    """Return interval coordinates expressed as distance from the relevant end."""
+    if arm == "p":
+        return max(start, 0), max(end, 0)
+    if arm == "q":
+        return max(chrom_size - end, 0), max(chrom_size - start, 0)
+    return start, end
+
+
+def _project_terminal_interval(start, end, chrom_size, arm):
+    """Project genomic coordinates into panel coordinates for terminal plots."""
+    if arm in {"p", "q"}:
+        return _terminal_distance_interval(start, end, chrom_size, arm)
+    return start, end
+
+
+def _project_terminal_series(starts, ends, values, chrom_size, arm):
+    """Project BEDgraph intervals into panel coordinates and sort left-to-right."""
+    starts = np.asarray(starts, dtype=np.float64)
+    ends = np.asarray(ends, dtype=np.float64)
+    values = np.asarray(values, dtype=np.float64)
+    if arm != "q":
+        return starts, ends, values
+
+    proj_starts = chrom_size - ends
+    proj_ends = chrom_size - starts
+    order = np.argsort(proj_starts)
+    return proj_starts[order], proj_ends[order], values[order]
+
+
 def _apply_terminal_x_axis(ax, view_start, view_end, arm):
     """Apply a minimal end-relative x-axis for p/q panels."""
     if view_end <= view_start:
         return
 
-    tick_pos = np.linspace(view_start, view_end, 3)
     if arm == "q":
-        tick_labels = [_fmt_kbp(view_end - pos) for pos in tick_pos]
+        tick_pos = np.linspace(view_end, view_start, 3)
+        tick_labels = [_fmt_kbp(max(pos, 0)) for pos in tick_pos]
         xlabel = "Distance to end (kbp)"
     elif arm == "p":
-        tick_labels = [_fmt_kbp(pos - view_start) for pos in tick_pos]
+        tick_pos = np.linspace(view_start, view_end, 3)
+        tick_labels = [_fmt_kbp(max(pos, 0)) for pos in tick_pos]
         xlabel = "Distance to end (kbp)"
     else:
+        tick_pos = np.linspace(view_start, view_end, 3)
         tick_labels = [_fmt_kbp(pos) for pos in tick_pos]
         xlabel = "Position along scaffold (kbp)"
 
@@ -505,12 +537,12 @@ def _iter_true_runs(mask):
 
 def _block_end_distance(block, chrom_size):
     """Return the relevant distance from a telomere block to the scaffold end in bp."""
+    if block["label"] in {"p", "q"}:
+        start_dist, end_dist = _terminal_distance_interval(
+            int(block["start"]), int(block["end"]), int(chrom_size), block["label"])
+        return min(start_dist, end_dist)
     left_gap = max(int(block["start"]), 0)
     right_gap = max(int(chrom_size) - int(block["end"]), 0)
-    if block["label"] == "p":
-        return left_gap
-    if block["label"] == "q":
-        return right_gap
     return min(left_gap, right_gap)
 
 
@@ -603,10 +635,33 @@ def _draw_raincloud_group(ax, values, position, color, rng):
             artist.set_linewidth(0.55)
 
 
+def _draw_balanced_legend(ax, handles):
+    """Render a compact two-row legend within a dedicated legend axis."""
+    ax.axis("off")
+    if not handles:
+        return
+
+    ncol = max(1, int(np.ceil(len(handles) / 2.0)))
+    ax.legend(
+        handles=handles,
+        loc="center",
+        bbox_to_anchor=(0.5, 0.50),
+        ncol=ncol,
+        fontsize=4.95,
+        frameon=False,
+        handlelength=0.88,
+        handleheight=0.7,
+        columnspacing=0.95,
+        handletextpad=0.28,
+        borderaxespad=0.0,
+        labelspacing=0.50,
+    )
+
+
 def _draw_summary_bar(ax, segments, title, x_label, fmt_value, x_formatter=None):
     """Draw a thin stacked summary bar for overview panel a."""
     total = sum(segment[1] for segment in segments)
-    ax.set_title(title, loc="left", fontsize=7.2, pad=3)
+    ax.set_title(title, loc="center", fontsize=7.2, pad=3)
 
     if total <= 0:
         ax.text(0.5, 0.5, "No classification data",
@@ -640,16 +695,15 @@ def _draw_summary_bar(ax, segments, title, x_label, fmt_value, x_formatter=None)
     ax.set_xlim(0, total)
     ax.set_ylim(-0.32, 0.32)
     ax.set_yticks([])
-    ax.tick_params(axis="x", length=2.0, width=0.45, pad=1.5)
+    ax.tick_params(axis="x", length=2.0, width=0.45, pad=1.2)
     ax.spines["left"].set_visible(False)
     ax.spines["bottom"].set_visible(True)
     ax.spines["bottom"].set_color("#c7c7c7")
     ax.spines["bottom"].set_linewidth(0.45)
-    ax.grid(axis="x", color="#efefef", linewidth=0.45, zorder=1)
     ax.minorticks_off()
     if x_formatter is not None:
         ax.xaxis.set_major_formatter(x_formatter)
-    ax.set_xlabel(x_label, fontsize=6.2, labelpad=2.2)
+    ax.set_xlabel(x_label, fontsize=6.2, labelpad=1.0)
 
 
 def _short_exception(exc):
@@ -701,30 +755,35 @@ def _save_figure_with_fallback(save_figure, build_figure, title, message_prefix)
 
 def plot_assembly_overview(classifications, blocks, chrom_sizes):
     """Overview page with classification summary and telomere block distributions."""
-    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 4.45))
+    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 5.12))
     outer = fig.add_gridspec(
         2, 2,
-        height_ratios=[1.02, 1.28],
-        hspace=0.56,
-        wspace=0.28,
-    )
-    summary = outer[0, :].subgridspec(
-        2, 2,
-        height_ratios=[1.0, 0.46],
-        width_ratios=[1.45, 1.0],
+        height_ratios=[0.98, 1.08],
         hspace=0.28,
         wspace=0.18,
     )
-    ax_abs = fig.add_subplot(summary[0, 0])
-    ax_rel = fig.add_subplot(summary[0, 1])
-    ax_leg = fig.add_subplot(summary[1, :])
+    abs_spec = outer[0, 0].subgridspec(
+        2, 1,
+        height_ratios=[1.0, 0.78],
+        hspace=0.16,
+    )
+    rel_spec = outer[0, 1].subgridspec(
+        2, 1,
+        height_ratios=[1.0, 0.78],
+        hspace=0.16,
+    )
+    ax_abs = fig.add_subplot(abs_spec[0])
+    ax_abs_leg = fig.add_subplot(abs_spec[1])
+    ax_rel = fig.add_subplot(rel_spec[0])
+    ax_rel_leg = fig.add_subplot(rel_spec[1])
     ax_rain = fig.add_subplot(outer[1, 0])
     ax_scatter = fig.add_subplot(outer[1, 1])
-    fig.subplots_adjust(left=0.11, right=0.98, top=0.91, bottom=0.12)
+    fig.subplots_adjust(left=0.12, right=0.98, top=0.86, bottom=0.10)
 
     _panel_label(ax_abs, "a")
-    _panel_label(ax_rain, "b")
-    _panel_label(ax_scatter, "c")
+    _panel_label(ax_rel, "b")
+    _panel_label(ax_rain, "c", x=-0.16)
+    _panel_label(ax_scatter, "d", x=-0.16)
 
     cat_labels = list(classifications.keys())
     cat_counts = [len(v) for v in classifications.values()]
@@ -755,14 +814,15 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     total_paths = total if total > 0 else max(len(chrom_sizes), len(blocks))
     median_text = _fmt_bp(int(round(_median(all_len)))) if all_len else "NA"
 
-    # ---- Panel a: Assembly summary ----
-    ax_abs.text(
-        1.0, 1.08,
+    fig.suptitle("Assembly summary", fontsize=8.6, fontweight="bold",
+                 x=0.5, y=0.972, ha="center")
+    fig.text(
+        0.5, 0.936,
         f"n={total_paths} sequences   telomere blocks={total_blocks}",
-        transform=ax_abs.transAxes,
-        ha="right", va="bottom", fontsize=6.1, color="#555555",
+        ha="center", va="center", fontsize=6.2, color="#555555",
     )
 
+    # ---- Panel a/b: Classification summary ----
     absolute_segments = [
         (lab, cnt, color)
         for lab, cnt, color in zip(cat_labels, cat_counts, cat_colors)
@@ -787,109 +847,93 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         "Sequences (n)",
         fmt_value=lambda value: f"{int(round(value))}",
     )
-    ax_abs.set_title("Assembly summary", loc="left", fontsize=8, pad=13)
-    ax_abs.text(
-        0.0, 1.01, "Absolute classification",
-        transform=ax_abs.transAxes,
-        ha="left", va="bottom", fontsize=7.2, color="#222222",
-    )
-    ax_abs.xaxis.set_major_locator(ticker.MaxNLocator(integer=True, nbins=5))
+    ax_abs.xaxis.set_major_locator(ticker.MaxNLocator(integer=True, nbins=4))
 
     _draw_summary_bar(
         ax_rel,
         relative_segments,
-        "Relative classification*",
+        "Relative classification",
         "Sequences (%)",
         fmt_value=lambda value: f"{int(round(value))}",
         x_formatter=ticker.FuncFormatter(lambda x, _: f"{x:.0f}%"),
     )
     ax_rel.xaxis.set_major_locator(ticker.MultipleLocator(25))
-    ax_rel.text(
-        0.0, -0.72,
-        "* excluding No telomeres classes",
-        transform=ax_rel.transAxes,
-        ha="left", va="top", fontsize=5.4, color="#666666",
+    abs_handles = [Patch(facecolor=color, label=lab) for lab, _, color in absolute_segments]
+    rel_handles = [Patch(facecolor=color, label=lab) for lab, _, color in telomeric_segments]
+    _draw_balanced_legend(ax_abs_leg, abs_handles)
+    _draw_balanced_legend(ax_rel_leg, rel_handles)
+    ax_rel_leg.text(
+        0.0, 1.06, "* excluding No telomeres classes",
+        transform=ax_rel_leg.transAxes,
+        ha="left", va="bottom", fontsize=5.2, color="#666666",
     )
 
-    ax_leg.axis("off")
-    handles = [Patch(facecolor=color, label=lab) for lab, _, color in absolute_segments]
-    if handles:
-        ncol = max(1, (len(handles) + 1) // 2)
-        ax_leg.legend(
-            handles=handles,
-            loc="center",
-            bbox_to_anchor=(0.01, 0.05, 0.98, 0.9),
-            mode="expand",
-            ncol=ncol,
-            fontsize=5.35,
-            frameon=False,
-            handlelength=0.9,
-            handleheight=0.7,
-            columnspacing=0.95,
-            handletextpad=0.35,
-            borderaxespad=0.0,
-        )
-
-    # ---- Panel b: Raincloud plot ----
-    ax_rain.set_title("Telomere block length distribution", loc="left", fontsize=8, pad=4)
+    # ---- Panel c: Raincloud plot ----
+    ax_rain.set_title("Length by arm", loc="center", fontsize=8, pad=4)
     groups = [
-        ("p arm", p_len, COLORS["p"]),
-        ("q arm", q_len, COLORS["q"]),
+        ("p-arm", p_len, COLORS["p"]),
+        ("q-arm", q_len, COLORS["q"]),
         ("balanced", b_len, COLORS["b"]),
     ]
     groups = [(label, values, color) for label, values, color in groups if values]
 
     if groups:
         rng = np.random.default_rng(0)
-        spacing = 0.58
-        positions = 0.72 + spacing * np.arange(len(groups) - 1, -1, -1)
+        spacing = 0.36
+        offsets = np.arange(len(groups) - 1, -1, -1, dtype=np.float64)
+        offsets -= (len(groups) - 1) / 2.0
+        positions = 0.75 + (spacing * offsets)
         for position, (label, values, color) in zip(positions, groups):
             _draw_raincloud_group(ax_rain, values, position, color, rng)
 
         ax_rain.set_yticks(positions)
-        ax_rain.set_yticklabels([label for label, _, _ in groups])
-        for tick in ax_rain.get_yticklabels():
-            tick.set_horizontalalignment("right")
-            tick.set_verticalalignment("center")
-        ax_rain.tick_params(axis="y", length=0, pad=8)
-        ax_rain.grid(axis="x", color="#ececec", linewidth=0.45)
+        ax_rain.set_yticklabels([])
+        ax_rain.tick_params(axis="y", length=0, pad=0)
         ax_rain.spines["left"].set_visible(False)
-        ax_rain.set_ylim(positions.min() - 0.32, positions.max() + 0.42)
+        ax_rain.set_ylim(positions.min() - 0.26, positions.max() + 0.26)
+        ax_rain.set_box_aspect(0.78)
 
         median_len = _median(all_len)
         ax_rain.axvline(median_len, color="#555555", linestyle="--", linewidth=0.7)
         ax_rain.text(
-            0.99, 1.02, f"median={median_text}",
+            0.99, 1.005, f"median={median_text}",
             transform=ax_rain.transAxes, ha="right", va="bottom",
             fontsize=6, color="#555555",
         )
-        ytrans = transforms.blended_transform_factory(ax_rain.transAxes, ax_rain.transData)
-        for position, (_, values, _) in zip(positions, groups):
+        label_trans = transforms.blended_transform_factory(ax_rain.transAxes, ax_rain.transData)
+        for position, (label, values, _) in zip(positions, groups):
             ax_rain.text(
-                -0.125, position - 0.18, f"n={len(values)}",
-                transform=ytrans, ha="left", va="center",
-                fontsize=5.7, color="#666666", clip_on=False,
+                -0.10, position + 0.055, label,
+                transform=label_trans, ha="center", va="center",
+                fontsize=6.0, color="#222222", clip_on=False,
+            )
+            ax_rain.text(
+                -0.10, position - 0.085, f"n={len(values)}",
+                transform=label_trans, ha="center", va="center",
+                fontsize=5.5, color="#666666", clip_on=False,
             )
 
         hi = max(all_len)
-        if hi >= 5000:
+        if hi >= 1000:
             ax_rain.xaxis.set_major_formatter(
                 ticker.FuncFormatter(lambda x, _: _fmt_kbp(max(x, 0))))
-            ax_rain.set_xlabel("Telomere block length (kbp)")
+            ax_rain.set_xlabel("Telomere length (kbp)")
         else:
-            ax_rain.set_xlabel("Telomere block length (bp)")
+            ax_rain.set_xlabel("Telomere length (bp)")
+        ax_rain.xaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
     else:
         label = "No labeled telomere blocks" if block_rows else "No telomere blocks"
         ax_rain.text(0.5, 0.5, label, ha="center", va="center",
                      transform=ax_rain.transAxes, fontsize=7, color="#999999")
-        ax_rain.set_xlabel("Telomere block length")
+        ax_rain.set_xlabel("Telomere length")
         ax_rain.set_yticks([])
+        ax_rain.set_box_aspect(0.78)
 
-    # ---- Panel c: Terminal offset versus block length ----
-    ax_scatter.set_title("Terminal offset versus block length", loc="left", fontsize=8, pad=4)
+    # ---- Panel d: Terminal offset versus block length ----
+    ax_scatter.set_title("Telomere positioning", loc="center", fontsize=8, pad=4)
     scatter_groups = [
-        ("p arm", "p", COLORS["p"]),
-        ("q arm", "q", COLORS["q"]),
+        ("p-arm", "p", COLORS["p"]),
+        ("q-arm", "q", COLORS["q"]),
         ("balanced", "b", COLORS["b"]),
     ]
     scatter_rows = [row for row in block_rows if row["label"] in {"p", "q", "b"}]
@@ -913,9 +957,8 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
                 label=legend_label,
             )
 
-        ax_scatter.grid(color="#ececec", linewidth=0.45)
         ax_scatter.set_xlabel("Distance to end (log10bp)")
-        ax_scatter.set_ylabel("Telomere block length (kbp)")
+        ax_scatter.set_ylabel("Telomere length (kbp)")
         if max_log <= 1.2:
             xticks = np.linspace(0, max(1.0, max_log), 3)
         else:
@@ -923,6 +966,9 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         ax_scatter.set_xticks(xticks)
         ax_scatter.set_xlim(-0.04, max(0.25, max_log + 0.08))
         ax_scatter.set_ylim(bottom=0)
+        ax_scatter.xaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
+        ax_scatter.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
+        ax_scatter.set_box_aspect(1.0)
         ax_scatter.legend(
             loc="upper right",
             fontsize=5.6,
@@ -936,7 +982,8 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
                         ha="center", va="center",
                         fontsize=7, color="#999999")
         ax_scatter.set_xlabel("Distance to end (log10bp)")
-        ax_scatter.set_ylabel("Telomere block length (kbp)")
+        ax_scatter.set_ylabel("Telomere length (kbp)")
+        ax_scatter.set_box_aspect(1.0)
 
     return fig
 
@@ -955,29 +1002,25 @@ def compute_view_windows(blocks_list, chrom_size):
         if not arm_blocks:
             return None
 
-        block_start = min(b["start"] for b in arm_blocks)
-        block_end = max(b["end"] for b in arm_blocks)
-        block_span = max(block_end - block_start, 1)
+        local_intervals = [
+            _terminal_distance_interval(
+                int(b["start"]), int(b["end"]), int(chrom_size), arm)
+            for b in arm_blocks
+        ]
+        local_start = min(min(start, end) for start, end in local_intervals)
+        local_end = max(max(start, end) for start, end in local_intervals)
+        block_span = max(local_end - local_start, 1)
+        context = max(int(round(block_span * 0.25)), 500)
+        local_limit = min(int(chrom_size), int(round(local_end + context)))
         if arm == "p":
-            terminal_gap = max(block_start, 0)
-            context = max(int(round(max(block_span * 0.9, terminal_gap * 0.6))), 1_000)
-            return 0, min(chrom_size, block_end + context)
+            return 0, local_limit
 
-        terminal_gap = max(chrom_size - block_end, 0)
-        context = max(int(round(max(block_span * 0.9, terminal_gap * 0.6))), 1_000)
-        return max(0, block_start - context), chrom_size
+        return max(0, int(chrom_size) - local_limit), chrom_size
 
     p_blocks = [b for b in blocks_list if b["label"] in ("p", "b")]
     q_blocks = [b for b in blocks_list if b["label"] in ("q", "b")]
     p_window = _window_for_arm(p_blocks, "p")
     q_window = _window_for_arm(q_blocks, "q")
-
-    # Standardize split-panel widths for direct visual comparison.
-    if p_window and q_window:
-        common_span = max(p_window[1] - p_window[0], q_window[1] - q_window[0])
-        common_span = min(common_span, chrom_size)
-        p_window = (0, min(common_span, chrom_size))
-        q_window = (max(chrom_size - common_span, 0), chrom_size)
 
     # If windows overlap, merge into a single full-width window
     if p_window and q_window and p_window[1] >= q_window[0]:
@@ -996,10 +1039,12 @@ def clip_bedgraph(bg_tuple, view_start, view_end):
     return cs, ce, values[mask]
 
 
-def _draw_blocks_track(ax, blocks_list, view_start, view_end, label=None):
+def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, label=None):
     """Draw telomere blocks as a thin track on a backbone line."""
     backbone_y = 0.5
-    ax.plot([view_start, view_end], [backbone_y, backbone_y],
+    display_start, display_end = _project_terminal_interval(
+        view_start, view_end, chrom_size, arm)
+    ax.plot([display_start, display_end], [backbone_y, backbone_y],
             color="#d6d6d6", linewidth=0.9, solid_capstyle="round",
             zorder=1, rasterized=True)
 
@@ -1008,15 +1053,18 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, label=None):
             continue
         cs = max(b["start"], view_start)
         ce = min(b["end"], view_end)
+        ds, de = _project_terminal_interval(cs, ce, chrom_size, arm)
+        if de < ds:
+            ds, de = de, ds
         color = COLORS.get(b["label"], "#999999")
         rect = Rectangle(
-            (cs, backbone_y - 0.09), ce - cs, 0.18,
+            (ds, backbone_y - 0.07), de - ds, 0.14,
             facecolor=color, edgecolor="none", alpha=0.98, zorder=2,
         )
         rect.set_rasterized(True)
         ax.add_patch(rect)
 
-    ax.set_ylim(0.25, 0.75)
+    ax.set_ylim(0.28, 0.72)
     ax.set_yticks([])
     ax.spines["left"].set_visible(False)
     ax.spines["bottom"].set_visible(False)
@@ -1028,12 +1076,15 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, label=None):
     return True
 
 
-def _draw_fraction_track(ax, track_data, view_start, view_end, color, label=None):
+def _draw_fraction_track(ax, track_data, view_start, view_end, chrom_size, arm, color, label=None):
     """Draw a quantitative 0..1 track as a thin step plot with light fill."""
     starts, ends, values = clip_bedgraph(track_data, view_start, view_end)
     if len(starts) == 0:
         ax.set_visible(False)
         return False
+
+    starts, ends, values = _project_terminal_series(
+        starts, ends, values, chrom_size, arm)
 
     valid = np.isfinite(values) & (values >= 0)
     no_data = ~valid
@@ -1059,7 +1110,7 @@ def _draw_fraction_track(ax, track_data, view_start, view_end, color, label=None
     return True
 
 
-def _draw_strand_track(ax, strand_data, view_start, view_end, label=None):
+def _draw_strand_track(ax, strand_data, view_start, view_end, chrom_size, arm, label=None):
     """Draw strand bias = |fwdRatio - revRatio| as a 0..1 track."""
     starts, ends, values = clip_bedgraph(strand_data, view_start, view_end)
     if len(starts) == 0:
@@ -1074,6 +1125,8 @@ def _draw_strand_track(ax, strand_data, view_start, view_end, label=None):
         (starts, ends, bias_values),
         view_start,
         view_end,
+        chrom_size,
+        arm,
         COLORS["strand_bias"],
         label,
     )
@@ -1132,11 +1185,11 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
     }
     height_ratios = [height_map[name] for name, _ in track_specs]
 
-    fig_height = 3.05
+    fig_height = 3.18
     fig, axes = plt.subplots(
         n_tracks, n_cols,
         figsize=(FIG_WIDTH_DOUBLE, fig_height),
-        gridspec_kw={"height_ratios": height_ratios, "hspace": 0.25,
+        gridspec_kw={"height_ratios": height_ratios, "hspace": 0.32,
                      "wspace": 0.18},
         squeeze=False,
         sharey="row",
@@ -1170,38 +1223,48 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
 
             if track_name == "blocks":
                 visible = _draw_blocks_track(
-                    ax, blocks_list, view_start, view_end,
+                    ax, blocks_list, view_start, view_end, chrom_size, arm,
                     label="Blocks" if show_label else None,
                 )
             elif track_name == "density":
                 visible = _draw_fraction_track(
                     ax, track_data, view_start, view_end,
+                    chrom_size, arm,
                     COLORS["density"],
                     label="Repeat\ndensity" if show_label else None,
                 )
             elif track_name == "canonical":
                 visible = _draw_fraction_track(
                     ax, track_data, view_start, view_end,
+                    chrom_size, arm,
                     COLORS["canonical"],
                     label="Canonical\nratio" if show_label else None,
                 )
             else:
                 visible = _draw_strand_track(
                     ax, track_data, view_start, view_end,
+                    chrom_size, arm,
                     label="Strand\nbias" if show_label else None,
                 )
 
             if visible:
-                ax.set_xlim(view_start, view_end)
+                display_start, display_end = _project_terminal_interval(
+                    view_start, view_end, chrom_size, arm)
+                if arm == "q":
+                    ax.set_xlim(display_end, display_start)
+                else:
+                    ax.set_xlim(display_start, display_end)
                 visible_rows.append(row)
 
         if visible_rows:
             for row in visible_rows[:-1]:
                 _hide_x_axis(axes[row][col_idx])
+            display_start, display_end = _project_terminal_interval(
+                view_start, view_end, chrom_size, arm)
             _apply_terminal_x_axis(
                 axes[visible_rows[-1]][col_idx],
-                view_start,
-                view_end,
+                display_start,
+                display_end,
                 arm,
             )
 
@@ -1230,7 +1293,7 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
     if block_handles and (merged or "b" in labels_present):
         fig.legend(
             handles=block_handles, loc="upper left",
-            bbox_to_anchor=(0.18, 0.972), fontsize=5.6,
+            bbox_to_anchor=(0.18, 0.986), fontsize=5.6,
             frameon=False, ncol=len(block_handles),
             handletextpad=0.3, columnspacing=0.8,
         )
