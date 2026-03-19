@@ -735,8 +735,8 @@ def _draw_dual_summary_panel(ax, all_segments, telo_segments):
     ax.set_title("Scaffold classification", loc="left", fontsize=6.8, pad=0.0, y=0.99)
 
     plot_rows = [
-        (0.74, "All", all_segments),
-        (0.28, "With telomeres", telo_segments),
+        (0.66, "All", all_segments),
+        (0.42, "With telomeres", telo_segments),
     ]
     for y_pos, _, segments in plot_rows:
         left = 0.0
@@ -745,21 +745,21 @@ def _draw_dual_summary_panel(ax, all_segments, telo_segments):
             if value <= 0:
                 continue
             ax.barh(
-                y_pos, value, left=left, height=0.18,
+                y_pos, value, left=left, height=0.14,
                 color=color, edgecolor="white", linewidth=0.6,
                 rasterized=True, zorder=2,
             )
             left += value
 
     ax.set_xlim(0.0, 100.0)
-    ax.set_ylim(0.0, 1.02)
+    ax.set_ylim(0.26, 0.86)
     ax.set_yticks([row[0] for row in plot_rows])
     ax.set_yticklabels([row[1] for row in plot_rows], fontsize=5.6)
-    ax.tick_params(axis="y", length=0, pad=2.0)
-    ax.tick_params(axis="x", length=2.0, width=0.45, pad=0.8, labelsize=5.4)
+    ax.tick_params(axis="y", length=0, pad=3.2)
+    ax.tick_params(axis="x", length=2.0, width=0.45, pad=0.45, labelsize=5.4)
     ax.xaxis.set_major_locator(ticker.MultipleLocator(25))
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:.0f}%"))
-    ax.set_xlabel("Sequences (%)", fontsize=6.0, labelpad=0.2)
+    ax.set_xlabel("Sequences (%)", fontsize=6.0, labelpad=0.05)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_visible(False)
@@ -850,8 +850,8 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 4.72))
 
     # Two-row nested gridspec: row 0 = summary panel + shared legend, row 1 = b/c/d
-    outer = fig.add_gridspec(2, 1, height_ratios=[0.72, 1.28], hspace=0.15)
-    row0 = outer[0].subgridspec(1, 2, width_ratios=[1.22, 0.78], wspace=0.16)
+    outer = fig.add_gridspec(2, 1, height_ratios=[0.78, 1.22], hspace=0.14)
+    row0 = outer[0].subgridspec(1, 2, width_ratios=[1.16, 0.84], wspace=0.22)
     row1 = outer[1].subgridspec(1, 3, wspace=0.30, width_ratios=[1.0, 1.0, 0.80])
 
     ax_summary = fig.add_subplot(row0[0, 0])
@@ -859,7 +859,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     ax_rain = fig.add_subplot(row1[0, 0])
     ax_scatter = fig.add_subplot(row1[0, 1])
     ax_flagged = fig.add_subplot(row1[0, 2])
-    fig.subplots_adjust(left=0.070, right=0.958, top=0.864, bottom=0.11)
+    fig.subplots_adjust(left=0.096, right=0.962, top=0.872, bottom=0.11)
 
     # ---- Data setup ----
     cat_labels = list(classifications.keys())
@@ -955,6 +955,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         ax_rain.tick_params(axis="y", length=2, labelsize=5.4)
         ax_rain.set_xlim(positions.min() - 0.34, positions.max() + 0.30)
         ax_rain.set_box_aspect(1.0)
+        ax_rain.set_anchor("S")
         ax_rain.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
 
         median_log = np.log10(_median(all_len) + 1.0)
@@ -979,6 +980,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         ax_rain.set_ylabel("Telomere length (log10bp)", fontsize=6.0)
         ax_rain.set_xticks([])
         ax_rain.set_box_aspect(1.0)
+        ax_rain.set_anchor("S")
 
     # ---- Panel d: Terminal offset (log10bp x) vs telomere length (kbp y) ----
     scatter_groups = [
@@ -1019,6 +1021,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         ax_scatter.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
         ax_scatter.tick_params(axis="both", labelsize=5.4)
         ax_scatter.set_box_aspect(1.0)
+        ax_scatter.set_anchor("S")
         leg_d = ax_scatter.legend(
             loc="upper right",
             fontsize=5.0,
@@ -1047,6 +1050,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         ax_scatter.set_xlabel("Distance to end (log10bp)", fontsize=6.0)
         ax_scatter.set_ylabel("Telomere length (kbp)", fontsize=6.0)
         ax_scatter.set_box_aspect(1.0)
+        ax_scatter.set_anchor("S")
 
     # ---- Panel e: Flagged scaffold lollipop chart ----
     if not block_rows:
@@ -1113,12 +1117,14 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         ax_flagged.tick_params(axis="x", labelsize=5.4)
         ax_flagged.spines["top"].set_visible(False)
         ax_flagged.spines["right"].set_visible(False)
-        ax_flagged.spines["left"].set_visible(False)
-        ax_flagged.spines["bottom"].set_linewidth(0.45)
-        ax_flagged.spines["bottom"].set_color("#bcbcbc")
-        ax_flagged.axvline(0, color="#bcbcbc", linewidth=0.45, zorder=1)
+        ax_flagged.spines["left"].set_visible(True)
+        ax_flagged.spines["left"].set_position(("data", 0.0))
+        ax_flagged.spines["left"].set_linewidth(0.35)
+        ax_flagged.spines["left"].set_color("black")
+        ax_flagged.spines["bottom"].set_linewidth(0.35)
+        ax_flagged.spines["bottom"].set_color("black")
 
-    ax_flagged.set_anchor("C")
+    ax_flagged.set_anchor("S")
 
     fig.canvas.draw()
     label_style = dict(fontsize=8, fontweight="bold", va="bottom", ha="left")
