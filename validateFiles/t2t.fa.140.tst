@@ -1,4 +1,4 @@
-testFiles/t2t.fa -f testFiles/t2t.fa -t 3000
+testFiles/t2t.fa -f testFiles/t2t.fa -y 0.99
 embedded
 
 +++ Path Summary Report +++

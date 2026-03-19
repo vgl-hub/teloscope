@@ -191,6 +191,27 @@ int main(int, char **argv) {
         {{"boundary_extend_its.fa"}, {
             "-f testFiles/boundary_extend_its.fa -t 300 -n",
             "-f testFiles/boundary_extend_its.fa -t 300 -i -o testFiles/tmp"
+        }},
+        // Classification audit: multi-block and orientation edge cases
+        {{"extra_invalid_p.fa"}, {
+            "-f testFiles/extra_invalid_p.fa -n",
+            "-f testFiles/extra_invalid_p.fa -r -o testFiles/tmp"
+        }},
+        {{"discordant_pp.fa"}, {
+            "-f testFiles/discordant_pp.fa -n",
+            "-f testFiles/discordant_pp.fa -r -o testFiles/tmp"
+        }},
+        {{"gapped_incomplete_q.fa"}, {
+            "-f testFiles/gapped_incomplete_q.fa -n",
+            "-f testFiles/gapped_incomplete_q.fa -r -o testFiles/tmp"
+        }},
+        {{"gapped_discordant_q.fa"}, {
+            "-f testFiles/gapped_discordant_q.fa -n",
+            "-f testFiles/gapped_discordant_q.fa -r -o testFiles/tmp"
+        }},
+        {{"gapped_misassembly_qq.fa"}, {
+            "-f testFiles/gapped_misassembly_qq.fa -n",
+            "-f testFiles/gapped_misassembly_qq.fa -r -o testFiles/tmp"
         }}
     //  {{set of test file paths}, {list of command line args to run with}}
     };

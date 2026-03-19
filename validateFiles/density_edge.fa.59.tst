@@ -1,4 +1,4 @@
-testFiles/density_edge.fa -f testFiles/density_edge.fa -l 500 -y 0.4 -k 10
+testFiles/density_edge.fa -f testFiles/density_edge.fa -y 0.8
 embedded
 
 +++ Path Summary Report +++

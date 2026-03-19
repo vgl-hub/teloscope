@@ -1,17 +1,14 @@
-testFiles/t2t.fa -f testFiles/t2t.fa -r -g -e -o testFiles/tmp
+testFiles/t2t.fa -f testFiles/t2t.fa -w 100 -s 100
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	granular	its	canonical	windows
-1	chr_t2t	2	pq	0	t2t	PQ	0	199	4
+pos	header	telomeres	labels	gaps	type	granular
+1	chr_t2t	2	pq	0	t2t	PQ
 
 +++ Assembly Summary Report +++
 Total paths:	1
 Total gaps:	0
 Total telomeres:	2
-Total ITS blocks:	0
-Total canonical matches:	199
-Total windows analyzed:	4
 
 +++ Telomere Statistics +++
 Mean length:	600
