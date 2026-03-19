@@ -501,20 +501,21 @@ def _apply_terminal_x_axis(ax, view_start, view_end, arm):
     if view_end <= view_start:
         return
 
-    span = view_end - view_start
-
-    # Adaptive unit selection
-    if span >= 2_000_000:
-        fmt = lambda x: f"{x / 1e6:.1f}"
-        unit = "Mbp"
-    elif span >= 2_000:
+    n_ticks = 5
+    if arm in ("p", "q"):
         fmt = lambda x: f"{int(round(max(x, 0) / 1e3))}"
         unit = "kbp"
     else:
-        fmt = lambda x: f"{max(x, 0):.0f}"
-        unit = "bp"
-
-    n_ticks = 5
+        span = view_end - view_start
+        if span >= 2_000_000:
+            fmt = lambda x: f"{x / 1e6:.1f}"
+            unit = "Mbp"
+        elif span >= 2_000:
+            fmt = lambda x: f"{int(round(max(x, 0) / 1e3))}"
+            unit = "kbp"
+        else:
+            fmt = lambda x: f"{max(x, 0):.0f}"
+            unit = "bp"
 
     if arm == "q":
         tick_pos = np.linspace(view_end, view_start, n_ticks)
@@ -597,7 +598,7 @@ def _draw_raincloud_group(ax, values, position, color, rng, vert=False):
     if len(core_values) >= 2 and np.ptp(core_values) > 0:
         violin = ax.violinplot(
             [core_values], positions=[position], vert=vert,
-            widths=0.36, showmeans=False, showmedians=False,
+            widths=0.28, showmeans=False, showmedians=False,
             showextrema=False,
         )
         body = violin["bodies"][0]
@@ -614,7 +615,7 @@ def _draw_raincloud_group(ax, values, position, color, rng, vert=False):
             # Clip to upper half so violin sits above the scatter.
             verts[:, 1] = np.maximum(verts[:, 1], position)
 
-    jitter = rng.uniform(-0.15, -0.08, size=len(values))
+    jitter = rng.uniform(-0.13, -0.07, size=len(values))
     filled_mask = ~outliers
     if np.any(filled_mask):
         xs = (np.full(np.sum(filled_mask), position) + jitter[filled_mask]
@@ -635,7 +636,7 @@ def _draw_raincloud_group(ax, values, position, color, rng, vert=False):
         [core_values],
         positions=[position],
         vert=vert,
-        widths=0.065,
+        widths=0.042,
         patch_artist=True,
         showfliers=False,
         whis=1.5,
@@ -651,34 +652,39 @@ def _draw_raincloud_group(ax, values, position, color, rng, vert=False):
             artist.set_linewidth(0.55)
 
 
-def _draw_balanced_legend(ax, handles, y_anchor=0.50):
+def _draw_balanced_legend(ax, handles, y_anchor=0.50, ncol=None, fontsize=4.9):
     """Render a compact two-row legend within a dedicated legend axis."""
     ax.axis("off")
     if not handles:
         return
 
-    ncol = max(1, int(np.ceil(len(handles) / 2.0)))
-    ax.legend(
+    ncol = ncol or max(1, int(np.ceil(len(handles) / 2.0)))
+    leg = ax.legend(
         handles=handles,
         loc="center",
         bbox_to_anchor=(0.5, y_anchor),
         ncol=ncol,
-        fontsize=4.8,
-        frameon=False,
+        fontsize=fontsize,
+        frameon=True,
+        facecolor="white",
+        edgecolor="black",
+        framealpha=1.0,
+        fancybox=False,
         handlelength=0.88,
         handleheight=0.7,
-        columnspacing=0.95,
+        columnspacing=0.90,
         handletextpad=0.28,
         borderaxespad=0.0,
-        labelspacing=0.50,
+        labelspacing=0.42,
     )
+    leg.get_frame().set_linewidth(0.4)
 
 
 def _draw_summary_bar(ax, segments, title, x_label, fmt_value, x_formatter=None):
     """Draw a thin stacked summary bar for overview panel a."""
     total = sum(segment[1] for segment in segments)
     if title:
-        ax.set_title(title, loc="center", fontsize=7.0, pad=0.0, y=0.97)
+        ax.set_title(title, loc="left", fontsize=6.8, pad=0.0, y=0.995)
 
     if total <= 0:
         ax.text(0.5, 0.5, "No classification data",
@@ -691,14 +697,14 @@ def _draw_summary_bar(ax, segments, title, x_label, fmt_value, x_formatter=None)
         return
 
     left = 0.0
-    bar_center = 0.055
+    bar_center = 0.103
     for segment in segments:
         label, value, color = segment[:3]
         label_value = segment[3] if len(segment) > 3 else value
         if value <= 0:
             continue
         ax.barh(
-            bar_center, value, left=left, height=0.08,
+            bar_center, value, left=left, height=0.034,
             color=color, edgecolor="white", linewidth=0.6,
             rasterized=True, zorder=2,
         )
@@ -706,14 +712,14 @@ def _draw_summary_bar(ax, segments, title, x_label, fmt_value, x_formatter=None)
             ax.text(
                 left + value / 2.0, bar_center, fmt_value(label_value),
                 ha="center", va="center",
-                fontsize=4.9, color="#222222", zorder=3,
+                fontsize=4.8, color="#222222", zorder=3,
             )
         left += value
 
     ax.set_xlim(0, total)
-    ax.set_ylim(-0.02, 0.14)
+    ax.set_ylim(0.055, 0.142)
     ax.set_yticks([])
-    ax.tick_params(axis="x", length=2.0, width=0.45, pad=1.2)
+    ax.tick_params(axis="x", length=2.0, width=0.45, pad=0.6, labelsize=5.4)
     ax.spines["left"].set_visible(False)
     ax.spines["bottom"].set_visible(True)
     ax.spines["bottom"].set_color("#c7c7c7")
@@ -721,7 +727,7 @@ def _draw_summary_bar(ax, segments, title, x_label, fmt_value, x_formatter=None)
     ax.minorticks_off()
     if x_formatter is not None:
         ax.xaxis.set_major_formatter(x_formatter)
-    ax.set_xlabel(x_label, fontsize=6.1, labelpad=0.6)
+    ax.set_xlabel(x_label, fontsize=6.0, labelpad=0.15)
 
 
 def _wrap_scaffold_name(name, width=18):
@@ -804,22 +810,24 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
 
     fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 4.72))
 
-    # Two-row nested gridspec: row 0 = bars (2 cols), row 1 = c/d/e (3 cols)
-    outer = fig.add_gridspec(2, 1, height_ratios=[0.66, 1.34], hspace=0.14)
-    row0 = outer[0].subgridspec(1, 2, wspace=0.12)
-    row1 = outer[1].subgridspec(1, 3, wspace=0.34, width_ratios=[1.0, 1.0, 0.78])
+    # Two-row nested gridspec: row 0 = stacked a/b + shared legend, row 1 = c/d/e
+    outer = fig.add_gridspec(2, 1, height_ratios=[0.58, 1.42], hspace=0.13)
+    row0 = outer[0].subgridspec(
+        2, 2,
+        height_ratios=[1.0, 1.0],
+        width_ratios=[1.0, 0.96],
+        hspace=0.42,
+        wspace=0.10,
+    )
+    row1 = outer[1].subgridspec(1, 3, wspace=0.30, width_ratios=[1.0, 1.0, 0.80])
 
-    abs_spec = row0[0, 0].subgridspec(2, 1, height_ratios=[1.0, 0.40], hspace=0.28)
-    rel_spec = row0[0, 1].subgridspec(2, 1, height_ratios=[1.0, 0.40], hspace=0.28)
-
-    ax_abs = fig.add_subplot(abs_spec[0])
-    ax_abs_leg = fig.add_subplot(abs_spec[1])
-    ax_rel = fig.add_subplot(rel_spec[0])
-    ax_rel_leg = fig.add_subplot(rel_spec[1])
+    ax_abs = fig.add_subplot(row0[0, 0])
+    ax_rel = fig.add_subplot(row0[1, 0])
+    ax_top_leg = fig.add_subplot(row0[:, 1])
     ax_rain = fig.add_subplot(row1[0, 0])
     ax_scatter = fig.add_subplot(row1[0, 1])
     ax_flagged = fig.add_subplot(row1[0, 2])
-    fig.subplots_adjust(left=0.068, right=0.958, top=0.86, bottom=0.11)
+    fig.subplots_adjust(left=0.070, right=0.958, top=0.864, bottom=0.11)
 
     # ---- Data setup ----
     cat_labels = list(classifications.keys())
@@ -886,7 +894,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     _draw_summary_bar(
         ax_abs,
         absolute_segments,
-        "",
+        "Scaffold classification (all)",
         "Sequences (n)",
         fmt_value=lambda value: f"{int(round(value))}",
     )
@@ -895,16 +903,14 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     _draw_summary_bar(
         ax_rel,
         relative_segments,
-        "",
+        "Scaffold classification (with telomeres)",
         "Sequences (%)",
         fmt_value=lambda value: f"{int(round(value))}",
         x_formatter=ticker.FuncFormatter(lambda x, _: f"{x:.0f}%"),
     )
     ax_rel.xaxis.set_major_locator(ticker.MultipleLocator(25))
-    abs_handles = [Patch(facecolor=color, label=lab) for lab, _, color in absolute_segments]
-    rel_handles = [Patch(facecolor=color, label=lab) for lab, _, color in telomeric_segments]
-    _draw_balanced_legend(ax_abs_leg, abs_handles, y_anchor=0.28)
-    _draw_balanced_legend(ax_rel_leg, rel_handles, y_anchor=0.28)
+    legend_handles = [Patch(facecolor=color, label=lab) for lab, _, color in absolute_segments]
+    _draw_balanced_legend(ax_top_leg, legend_handles, y_anchor=0.50, ncol=2, fontsize=4.9)
 
     # ---- Panel c: Vertical raincloud plot (log10bp on y, arms on x) ----
     groups = [
@@ -926,9 +932,9 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
 
         x_labels = [f"{label}\n(n={len(values)})" for label, values, _ in groups]
         ax_rain.set_xticks(positions)
-        ax_rain.set_xticklabels(x_labels, fontsize=5.5)
-        ax_rain.tick_params(axis="x", length=2, pad=3)
-        ax_rain.tick_params(axis="y", length=2)
+        ax_rain.set_xticklabels(x_labels, fontsize=5.4)
+        ax_rain.tick_params(axis="x", length=2, pad=2.5)
+        ax_rain.tick_params(axis="y", length=2, labelsize=5.4)
         ax_rain.set_xlim(positions.min() - 0.34, positions.max() + 0.30)
         ax_rain.set_box_aspect(1.0)
         ax_rain.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
@@ -944,14 +950,15 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         ax_rain.text(
             1.01, median_log, "median",
             transform=median_trans, ha="left", va="center",
-            fontsize=5.6, color="#555555",
+            rotation=90,
+            fontsize=5.2, color="#555555",
         )
-        ax_rain.set_ylabel("Telomere length (log10bp)")
+        ax_rain.set_ylabel("Telomere length (log10bp)", fontsize=6.0)
     else:
         label = "No labeled telomere blocks" if block_rows else "No telomere blocks"
         ax_rain.text(0.5, 0.5, label, ha="center", va="center",
-                     transform=ax_rain.transAxes, fontsize=7, color="#999999")
-        ax_rain.set_ylabel("Telomere length (log10bp)")
+                     transform=ax_rain.transAxes, fontsize=6.0, color="#999999")
+        ax_rain.set_ylabel("Telomere length (log10bp)", fontsize=6.0)
         ax_rain.set_xticks([])
         ax_rain.set_box_aspect(1.0)
 
@@ -982,8 +989,8 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
                 label=legend_label,
             )
 
-        ax_scatter.set_xlabel("Distance to end (log10bp)")
-        ax_scatter.set_ylabel("Telomere length (kbp)")
+        ax_scatter.set_xlabel("Distance to end (log10bp)", fontsize=6.0)
+        ax_scatter.set_ylabel("Telomere length (kbp)", fontsize=6.0)
         ax_scatter.set_xticks([0, 1, 2, 3, 4])
         x_right = max(4.12, max_log_x + 0.18)
         ax_scatter.axvspan(3.0, x_right, facecolor="#ededed", linewidth=0, zorder=0)
@@ -992,14 +999,20 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
                                              dtype=np.float64))), 0.0)
         ax_scatter.set_ylim(-0.45, max(1.2, y_max * 1.10))
         ax_scatter.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
+        ax_scatter.tick_params(axis="both", labelsize=5.4)
         ax_scatter.set_box_aspect(1.0)
         leg_d = ax_scatter.legend(
             loc="upper right",
-            fontsize=5.6,
-            frameon=False,
+            fontsize=5.0,
+            frameon=True,
+            facecolor="white",
+            edgecolor="black",
+            framealpha=1.0,
+            fancybox=False,
             handletextpad=0.35,
             borderaxespad=0.2,
         )
+        leg_d.get_frame().set_linewidth(0.4)
 
         ax_scatter.axvline(
             3.0,
@@ -1013,8 +1026,8 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
                         transform=ax_scatter.transAxes,
                         ha="center", va="center",
                         fontsize=7, color="#999999")
-        ax_scatter.set_xlabel("Distance to end (log10bp)")
-        ax_scatter.set_ylabel("Telomere length (kbp)")
+        ax_scatter.set_xlabel("Distance to end (log10bp)", fontsize=6.0)
+        ax_scatter.set_ylabel("Telomere length (kbp)", fontsize=6.0)
         ax_scatter.set_box_aspect(1.0)
 
     # ---- Panel e: Flagged scaffold lollipop chart ----
@@ -1022,7 +1035,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         ax_flagged.text(0.5, 0.5, "No telomere blocks",
                         transform=ax_flagged.transAxes,
                         ha="center", va="center",
-                        fontsize=7, color="#999999")
+                        fontsize=6.0, color="#999999")
         ax_flagged.set_xticks([])
         ax_flagged.set_yticks([])
         for spine in ax_flagged.spines.values():
@@ -1033,7 +1046,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
             f"No flagged blocks\n(distance > {FLAGGED_DISTANCE_BP // 1000} kbp)",
             transform=ax_flagged.transAxes,
             ha="center", va="center",
-            fontsize=6, color="#999999", linespacing=1.4,
+            fontsize=6.0, color="#999999", linespacing=1.4,
         )
         ax_flagged.set_xticks([])
         ax_flagged.set_yticks([])
@@ -1042,81 +1055,88 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     else:
         label_texts = []
         log_lengths = []
-        dot_colors = []
-        line_counts = []
+        bar_colors = []
         for scaffold, info in flagged_top:
-            wrapped = _wrap_scaffold_name(scaffold, width=18)
-            label_text = f"{wrapped}\nn={info['count']}"
-            label_texts.append(label_text)
+            wrapped = _wrap_scaffold_name(scaffold, width=14)
+            label_texts.append(f"{wrapped}\n(n={info['count']})")
             log_lengths.append(np.log10(info["length"] + 1.0))
             dominant_arm = info["arms"].most_common(1)[0][0]
-            dot_colors.append(COLORS.get(dominant_arm, "#aaaaaa"))
-            line_counts.append(label_text.count("\n") + 1)
+            bar_colors.append(COLORS.get(dominant_arm, "#aaaaaa"))
 
-        y_pos = []
-        cursor = 0.0
-        for line_count in line_counts:
-            y_pos.append(cursor)
-            cursor += 1.0 + (0.62 * max(0, line_count - 1))
-        y_pos = np.asarray(y_pos, dtype=np.float64)
-        max_y = y_pos[-1] if len(y_pos) else 0.0
-
-        x_max = max(log_lengths) if log_lengths else 1.0
-        label_space = max(1.25, x_max * 0.82)
-        label_x = -label_space
-
-        for yp, xv, col, label_text in zip(y_pos, log_lengths, dot_colors, label_texts):
-            ax_flagged.hlines(yp, 0, xv, color=col, linewidth=0.8)
-            ax_flagged.plot(xv, yp, "o", color=col, markersize=4.5,
-                            markeredgecolor="white", markeredgewidth=0.3)
+        y_pos = np.arange(len(label_texts), dtype=np.float64)
+        label_space = 1.40
+        ax_flagged.barh(
+            y_pos,
+            log_lengths,
+            height=0.34,
+            color=bar_colors,
+            edgecolor="white",
+            linewidth=0.45,
+            zorder=2,
+        )
+        for y_pos_i, label_text in zip(y_pos, label_texts):
             ax_flagged.text(
-                label_x + (0.03 * label_space), yp, label_text,
-                ha="right", va="center", fontsize=4.85,
-                color="#222222", linespacing=1.05,
+                -0.08,
+                y_pos_i,
+                label_text,
+                ha="right",
+                va="center",
+                fontsize=4.35,
+                color="#222222",
+                linespacing=1.0,
             )
 
-        ax_flagged.set_ylim(max_y + 0.65, -0.55)
+        x_max = max(4.02, max(log_lengths) + 0.12) if log_lengths else 4.02
+        ax_flagged.set_ylim(len(label_texts) - 0.45, -0.55)
         ax_flagged.set_yticks([])
-        ax_flagged.set_xlim(label_x - 0.04, x_max + 0.18)
-        ax_flagged.set_xlabel("Flagged length (log10bp)", fontsize=6)
-        ax_flagged.set_xticks(np.linspace(0.0, x_max, 3))
+        ax_flagged.set_xlim(-label_space, x_max)
+        ax_flagged.set_xlabel("Flagged length (log10bp)", fontsize=6.0)
+        ax_flagged.set_xticks([0, 1, 2, 3, 4])
+        ax_flagged.tick_params(axis="x", labelsize=5.4)
         ax_flagged.spines["top"].set_visible(False)
         ax_flagged.spines["right"].set_visible(False)
         ax_flagged.spines["left"].set_visible(False)
-        ax_flagged.axvline(0, color="black", linewidth=0.5)
+        ax_flagged.spines["bottom"].set_linewidth(0.45)
+        ax_flagged.spines["bottom"].set_color("#bcbcbc")
+        ax_flagged.axvline(0, color="#bcbcbc", linewidth=0.45, zorder=1)
 
-    ax_flagged.set_box_aspect(1.0)
-    ax_flagged.set_anchor("E")
+    ax_flagged.set_anchor("C")
 
     fig.canvas.draw()
     label_style = dict(fontsize=8, fontweight="bold", va="bottom", ha="left")
-    title_style = dict(fontsize=8, ha="center", va="bottom")
+    title_style = dict(fontsize=6.8, ha="center", va="bottom")
 
-    panel_meta = [
+    top_panel_meta = [
         (ax_abs, "a", "Scaffold classification (all)"),
         (ax_rel, "b", "Scaffold classification (with telomeres)"),
+    ]
+    bottom_panel_meta = [
         (ax_rain, "c", "Length by arm"),
         (ax_scatter, "d", "Telomere positioning"),
         (ax_flagged, "e", "Flagged telomeres"),
     ]
-    for ax, label, title in panel_meta:
+    for ax, label, title in top_panel_meta:
         bbox = ax.get_position()
-        fig.text(max(0.005, bbox.x0 - 0.032), bbox.y1 + 0.006, label, **label_style)
-        fig.text((bbox.x0 + bbox.x1) / 2.0, bbox.y1 + 0.009, title, **title_style)
+        fig.text(max(0.005, bbox.x0 - 0.032), bbox.y1 + 0.004, label, **label_style)
+    bottom_title_y = max(ax.get_position().y1 for ax, _, _ in bottom_panel_meta) - 0.016
+    for ax, label, title in bottom_panel_meta:
+        bbox = ax.get_position()
+        fig.text(max(0.005, bbox.x0 - 0.032), bottom_title_y + 0.002, label, **label_style)
+        fig.text((bbox.x0 + bbox.x1) / 2.0, bottom_title_y + 0.004, title, **title_style)
 
-    fig.suptitle("Assembly summary", fontsize=10.2, fontweight="bold",
+    fig.suptitle("Assembly summary", fontsize=9.8, fontweight="bold",
                  x=0.5, y=0.978, ha="center")
     summary_line = (
-        f"Scaffolds - n={total_paths} (flagged={flagged_total_scaffolds}), "
-        f"Telomere blocks - n={total_blocks} (flagged={flagged_total_blocks}), "
-        f"Median - {median_bp:,} bp"
+        f"Scaffolds (n={total_paths:,}, flagged={flagged_total_scaffolds:,}), "
+        f"telomere blocks (n={total_blocks:,}, flagged={flagged_total_blocks:,}), "
+        f"median {median_bp:,} bp"
         if median_bp is not None else
-        f"Scaffolds - n={total_paths} (flagged={flagged_total_scaffolds}), "
-        f"Telomere blocks - n={total_blocks} (flagged={flagged_total_blocks}), "
-        "Median - NA"
+        f"Scaffolds (n={total_paths:,}, flagged={flagged_total_scaffolds:,}), "
+        f"telomere blocks (n={total_blocks:,}, flagged={flagged_total_blocks:,}), "
+        "median NA"
     )
     fig.text(0.5, 0.942, summary_line,
-             ha="center", va="top", fontsize=6.55, color="#444444")
+             ha="center", va="top", fontsize=5.8, color="#444444")
 
     return fig
 
@@ -1198,20 +1218,6 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, l
             color="#d6d6d6", linewidth=0.9, solid_capstyle="round",
             zorder=1, rasterized=True)
 
-    if not telomere_present:
-        ax.set_ylim(0.28, 0.72)
-        ax.set_yticks([])
-        ax.spines["left"].set_visible(False)
-        ax.spines["bottom"].set_visible(False)
-        ax.text(0.5, 0.76, "No telomere", transform=ax.transAxes,
-                ha="center", va="center", fontsize=6.4, color="#999999")
-        if label:
-            ax.set_ylabel(label, fontsize=6.3, labelpad=3)
-        else:
-            ax.set_ylabel("")
-        _hide_x_axis(ax)
-        return True
-
     for b in blocks_list:
         if b["end"] <= view_start or b["start"] >= view_end:
             continue
@@ -1236,6 +1242,9 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, l
         ax.set_ylabel(label, fontsize=6.3, labelpad=3)
     else:
         ax.set_ylabel("")
+    if not telomere_present:
+        ax.text(0.5, 0.84, "No telomere", transform=ax.transAxes,
+                ha="center", va="center", fontsize=6.3, color="#999999")
     _hide_x_axis(ax)
     return True
 
@@ -1468,8 +1477,8 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
         )
 
     if not merged and n_cols == 2:
-        fig.text(0.06, 0.812, "a", fontsize=8, fontweight="bold", va="bottom", ha="left")
-        fig.text(0.56, 0.812, "b", fontsize=8, fontweight="bold", va="bottom", ha="left")
+        fig.text(0.033, 0.835, "a", fontsize=8, fontweight="bold", va="bottom", ha="left")
+        fig.text(0.533, 0.835, "b", fontsize=8, fontweight="bold", va="bottom", ha="left")
 
     fig.suptitle(f"{chrom}  ({_fmt_bp(chrom_size)})",
                  fontsize=8, fontweight="bold", y=0.965, x=0.5, ha="center")
