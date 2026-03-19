@@ -508,13 +508,13 @@ def _apply_terminal_x_axis(ax, view_start, view_end, arm):
         fmt = lambda x: f"{x / 1e6:.1f}"
         unit = "Mbp"
     elif span >= 2_000:
-        fmt = lambda x: _fmt_kbp(max(x, 0))
+        fmt = lambda x: f"{int(round(max(x, 0) / 1e3))}"
         unit = "kbp"
     else:
         fmt = lambda x: f"{max(x, 0):.0f}"
         unit = "bp"
 
-    n_ticks = 4 if span >= 50_000 else 3
+    n_ticks = 5
 
     if arm == "q":
         tick_pos = np.linspace(view_end, view_start, n_ticks)
@@ -618,17 +618,17 @@ def _draw_raincloud_group(ax, values, position, color, rng, vert=False):
     filled_mask = ~outliers
     if np.any(filled_mask):
         xs = (np.full(np.sum(filled_mask), position) + jitter[filled_mask]
-              if not vert else values[filled_mask])
+              if vert else values[filled_mask])
         ys = (values[filled_mask]
               if vert else np.full(np.sum(filled_mask), position) + jitter[filled_mask])
-        ax.scatter(xs, ys, s=7, color=color, alpha=0.42,
+        ax.scatter(xs, ys, s=8.5, color=color, alpha=0.48,
                    edgecolors="white", linewidths=0.22, rasterized=True, zorder=3)
     if np.any(outliers):
         xs = (np.full(np.sum(outliers), position) + jitter[outliers]
-              if not vert else values[outliers])
+              if vert else values[outliers])
         ys = (values[outliers]
               if vert else np.full(np.sum(outliers), position) + jitter[outliers])
-        ax.scatter(xs, ys, s=7, facecolors="none", edgecolors=color,
+        ax.scatter(xs, ys, s=8.5, facecolors="none", edgecolors=color,
                    linewidths=0.55, rasterized=True, zorder=4)
 
     box = ax.boxplot(
@@ -658,15 +658,13 @@ def _draw_balanced_legend(ax, handles, y_anchor=0.50):
         return
 
     ncol = max(1, int(np.ceil(len(handles) / 2.0)))
-    leg = ax.legend(
+    ax.legend(
         handles=handles,
         loc="center",
         bbox_to_anchor=(0.5, y_anchor),
         ncol=ncol,
-        fontsize=4.95,
-        frameon=True,
-        facecolor="white",
-        edgecolor="black",
+        fontsize=4.8,
+        frameon=False,
         handlelength=0.88,
         handleheight=0.7,
         columnspacing=0.95,
@@ -674,7 +672,6 @@ def _draw_balanced_legend(ax, handles, y_anchor=0.50):
         borderaxespad=0.0,
         labelspacing=0.50,
     )
-    leg.get_frame().set_linewidth(0.4)
 
 
 def _draw_summary_bar(ax, segments, title, x_label, fmt_value, x_formatter=None):
@@ -694,26 +691,27 @@ def _draw_summary_bar(ax, segments, title, x_label, fmt_value, x_formatter=None)
         return
 
     left = 0.0
+    bar_center = 0.055
     for segment in segments:
         label, value, color = segment[:3]
         label_value = segment[3] if len(segment) > 3 else value
         if value <= 0:
             continue
         ax.barh(
-            0.0, value, left=left, height=0.10,
+            bar_center, value, left=left, height=0.08,
             color=color, edgecolor="white", linewidth=0.6,
             rasterized=True, zorder=2,
         )
         if value / total >= 0.08:
             ax.text(
-                left + value / 2.0, 0.0, fmt_value(label_value),
+                left + value / 2.0, bar_center, fmt_value(label_value),
                 ha="center", va="center",
                 fontsize=4.9, color="#222222", zorder=3,
             )
         left += value
 
     ax.set_xlim(0, total)
-    ax.set_ylim(-0.08, 0.14)
+    ax.set_ylim(-0.02, 0.14)
     ax.set_yticks([])
     ax.tick_params(axis="x", length=2.0, width=0.45, pad=1.2)
     ax.spines["left"].set_visible(False)
@@ -807,12 +805,12 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 4.72))
 
     # Two-row nested gridspec: row 0 = bars (2 cols), row 1 = c/d/e (3 cols)
-    outer = fig.add_gridspec(2, 1, height_ratios=[0.58, 1.42], hspace=0.14)
+    outer = fig.add_gridspec(2, 1, height_ratios=[0.66, 1.34], hspace=0.14)
     row0 = outer[0].subgridspec(1, 2, wspace=0.12)
-    row1 = outer[1].subgridspec(1, 3, wspace=0.34, width_ratios=[1.0, 1.0, 0.92])
+    row1 = outer[1].subgridspec(1, 3, wspace=0.34, width_ratios=[1.0, 1.0, 0.78])
 
-    abs_spec = row0[0, 0].subgridspec(2, 1, height_ratios=[1.0, 0.28], hspace=0.16)
-    rel_spec = row0[0, 1].subgridspec(2, 1, height_ratios=[1.0, 0.28], hspace=0.16)
+    abs_spec = row0[0, 0].subgridspec(2, 1, height_ratios=[1.0, 0.40], hspace=0.28)
+    rel_spec = row0[0, 1].subgridspec(2, 1, height_ratios=[1.0, 0.40], hspace=0.28)
 
     ax_abs = fig.add_subplot(abs_spec[0])
     ax_abs_leg = fig.add_subplot(abs_spec[1])
@@ -865,7 +863,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     all_len = p_len + q_len + b_len
     total_blocks = len(block_rows)
     total_paths = total if total > 0 else max(len(chrom_sizes), len(blocks))
-    median_kbp_text = f"{_fmt_kbp(_median(all_len))} kbp" if all_len else "NA"
+    median_bp = int(round(_median(all_len))) if all_len else None
 
     # ---- Panel a/b: Classification summary ----
     absolute_segments = [
@@ -905,8 +903,8 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     ax_rel.xaxis.set_major_locator(ticker.MultipleLocator(25))
     abs_handles = [Patch(facecolor=color, label=lab) for lab, _, color in absolute_segments]
     rel_handles = [Patch(facecolor=color, label=lab) for lab, _, color in telomeric_segments]
-    _draw_balanced_legend(ax_abs_leg, abs_handles, y_anchor=0.16)
-    _draw_balanced_legend(ax_rel_leg, rel_handles, y_anchor=0.16)
+    _draw_balanced_legend(ax_abs_leg, abs_handles, y_anchor=0.28)
+    _draw_balanced_legend(ax_rel_leg, rel_handles, y_anchor=0.28)
 
     # ---- Panel c: Vertical raincloud plot (log10bp on y, arms on x) ----
     groups = [
@@ -943,16 +941,10 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
             linewidth=OVERVIEW_DASH_WIDTH,
         )
         median_trans = transforms.blended_transform_factory(ax_rain.transAxes, ax_rain.transData)
-        ax_rain.annotate(
-            f"median ({median_kbp_text})",
-            xy=(0.03, median_log),
-            xycoords=median_trans,
-            xytext=(0, 2),
-            textcoords="offset points",
-            ha="left",
-            va="bottom",
-            fontsize=5.3,
-            color="#444444",
+        ax_rain.text(
+            1.01, median_log, "median",
+            transform=median_trans, ha="left", va="center",
+            fontsize=5.6, color="#555555",
         )
         ax_rain.set_ylabel("Telomere length (log10bp)")
     else:
@@ -993,24 +985,21 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         ax_scatter.set_xlabel("Distance to end (log10bp)")
         ax_scatter.set_ylabel("Telomere length (kbp)")
         ax_scatter.set_xticks([0, 1, 2, 3, 4])
-        x_right = max(4.05, max_log_x + 0.10)
+        x_right = max(4.12, max_log_x + 0.18)
         ax_scatter.axvspan(3.0, x_right, facecolor="#ededed", linewidth=0, zorder=0)
-        ax_scatter.set_xlim(-0.05, x_right)
+        ax_scatter.set_xlim(-0.10, x_right)
         y_max = max(float(np.max(np.asarray([row["length"] / 1e3 for row in scatter_rows],
                                              dtype=np.float64))), 0.0)
-        ax_scatter.set_ylim(-0.3, max(1.0, y_max * 1.08))
+        ax_scatter.set_ylim(-0.45, max(1.2, y_max * 1.10))
         ax_scatter.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
         ax_scatter.set_box_aspect(1.0)
         leg_d = ax_scatter.legend(
-            loc="upper left",
+            loc="upper right",
             fontsize=5.6,
-            frameon=True,
-            facecolor="white",
-            edgecolor="black",
+            frameon=False,
             handletextpad=0.35,
             borderaxespad=0.2,
         )
-        leg_d.get_frame().set_linewidth(0.4)
 
         ax_scatter.axvline(
             3.0,
@@ -1051,19 +1040,18 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         for spine in ax_flagged.spines.values():
             spine.set_visible(False)
     else:
-        names = []
+        label_texts = []
         log_lengths = []
-        counts = []
         dot_colors = []
         line_counts = []
         for scaffold, info in flagged_top:
             wrapped = _wrap_scaffold_name(scaffold, width=18)
-            names.append(wrapped)
+            label_text = f"{wrapped}\nn={info['count']}"
+            label_texts.append(label_text)
             log_lengths.append(np.log10(info["length"] + 1.0))
-            counts.append(info["count"])
             dominant_arm = info["arms"].most_common(1)[0][0]
             dot_colors.append(COLORS.get(dominant_arm, "#aaaaaa"))
-            line_counts.append(wrapped.count("\n") + 1)
+            line_counts.append(label_text.count("\n") + 1)
 
         y_pos = []
         cursor = 0.0
@@ -1073,37 +1061,31 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         y_pos = np.asarray(y_pos, dtype=np.float64)
         max_y = y_pos[-1] if len(y_pos) else 0.0
 
-        for i, (yp, xv, col) in enumerate(zip(y_pos, log_lengths, dot_colors)):
+        x_max = max(log_lengths) if log_lengths else 1.0
+        label_space = max(1.25, x_max * 0.82)
+        label_x = -label_space
+
+        for yp, xv, col, label_text in zip(y_pos, log_lengths, dot_colors, label_texts):
             ax_flagged.hlines(yp, 0, xv, color=col, linewidth=0.8)
             ax_flagged.plot(xv, yp, "o", color=col, markersize=4.5,
                             markeredgecolor="white", markeredgewidth=0.3)
-            ax_flagged.annotate(
-                f"n={counts[i]}",
-                xy=(xv, yp),
-                xytext=(4, 0),
-                textcoords="offset points",
-                ha="left",
-                va="center",
-                fontsize=4.5,
-                color="#555555",
-                annotation_clip=False,
+            ax_flagged.text(
+                label_x + (0.03 * label_space), yp, label_text,
+                ha="right", va="center", fontsize=4.85,
+                color="#222222", linespacing=1.05,
             )
 
         ax_flagged.set_ylim(max_y + 0.65, -0.55)
-        ax_flagged.set_yticks(y_pos)
-        ax_flagged.set_yticklabels(names, fontsize=5)
-        for tick in ax_flagged.get_yticklabels():
-            tick.set_horizontalalignment("right")
-            tick.set_multialignment("right")
-        x_max = max(log_lengths) if log_lengths else 1.0
-        ax_flagged.set_xlim(0.0, x_max + 0.22)
+        ax_flagged.set_yticks([])
+        ax_flagged.set_xlim(label_x - 0.04, x_max + 0.18)
         ax_flagged.set_xlabel("Flagged length (log10bp)", fontsize=6)
-        ax_flagged.xaxis.set_major_locator(ticker.MaxNLocator(nbins=3))
+        ax_flagged.set_xticks(np.linspace(0.0, x_max, 3))
         ax_flagged.spines["top"].set_visible(False)
         ax_flagged.spines["right"].set_visible(False)
-        ax_flagged.tick_params(axis="y", pad=1.2)
+        ax_flagged.spines["left"].set_visible(False)
+        ax_flagged.axvline(0, color="black", linewidth=0.5)
 
-    ax_flagged.set_box_aspect(2.35)
+    ax_flagged.set_box_aspect(1.0)
     ax_flagged.set_anchor("E")
 
     fig.canvas.draw()
@@ -1122,13 +1104,19 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         fig.text(max(0.005, bbox.x0 - 0.032), bbox.y1 + 0.006, label, **label_style)
         fig.text((bbox.x0 + bbox.x1) / 2.0, bbox.y1 + 0.009, title, **title_style)
 
-    summary_title = (
-        rf"$\bf{{Assembly\ summary}}$: n={total_paths} | "
-        rf"telomeres={total_blocks} | flagged scaffolds={flagged_total_scaffolds} | "
-        rf"flagged blocks={flagged_total_blocks}"
+    fig.suptitle("Assembly summary", fontsize=10.2, fontweight="bold",
+                 x=0.5, y=0.978, ha="center")
+    summary_line = (
+        f"Scaffolds - n={total_paths} (flagged={flagged_total_scaffolds}), "
+        f"Telomere blocks - n={total_blocks} (flagged={flagged_total_blocks}), "
+        f"Median - {median_bp:,} bp"
+        if median_bp is not None else
+        f"Scaffolds - n={total_paths} (flagged={flagged_total_scaffolds}), "
+        f"Telomere blocks - n={total_blocks} (flagged={flagged_total_blocks}), "
+        "Median - NA"
     )
-    fig.text(0.5, 0.975, summary_title,
-             ha="center", va="top", fontsize=6.9, color="#222222")
+    fig.text(0.5, 0.942, summary_line,
+             ha="center", va="top", fontsize=6.55, color="#444444")
 
     return fig
 
@@ -1203,12 +1191,19 @@ def clip_bedgraph(bg_tuple, view_start, view_end):
 def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, label=None,
                        telomere_present=True):
     """Draw telomere blocks as a thin track on a backbone line."""
+    backbone_y = 0.5
+    display_start, display_end = _project_terminal_interval(
+        view_start, view_end, chrom_size, arm)
+    ax.plot([display_start, display_end], [backbone_y, backbone_y],
+            color="#d6d6d6", linewidth=0.9, solid_capstyle="round",
+            zorder=1, rasterized=True)
+
     if not telomere_present:
-        ax.set_ylim(0.0, 1.0)
+        ax.set_ylim(0.28, 0.72)
         ax.set_yticks([])
         ax.spines["left"].set_visible(False)
         ax.spines["bottom"].set_visible(False)
-        ax.text(0.5, 0.5, "No telomere", transform=ax.transAxes,
+        ax.text(0.5, 0.76, "No telomere", transform=ax.transAxes,
                 ha="center", va="center", fontsize=6.4, color="#999999")
         if label:
             ax.set_ylabel(label, fontsize=6.3, labelpad=3)
@@ -1216,13 +1211,6 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, l
             ax.set_ylabel("")
         _hide_x_axis(ax)
         return True
-
-    backbone_y = 0.5
-    display_start, display_end = _project_terminal_interval(
-        view_start, view_end, chrom_size, arm)
-    ax.plot([display_start, display_end], [backbone_y, backbone_y],
-            color="#d6d6d6", linewidth=0.9, solid_capstyle="round",
-            zorder=1, rasterized=True)
 
     for b in blocks_list:
         if b["end"] <= view_start or b["start"] >= view_end:
@@ -1232,28 +1220,10 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, l
         ds, de = _project_terminal_interval(cs, ce, chrom_size, arm)
         if de < ds:
             ds, de = de, ds
-        # Enforce minimum visible width for tiny blocks in large views
-        view_span = abs(display_end - display_start)
-        min_width = view_span * 0.015
-        block_width = de - ds
-        expanded = block_width < min_width
-        if expanded:
-            center = (ds + de) / 2
-            ds = center - min_width / 2
-            de = center + min_width / 2
-            disp_lo = min(display_start, display_end)
-            disp_hi = max(display_start, display_end)
-            if ds < disp_lo:
-                ds, de = disp_lo, disp_lo + min_width
-            if de > disp_hi:
-                de, ds = disp_hi, disp_hi - min_width
         color = COLORS.get(b["label"], "#999999")
         rect = Rectangle(
             (ds, backbone_y - 0.07), de - ds, 0.14,
-            facecolor=color,
-            edgecolor=color if expanded else "none",
-            linewidth=0.3 if expanded else 0,
-            alpha=0.98, zorder=2,
+            facecolor=color, edgecolor="none", alpha=0.98, zorder=2,
         )
         rect.set_rasterized(True)
         ax.add_patch(rect)
@@ -1481,8 +1451,6 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
         if n_cols == 2:
             axes[0][0].set_title("p-arm", fontsize=7, pad=3)
             axes[0][1].set_title("q-arm", fontsize=7, pad=3)
-            _panel_label(axes[0][0], "a", x=0.0, y=1.16)
-            _panel_label(axes[0][1], "b", x=0.0, y=1.16)
 
     labels_present = [lab for lab in ("p", "q", "b") if any(b["label"] == lab for b in blocks_list)]
     block_handles = [
@@ -1499,8 +1467,12 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
             handletextpad=0.3, columnspacing=0.8,
         )
 
+    if not merged and n_cols == 2:
+        fig.text(0.06, 0.812, "a", fontsize=8, fontweight="bold", va="bottom", ha="left")
+        fig.text(0.56, 0.812, "b", fontsize=8, fontweight="bold", va="bottom", ha="left")
+
     fig.suptitle(f"{chrom}  ({_fmt_bp(chrom_size)})",
-                 fontsize=8, fontweight="bold", y=0.985, x=0.09, ha="left")
+                 fontsize=8, fontweight="bold", y=0.965, x=0.5, ha="center")
     return fig
 
 
