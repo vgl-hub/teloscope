@@ -730,6 +730,45 @@ def _draw_summary_bar(ax, segments, title, x_label, fmt_value, x_formatter=None)
     ax.set_xlabel(x_label, fontsize=6.0, labelpad=0.15)
 
 
+def _draw_dual_summary_panel(ax, all_segments, telo_segments):
+    """Draw a single two-row stacked summary panel with a shared percentage axis."""
+    ax.set_title("Scaffold classification", loc="left", fontsize=6.8, pad=0.0, y=0.99)
+
+    plot_rows = [
+        (0.74, "All", all_segments),
+        (0.28, "With telomeres", telo_segments),
+    ]
+    for y_pos, _, segments in plot_rows:
+        left = 0.0
+        for segment in segments:
+            _, value, color = segment[:3]
+            if value <= 0:
+                continue
+            ax.barh(
+                y_pos, value, left=left, height=0.18,
+                color=color, edgecolor="white", linewidth=0.6,
+                rasterized=True, zorder=2,
+            )
+            left += value
+
+    ax.set_xlim(0.0, 100.0)
+    ax.set_ylim(0.0, 1.02)
+    ax.set_yticks([row[0] for row in plot_rows])
+    ax.set_yticklabels([row[1] for row in plot_rows], fontsize=5.6)
+    ax.tick_params(axis="y", length=0, pad=2.0)
+    ax.tick_params(axis="x", length=2.0, width=0.45, pad=0.8, labelsize=5.4)
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(25))
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:.0f}%"))
+    ax.set_xlabel("Sequences (%)", fontsize=6.0, labelpad=0.2)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.spines["bottom"].set_visible(True)
+    ax.spines["bottom"].set_color("#c7c7c7")
+    ax.spines["bottom"].set_linewidth(0.45)
+    ax.minorticks_off()
+
+
 def _wrap_scaffold_name(name, width=18):
     """Wrap long scaffold names across multiple lines while preserving delimiters."""
     parts = re.findall(r"[^._-]+[._-]*", name) or [name]
@@ -810,20 +849,13 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
 
     fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 4.72))
 
-    # Two-row nested gridspec: row 0 = stacked a/b + shared legend, row 1 = c/d/e
-    outer = fig.add_gridspec(2, 1, height_ratios=[0.58, 1.42], hspace=0.13)
-    row0 = outer[0].subgridspec(
-        2, 2,
-        height_ratios=[1.0, 1.0],
-        width_ratios=[1.0, 0.96],
-        hspace=0.42,
-        wspace=0.10,
-    )
+    # Two-row nested gridspec: row 0 = summary panel + shared legend, row 1 = b/c/d
+    outer = fig.add_gridspec(2, 1, height_ratios=[0.72, 1.28], hspace=0.15)
+    row0 = outer[0].subgridspec(1, 2, width_ratios=[1.22, 0.78], wspace=0.16)
     row1 = outer[1].subgridspec(1, 3, wspace=0.30, width_ratios=[1.0, 1.0, 0.80])
 
-    ax_abs = fig.add_subplot(row0[0, 0])
-    ax_rel = fig.add_subplot(row0[1, 0])
-    ax_top_leg = fig.add_subplot(row0[:, 1])
+    ax_summary = fig.add_subplot(row0[0, 0])
+    ax_top_leg = fig.add_subplot(row0[0, 1])
     ax_rain = fig.add_subplot(row1[0, 0])
     ax_scatter = fig.add_subplot(row1[0, 1])
     ax_flagged = fig.add_subplot(row1[0, 2])
@@ -873,7 +905,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     total_paths = total if total > 0 else max(len(chrom_sizes), len(blocks))
     median_bp = int(round(_median(all_len))) if all_len else None
 
-    # ---- Panel a/b: Classification summary ----
+    # ---- Panel a: Classification summary ----
     absolute_segments = [
         (lab, cnt, color)
         for lab, cnt, color in zip(cat_labels, cat_counts, cat_colors)
@@ -890,25 +922,11 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         (lab, (100.0 * cnt / telomeric_total) if telomeric_total else 0.0, color, cnt)
         for lab, cnt, color in telomeric_segments
     ]
-
-    _draw_summary_bar(
-        ax_abs,
-        absolute_segments,
-        "Scaffold classification (all)",
-        "Sequences (n)",
-        fmt_value=lambda value: f"{int(round(value))}",
-    )
-    ax_abs.xaxis.set_major_locator(ticker.MaxNLocator(integer=True, nbins=4))
-
-    _draw_summary_bar(
-        ax_rel,
-        relative_segments,
-        "Scaffold classification (with telomeres)",
-        "Sequences (%)",
-        fmt_value=lambda value: f"{int(round(value))}",
-        x_formatter=ticker.FuncFormatter(lambda x, _: f"{x:.0f}%"),
-    )
-    ax_rel.xaxis.set_major_locator(ticker.MultipleLocator(25))
+    absolute_pct_segments = [
+        (lab, (100.0 * cnt / total) if total else 0.0, color, cnt)
+        for lab, cnt, color in absolute_segments
+    ]
+    _draw_dual_summary_panel(ax_summary, absolute_pct_segments, relative_segments)
     legend_handles = [Patch(facecolor=color, label=lab) for lab, _, color in absolute_segments]
     _draw_balanced_legend(ax_top_leg, legend_handles, y_anchor=0.50, ncol=2, fontsize=4.9)
 
@@ -1107,13 +1125,12 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
     title_style = dict(fontsize=6.8, ha="center", va="bottom")
 
     top_panel_meta = [
-        (ax_abs, "a", "Scaffold classification (all)"),
-        (ax_rel, "b", "Scaffold classification (with telomeres)"),
+        (ax_summary, "a", "Scaffold classification"),
     ]
     bottom_panel_meta = [
-        (ax_rain, "c", "Length by arm"),
-        (ax_scatter, "d", "Telomere positioning"),
-        (ax_flagged, "e", "Flagged telomeres"),
+        (ax_rain, "b", "Length by arm"),
+        (ax_scatter, "c", "Telomere positioning"),
+        (ax_flagged, "d", "Flagged telomeres"),
     ]
     for ax, label, title in top_panel_meta:
         bbox = ax.get_position()
