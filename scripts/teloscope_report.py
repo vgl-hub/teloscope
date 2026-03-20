@@ -496,47 +496,76 @@ def _project_terminal_series(starts, ends, values, chrom_size, arm):
     return proj_starts[order], proj_ends[order], values[order]
 
 
-def _apply_terminal_x_axis(ax, view_start, view_end, arm):
-    """Apply end-relative x-axis with adaptive units (bp / kbp / Mbp)."""
+def _format_terminal_tick_value(value_kbp):
+    """Format terminal-axis tick labels in kbp without spurious rounding."""
+    return f"{value_kbp:.2f}".rstrip("0").rstrip(".")
+
+
+def _get_terminal_axis_spec(view_start, view_end, arm):
+    """Return x-axis limits, tick positions, labels, and xlabel for terminal plots."""
     if view_end <= view_start:
-        return
+        return None
 
     n_ticks = 5
     if arm in ("p", "q"):
+        axis_span_kbp = max(1, int(np.ceil((view_end - view_start) / 1e3)))
+        axis_start = view_start
+        axis_end = view_start + (axis_span_kbp * 1e3)
+        tick_pos = np.linspace(axis_start, axis_end, n_ticks)
+        tick_values = np.linspace(0.0, float(axis_span_kbp), n_ticks)
+        tick_labels = [_format_terminal_tick_value(value) for value in tick_values]
+        xlabel = "Distance to end (kbp)"
+        return {
+            "axis_start": axis_start,
+            "axis_end": axis_end,
+            "tick_pos": tick_pos,
+            "tick_labels": tick_labels,
+            "xlabel": xlabel,
+        }
+
+    span = view_end - view_start
+    if span >= 2_000_000:
+        fmt = lambda x: f"{x / 1e6:.1f}"
+        unit = "Mbp"
+    elif span >= 2_000:
         fmt = lambda x: f"{int(round(max(x, 0) / 1e3))}"
         unit = "kbp"
     else:
-        span = view_end - view_start
-        if span >= 2_000_000:
-            fmt = lambda x: f"{x / 1e6:.1f}"
-            unit = "Mbp"
-        elif span >= 2_000:
-            fmt = lambda x: f"{int(round(max(x, 0) / 1e3))}"
-            unit = "kbp"
-        else:
-            fmt = lambda x: f"{max(x, 0):.0f}"
-            unit = "bp"
+        fmt = lambda x: f"{max(x, 0):.0f}"
+        unit = "bp"
 
-    if arm == "q":
-        tick_pos = np.linspace(view_end, view_start, n_ticks)
-    else:
-        tick_pos = np.linspace(view_start, view_end, n_ticks)
-
+    tick_pos = np.linspace(view_start, view_end, n_ticks)
     tick_labels = [fmt(pos) for pos in tick_pos]
 
-    if arm in ("p", "q"):
-        xlabel = f"Distance to end ({unit})"
-    else:
-        xlabel = f"Position along scaffold ({unit})"
+    xlabel = f"Position along scaffold ({unit})"
 
-    ax.set_xticks(tick_pos)
-    ax.set_xticklabels(tick_labels)
+    return {
+        "axis_start": view_start,
+        "axis_end": view_end,
+        "tick_pos": tick_pos,
+        "tick_labels": tick_labels,
+        "xlabel": xlabel,
+    }
+
+
+def _apply_terminal_x_axis(ax, axis_spec, arm):
+    """Apply end-relative x-axis with adaptive units (bp / kbp / Mbp)."""
+    if axis_spec is None:
+        return
+
+    if arm == "q":
+        ax.set_xlim(axis_spec["axis_end"], axis_spec["axis_start"])
+    else:
+        ax.set_xlim(axis_spec["axis_start"], axis_spec["axis_end"])
+
+    ax.set_xticks(axis_spec["tick_pos"])
+    ax.set_xticklabels(axis_spec["tick_labels"])
     ax.tick_params(axis="x", bottom=True, labelbottom=True,
                    length=2.3, width=0.45, pad=1.5)
     ax.spines["bottom"].set_visible(True)
     ax.spines["bottom"].set_linewidth(0.45)
     ax.spines["bottom"].set_color("#bcbcbc")
-    ax.set_xlabel(xlabel, fontsize=6.3, labelpad=2.5)
+    ax.set_xlabel(axis_spec["xlabel"], fontsize=6.3, labelpad=2.5)
     ax.minorticks_off()
 
 
@@ -1410,6 +1439,9 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
     for col_idx, window, arm in columns:
         drawn_cols.add(col_idx)
         view_start, view_end = window
+        display_start, display_end = _project_terminal_interval(
+            view_start, view_end, chrom_size, arm)
+        axis_spec = _get_terminal_axis_spec(display_start, display_end, arm)
         visible_rows = []
 
         for row, (track_name, track_data) in enumerate(track_specs):
@@ -1449,23 +1481,19 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
                 )
 
             if visible:
-                display_start, display_end = _project_terminal_interval(
-                    view_start, view_end, chrom_size, arm)
-                if arm == "q":
-                    ax.set_xlim(display_end, display_start)
-                else:
-                    ax.set_xlim(display_start, display_end)
+                if axis_spec is not None:
+                    if arm == "q":
+                        ax.set_xlim(axis_spec["axis_end"], axis_spec["axis_start"])
+                    else:
+                        ax.set_xlim(axis_spec["axis_start"], axis_spec["axis_end"])
                 visible_rows.append(row)
 
         if visible_rows:
             for row in visible_rows[:-1]:
                 _hide_x_axis(axes[row][col_idx])
-            display_start, display_end = _project_terminal_interval(
-                view_start, view_end, chrom_size, arm)
             _apply_terminal_x_axis(
                 axes[visible_rows[-1]][col_idx],
-                display_start,
-                display_end,
+                axis_spec,
                 arm,
             )
 
