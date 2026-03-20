@@ -34,7 +34,7 @@ Quick start
     teloscope asm.fa
 
 ### With PDF report
-    teloscope asm.fa -o results/ -r --report
+    teloscope asm.fa -o results/ -r --plot-report
 
 ### Non-default organisms
     teloscope asm.fa -c CCCTAAA
@@ -44,7 +44,7 @@ Quick start
     teloscope asm.fa -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG
 
 ### All optional outputs
-    teloscope asm.fa -o results/ -r -g -e -m -i --report
+    teloscope asm.fa -o results/ -r -g -e -m -i --plot-report
 
 ### Piping from stdin
     cat asm.fa | teloscope -o results/
@@ -52,7 +52,7 @@ Quick start
 
 Teloscope reads `.fa.gz` files directly (`teloscope asm.fa.gz`). When piping, gzipped input must be decompressed first with `zcat`.
 
-`--report` generates a PDF report after analysis. Requires Python 3 with matplotlib, numpy, and pandas. Use `-r` alongside for density and ratio tracks in the report.
+`--plot-report` generates a PDF report after analysis. Requires Python 3 with matplotlib, numpy, and pandas. Use `-r` alongside for density and ratio tracks in the report.
 
 **Note:** Teloscope always searches for both the input patterns and their reverse complements. If no patterns are provided (`-p`), it defaults to the canonical repeat (`-c`) and its reverse complement. Patterns accept IUPAC ambiguity codes (e.g., `NNNGGG` expands to all 64 combinations of `[ACGT][ACGT][ACGT]GGG`).
 

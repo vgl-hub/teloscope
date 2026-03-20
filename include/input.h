@@ -46,7 +46,7 @@ struct UserInputTeloscope : UserInput {
     bool outITS = false;
     bool ultraFastMode = true;
     bool manualCuration = false;
-    bool outReport = false;
+    bool outPlotReport = false;
 
     double maxMem = 0;
     std::string prefix = ".", outFile = "";

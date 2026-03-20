@@ -3,13 +3,13 @@
 Report generation
 ============
 
-The `--report` flag generates a publication-ready PDF after analysis:
+The `--plot-report` flag generates a publication-ready PDF after analysis:
 
 ```sh
-teloscope asm.fa -o results/ -r --report
+teloscope asm.fa -o results/ -r --plot-report
 ```
 
-This produces `results/asm.fa_report.pdf` with an assembly overview (chromosome classification summary and telomere length distribution) followed by terminal zoom figures for each chromosome that has telomere blocks. Each figure shows two side-by-side panels (p-end and q-end) with block locations, repeat density, canonical ratio, and strand ratio tracks. Use `-r` alongside `--report` for the density and ratio tracks.
+This produces `results/asm.fa_plot_report.pdf` with an assembly overview (chromosome classification summary and telomere length distribution) followed by terminal zoom figures for each chromosome that has telomere blocks. Each figure shows two side-by-side panels (p-end and q-end) with block locations, repeat density, canonical ratio, and strand ratio tracks. Use `-r` alongside `--plot-report` for the density and ratio tracks.
 
 Requires Python 3.6+ with matplotlib, numpy, and pandas.
 

@@ -121,7 +121,7 @@ int main(int argc, char **argv) {
         {"out-its", no_argument, 0, 'i'},
         {"ultra-fast", no_argument, 0, 'u'},
         {"manual-curation", no_argument, 0, 'n'},
-        {"report", no_argument, 0, 0},
+        {"plot-report", no_argument, 0, 0},
         {"verbose", no_argument, &verbose_flag, 1},
         {"cmd", no_argument, &cmd_flag, 1},
         {"version", no_argument, 0, 'v'},
@@ -154,8 +154,8 @@ int main(int argc, char **argv) {
 
 
             case 0: // long options without short options
-                if (strcmp(long_options[option_index].name, "report") == 0)
-                    userInput.outReport = true;
+                if (strcmp(long_options[option_index].name, "plot-report") == 0)
+                    userInput.outPlotReport = true;
                 break;
 
 
@@ -478,7 +478,7 @@ int main(int argc, char **argv) {
                 printf("\t'-i'\t--out-its\tOutput assembly interstitial telomere (ITSs) regions.[Default: false] \n");
                 printf("\t'-u'\t--ultra-fast\tUltra-fast mode. Only scans terminal telomeres at contig ends. [Default: true]\n");
                 printf("\t'-n'\t--manual-curation\tRetain all terminal telomeres (contig + scaffold) in BED output. [Default: scaffold only]\n");
-                printf("\t\t--report\tGenerate a PDF report after analysis (requires Python 3 + matplotlib). [Default: false]\n");
+                printf("\t\t--plot-report\tGenerate a PDF plot report after analysis (requires Python 3 + matplotlib). [Default: false]\n");
 
                 printf("\t'-v'\t--version\tPrint current software version.\n");
                 printf("\t'-h'\t--help\tPrint current software options.\n");
@@ -581,7 +581,7 @@ int main(int argc, char **argv) {
     if (userInput.outEntropy) appendOutput("Shannon entropy");
     if (userInput.outMatches) appendOutput("genome-wide matches");
     if (userInput.outITS) appendOutput("ITS blocks");
-    if (userInput.outReport) appendOutput("PDF report");
+    if (userInput.outPlotReport) appendOutput("plot report");
     if (!outputSummary.empty()) {
         fprintf(stderr, "Outputs: %s.\n", outputSummary.c_str());
     }
@@ -613,14 +613,14 @@ int main(int argc, char **argv) {
 
     lg.verbose("Generated output");
 
-    if (userInput.outReport) {
+    if (userInput.outPlotReport) {
         std::string scriptPath = findReportScript(argv[0]);
         if (scriptPath.empty()) {
             fprintf(stderr, "Warning: Could not locate teloscope_report.py.\n");
             fprintf(stderr, "  Ensure the scripts/ directory is present alongside the teloscope binary.\n");
         } else {
-            std::string pdfPath = userInput.outRoute + "/" + userInput.inSequenceName + "_report.pdf";
-            fprintf(stderr, "Generating report: %s\n", pdfPath.c_str());
+            std::string pdfPath = userInput.outRoute + "/" + userInput.inSequenceName + "_plot_report.pdf";
+            fprintf(stderr, "Generating plot report: %s\n", pdfPath.c_str());
 
             std::string cmd = "python3 \"" + scriptPath + "\" \""
                             + userInput.outRoute + "\" -o \"" + pdfPath + "\"";
