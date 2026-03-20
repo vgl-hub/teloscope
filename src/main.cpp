@@ -2,6 +2,9 @@
 #include <input.h>
 #include <iostream>
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 
 std::string version = "0.1.3";
 
@@ -20,6 +23,47 @@ Log lg;
 std::vector<Log> logs;
 
 UserInputTeloscope userInput; // init input object
+
+static std::string findReportScript(const char* argv0) {
+    std::filesystem::path exeDir;
+
+#if defined(__APPLE__)
+    {
+        char buf[4096];
+        uint32_t bufsize = sizeof(buf);
+        if (_NSGetExecutablePath(buf, &bufsize) == 0) {
+            std::error_code ec;
+            auto p = std::filesystem::canonical(buf, ec);
+            if (!ec) exeDir = p.parent_path();
+        }
+    }
+#elif !defined(_WIN32)
+    {
+        std::error_code ec;
+        auto p = std::filesystem::canonical("/proc/self/exe", ec);
+        if (!ec) exeDir = p.parent_path();
+    }
+#endif
+
+    if (exeDir.empty() && argv0) {
+        std::error_code ec;
+        auto p = std::filesystem::canonical(argv0, ec);
+        if (!ec) exeDir = p.parent_path();
+    }
+
+    if (exeDir.empty()) return "";
+
+    for (const char* rel : {"../../scripts/teloscope_report.py",
+                            "../scripts/teloscope_report.py",
+                            "scripts/teloscope_report.py",
+                            "teloscope_report.py"}) {
+        std::error_code ec;
+        auto resolved = std::filesystem::canonical(exeDir / rel, ec);
+        if (!ec) return resolved.string();
+    }
+
+    return "";
+}
 
 int main(int argc, char **argv) {
     
@@ -77,6 +121,7 @@ int main(int argc, char **argv) {
         {"out-its", no_argument, 0, 'i'},
         {"ultra-fast", no_argument, 0, 'u'},
         {"manual-curation", no_argument, 0, 'n'},
+        {"report", no_argument, 0, 0},
         {"verbose", no_argument, &verbose_flag, 1},
         {"cmd", no_argument, &cmd_flag, 1},
         {"version", no_argument, 0, 'v'},
@@ -108,11 +153,9 @@ int main(int argc, char **argv) {
             default: // handle positional arguments
 
 
-            case 0: // case for long options without short options, none yet
-                
-                // if (strcmp(long_options[option_index].name,"line-length") == 0)
-                //     splitLength = atoi(optarg);
-                
+            case 0: // long options without short options
+                if (strcmp(long_options[option_index].name, "report") == 0)
+                    userInput.outReport = true;
                 break;
 
 
@@ -435,6 +478,7 @@ int main(int argc, char **argv) {
                 printf("\t'-i'\t--out-its\tOutput assembly interstitial telomere (ITSs) regions.[Default: false] \n");
                 printf("\t'-u'\t--ultra-fast\tUltra-fast mode. Only scans terminal telomeres at contig ends. [Default: true]\n");
                 printf("\t'-n'\t--manual-curation\tRetain all terminal telomeres (contig + scaffold) in BED output. [Default: scaffold only]\n");
+                printf("\t\t--report\tGenerate a PDF report after analysis (requires Python 3 + matplotlib). [Default: false]\n");
 
                 printf("\t'-v'\t--version\tPrint current software version.\n");
                 printf("\t'-h'\t--help\tPrint current software options.\n");
@@ -537,6 +581,7 @@ int main(int argc, char **argv) {
     if (userInput.outEntropy) appendOutput("Shannon entropy");
     if (userInput.outMatches) appendOutput("genome-wide matches");
     if (userInput.outITS) appendOutput("ITS blocks");
+    if (userInput.outReport) appendOutput("PDF report");
     if (!outputSummary.empty()) {
         fprintf(stderr, "Outputs: %s.\n", outputSummary.c_str());
     }
@@ -568,6 +613,27 @@ int main(int argc, char **argv) {
 
     lg.verbose("Generated output");
 
+    if (userInput.outReport) {
+        std::string scriptPath = findReportScript(argv[0]);
+        if (scriptPath.empty()) {
+            fprintf(stderr, "Warning: Could not locate teloscope_report.py.\n");
+            fprintf(stderr, "  Ensure the scripts/ directory is present alongside the teloscope binary.\n");
+        } else {
+            std::string pdfPath = userInput.outRoute + "/" + userInput.inSequenceName + "_report.pdf";
+            fprintf(stderr, "Generating report: %s\n", pdfPath.c_str());
+
+            std::string cmd = "python3 \"" + scriptPath + "\" \""
+                            + userInput.outRoute + "\" -o \"" + pdfPath + "\"";
+            int ret = system(cmd.c_str());
+            if (ret != 0) {
+                fprintf(stderr, "Warning: Report generation failed.\n");
+                fprintf(stderr, "  Ensure Python 3 is installed with: matplotlib, numpy, pandas\n");
+                fprintf(stderr, "  Or generate manually: python3 scripts/teloscope_report.py %s\n",
+                        userInput.outRoute.c_str());
+            }
+        }
+    }
+
     exit(EXIT_SUCCESS);
-    
+
 }

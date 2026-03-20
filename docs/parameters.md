@@ -57,6 +57,7 @@ Both the provided patterns and their reverse complements are searched automatica
 | `-i` | `--out-its` | Output interstitial telomere (ITS) blocks | `false` |
 | `-u` | `--ultra-fast` | Only scan near contig ends; skip genome-wide analysis | `true` |
 | `-n` | `--manual-curation` | Include contig-terminal telomeres in BED output (not just scaffold-terminal) | `false` |
+| | `--report` | Generate a PDF report after analysis (requires Python 3 + matplotlib) | `false` |
 | `-v` | `--version` | Print current software version | |
 | `-h` | `--help` | Print help | |
 | | `--verbose` | Verbose output | |
