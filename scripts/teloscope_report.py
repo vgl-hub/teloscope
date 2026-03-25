@@ -60,6 +60,9 @@ COLORS = {
     "density":      "#2A9D59",
     "canonical":    "#1B9ECA",
     "strand_bias":  "#8D80C6",
+    "gc":           "#E69F00",
+    "entropy":      "#CC79A7",
+    "its":          "#A0522D",
     "no_data":      "#e0e0e0",
 }
 
@@ -449,11 +452,14 @@ def _hide_x_axis(ax):
     ax.spines["bottom"].set_visible(False)
 
 
-def _style_fraction_axis(ax, label=None):
-    """Style 0..1 quantitative tracks with minimal ticks."""
-    ax.set_ylim(0, 1.02)
-    ax.set_yticks([0.0, 0.5, 1.0])
-    ax.set_yticklabels(["0", "0.5", "1"])
+def _style_fraction_axis(ax, label=None, y_max=1.0):
+    """Style quantitative tracks with minimal ticks."""
+    ax.set_ylim(0, y_max * 1.02)
+    mid = y_max / 2
+    ax.set_yticks([0.0, mid, y_max])
+    mid_str = f"{mid:g}"
+    max_str = f"{y_max:g}"
+    ax.set_yticklabels(["0", mid_str, max_str])
     ax.tick_params(axis="y", length=2.0, width=0.45, pad=2.2,
                    labelsize=5.5, colors="#555555")
     ax.spines["left"].set_visible(True)
@@ -1261,7 +1267,7 @@ def clip_bedgraph(bg_tuple, view_start, view_end):
 
 
 def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, label=None,
-                       telomere_present=True):
+                       telomere_present=True, its_blocks_list=None):
     """Draw telomere blocks as a thin track on a backbone line."""
     backbone_y = 0.5
     display_start, display_end = _project_terminal_interval(
@@ -1286,6 +1292,23 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, l
         rect.set_rasterized(True)
         ax.add_patch(rect)
 
+    if its_blocks_list:
+        for b in its_blocks_list:
+            if b["end"] <= view_start or b["start"] >= view_end:
+                continue
+            cs = max(b["start"], view_start)
+            ce = min(b["end"], view_end)
+            ds, de = _project_terminal_interval(cs, ce, chrom_size, arm)
+            if de < ds:
+                ds, de = de, ds
+            rect = Rectangle(
+                (ds, backbone_y - 0.04), de - ds, 0.08,
+                facecolor=COLORS["its"], edgecolor=COLORS["its"],
+                alpha=0.75, linewidth=0.3, hatch="///", zorder=3,
+            )
+            rect.set_rasterized(True)
+            ax.add_patch(rect)
+
     ax.set_ylim(0.28, 0.72)
     ax.set_yticks([])
     ax.spines["left"].set_visible(False)
@@ -1301,8 +1324,8 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, l
     return True
 
 
-def _draw_fraction_track(ax, track_data, view_start, view_end, chrom_size, arm, color, label=None):
-    """Draw a quantitative 0..1 track as a thin step plot with light fill."""
+def _draw_fraction_track(ax, track_data, view_start, view_end, chrom_size, arm, color, label=None, y_max=1.0):
+    """Draw a quantitative track as a thin step plot with light fill."""
     starts, ends, values = clip_bedgraph(track_data, view_start, view_end)
     if len(starts) == 0:
         ax.set_visible(False)
@@ -1331,7 +1354,7 @@ def _draw_fraction_track(ax, track_data, view_start, view_end, chrom_size, arm, 
         ax.plot(xs, ys, drawstyle="steps-post", color=color,
                 linewidth=0.6, rasterized=True)
 
-    _style_fraction_axis(ax, label)
+    _style_fraction_axis(ax, label, y_max=y_max)
     return True
 
 
@@ -1371,15 +1394,19 @@ def _hide_panel(ax, message="No telomere"):
 
 
 def plot_terminal_zoom(chrom, chrom_size, blocks_list,
-                       density_data=None, canonical_data=None, strand_data=None):
+                       density_data=None, canonical_data=None, strand_data=None,
+                       its_blocks_list=None, gc_data=None, entropy_data=None):
     """Two-column terminal zoom: p-end (left) and q-end (right).
 
-    Each column shows up to 4 tracks (blocks, density, canonical ratio, strand bias).
+    Each column shows tracks (blocks, density, canonical ratio, strand bias, GC, entropy).
     If windows overlap on a short chromosome, a single merged panel is used.
     """
     has_density = density_data is not None and len(density_data[0]) > 0
     has_canonical = canonical_data is not None and len(canonical_data[0]) > 0
     has_strand = strand_data is not None and len(strand_data[0]) > 0
+    has_its = its_blocks_list is not None and len(its_blocks_list) > 0
+    has_gc = gc_data is not None and len(gc_data[0]) > 0
+    has_entropy = entropy_data is not None and len(entropy_data[0]) > 0
     p_has_telomere = any(b["label"] in ("p", "b") for b in blocks_list)
     q_has_telomere = any(b["label"] in ("q", "b") for b in blocks_list)
 
@@ -1397,19 +1424,25 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
         track_specs.append(("canonical", canonical_data))
     if has_strand:
         track_specs.append(("strand", strand_data))
+    if has_gc:
+        track_specs.append(("gc", gc_data))
+    if has_entropy:
+        track_specs.append(("entropy", entropy_data))
 
     n_tracks = len(track_specs)
 
     n_cols = 1 if merged else 2
     height_map = {
-        "blocks": 0.18,
-        "density": 0.30,
+        "blocks":    0.18,
+        "density":   0.30,
         "canonical": 0.30,
-        "strand": 0.30,
+        "strand":    0.30,
+        "gc":        0.30,
+        "entropy":   0.30,
     }
     height_ratios = [height_map[name] for name, _ in track_specs]
 
-    fig_height = 3.18
+    fig_height = 2.2 + 0.25 * n_tracks
     fig, axes = plt.subplots(
         n_tracks, n_cols,
         figsize=(FIG_WIDTH_DOUBLE, fig_height),
@@ -1458,6 +1491,7 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
                     ax, blocks_list, view_start, view_end, chrom_size, arm,
                     label="Blocks" if show_label else None,
                     telomere_present=telomere_present,
+                    its_blocks_list=its_blocks_list if has_its else None,
                 )
             elif track_name == "density":
                 visible = _draw_fraction_track(
@@ -1472,6 +1506,22 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
                     chrom_size, arm,
                     COLORS["canonical"],
                     label="Canonical\nratio" if show_label else None,
+                )
+            elif track_name == "gc":
+                starts, ends, values = track_data
+                visible = _draw_fraction_track(
+                    ax, (starts, ends, values / 100.0), view_start, view_end,
+                    chrom_size, arm,
+                    COLORS["gc"],
+                    label="GC\ncontent" if show_label else None,
+                )
+            elif track_name == "entropy":
+                visible = _draw_fraction_track(
+                    ax, track_data, view_start, view_end,
+                    chrom_size, arm,
+                    COLORS["entropy"],
+                    label="Shannon\nentropy" if show_label else None,
+                    y_max=2.0,
                 )
             else:
                 visible = _draw_strand_track(
@@ -1519,7 +1569,12 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
                label={"p": "p arm", "q": "q arm", "b": "balanced"}[lab])
         for lab in labels_present
     ]
-    if block_handles and (merged or "b" in labels_present):
+    if has_its:
+        block_handles.append(
+            Line2D([0], [0], marker="s", color="w", markerfacecolor=COLORS["its"],
+                   markersize=4.5, linestyle="none", label="ITS")
+        )
+    if block_handles and (merged or "b" in labels_present or has_its):
         fig.legend(
             handles=block_handles, loc="upper left",
             bbox_to_anchor=(0.18, 0.986), fontsize=5.6,
@@ -1575,6 +1630,9 @@ def main():
     density_data = parse_bedgraph(files["density"]) if "density" in files else None
     canonical_data = parse_bedgraph(files["canonical_ratio"]) if "canonical_ratio" in files else None
     strand_data  = parse_bedgraph(files["strand_ratio"]) if "strand_ratio" in files else None
+    its_blocks = parse_terminal_bed(files["interstitial"]) if "interstitial" in files else None
+    gc_data = parse_bedgraph(files["gc"]) if "gc" in files else None
+    entropy_data = parse_bedgraph(files["entropy"]) if "entropy" in files else None
 
     chrom_sizes = get_chrom_sizes(blocks, density_data, canonical_data, strand_data)
 
@@ -1625,13 +1683,17 @@ def main():
             den = density_data.get(chrom) if density_data else None
             can = canonical_data.get(chrom) if canonical_data else None
             strand = strand_data.get(chrom) if strand_data else None
+            its = its_blocks.get(chrom, []) if its_blocks else None
+            gc = gc_data.get(chrom) if gc_data else None
+            ent = entropy_data.get(chrom) if entropy_data else None
 
             safe_name = _sanitize_filename(chrom)
             path = os.path.join(out_dir, f"teloscope_{safe_name}.png")
             ok, error_text = _save_figure_with_fallback(
                 lambda fig, path=path: fig.savefig(path, dpi=args.dpi),
-                lambda chrom=chrom, csize=csize, blist=blist, den=den, can=can, strand=strand:
-                    plot_terminal_zoom(chrom, csize, blist, den, can, strand),
+                lambda chrom=chrom, csize=csize, blist=blist, den=den, can=can, strand=strand,
+                       its=its, gc=gc, ent=ent:
+                    plot_terminal_zoom(chrom, csize, blist, den, can, strand, its, gc, ent),
                 chrom,
                 f"Failed to render the terminal zoom for {chrom}. A placeholder image was written instead.",
             )
@@ -1666,11 +1728,15 @@ def main():
                 den = density_data.get(chrom) if density_data else None
                 can = canonical_data.get(chrom) if canonical_data else None
                 strand = strand_data.get(chrom) if strand_data else None
+                its = its_blocks.get(chrom, []) if its_blocks else None
+                gc = gc_data.get(chrom) if gc_data else None
+                ent = entropy_data.get(chrom) if entropy_data else None
 
                 ok, error_text = _save_figure_with_fallback(
                     lambda fig: pdf.savefig(fig),
-                    lambda chrom=chrom, csize=csize, blist=blist, den=den, can=can, strand=strand:
-                        plot_terminal_zoom(chrom, csize, blist, den, can, strand),
+                    lambda chrom=chrom, csize=csize, blist=blist, den=den, can=can, strand=strand,
+                           its=its, gc=gc, ent=ent:
+                        plot_terminal_zoom(chrom, csize, blist, den, can, strand, its, gc, ent),
                     chrom,
                     f"Failed to render the terminal zoom for {chrom}. A placeholder page was written instead.",
                 )
