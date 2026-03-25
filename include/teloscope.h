@@ -121,10 +121,10 @@ struct WindowData {
     uint16_t nonCanonicalCounts = 0;
     uint16_t fwdCounts = 0;
     uint16_t revCounts = 0;
-    float canonicalDensity = 0.0f;
-    float nonCanonicalDensity = 0.0f;
-    float fwdDensity = 0.0f;
-    float revDensity = 0.0f;
+    uint32_t canonicalCovered = 0;
+    uint32_t nonCanonicalCovered = 0;
+    uint32_t fwdCovered = 0;
+    uint32_t revCovered = 0;
     bool hasCanDimer = false; 
     
     WindowData() : windowStart(0), currentWindowSize(0), gcContent(0.0f), shannonEntropy(0.0f) {}

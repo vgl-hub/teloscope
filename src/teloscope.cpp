@@ -401,13 +401,6 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
     uint64_t lastCanonicalPos = 0;
     bool needMatchSeq = userInput.outMatches;
 
-    // density lookup by match length
-    float densityByLen[256] = {};
-    float invWindowSize = 100.0f / window.size();
-    for (uint16_t len = 0; len <= longestPatternSize; ++len) {
-        densityByLen[len] = len * invWindowSize;
-    }
-
     // terminal status
     uint64_t windowEnd = windowStart + window.size();
     uint64_t terminalEnd = (segmentSize > terminalLimit) ? (segmentSize - terminalLimit) : 0;
@@ -455,7 +448,6 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                 uint16_t matchLen = static_cast<uint16_t>(j - i + 1);
                 bool isForward = trie.isForward(current);
                 bool isCanonical = trie.isCanonical(current);
-                float densityGain = densityByLen[matchLen];
                 uint64_t matchPos = absPos + windowStart + i;
 
                 bool isTerminal;
@@ -495,11 +487,11 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                 if (alwaysMainWindow || j >= overlapSize) {
                     if (isCanonical) {
                         windowData.canonicalCounts++;
-                        windowData.canonicalDensity += densityGain;
+                        windowData.canonicalCovered += matchLen;
                         segmentData.canonicalMatches.push_back(matchInfo);
                     } else {
                         windowData.nonCanonicalCounts++;
-                        windowData.nonCanonicalDensity += densityGain;
+                        windowData.nonCanonicalCovered += matchLen;
                         if (isTerminal) {
                             segmentData.nonCanonicalMatches.push_back(matchInfo);
                         }
@@ -508,11 +500,11 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                     // route by strand
                     if (isForward) {
                         windowData.fwdCounts++;
-                        windowData.fwdDensity += densityGain;
+                        windowData.fwdCovered += matchLen;
                         segmentData.fwdMatches.push_back(matchInfo);
                     } else {
                         windowData.revCounts++;
-                        windowData.revDensity += densityGain;
+                        windowData.revCovered += matchLen;
                         segmentData.revMatches.push_back(matchInfo);
                     }
                     segmentData.allMatches.push_back(matchInfo);
@@ -522,19 +514,19 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                 if (hasOverlap && i >= step) {
                     if (isCanonical) {
                         nextOverlapData.canonicalCounts++;
-                        nextOverlapData.canonicalDensity += densityGain;
+                        nextOverlapData.canonicalCovered += matchLen;
                     } else {
                         nextOverlapData.nonCanonicalCounts++;
-                        nextOverlapData.nonCanonicalDensity += densityGain;
+                        nextOverlapData.nonCanonicalCovered += matchLen;
                     }
 
                     // fwd/rev overlap metrics
                     if (isForward) {
                         nextOverlapData.fwdCounts++;
-                        nextOverlapData.fwdDensity += densityGain;
+                        nextOverlapData.fwdCovered += matchLen;
                     } else {
                         nextOverlapData.revCounts++;
-                        nextOverlapData.revDensity += densityGain;
+                        nextOverlapData.revCovered += matchLen;
                     }
                 }
 
@@ -788,16 +780,17 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
             uint64_t windowEnd = window.windowStart + window.currentWindowSize;
 
             if (userInput.outWinRepeats) {
-                float totalDensity = window.fwdDensity + window.revDensity;
-                float canonRatio = (totalDensity > 0.0f)
-                    ? window.canonicalDensity / (window.canonicalDensity + window.nonCanonicalDensity)
+                uint32_t totalCovered = window.fwdCovered + window.revCovered;
+                float totalDensity = static_cast<float>(totalCovered) / window.currentWindowSize;
+                float canonRatio = (totalCovered > 0)
+                    ? static_cast<float>(window.canonicalCovered) / (window.canonicalCovered + window.nonCanonicalCovered)
                     : -1.0f;
-                float strandRatio = (totalDensity > 0.0f)
-                    ? window.fwdDensity / (window.fwdDensity + window.revDensity)
+                float strandRatio = (totalCovered > 0)
+                    ? static_cast<float>(window.fwdCovered) / (window.fwdCovered + window.revCovered)
                     : -1.0f;
 
                 windowDensityFile << header << "\t" << window.windowStart << "\t" << windowEnd
-                                    << "\t" << totalDensity / 100.0f << "\n";
+                                    << "\t" << totalDensity << "\n";
                 windowCanonicalRatioFile << header << "\t" << window.windowStart << "\t" << windowEnd
                                            << "\t" << canonRatio << "\n";
                 windowStrandRatioFile << header << "\t" << window.windowStart << "\t" << windowEnd
