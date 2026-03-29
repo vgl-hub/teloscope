@@ -62,7 +62,7 @@ COLORS = {
     "strand_bias":  "#8D80C6",
     "gc":           "#E69F00",
     "entropy":      "#CC79A7",
-    "its":          "#A0522D",
+    "its":          "#708090",
     "no_data":      "#e0e0e0",
 }
 
@@ -428,9 +428,9 @@ def _bedgraph_to_step(starts, ends, values):
     xs = np.empty(n + 1)
     ys = np.empty(n + 1)
     xs[:n] = starts
-    ys[:n] = np.clip(values, 0, 1)
+    ys[:n] = np.clip(values, 0, None)
     xs[n] = ends[-1]
-    ys[n] = 0
+    ys[n] = values[-1]
     return xs, ys
 
 
@@ -452,14 +452,16 @@ def _hide_x_axis(ax):
     ax.spines["bottom"].set_visible(False)
 
 
-def _style_fraction_axis(ax, label=None, y_max=1.0):
+def _style_fraction_axis(ax, label=None, y_max=1.0, y_min=0.0):
     """Style quantitative tracks with minimal ticks."""
-    ax.set_ylim(0, y_max * 1.02)
-    mid = y_max / 2
-    ax.set_yticks([0.0, mid, y_max])
+    margin = (y_max - y_min) * 0.02
+    ax.set_ylim(y_min - margin, y_max + margin)
+    mid = (y_min + y_max) / 2
+    ax.set_yticks([y_min, mid, y_max])
+    min_str = f"{y_min:g}"
     mid_str = f"{mid:g}"
     max_str = f"{y_max:g}"
-    ax.set_yticklabels(["0", mid_str, max_str])
+    ax.set_yticklabels([min_str, mid_str, max_str])
     ax.tick_params(axis="y", length=2.0, width=0.45, pad=2.2,
                    labelsize=5.5, colors="#555555")
     ax.spines["left"].set_visible(True)
@@ -770,24 +772,31 @@ def _draw_dual_summary_panel(ax, all_segments, telo_segments):
     ax.set_title("Scaffold classification", loc="left", fontsize=6.8, pad=0.0, y=0.99)
 
     plot_rows = [
-        (0.66, "All", all_segments),
-        (0.42, "With telomeres", telo_segments),
+        (0.72, "All", all_segments),
+        (0.52, "With telomeres", telo_segments),
     ]
     for y_pos, _, segments in plot_rows:
         left = 0.0
         for segment in segments:
             _, value, color = segment[:3]
+            cnt = segment[3] if len(segment) > 3 else None
             if value <= 0:
                 continue
             ax.barh(
-                y_pos, value, left=left, height=0.14,
+                y_pos, value, left=left, height=0.10,
                 color=color, edgecolor="white", linewidth=0.6,
                 rasterized=True, zorder=2,
             )
+            if cnt is not None and value >= 5.0:
+                ax.text(
+                    left + value / 2.0, y_pos, str(cnt),
+                    ha="center", va="center",
+                    fontsize=4.8, color="#222222", zorder=3,
+                )
             left += value
 
     ax.set_xlim(0.0, 100.0)
-    ax.set_ylim(0.26, 0.86)
+    ax.set_ylim(0.34, 0.90)
     ax.set_yticks([row[0] for row in plot_rows])
     ax.set_yticklabels([row[1] for row in plot_rows], fontsize=5.6)
     ax.tick_params(axis="y", length=0, pad=3.2)
@@ -1156,6 +1165,7 @@ def plot_assembly_overview(classifications, blocks, chrom_sizes):
         ax_flagged.spines["left"].set_position(("data", 0.0))
         ax_flagged.spines["left"].set_linewidth(0.35)
         ax_flagged.spines["left"].set_color("black")
+        ax_flagged.spines["left"].set_bounds(0, len(label_texts) - 1)
         ax_flagged.spines["bottom"].set_linewidth(0.35)
         ax_flagged.spines["bottom"].set_color("black")
 
@@ -1302,9 +1312,9 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, l
             if de < ds:
                 ds, de = de, ds
             rect = Rectangle(
-                (ds, backbone_y - 0.04), de - ds, 0.08,
-                facecolor=COLORS["its"], edgecolor=COLORS["its"],
-                alpha=0.75, linewidth=0.3, hatch="///", zorder=3,
+                (ds, backbone_y - 0.07), de - ds, 0.14,
+                facecolor=COLORS["its"], edgecolor="none",
+                alpha=0.98, zorder=3,
             )
             rect.set_rasterized(True)
             ax.add_patch(rect)
@@ -1324,7 +1334,7 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, l
     return True
 
 
-def _draw_fraction_track(ax, track_data, view_start, view_end, chrom_size, arm, color, label=None, y_max=1.0):
+def _draw_fraction_track(ax, track_data, view_start, view_end, chrom_size, arm, color, label=None, y_max=1.0, y_min=0.0):
     """Draw a quantitative track as a thin step plot with light fill."""
     starts, ends, values = clip_bedgraph(track_data, view_start, view_end)
     if len(starts) == 0:
@@ -1354,7 +1364,7 @@ def _draw_fraction_track(ax, track_data, view_start, view_end, chrom_size, arm, 
         ax.plot(xs, ys, drawstyle="steps-post", color=color,
                 linewidth=0.6, rasterized=True)
 
-    _style_fraction_axis(ax, label, y_max=y_max)
+    _style_fraction_axis(ax, label, y_max=y_max, y_min=y_min)
     return True
 
 
@@ -1509,11 +1519,25 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
                 )
             elif track_name == "gc":
                 starts, ends, values = track_data
+                gc_frac = values / 100.0
+                clipped_gc = clip_bedgraph((starts, ends, gc_frac), view_start, view_end)
+                gc_lo, gc_hi = 0.0, 1.0
+                if len(clipped_gc[0]) > 0:
+                    finite_vals = clipped_gc[2][np.isfinite(clipped_gc[2])]
+                    if len(finite_vals) > 0:
+                        gc_lo = max(0.0, float(np.min(finite_vals)) - 0.05)
+                        gc_hi = min(1.0, float(np.max(finite_vals)) + 0.05)
+                        if gc_hi - gc_lo < 0.10:
+                            mid_gc = (gc_lo + gc_hi) / 2
+                            gc_lo = max(0.0, mid_gc - 0.05)
+                            gc_hi = min(1.0, mid_gc + 0.05)
                 visible = _draw_fraction_track(
-                    ax, (starts, ends, values / 100.0), view_start, view_end,
+                    ax, (starts, ends, gc_frac), view_start, view_end,
                     chrom_size, arm,
                     COLORS["gc"],
                     label="GC\ncontent" if show_label else None,
+                    y_max=gc_hi,
+                    y_min=gc_lo,
                 )
             elif track_name == "entropy":
                 visible = _draw_fraction_track(
@@ -1522,6 +1546,7 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
                     COLORS["entropy"],
                     label="Shannon\nentropy" if show_label else None,
                     y_max=2.0,
+                    y_min=1.0,
                 )
             else:
                 visible = _draw_strand_track(
