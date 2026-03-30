@@ -212,6 +212,11 @@ int main(int, char **argv) {
         {{"gapped_misassembly_qq.fa"}, {
             "-f testFiles/gapped_misassembly_qq.fa -n",
             "-f testFiles/gapped_misassembly_qq.fa -r -o testFiles/tmp"
+        }},
+        {{"multi_gap_t2t.fa"}, {
+            "-f testFiles/multi_gap_t2t.fa -n",
+            "-f testFiles/multi_gap_t2t.fa -r -o testFiles/tmp",
+            "-f testFiles/multi_gap_t2t.fa -r -g -e -o testFiles/tmp"
         }}
     //  {{set of test file paths}, {list of command line args to run with}}
     };

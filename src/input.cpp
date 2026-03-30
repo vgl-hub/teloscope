@@ -236,8 +236,8 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
             auto inGap = gapIndex.find(cUId)->second;
             gapLen = inGap->getDist(component->start - component->end);
 
+            pathData.gapInfos.push_back({absPos, static_cast<uint32_t>(gapLen)});
             absPos += gapLen;
-            pathData.gaps++;
             
         } else {
         } // need to handle edges, cigars etc
@@ -245,7 +245,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     }
 
     // Filter blocks
-    labelTerminalBlocks(pathData.terminalBlocks, pathData.gaps,
+    labelTerminalBlocks(pathData.terminalBlocks, static_cast<uint16_t>(pathData.gapInfos.size()),
                         pathData.terminalLabel, pathData.scaffoldType,
                         pathData.pathSize, userInput.terminalLimit);
     threadLog.add("\tCompleted walking path:\t" + path->getHeader());

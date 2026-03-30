@@ -56,6 +56,9 @@ $(BUILD):
 $(BINDIR):
 	-mkdir -p $@
 
+test-gaps: head
+	bash scripts/test_gaps_bed.sh
+
 clean:
 	$(RM) -r build
 	$(MAKE) -C $(GFALIBS_DIR) clean
