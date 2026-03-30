@@ -62,21 +62,33 @@ COLORS = {
     "strand_bias":  "#8D80C6",
     "gc":           "#E69F00",
     "entropy":      "#CC79A7",
-    "terminal":     "#4A6FA5",    # matte steel blue
-    "its":          "#D4915E",    # matte terracotta
-    "gap":          "#B8A9C9",    # matte lavender
+    "terminal":     "#4A4A4A",    # dark matte grey
+    "its":          "#8C8C8C",    # medium grey
+    "gap":          "#D6D6D6",    # light grey
     "no_data":      "#e0e0e0",
 }
 
-# Directional symbols for block labels (cytogenetic convention)
-BLOCK_SYMBOLS = {
-    "p": "\u25C0",  # ◀ left-pointing triangle (p-arm = chromosome start)
-    "q": "\u25B6",  # ▶ right-pointing triangle (q-arm = chromosome end)
-    "b": "\u25C6",  # ◆ diamond (balanced = both arms)
+# Marker-based directional symbols for block labels.
+# Using markers avoids font fallback mismatches in exported figures.
+BLOCK_MARKERS = {
+    "p": "<",
+    "q": ">",
+    "b": "D",
 }
 
 OVERVIEW_DASH_STYLE = (0, (2.2, 2.2))
 OVERVIEW_DASH_WIDTH = 0.35
+
+FIGURE_TITLE_SIZE = 9.3
+FIGURE_SUMMARY_SIZE = 6.0
+PANEL_LABEL_SIZE = 8.0
+PANEL_TITLE_SIZE = 6.9
+AXIS_LABEL_SIZE = 6.2
+AXIS_TICK_SIZE = 5.5
+LEGEND_TEXT_SIZE = 5.4
+ANNOTATION_TEXT_SIZE = 4.9
+PLACEHOLDER_TEXT_SIZE = 6.2
+TRACK_LABEL_X = -0.17
 
 def _apply_nature_style():
     """Apply Nature journal rcParams globally."""
@@ -86,14 +98,14 @@ def _apply_nature_style():
         "font.sans-serif":    ["Arial", "Helvetica", "DejaVu Sans"],
         "font.size":          7,
         # Axes
-        "axes.titlesize":     8,
-        "axes.labelsize":     7,
+        "axes.titlesize":     PANEL_TITLE_SIZE,
+        "axes.labelsize":     AXIS_LABEL_SIZE,
         "axes.linewidth":     0.5,
         "axes.spines.top":    False,
         "axes.spines.right":  False,
         # Ticks
-        "xtick.labelsize":    6,
-        "ytick.labelsize":    6,
+        "xtick.labelsize":    AXIS_TICK_SIZE,
+        "ytick.labelsize":    AXIS_TICK_SIZE,
         "xtick.major.width":  0.5,
         "ytick.major.width":  0.5,
         "xtick.major.size":   3,
@@ -104,7 +116,7 @@ def _apply_nature_style():
         "lines.linewidth":    0.8,
         "lines.markersize":   3,
         # Legend
-        "legend.fontsize":    6,
+        "legend.fontsize":    LEGEND_TEXT_SIZE,
         "legend.frameon":     False,
         # Figure
         "figure.dpi":         150,
@@ -134,6 +146,7 @@ def find_files(directory):
     patterns = {
         "terminal":        "*_terminal_telomeres.bed",
         "interstitial":    "*_interstitial_telomeres.bed",
+        "gaps":            "*_gaps.bed",
         "density":         "*_window_repeat_density.bedgraph",
         "canonical_ratio": "*_window_canonical_ratio.bedgraph",
         "strand_ratio":    "*_window_strand_ratio.bedgraph",
@@ -206,6 +219,45 @@ def parse_terminal_bed(path):
         suffix = " (first 3 shown above)" if malformed > 3 else ""
         _warn(f"Skipped {malformed} malformed terminal BED line(s) from '{path}'{suffix}.")
     return dict(blocks)
+
+
+def parse_interval_bed(path):
+    """Parse a simple BED file -> dict[chrom -> list of interval dicts]."""
+    intervals = defaultdict(list)
+    malformed = 0
+    with open(path) as fh:
+        for lineno, line in enumerate(fh, start=1):
+            line = line.strip()
+            if not line or line.startswith("#") or line.startswith("track"):
+                continue
+            parts = line.split("\t")
+            if len(parts) < 3:
+                malformed += 1
+                if malformed <= 3:
+                    _warn(f"{path}:{lineno}: expected at least 3 BED columns, found {len(parts)}; skipping.")
+                continue
+            try:
+                start = int(parts[1])
+                end = int(parts[2])
+            except ValueError as exc:
+                malformed += 1
+                if malformed <= 3:
+                    _warn(f"{path}:{lineno}: invalid BED coordinate ({exc}); skipping.")
+                continue
+            if end <= start:
+                malformed += 1
+                if malformed <= 3:
+                    _warn(f"{path}:{lineno}: invalid interval start={start} end={end}; skipping.")
+                continue
+            intervals[parts[0]].append({
+                "start": start,
+                "end": end,
+                "label": parts[3] if len(parts) > 3 else "",
+            })
+    if malformed:
+        suffix = " (first 3 shown above)" if malformed > 3 else ""
+        _warn(f"Skipped {malformed} malformed BED interval line(s) from '{path}'{suffix}.")
+    return dict(intervals)
 
 
 def _parse_bedgraph_fallback(path):
@@ -446,7 +498,7 @@ def _bedgraph_to_step(starts, ends, values):
 def _panel_label(ax, label, x=-0.05, y=1.15):
     """Add Nature-style panel label (bold lowercase letter, top-left)."""
     ax.text(x, y, label, transform=ax.transAxes,
-            fontsize=8, fontweight="bold", va="top", ha="left")
+            fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="top", ha="left")
 
 
 def _sanitize_filename(name):
@@ -461,6 +513,27 @@ def _hide_x_axis(ax):
     ax.spines["bottom"].set_visible(False)
 
 
+def _set_track_label(ax, label, x=TRACK_LABEL_X):
+    """Keep labels centered to their track while rendering them horizontally."""
+    if label:
+        ax.set_ylabel(label, fontsize=AXIS_LABEL_SIZE, rotation=0,
+                      ha="right", va="center")
+        ax.yaxis.set_label_coords(x, 0.5)
+    else:
+        ax.set_ylabel("")
+
+
+def _draw_block_symbol(ax, x_pos, y_pos, label, zorder):
+    """Draw a consistent marker-based block symbol without font fallback issues."""
+    marker = BLOCK_MARKERS.get(label)
+    if marker is None:
+        return
+    size = 18 if label in {"p", "q"} else 14
+    ax.scatter([x_pos], [y_pos], s=size, marker=marker,
+               c="white", edgecolors="none", linewidths=0,
+               zorder=zorder, rasterized=True)
+
+
 def _style_fraction_axis(ax, label=None, y_max=1.0, y_min=0.0):
     """Style quantitative tracks with minimal ticks."""
     margin = (y_max - y_min) * 0.02
@@ -472,14 +545,11 @@ def _style_fraction_axis(ax, label=None, y_max=1.0, y_min=0.0):
     max_str = f"{y_max:g}"
     ax.set_yticklabels([min_str, mid_str, max_str])
     ax.tick_params(axis="y", length=2.0, width=0.45, pad=2.2,
-                   labelsize=5.5, colors="#555555")
+                   labelsize=AXIS_TICK_SIZE, colors="#555555")
     ax.spines["left"].set_visible(True)
     ax.spines["left"].set_linewidth(0.45)
     ax.spines["left"].set_color("#bcbcbc")
-    if label:
-        ax.set_ylabel(label, fontsize=6.3, labelpad=4.5)
-    else:
-        ax.set_ylabel("")
+    _set_track_label(ax, label)
     _hide_x_axis(ax)
 
 
@@ -582,7 +652,7 @@ def _apply_terminal_x_axis(ax, axis_spec, arm):
     ax.spines["bottom"].set_visible(True)
     ax.spines["bottom"].set_linewidth(0.45)
     ax.spines["bottom"].set_color("#bcbcbc")
-    ax.set_xlabel(axis_spec["xlabel"], fontsize=6.3, labelpad=2.5)
+    ax.set_xlabel(axis_spec["xlabel"], fontsize=AXIS_LABEL_SIZE, labelpad=2.5)
     ax.minorticks_off()
 
 
@@ -698,17 +768,20 @@ def _draw_raincloud_group(ax, values, position, color, rng, vert=False):
             artist.set_linewidth(0.55)
 
 
-def _draw_balanced_legend(ax, handles, y_anchor=0.50, ncol=None, fontsize=4.9):
+def _draw_balanced_legend(ax, handles, y_anchor=0.50, ncol=None, fontsize=LEGEND_TEXT_SIZE,
+                          loc="center", bbox_to_anchor=None, alignment=None):
     """Render a compact two-row legend within a dedicated legend axis."""
     ax.axis("off")
     if not handles:
         return
 
     ncol = ncol or max(1, int(np.ceil(len(handles) / 2.0)))
+    if bbox_to_anchor is None:
+        bbox_to_anchor = (0.5, y_anchor)
     leg = ax.legend(
         handles=handles,
-        loc="center",
-        bbox_to_anchor=(0.5, y_anchor),
+        loc=loc,
+        bbox_to_anchor=bbox_to_anchor,
         ncol=ncol,
         fontsize=fontsize,
         frameon=True,
@@ -724,6 +797,8 @@ def _draw_balanced_legend(ax, handles, y_anchor=0.50, ncol=None, fontsize=4.9):
         labelspacing=0.42,
     )
     leg.get_frame().set_linewidth(0.4)
+    if alignment is not None and hasattr(leg, "_legend_box"):
+        leg._legend_box.align = alignment
 
 
 def _draw_summary_bar(ax, segments, title, x_label, fmt_value, x_formatter=None):
@@ -735,7 +810,7 @@ def _draw_summary_bar(ax, segments, title, x_label, fmt_value, x_formatter=None)
     if total <= 0:
         ax.text(0.5, 0.5, "No classification data",
                 transform=ax.transAxes, ha="center", va="center",
-                fontsize=6.3, color="#999999")
+                fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999")
         ax.set_xticks([])
         ax.set_yticks([])
         ax.spines["left"].set_visible(False)
@@ -758,14 +833,14 @@ def _draw_summary_bar(ax, segments, title, x_label, fmt_value, x_formatter=None)
             ax.text(
                 left + value / 2.0, bar_center, fmt_value(label_value),
                 ha="center", va="center",
-                fontsize=4.8, color="#222222", zorder=3,
+                fontsize=ANNOTATION_TEXT_SIZE, color="#222222", zorder=3,
             )
         left += value
 
     ax.set_xlim(0, total)
     ax.set_ylim(0.055, 0.142)
     ax.set_yticks([])
-    ax.tick_params(axis="x", length=2.0, width=0.45, pad=0.6, labelsize=5.4)
+    ax.tick_params(axis="x", length=2.0, width=0.45, pad=0.6, labelsize=AXIS_TICK_SIZE)
     ax.spines["left"].set_visible(False)
     ax.spines["bottom"].set_visible(True)
     ax.spines["bottom"].set_color("#c7c7c7")
@@ -773,16 +848,17 @@ def _draw_summary_bar(ax, segments, title, x_label, fmt_value, x_formatter=None)
     ax.minorticks_off()
     if x_formatter is not None:
         ax.xaxis.set_major_formatter(x_formatter)
-    ax.set_xlabel(x_label, fontsize=6.0, labelpad=0.15)
+    ax.set_xlabel(x_label, fontsize=AXIS_LABEL_SIZE, labelpad=0.15)
 
 
-def _draw_dual_summary_panel(ax, all_segments, telo_segments):
+def _draw_dual_summary_panel(ax, all_segments, telo_segments, title=None):
     """Draw a single two-row stacked summary panel with a shared percentage axis."""
-    ax.set_title("Scaffold classification", loc="left", fontsize=6.8, pad=0.0, y=0.99)
+    if title:
+        ax.set_title(title, loc="left", fontsize=PANEL_TITLE_SIZE, pad=0.0, y=0.985)
 
     plot_rows = [
-        (0.72, "All", all_segments),
-        (0.52, "With telomeres", telo_segments),
+        (0.70, "All", all_segments),
+        (0.54, "With telomeres", telo_segments),
     ]
     for y_pos, _, segments in plot_rows:
         left = 0.0
@@ -792,7 +868,7 @@ def _draw_dual_summary_panel(ax, all_segments, telo_segments):
             if value <= 0:
                 continue
             ax.barh(
-                y_pos, value, left=left, height=0.10,
+                y_pos, value, left=left, height=0.076,
                 color=color, edgecolor="white", linewidth=0.6,
                 rasterized=True, zorder=2,
             )
@@ -800,19 +876,19 @@ def _draw_dual_summary_panel(ax, all_segments, telo_segments):
                 ax.text(
                     left + value / 2.0, y_pos, str(cnt),
                     ha="center", va="center",
-                    fontsize=4.8, color="#222222", zorder=3,
+                    fontsize=ANNOTATION_TEXT_SIZE, color="#222222", zorder=3,
                 )
             left += value
 
     ax.set_xlim(0.0, 100.0)
-    ax.set_ylim(0.34, 0.90)
+    ax.set_ylim(0.43, 0.81)
     ax.set_yticks([row[0] for row in plot_rows])
-    ax.set_yticklabels([row[1] for row in plot_rows], fontsize=5.6)
+    ax.set_yticklabels([row[1] for row in plot_rows], fontsize=AXIS_TICK_SIZE)
     ax.tick_params(axis="y", length=0, pad=3.2)
-    ax.tick_params(axis="x", length=2.0, width=0.45, pad=0.45, labelsize=5.4)
+    ax.tick_params(axis="x", length=2.0, width=0.45, pad=0.55, labelsize=AXIS_TICK_SIZE)
     ax.xaxis.set_major_locator(ticker.MultipleLocator(25))
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:.0f}%"))
-    ax.set_xlabel("Sequences (%)", fontsize=6.0, labelpad=0.05)
+    ax.set_xlabel("Sequences (%)", fontsize=AXIS_LABEL_SIZE, labelpad=0.45)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_visible(False)
@@ -860,9 +936,9 @@ def _placeholder_figure(title, message):
     ax = fig.add_subplot(111)
     ax.axis("off")
     ax.text(0.01, 0.92, title, transform=ax.transAxes,
-            fontsize=8, fontweight="bold", va="top", ha="left")
+            fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="top", ha="left")
     ax.text(0.01, 0.72, textwrap.fill(message, width=95), transform=ax.transAxes,
-            fontsize=6.5, va="top", ha="left", color="#444444")
+            fontsize=FIGURE_SUMMARY_SIZE, va="top", ha="left", color="#444444")
     fig.subplots_adjust(left=0.03, right=0.98, top=0.95, bottom=0.08)
     return fig
 
@@ -895,7 +971,7 @@ def _save_figure_with_fallback(save_figure, build_figure, title, message_prefix)
 # Tier 1: Assembly overview (two pages)
 # ---------------------------------------------------------------------------
 
-def _draw_flagged_scaffolds_panel(ax, classifications, chrom_sizes, top_n=10):
+def _draw_flagged_scaffolds_panel(ax, classifications, chrom_sizes, top_n=10, title=None):
     """Horizontal bars of Misassembly and Discordant scaffolds ranked by scaffold size."""
     flagged_cats = ["Misassembly", "Gapped Misassembly", "Discordant", "Gapped Discordant"]
     flagged = []
@@ -910,12 +986,13 @@ def _draw_flagged_scaffolds_panel(ax, classifications, chrom_sizes, top_n=10):
     if not flagged_top:
         ax.text(0.5, 0.5, "No flagged scaffolds\n(misassembly / discordant)",
                 transform=ax.transAxes, ha="center", va="center",
-                fontsize=6.0, color="#999999", linespacing=1.4)
+                fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999", linespacing=1.4)
         ax.set_xticks([])
         ax.set_yticks([])
         for spine in ax.spines.values():
             spine.set_visible(False)
-        ax.set_title("Flagged scaffolds", loc="left", fontsize=6.8, pad=0.0, y=0.995)
+        if title:
+            ax.set_title(title, loc="left", fontsize=PANEL_TITLE_SIZE, pad=0.0, y=0.985)
         return
 
     label_texts = []
@@ -942,25 +1019,27 @@ def _draw_flagged_scaffolds_panel(ax, classifications, chrom_sizes, top_n=10):
         ax.text(
             -0.08, y_pos_i, label_text,
             ha="right", va="center",
-            fontsize=4.35, color="#222222", linespacing=1.0,
+            fontsize=4.45, color="#222222", linespacing=1.0,
         )
 
     x_max = max(4.02, max(log_sizes) + 0.12) if log_sizes else 8.0
-    ax.set_ylim(len(label_texts) - 0.45, -0.55)
+    ax.set_ylim(len(label_texts) - 0.45, -0.88)
     ax.set_yticks([])
     ax.set_xlim(-label_space, x_max)
-    ax.set_xlabel("Scaffold size (log\u2081\u2080 bp)", fontsize=6.0)
+    ax.set_xlabel("Scaffold size (log10 bp)", fontsize=AXIS_LABEL_SIZE)
     ax.set_xticks([t for t in [0, 2, 4, 6, 8] if t <= x_max + 0.1])
-    ax.tick_params(axis="x", labelsize=5.4)
+    ax.tick_params(axis="x", labelsize=AXIS_TICK_SIZE)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_visible(True)
     ax.spines["left"].set_position(("data", 0.0))
     ax.spines["left"].set_linewidth(0.35)
     ax.spines["left"].set_color("black")
+    ax.spines["left"].set_bounds(-0.10, len(label_texts) - 0.90)
     ax.spines["bottom"].set_linewidth(0.35)
     ax.spines["bottom"].set_color("black")
-    ax.set_title("Flagged scaffolds", loc="left", fontsize=6.8, pad=0.0, y=0.995)
+    if title:
+        ax.set_title(title, loc="left", fontsize=PANEL_TITLE_SIZE, pad=0.0, y=0.985)
 
 
 def _compute_block_rows(blocks, chrom_sizes):
@@ -1009,16 +1088,16 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
     median_bp = int(round(_median(all_len))) if all_len else None
 
     # ---- Figure layout: a (left column) | b (right column) ----
-    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 3.2))
-    gs = fig.add_gridspec(1, 2, wspace=0.28, width_ratios=[1.0, 0.85])
+    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 3.55))
+    gs = fig.add_gridspec(2, 2, height_ratios=[1.0, 0.22],
+                          width_ratios=[1.0, 0.85], hspace=0.18, wspace=0.28)
 
-    gs_left = gs[0, 0].subgridspec(3, 1, height_ratios=[1.0, 0.12, 0.08], hspace=0.10)
-    ax_summary        = fig.add_subplot(gs_left[0])
-    ax_quality_legend  = fig.add_subplot(gs_left[1])
-    ax_gap_legend      = fig.add_subplot(gs_left[2])
-
+    ax_summary = fig.add_subplot(gs[0, 0])
     ax_flagged_scaffolds = fig.add_subplot(gs[0, 1])
-    fig.subplots_adjust(left=0.096, right=0.962, top=0.86, bottom=0.09)
+    gs_leg = gs[1, :].subgridspec(1, 2, width_ratios=[0.34, 0.66], wspace=0.08)
+    ax_gap_legend = fig.add_subplot(gs_leg[0, 0])
+    ax_quality_legend = fig.add_subplot(gs_leg[0, 1])
+    fig.subplots_adjust(left=0.096, right=0.962, top=0.81, bottom=0.08)
 
     # ---- Panel a: Classification bars ----
     absolute_segments = [
@@ -1041,7 +1120,7 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
         (lab, (100.0 * cnt / total) if total else 0.0, color, cnt)
         for lab, cnt, color in absolute_segments
     ]
-    _draw_dual_summary_panel(ax_summary, absolute_pct_segments, relative_segments)
+    _draw_dual_summary_panel(ax_summary, absolute_pct_segments, relative_segments, title=None)
 
     # ---- Quality legend (5 categories) ----
     quality_handles = [
@@ -1051,29 +1130,43 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
         Patch(facecolor=COLORS["Discordant"],   label="Discordant"),
         Patch(facecolor=COLORS["No telomeres"], label="No telomeres"),
     ]
-    _draw_balanced_legend(ax_quality_legend, quality_handles, y_anchor=0.50, ncol=5, fontsize=5.2)
+    _draw_balanced_legend(
+        ax_quality_legend, quality_handles,
+        loc="lower right", bbox_to_anchor=(1.0, 0.02),
+        ncol=3, fontsize=LEGEND_TEXT_SIZE, alignment="right",
+    )
 
     # ---- Gap legend (gapless / gapped shade key) ----
     gap_handles = [
         Patch(facecolor="#555555", label="Gapless"),
         Patch(facecolor="#cccccc", label="Gapped"),
     ]
-    _draw_balanced_legend(ax_gap_legend, gap_handles, y_anchor=0.50, ncol=2, fontsize=5.2)
+    _draw_balanced_legend(
+        ax_gap_legend, gap_handles,
+        loc="lower left", bbox_to_anchor=(0.0, 0.02),
+        ncol=1, fontsize=LEGEND_TEXT_SIZE, alignment="left",
+    )
 
     # ---- Panel b: Flagged scaffolds (discordant / misassembly by size) ----
-    _draw_flagged_scaffolds_panel(ax_flagged_scaffolds, classifications, chrom_sizes)
+    _draw_flagged_scaffolds_panel(ax_flagged_scaffolds, classifications, chrom_sizes, title=None)
 
     # ---- Titles and panel labels ----
     fig.canvas.draw()
-    label_style = dict(fontsize=8, fontweight="bold", va="bottom", ha="left")
+    label_style = dict(fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="bottom", ha="left")
+    title_style = dict(fontsize=PANEL_TITLE_SIZE, va="bottom", ha="center")
+
+    panel_label_y = 0.825
+    panel_title_y = 0.827
 
     bbox_a = ax_summary.get_position()
-    fig.text(max(0.005, bbox_a.x0 - 0.032), bbox_a.y1 + 0.004, "a", **label_style)
+    fig.text(max(0.005, bbox_a.x0 - 0.032), panel_label_y, "a", **label_style)
+    fig.text((bbox_a.x0 + bbox_a.x1) / 2.0, panel_title_y, "Scaffold classification", **title_style)
     bbox_b = ax_flagged_scaffolds.get_position()
-    fig.text(max(0.005, bbox_b.x0 - 0.032), bbox_b.y1 + 0.004, "b", **label_style)
+    fig.text(max(0.005, bbox_b.x0 - 0.032), panel_label_y, "b", **label_style)
+    fig.text((bbox_b.x0 + bbox_b.x1) / 2.0, panel_title_y, "Flagged scaffolds", **title_style)
 
-    fig.suptitle("Assembly summary", fontsize=9.8, fontweight="bold",
-                 x=0.5, y=0.978, ha="center")
+    fig.suptitle("Assembly summary", fontsize=FIGURE_TITLE_SIZE, fontweight="bold",
+                 x=0.5, y=0.968, ha="center")
     summary_line = (
         f"Scaffolds (n={total_paths:,}, flagged={flagged_total_scaffolds:,}), "
         f"telomere blocks (n={total_blocks:,}, flagged={flagged_total_blocks:,}), "
@@ -1083,8 +1176,8 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
         f"telomere blocks (n={total_blocks:,}, flagged={flagged_total_blocks:,}), "
         "median NA"
     )
-    fig.text(0.5, 0.942, summary_line,
-             ha="center", va="top", fontsize=5.8, color="#444444")
+    fig.text(0.5, 0.918, summary_line,
+             ha="center", va="top", fontsize=FIGURE_SUMMARY_SIZE, color="#444444")
 
     return fig
 
@@ -1112,12 +1205,12 @@ def plot_overview_page2(blocks, chrom_sizes):
     all_len = p_len + q_len + b_len
 
     # ---- Figure layout ----
-    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 3.0))
+    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 3.15))
     gs = fig.add_gridspec(1, 3, wspace=0.30, width_ratios=[1.0, 1.0, 0.80])
     ax_rain = fig.add_subplot(gs[0, 0])
     ax_scatter = fig.add_subplot(gs[0, 1])
     ax_flagged = fig.add_subplot(gs[0, 2])
-    fig.subplots_adjust(left=0.096, right=0.962, top=0.88, bottom=0.13)
+    fig.subplots_adjust(left=0.096, right=0.962, top=0.81, bottom=0.14)
 
     # ---- Panel c: Vertical raincloud ----
     groups = [
@@ -1139,9 +1232,9 @@ def plot_overview_page2(blocks, chrom_sizes):
 
         x_labels = [f"{lbl}\n(n={len(vals)})" for lbl, vals, _ in groups]
         ax_rain.set_xticks(positions)
-        ax_rain.set_xticklabels(x_labels, fontsize=5.4)
+        ax_rain.set_xticklabels(x_labels, fontsize=AXIS_TICK_SIZE)
         ax_rain.tick_params(axis="x", length=2, pad=2.5)
-        ax_rain.tick_params(axis="y", length=2, labelsize=5.4)
+        ax_rain.tick_params(axis="y", length=2, labelsize=AXIS_TICK_SIZE)
         ax_rain.set_xlim(positions.min() - 0.34, positions.max() + 0.30)
         ax_rain.set_box_aspect(1.0)
         ax_rain.set_anchor("S")
@@ -1153,13 +1246,13 @@ def plot_overview_page2(blocks, chrom_sizes):
         median_trans = transforms.blended_transform_factory(ax_rain.transAxes, ax_rain.transData)
         ax_rain.text(1.01, median_log, "median",
                      transform=median_trans, ha="left", va="center",
-                     rotation=90, fontsize=5.2, color="#555555")
-        ax_rain.set_ylabel("Telomere length (log10bp)", fontsize=6.0)
+                     rotation=90, fontsize=LEGEND_TEXT_SIZE, color="#555555")
+        ax_rain.set_ylabel("Telomere length (log10bp)", fontsize=AXIS_LABEL_SIZE)
     else:
         lbl_text = "No labeled telomere blocks" if block_rows else "No telomere blocks"
         ax_rain.text(0.5, 0.5, lbl_text, ha="center", va="center",
-                     transform=ax_rain.transAxes, fontsize=6.0, color="#999999")
-        ax_rain.set_ylabel("Telomere length (log10bp)", fontsize=6.0)
+                     transform=ax_rain.transAxes, fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999")
+        ax_rain.set_ylabel("Telomere length (log10bp)", fontsize=AXIS_LABEL_SIZE)
         ax_rain.set_xticks([])
         ax_rain.set_box_aspect(1.0)
         ax_rain.set_anchor("S")
@@ -1184,8 +1277,8 @@ def plot_overview_page2(blocks, chrom_sizes):
                                edgecolors="white", linewidths=0.28,
                                rasterized=True, label=leg_lbl)
 
-        ax_scatter.set_xlabel("Distance to end (log10bp)", fontsize=6.0)
-        ax_scatter.set_ylabel("Telomere length (kbp)", fontsize=6.0)
+        ax_scatter.set_xlabel("Distance to end (log10bp)", fontsize=AXIS_LABEL_SIZE)
+        ax_scatter.set_ylabel("Telomere length (kbp)", fontsize=AXIS_LABEL_SIZE)
         ax_scatter.set_xticks([0, 1, 2, 3, 4])
         x_right = max(4.12, max_log_x + 0.18)
         ax_scatter.axvspan(3.0, x_right, facecolor="#ededed", linewidth=0, zorder=0)
@@ -1194,10 +1287,10 @@ def plot_overview_page2(blocks, chrom_sizes):
                                                 dtype=np.float64))), 0.0)
         ax_scatter.set_ylim(-0.45, max(1.2, y_max_sc * 1.10))
         ax_scatter.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
-        ax_scatter.tick_params(axis="both", labelsize=5.4)
+        ax_scatter.tick_params(axis="both", labelsize=AXIS_TICK_SIZE)
         ax_scatter.set_box_aspect(1.0)
         ax_scatter.set_anchor("S")
-        leg_d = ax_scatter.legend(loc="upper right", fontsize=5.0,
+        leg_d = ax_scatter.legend(loc="upper right", fontsize=LEGEND_TEXT_SIZE,
                                   frameon=True, facecolor="white", edgecolor="black",
                                   framealpha=1.0, fancybox=False,
                                   handletextpad=0.35, borderaxespad=0.2)
@@ -1207,9 +1300,9 @@ def plot_overview_page2(blocks, chrom_sizes):
     else:
         ax_scatter.text(0.5, 0.5, "No telomere blocks",
                         transform=ax_scatter.transAxes,
-                        ha="center", va="center", fontsize=7, color="#999999")
-        ax_scatter.set_xlabel("Distance to end (log10bp)", fontsize=6.0)
-        ax_scatter.set_ylabel("Telomere length (kbp)", fontsize=6.0)
+                        ha="center", va="center", fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999")
+        ax_scatter.set_xlabel("Distance to end (log10bp)", fontsize=AXIS_LABEL_SIZE)
+        ax_scatter.set_ylabel("Telomere length (kbp)", fontsize=AXIS_LABEL_SIZE)
         ax_scatter.set_box_aspect(1.0)
         ax_scatter.set_anchor("S")
 
@@ -1217,7 +1310,7 @@ def plot_overview_page2(blocks, chrom_sizes):
     if not block_rows:
         ax_flagged.text(0.5, 0.5, "No telomere blocks",
                         transform=ax_flagged.transAxes,
-                        ha="center", va="center", fontsize=6.0, color="#999999")
+                        ha="center", va="center", fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999")
         ax_flagged.set_xticks([])
         ax_flagged.set_yticks([])
         for spine in ax_flagged.spines.values():
@@ -1227,7 +1320,7 @@ def plot_overview_page2(blocks, chrom_sizes):
             0.5, 0.5,
             f"No flagged blocks\n(distance > {FLAGGED_DISTANCE_BP // 1000} kbp)",
             transform=ax_flagged.transAxes,
-            ha="center", va="center", fontsize=6.0, color="#999999", linespacing=1.4,
+            ha="center", va="center", fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999", linespacing=1.4,
         )
         ax_flagged.set_xticks([])
         ax_flagged.set_yticks([])
@@ -1251,21 +1344,22 @@ def plot_overview_page2(blocks, chrom_sizes):
         for y_pos_i, label_text in zip(y_pos, label_texts):
             ax_flagged.text(-0.08, y_pos_i, label_text,
                             ha="right", va="center",
-                            fontsize=4.35, color="#222222", linespacing=1.0)
+                            fontsize=4.45, color="#222222", linespacing=1.0)
 
         x_max = max(4.02, max(log_lengths) + 0.12) if log_lengths else 4.02
-        ax_flagged.set_ylim(len(label_texts) - 0.45, -0.55)
+        ax_flagged.set_ylim(len(label_texts) - 0.45, -0.88)
         ax_flagged.set_yticks([])
         ax_flagged.set_xlim(-label_space, x_max)
-        ax_flagged.set_xlabel("Flagged length (log10bp)", fontsize=6.0)
+        ax_flagged.set_xlabel("Flagged length (log10bp)", fontsize=AXIS_LABEL_SIZE)
         ax_flagged.set_xticks([0, 1, 2, 3, 4])
-        ax_flagged.tick_params(axis="x", labelsize=5.4)
+        ax_flagged.tick_params(axis="x", labelsize=AXIS_TICK_SIZE)
         ax_flagged.spines["top"].set_visible(False)
         ax_flagged.spines["right"].set_visible(False)
         ax_flagged.spines["left"].set_visible(True)
         ax_flagged.spines["left"].set_position(("data", 0.0))
         ax_flagged.spines["left"].set_linewidth(0.35)
         ax_flagged.spines["left"].set_color("black")
+        ax_flagged.spines["left"].set_bounds(-0.10, len(label_texts) - 0.90)
         ax_flagged.spines["bottom"].set_linewidth(0.35)
         ax_flagged.spines["bottom"].set_color("black")
 
@@ -1273,19 +1367,19 @@ def plot_overview_page2(blocks, chrom_sizes):
 
     # ---- Panel labels and titles ----
     fig.canvas.draw()
-    label_style = dict(fontsize=8, fontweight="bold", va="bottom", ha="left")
-    title_style = dict(fontsize=6.8, ha="center", va="bottom")
+    label_style = dict(fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="bottom", ha="left")
+    title_style = dict(fontsize=PANEL_TITLE_SIZE, ha="center", va="bottom")
 
     panel_meta = [
         (ax_rain,    "c", "Length by arm"),
         (ax_scatter, "d", "Telomere positioning"),
         (ax_flagged, "e", "Flagged telomeres"),
     ]
-    title_y = max(ax.get_position().y1 for ax, _, _ in panel_meta) - 0.016
+    title_y = 0.845
     for ax, lbl, title in panel_meta:
         bbox = ax.get_position()
-        fig.text(max(0.005, bbox.x0 - 0.032), title_y + 0.002, lbl, **label_style)
-        fig.text((bbox.x0 + bbox.x1) / 2.0, title_y + 0.004, title, **title_style)
+        fig.text(max(0.005, bbox.x0 - 0.032), title_y, lbl, **label_style)
+        fig.text((bbox.x0 + bbox.x1) / 2.0, title_y + 0.002, title, **title_style)
 
     return fig
 
@@ -1391,10 +1485,7 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, l
         rect.set_rasterized(True)
         ax.add_patch(rect)
         if (de - ds) / view_span >= 0.015:
-            symbol = BLOCK_SYMBOLS.get(b["label"], b["label"])
-            ax.text((ds + de) / 2, backbone_y, symbol,
-                    ha="center", va="center", fontsize=4.5,
-                    color="white", fontweight="bold", zorder=4)
+            _draw_block_symbol(ax, (ds + de) / 2, backbone_y, b["label"], zorder=4)
 
     # ---- ITS blocks ----
     if its_blocks_list:
@@ -1414,10 +1505,7 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, l
             rect.set_rasterized(True)
             ax.add_patch(rect)
             if (de - ds) / view_span >= 0.015:
-                symbol = BLOCK_SYMBOLS.get(b.get("label", ""), b.get("label", ""))
-                ax.text((ds + de) / 2, backbone_y, symbol,
-                        ha="center", va="center", fontsize=4.5,
-                        color="white", fontweight="bold", zorder=5)
+                _draw_block_symbol(ax, (ds + de) / 2, backbone_y, b.get("label", ""), zorder=5)
 
     # ---- Gap placeholders (thin light-grey vertical lines) ----
     if gap_blocks_list:
@@ -1437,13 +1525,10 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, l
     ax.set_yticks([])
     ax.spines["left"].set_visible(False)
     ax.spines["bottom"].set_visible(False)
-    if label:
-        ax.set_ylabel(label, fontsize=6.3, labelpad=3)
-    else:
-        ax.set_ylabel("")
+    _set_track_label(ax, label)
     if not telomere_present:
         ax.text(0.5, 0.84, "No telomere", transform=ax.transAxes,
-                ha="center", va="center", fontsize=6.3, color="#999999")
+                ha="center", va="center", fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999")
     _hide_x_axis(ax)
     return True
 
@@ -1514,12 +1599,13 @@ def _hide_panel(ax, message="No telomere"):
     ax.set_xticks([])
     ax.set_yticks([])
     ax.text(0.5, 0.5, message, transform=ax.transAxes,
-            ha="center", va="center", fontsize=7, color="#bbbbbb")
+            ha="center", va="center", fontsize=PLACEHOLDER_TEXT_SIZE, color="#bbbbbb")
 
 
 def plot_terminal_zoom(chrom, chrom_size, blocks_list,
                        density_data=None, canonical_data=None, strand_data=None,
-                       its_blocks_list=None, gc_data=None, entropy_data=None):
+                       its_blocks_list=None, gc_data=None, entropy_data=None,
+                       gap_blocks_list=None):
     """Two-column terminal zoom: p-end (left) and q-end (right).
 
     Each column shows tracks (blocks, density, canonical ratio, strand bias, GC, entropy).
@@ -1576,7 +1662,7 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
         sharey="row",
     )
 
-    fig.subplots_adjust(left=0.095, right=0.97, top=0.785, bottom=0.16)
+    fig.subplots_adjust(left=0.145, right=0.97, top=0.775, bottom=0.16)
 
     # Determine which columns to draw
     if merged:
@@ -1616,20 +1702,21 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
                     label="Blocks" if show_label else None,
                     telomere_present=telomere_present,
                     its_blocks_list=its_blocks_list if has_its else None,
+                    gap_blocks_list=gap_blocks_list,
                 )
             elif track_name == "density":
                 visible = _draw_fraction_track(
                     ax, track_data, view_start, view_end,
                     chrom_size, arm,
                     COLORS["density"],
-                    label="Repeat\ndensity" if show_label else None,
+                    label="Repeat density" if show_label else None,
                 )
             elif track_name == "canonical":
                 visible = _draw_fraction_track(
                     ax, track_data, view_start, view_end,
                     chrom_size, arm,
                     COLORS["canonical"],
-                    label="Canonical\nratio" if show_label else None,
+                    label="Canonical ratio" if show_label else None,
                 )
             elif track_name == "gc":
                 starts, ends, values = track_data
@@ -1638,7 +1725,7 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
                     ax, (starts, ends, gc_frac), view_start, view_end,
                     chrom_size, arm,
                     COLORS["gc"],
-                    label="GC\ncontent" if show_label else None,
+                    label="GC content" if show_label else None,
                     y_max=1.0,
                     y_min=0.0,
                 )
@@ -1647,7 +1734,7 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
                     ax, track_data, view_start, view_end,
                     chrom_size, arm,
                     COLORS["entropy"],
-                    label="Shannon\nentropy" if show_label else None,
+                    label="Shannon entropy" if show_label else None,
                     y_max=2.0,
                     y_min=1.0,
                 )
@@ -1655,7 +1742,7 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
                 visible = _draw_strand_track(
                     ax, track_data, view_start, view_end,
                     chrom_size, arm,
-                    label="Strand\nbias" if show_label else None,
+                    label="Strand bias" if show_label else None,
                 )
 
             if visible:
@@ -1684,18 +1771,18 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
 
     # Column titles
     if merged:
-        axes[0][0].set_title("Full scaffold", fontsize=7, pad=3)
+        axes[0][0].set_title("Full scaffold", fontsize=PANEL_TITLE_SIZE, pad=3)
     else:
         if n_cols == 2:
-            axes[0][0].set_title("p-arm", fontsize=7, pad=3)
-            axes[0][1].set_title("q-arm", fontsize=7, pad=3)
+            axes[0][0].set_title("p-arm", fontsize=PANEL_TITLE_SIZE, pad=3)
+            axes[0][1].set_title("q-arm", fontsize=PANEL_TITLE_SIZE, pad=3)
 
     if not merged and n_cols == 2:
-        fig.text(0.033, 0.835, "a", fontsize=8, fontweight="bold", va="bottom", ha="left")
-        fig.text(0.533, 0.835, "b", fontsize=8, fontweight="bold", va="bottom", ha="left")
+        fig.text(0.033, 0.825, "a", fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="bottom", ha="left")
+        fig.text(0.533, 0.825, "b", fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="bottom", ha="left")
 
     fig.suptitle(f"{chrom}  ({_fmt_bp(chrom_size)})",
-                 fontsize=8, fontweight="bold", y=0.965, x=0.5, ha="center")
+                 fontsize=PANEL_LABEL_SIZE, fontweight="bold", y=0.958, x=0.5, ha="center")
     return fig
 
 
@@ -1739,6 +1826,7 @@ def main():
     canonical_data = parse_bedgraph(files["canonical_ratio"]) if "canonical_ratio" in files else None
     strand_data  = parse_bedgraph(files["strand_ratio"]) if "strand_ratio" in files else None
     its_blocks = parse_terminal_bed(files["interstitial"]) if "interstitial" in files else None
+    gap_blocks = parse_interval_bed(files["gaps"]) if "gaps" in files else None
     gc_data = parse_bedgraph(files["gc"]) if "gc" in files else None
     entropy_data = parse_bedgraph(files["entropy"]) if "entropy" in files else None
 
@@ -1805,6 +1893,7 @@ def main():
             can = canonical_data.get(chrom) if canonical_data else None
             strand = strand_data.get(chrom) if strand_data else None
             its = its_blocks.get(chrom, []) if its_blocks else None
+            gaps = gap_blocks.get(chrom, []) if gap_blocks else None
             gc = gc_data.get(chrom) if gc_data else None
             ent = entropy_data.get(chrom) if entropy_data else None
 
@@ -1813,8 +1902,8 @@ def main():
             ok, error_text = _save_figure_with_fallback(
                 lambda fig, path=path: fig.savefig(path, dpi=args.dpi),
                 lambda chrom=chrom, csize=csize, blist=blist, den=den, can=can, strand=strand,
-                       its=its, gc=gc, ent=ent:
-                    plot_terminal_zoom(chrom, csize, blist, den, can, strand, its, gc, ent),
+                       its=its, gc=gc, ent=ent, gaps=gaps:
+                    plot_terminal_zoom(chrom, csize, blist, den, can, strand, its, gc, ent, gaps),
                 chrom,
                 f"Failed to render the terminal zoom for {chrom}. A placeholder image was written instead.",
             )
@@ -1862,14 +1951,15 @@ def main():
                 can = canonical_data.get(chrom) if canonical_data else None
                 strand = strand_data.get(chrom) if strand_data else None
                 its = its_blocks.get(chrom, []) if its_blocks else None
+                gaps = gap_blocks.get(chrom, []) if gap_blocks else None
                 gc = gc_data.get(chrom) if gc_data else None
                 ent = entropy_data.get(chrom) if entropy_data else None
 
                 ok, error_text = _save_figure_with_fallback(
                     lambda fig: pdf.savefig(fig),
                     lambda chrom=chrom, csize=csize, blist=blist, den=den, can=can, strand=strand,
-                           its=its, gc=gc, ent=ent:
-                        plot_terminal_zoom(chrom, csize, blist, den, can, strand, its, gc, ent),
+                           its=its, gc=gc, ent=ent, gaps=gaps:
+                        plot_terminal_zoom(chrom, csize, blist, den, can, strand, its, gc, ent, gaps),
                     chrom,
                     f"Failed to render the terminal zoom for {chrom}. A placeholder page was written instead.",
                 )
