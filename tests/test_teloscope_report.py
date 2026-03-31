@@ -122,7 +122,7 @@ class TeloscopeReportTests(unittest.TestCase):
             self.assertEqual(label.get_ha(), "right")
             self.assertLess(max(right_edges) - min(right_edges), 0.1)
 
-    def test_terminal_gap_placeholders_are_rendered_on_blocks_track(self):
+    def test_terminal_gap_intervals_are_rendered_as_light_gray_bars(self):
         chrom_size = 3_100
         fig = REPORT.plot_terminal_zoom(
             "chrGap",
@@ -135,10 +135,12 @@ class TeloscopeReportTests(unittest.TestCase):
         )
         self.addCleanup(REPORT.plt.close, fig)
 
-        for ax in fig.axes[:2]:
-            gap_lines = [line for line in ax.lines if line.get_color() == REPORT.COLORS["gap"]]
-            self.assertEqual(len(gap_lines), 1)
-            self.assertEqual(tuple(float(v) for v in gap_lines[0].get_xdata()), (1550.0, 1550.0))
+        gap_patches = [
+            patch for patch in fig.axes[0].patches
+            if float(patch.get_x()) == 1500.0 and float(patch.get_width()) == 100.0
+        ]
+        self.assertEqual(len(gap_patches), 1)
+        self.assertEqual(gap_patches[0].get_facecolor(), (0.8392156862745098, 0.8392156862745098, 0.8392156862745098, 0.98))
 
     def test_overview_legends_form_centered_shared_group(self):
         blocks = {

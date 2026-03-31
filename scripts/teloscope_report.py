@@ -1546,7 +1546,7 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, l
     Nature-style monochrome gradient:
       terminal blocks → COLORS["terminal"] (dark)
       ITS blocks      → COLORS["its"]      (medium grey)
-      gap placeholders→ COLORS["gap"]      (light grey vertical line)
+      gap blocks      → COLORS["gap"]      (light grey)
     p/q arm letters are centered on each block when the block is wide enough.
     """
     backbone_y = 0.5
@@ -1593,7 +1593,7 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, l
             if _block_symbol_fits(de - ds, view_span, b.get("label", "")):
                 _draw_block_symbol(ax, (ds + de) / 2, backbone_y, b.get("label", ""), zorder=5)
 
-    # ---- Gap placeholders (thin light-grey vertical lines) ----
+    # ---- Gap blocks ----
     if gap_blocks_list:
         for b in gap_blocks_list:
             if b["end"] <= view_start or b["start"] >= view_end:
@@ -1603,9 +1603,12 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, l
             ds, de = _project_terminal_interval(cs, ce, chrom_size, arm)
             if de < ds:
                 ds, de = de, ds
-            mid = (ds + de) / 2
-            ax.plot([mid, mid], [backbone_y - 0.07, backbone_y + 0.07],
-                    color=COLORS["gap"], linewidth=0.6, solid_capstyle="round", zorder=4)
+            rect = Rectangle(
+                (ds, backbone_y - 0.07), de - ds, 0.14,
+                facecolor=COLORS["gap"], edgecolor="none",
+                alpha=0.98, zorder=4,
+            )
+            ax.add_patch(rect)
 
     ax.set_ylim(0.28, 0.72)
     ax.set_yticks([])
