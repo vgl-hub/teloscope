@@ -100,6 +100,46 @@ class TeloscopeReportTests(unittest.TestCase):
 
         self.assertEqual((line_min, line_max), (min(xlim), max(xlim)))
 
+    def test_terminal_track_labels_right_align_multiline_rows(self):
+        chrom, blocks, chrom_sizes, bedgraph = _synthetic_terminal_dataset()
+        fig = REPORT.plot_terminal_zoom(
+            chrom,
+            chrom_sizes[chrom],
+            blocks[chrom],
+            density_data=bedgraph[chrom],
+            canonical_data=bedgraph[chrom],
+            strand_data=bedgraph[chrom],
+        )
+        self.addCleanup(REPORT.plt.close, fig)
+        fig.canvas.draw()
+
+        renderer = fig.canvas.get_renderer()
+        for label_text in ("Repeat\ndensity", "Canonical\nratio", "Strand\nbias"):
+            label = next(ax.yaxis.label for ax in fig.axes if ax.yaxis.label.get_text() == label_text)
+            _, lines, _ = label._get_layout(renderer)
+            right_edges = [float(x + size[0]) for _, size, x, _ in lines]
+
+            self.assertEqual(label.get_ha(), "right")
+            self.assertLess(max(right_edges) - min(right_edges), 0.1)
+
+    def test_terminal_gap_placeholders_are_rendered_on_blocks_track(self):
+        chrom_size = 3_100
+        fig = REPORT.plot_terminal_zoom(
+            "chrGap",
+            chrom_size,
+            [
+                _block(0, 600, "p", chrom_size),
+                _block(2_500, 3_100, "q", chrom_size),
+            ],
+            gap_blocks_list=[{"start": 1_500, "end": 1_600}],
+        )
+        self.addCleanup(REPORT.plt.close, fig)
+
+        for ax in fig.axes[:2]:
+            gap_lines = [line for line in ax.lines if line.get_color() == REPORT.COLORS["gap"]]
+            self.assertEqual(len(gap_lines), 1)
+            self.assertEqual(tuple(float(v) for v in gap_lines[0].get_xdata()), (1550.0, 1550.0))
+
     def test_overview_legends_form_centered_shared_group(self):
         blocks = {
             "chrA": [

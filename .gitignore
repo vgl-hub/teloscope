@@ -91,6 +91,7 @@ err.txt
 TODO.md
 CLAUDE.md
 out
+output/
 .vscode/*
 .vs/
 testFiles/simulate/

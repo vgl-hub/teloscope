@@ -526,11 +526,11 @@ def _hide_x_axis(ax):
 
 
 def _set_track_label(ax, label, x=TRACK_LABEL_X):
-    """Keep labels centered to their track while rendering them horizontally."""
+    """Keep labels centered to their track while right-aligning multiline text."""
     if label:
         ax.set_ylabel(label, fontsize=AXIS_LABEL_SIZE, rotation=0,
                       ha="right", va="center")
-        ax.yaxis.label.set_multialignment("center")
+        ax.yaxis.label.set_multialignment("right")
         ax.yaxis.label.set_linespacing(0.95)
         ax.yaxis.set_label_coords(x, 0.5)
     else:
