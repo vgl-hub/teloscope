@@ -669,6 +669,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
                             std::ofstream& noncanonicalMatchFile,
                             std::ofstream& terminalBlocksFile,
                             std::ofstream& interstitialBlocksFile,
+                            std::ofstream& gapFile,
                             std::ofstream& reportFile) {
 
     // BEDgraph headers
@@ -702,7 +703,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
         const auto& header = pathData.header;
         const auto& windows = pathData.windows;
         const auto& pos = pathData.seqPos;
-        const auto& gaps = pathData.gaps;
+        const uint16_t gaps = static_cast<uint16_t>(pathData.gapInfos.size());
         const auto& pathSize = pathData.pathSize;
 
         // Longest telomere blocks
@@ -756,6 +757,13 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
                                         << block.nonCanonicalCount << "\t"
                                         << pathSize << "\n";
             }
+        }
+
+        // Gap positions
+        for (const auto& gap : pathData.gapInfos) {
+            gapFile << header << "\t"
+                    << gap.start << "\t"
+                    << (gap.start + gap.length) << "\n";
         }
 
         // All canonical and terminal non-canonical matches
@@ -862,7 +870,7 @@ void Teloscope::handleBEDFile() {
     std::vector<char> densityBuf(ioBufSize), canonRatioBuf(ioBufSize), strandRatioBuf(ioBufSize);
     std::vector<char> gcBuf(ioBufSize), entropyBuf(ioBufSize);
     std::vector<char> canonMatchBuf(ioBufSize), noncanonMatchBuf(ioBufSize);
-    std::vector<char> termBlockBuf(ioBufSize), itsBlockBuf(ioBufSize);
+    std::vector<char> termBlockBuf(ioBufSize), itsBlockBuf(ioBufSize), gapBuf(ioBufSize);
     std::vector<char> reportBuf(ioBufSize);
 
     std::ofstream windowDensityFile;
@@ -874,6 +882,7 @@ void Teloscope::handleBEDFile() {
     std::ofstream noncanonicalMatchFile;
     std::ofstream terminalBlocksFile;
     std::ofstream interstitialBlocksFile;
+    std::ofstream gapFile;
     std::ofstream reportFile;
 
     std::string base = userInput.outRoute + "/" + userInput.inSequenceName;
@@ -909,6 +918,7 @@ void Teloscope::handleBEDFile() {
     }
 
     openFile(terminalBlocksFile, base + "_terminal_telomeres.bed", termBlockBuf);
+    openFile(gapFile, base + "_gaps.bed", gapBuf);
     openFile(reportFile, base + "_report.tsv", reportBuf);
 
     writeBEDFile(windowDensityFile, windowCanonicalRatioFile,
@@ -916,7 +926,7 @@ void Teloscope::handleBEDFile() {
                 windowGCFile, windowEntropyFile,
                 canonicalMatchFile, noncanonicalMatchFile,
                 terminalBlocksFile, interstitialBlocksFile,
-                reportFile);
+                gapFile, reportFile);
 
     printSummary(reportFile);
     reportFile.close();
@@ -944,6 +954,7 @@ void Teloscope::handleBEDFile() {
     }
 
     terminalBlocksFile.close();
+    gapFile.close();
 }
 
 

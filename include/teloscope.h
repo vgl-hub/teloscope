@@ -93,6 +93,11 @@ struct MatchInfo {
     std::string matchSeq;
 };
 
+struct GapInfo {
+    uint64_t start = 0;
+    uint32_t length = 0;
+};
+
 
 struct TelomereBlock {
     uint64_t start = 0;
@@ -145,7 +150,7 @@ struct SegmentData {
 struct PathData {
     unsigned int seqPos;
     std::string header;
-    uint16_t gaps = 0;
+    std::vector<GapInfo> gapInfos;
     uint64_t pathSize;
     std::vector<WindowData> windows;
     std::vector<TelomereBlock> terminalBlocks;
@@ -266,6 +271,7 @@ public:
                     std::ofstream& noncanonicalMatchFile,
                     std::ofstream& terminalBlocksFile,
                     std::ofstream& interstitialBlocksFile,
+                    std::ofstream& gapFile,
                     std::ofstream& reportFile);
 
 
