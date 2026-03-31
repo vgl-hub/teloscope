@@ -77,6 +77,12 @@ BLOCK_GLYPHS = {
 
 OVERVIEW_DASH_STYLE = (0, (2.2, 2.2))
 OVERVIEW_DASH_WIDTH = 0.35
+FLAGGED_SCAFFOLD_CATEGORIES = (
+    "Misassembly",
+    "Gapped Misassembly",
+    "Discordant",
+    "Gapped Discordant",
+)
 
 FIGURE_TITLE_SIZE = 9.3
 FIGURE_SUMMARY_SIZE = 6.0
@@ -798,7 +804,7 @@ def _draw_balanced_legend(ax, handles, y_anchor=0.50, ncol=None, fontsize=LEGEND
     """Render a compact two-row legend within a dedicated legend axis."""
     ax.axis("off")
     if not handles:
-        return
+        return None
 
     ncol = ncol or max(1, int(np.ceil(len(handles) / 2.0)))
     if bbox_to_anchor is None:
@@ -824,6 +830,50 @@ def _draw_balanced_legend(ax, handles, y_anchor=0.50, ncol=None, fontsize=LEGEND
     leg.get_frame().set_linewidth(0.4)
     if alignment is not None and hasattr(leg, "_legend_box"):
         leg._legend_box.align = alignment
+    return leg
+
+
+def _draw_centered_legend_pair(ax, left_handles, right_handles, gap=0.016,
+                               left_legend_kwargs=None, right_legend_kwargs=None):
+    """Draw two boxed legends as a compact centered pair within one shared strip."""
+    ax.axis("off")
+    left_legend_kwargs = dict(left_legend_kwargs or {})
+    right_legend_kwargs = dict(right_legend_kwargs or {})
+
+    left_legend_kwargs.setdefault("loc", "center")
+    left_legend_kwargs.setdefault("bbox_to_anchor", (0.5, 0.50))
+    left_legend_kwargs.setdefault("alignment", "center")
+    left_legend = _draw_balanced_legend(ax, left_handles, **left_legend_kwargs)
+
+    right_legend_kwargs.setdefault("loc", "center")
+    right_legend_kwargs.setdefault("bbox_to_anchor", (0.5, 0.50))
+    right_legend_kwargs.setdefault("alignment", "center")
+    right_legend = _draw_balanced_legend(ax, right_handles, **right_legend_kwargs)
+
+    if left_legend is None or right_legend is None:
+        if left_legend is not None:
+            ax.add_artist(left_legend)
+        return left_legend, right_legend
+
+    ax.add_artist(left_legend)
+
+    fig = ax.figure
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    left_box = left_legend.get_window_extent(renderer).transformed(fig.transFigure.inverted())
+    right_box = right_legend.get_window_extent(renderer).transformed(fig.transFigure.inverted())
+    axis_box = ax.get_position()
+
+    group_width = left_box.width + gap + right_box.width
+    group_left = axis_box.x0 + ((axis_box.width - group_width) / 2.0)
+    left_center = group_left + (left_box.width / 2.0)
+    right_center = group_left + left_box.width + gap + (right_box.width / 2.0)
+
+    left_anchor = (left_center - axis_box.x0) / axis_box.width
+    right_anchor = (right_center - axis_box.x0) / axis_box.width
+    left_legend.set_bbox_to_anchor((left_anchor, 0.50), transform=ax.transAxes)
+    right_legend.set_bbox_to_anchor((right_anchor, 0.50), transform=ax.transAxes)
+    return left_legend, right_legend
 
 
 def _draw_ranked_bar_panel(ax, rows, x_label, xticks, title=None):
@@ -848,6 +898,7 @@ def _draw_ranked_bar_panel(ax, rows, x_label, xticks, title=None):
             y_pos_i,
             row["label"],
             ha="right",
+            multialignment="right",
             va="center",
             fontsize=MIN_TEXT_SIZE,
             color="#222222",
@@ -1045,9 +1096,8 @@ def _save_figure_with_fallback(save_figure, build_figure, title, message_prefix)
 
 def _draw_flagged_scaffolds_panel(ax, classifications, chrom_sizes, top_n=10, title=None):
     """Horizontal bars of flagged scaffolds ranked by scaffold size."""
-    flagged_cats = ["Misassembly", "Gapped Misassembly", "Discordant", "Gapped Discordant"]
     flagged = []
-    for cat in flagged_cats:
+    for cat in FLAGGED_SCAFFOLD_CATEGORIES:
         for chrom in classifications.get(cat, []):
             size = chrom_sizes.get(chrom, 0)
             if size > 0:
@@ -1070,9 +1120,8 @@ def _draw_flagged_scaffolds_panel(ax, classifications, chrom_sizes, top_n=10, ti
     rows = []
     for entry in flagged_top:
         wrapped = _wrap_scaffold_name(entry["chrom"], width=14)
-        short_cat = entry["category"].replace("Gapped ", "G. ")
         rows.append({
-            "label": f"{wrapped}\n({short_cat})",
+            "label": wrapped,
             "value": np.log10(entry["size"] + 1.0),
             "color": COLORS.get(entry["category"], "#aaaaaa"),
         })
@@ -1116,15 +1165,14 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
     total = sum(cat_counts)
 
     block_rows = _compute_block_rows(blocks, chrom_sizes)
-    flagged_rows = [r for r in block_rows if r["distance"] > FLAGGED_DISTANCE_BP]
-    flagged_by_scaffold = defaultdict(lambda: {"length": 0, "count": 0, "arms": Counter()})
-    for fr in flagged_rows:
-        entry = flagged_by_scaffold[fr["chrom"]]
-        entry["length"] += fr["length"]
-        entry["count"] += 1
-        entry["arms"][fr["label"]] += 1
-    flagged_total_scaffolds = len(flagged_by_scaffold)
-    flagged_total_blocks = len(flagged_rows)
+    distance_flagged_blocks = [r for r in block_rows if r["distance"] > FLAGGED_DISTANCE_BP]
+    flagged_scaffolds = {
+        chrom
+        for category in FLAGGED_SCAFFOLD_CATEGORIES
+        for chrom in classifications.get(category, [])
+    }
+    flagged_total_scaffolds = len(flagged_scaffolds)
+    distance_flagged_block_total = len(distance_flagged_blocks)
 
     all_len = [r["length"] for r in block_rows if r["label"] in ("p", "q", "b")]
     total_blocks = len(block_rows)
@@ -1138,9 +1186,7 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
 
     ax_summary = fig.add_subplot(gs[0, 0])
     ax_flagged_scaffolds = fig.add_subplot(gs[0, 1])
-    gs_leg = gs[1, :].subgridspec(1, 2, width_ratios=[0.34, 0.66], wspace=0.12)
-    ax_gap_legend = fig.add_subplot(gs_leg[0, 0])
-    ax_quality_legend = fig.add_subplot(gs_leg[0, 1])
+    ax_legends = fig.add_subplot(gs[1, :])
     fig.subplots_adjust(left=0.096, right=0.962, top=0.81, bottom=0.08)
 
     # ---- Panel a: Classification bars ----
@@ -1174,21 +1220,25 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
         Patch(facecolor=COLORS["Discordant"],   label="Discordant"),
         Patch(facecolor=COLORS["No telomeres"], label="No telomeres"),
     ]
-    _draw_balanced_legend(
-        ax_quality_legend, quality_handles,
-        loc="center", bbox_to_anchor=(0.5, 0.50),
-        ncol=3, fontsize=LEGEND_TEXT_SIZE, alignment="center",
-    )
 
-    # ---- Gap legend (gapless / gapped shade key) ----
+    # ---- Shared legend strip: gap key + quality legend ----
     gap_handles = [
         Patch(facecolor="#555555", label="Gapless"),
         Patch(facecolor="#cccccc", label="Gapped"),
     ]
-    _draw_balanced_legend(
-        ax_gap_legend, gap_handles,
-        loc="center", bbox_to_anchor=(0.5, 0.50),
-        ncol=1, fontsize=LEGEND_TEXT_SIZE, alignment="center",
+    _draw_centered_legend_pair(
+        ax_legends,
+        gap_handles,
+        quality_handles,
+        gap=0.016,
+        left_legend_kwargs={
+            "ncol": 1,
+            "fontsize": LEGEND_TEXT_SIZE,
+        },
+        right_legend_kwargs={
+            "ncol": 3,
+            "fontsize": LEGEND_TEXT_SIZE,
+        },
     )
 
     # ---- Panel b: Flagged scaffolds (discordant / misassembly by size) ----
@@ -1212,12 +1262,12 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
     fig.suptitle("Assembly summary", fontsize=FIGURE_TITLE_SIZE, fontweight="bold",
                  x=0.5, y=0.968, ha="center")
     summary_line = (
-        f"Scaffolds (n={total_paths:,}, distance-flagged={flagged_total_scaffolds:,}), "
-        f"telomere blocks (n={total_blocks:,}, distance-flagged={flagged_total_blocks:,}), "
+        f"Scaffolds (n={total_paths:,}, flagged={flagged_total_scaffolds:,}), "
+        f"telomere blocks (n={total_blocks:,}, distance-flagged={distance_flagged_block_total:,}), "
         f"median {median_bp:,} bp"
         if median_bp is not None else
-        f"Scaffolds (n={total_paths:,}, distance-flagged={flagged_total_scaffolds:,}), "
-        f"telomere blocks (n={total_blocks:,}, distance-flagged={flagged_total_blocks:,}), "
+        f"Scaffolds (n={total_paths:,}, flagged={flagged_total_scaffolds:,}), "
+        f"telomere blocks (n={total_blocks:,}, distance-flagged={distance_flagged_block_total:,}), "
         "median NA"
     )
     fig.text(0.5, 0.918, summary_line,
