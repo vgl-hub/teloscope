@@ -8,7 +8,7 @@ Teloscope
 [![Anaconda-Server Badge](https://anaconda.org/bioconda/teloscope/badges/license.svg)](https://anaconda.org/bioconda/teloscope)
 [![Anaconda-Server Badge](https://anaconda.org/bioconda/teloscope/badges/downloads.svg)](https://anaconda.org/bioconda/teloscope)
 
-Teloscope is a comprehensive telomere annotation tool. It rapidly matches, counts, and reports telomeric repeats from genome assemblies (.fa), (.fa.gz), or (.gfa). It groups repeat matches into telomere blocks, classifies each chromosome by its telomere completeness, and outputs annotations in standard BED/BEDgraph files along with a summary report to stdout.
+Teloscope is a comprehensive telomere annotation tool. It rapidly matches, counts, and reports telomeric repeats from genome assemblies (.fa), (.fa.gz), or (.gfa). It groups repeat matches into telomere blocks, classifies each chromosome by its telomere completeness, and outputs annotations in standard BED/BEDgraph files along with a summary report.
 
 Install
 ------------

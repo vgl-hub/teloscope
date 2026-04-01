@@ -13,13 +13,17 @@ No BED or BEDgraph files are produced in GFA mode.
 
 ### FASTA mode
 
-Teloscope always produces the following file:
+Teloscope always produces the following files:
 
 * `terminal_telomeres.bed` Telomere block annotations for the assembly.
 
     Columns: `chr`, `start`, `end`, `length`, `label`, `fwdCount`, `revCount`, `canonCount`, `nonCanonCount`, `chrSize`, `type`.
 
     The `label` column assigns each block to an arm: `p` (mostly forward-strand matches), `q` (mostly reverse-strand), or `b` (balanced). The `type` column is either `scaffold` (block is near a scaffold end) or `contig` (block is near a contig end but not a scaffold end). By default only scaffold-terminal telomeres are reported; use `-n`/`--manual-curation` to also include contig-terminal blocks.
+
+* `gaps.bed` Assembly gap coordinates (runs of Ns). Columns: `chr`, `start`, `end`.
+
+* `report.tsv` The Path Summary and Assembly Summary tables (also printed to stdout), written as a TSV file for downstream parsing.
 
 Additional optional outputs (disabled in ultra-fast mode):
 
@@ -34,9 +38,9 @@ Additional optional outputs (disabled in ultra-fast mode):
 
 All output filenames are prefixed with the input filename (e.g., `asm.fa_terminal_telomeres.bed`).
 
-### Console summary
+### Summary report
 
-Teloscope prints two tables to stdout:
+Teloscope prints two tables to stdout and writes them to `report.tsv`:
 
 **Path Summary Report.** One row per sequence. Columns in ultra-fast mode: `pos`, `header`, `telomeres`, `labels`, `gaps`, `type`, `granular`. In full-scan mode, three columns are added: `its`, `canonical`, `windows`.
 
