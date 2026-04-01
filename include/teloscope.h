@@ -232,6 +232,9 @@ public:
 
     bool walkSegment(InSegment* segment, InSequences& inSequences);
 
+    bool walkSegmentForPath(InSegment* segment, InSequences& inSequences,
+                            char pathOrient, bool isFirst);
+
     bool walkPath(InPath* path, std::vector<InSegment*> &inSegments, std::vector<InGap> &inGaps);
 
     void analyzeWindow(const std::string_view &window, uint64_t windowStart,

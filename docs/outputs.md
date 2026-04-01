@@ -7,7 +7,7 @@ Outputs
 
 When the input is a GFA file, Teloscope scans each segment for terminal telomeric repeats and writes an annotated GFA:
 
-* `assembly.telo.annotated.gfa` The original graph with synthetic telomere nodes appended. Each telomere node is a placeholder segment (`S telomere_<seg>_<start|end> * LN:i:6 RC:i:6000 TL:i:<len>`) linked to the parent assembly segment (`L telomere_... + <seg> <orient> 0M`). The `TL` tag records the actual telomere block length in bp. Designed for visualization in BandageNG.
+* `<input>.telo.annotated.gfa` The original graph with synthetic telomere nodes appended. Each telomere node is a placeholder segment (`S telomere_<seg><orient>_<start|end> * LN:i:6 RC:i:6000 TL:i:<len>`) linked to the parent assembly segment (`L telomere_... + <seg> <orient> 0M`). The `TL` tag records the actual telomere block length in bp. When paths are present, only path-terminal segments are annotated, and edge orientation follows the path context. Designed for visualization in BandageNG.
 
 No BED or BEDgraph files are produced in GFA mode.
 

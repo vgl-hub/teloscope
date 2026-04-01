@@ -40,12 +40,45 @@ void Input::read(InSequences &inSequences) {
 
     // GFA-based annotation
     if (userInput.inSequence.find(".gfa") != std::string::npos) {
-        for (InSegment* inSegment : *inSegments) {
-            threadPool.queueJob([inSegment, &inSequences, &teloscope]() {
-                return teloscope.walkSegment(inSegment, inSequences);
-            });
+
+        if (!inPaths.empty()) {
+            // Path-aware mode: only annotate path-terminal segments
+            for (InPath& path : inPaths) {
+                std::vector<PathComponent> components = path.getComponents();
+
+                // Find first SEGMENT component
+                for (const auto& comp : components) {
+                    if (comp.componentType == SEGMENT && comp.orientation != '0') {
+                        InSegment* seg = inSequences.getInSegment(comp.id);
+                        char orient = comp.orientation;
+                        threadPool.queueJob([seg, &inSequences, &teloscope, orient]() {
+                            return teloscope.walkSegmentForPath(seg, inSequences, orient, true);
+                        });
+                        break;
+                    }
+                }
+
+                // Find last SEGMENT component (reverse iteration)
+                for (auto it = components.rbegin(); it != components.rend(); ++it) {
+                    if (it->componentType == SEGMENT && it->orientation != '0') {
+                        InSegment* seg = inSequences.getInSegment(it->id);
+                        char orient = it->orientation;
+                        threadPool.queueJob([seg, &inSequences, &teloscope, orient]() {
+                            return teloscope.walkSegmentForPath(seg, inSequences, orient, false);
+                        });
+                        break;
+                    }
+                }
+            }
+        } else {
+            // Fallback: path-less GFA, scan all segments (implicit + orientation)
+            for (InSegment* inSegment : *inSegments) {
+                threadPool.queueJob([inSegment, &inSequences, &teloscope]() {
+                    return teloscope.walkSegment(inSegment, inSequences);
+                });
+            }
         }
-        
+
         lg.verbose("Waiting for telomere annotation jobs to complete");
         jobWait(threadPool);
         lg.verbose("\nAll telomere annotation jobs completed.");
@@ -75,7 +108,7 @@ void Input::read(InSequences &inSequences) {
 
         // Write annotated GFA
         Report report;
-        std::string outGfa = userInput.outRoute + "/assembly.telo.annotated.gfa";
+        std::string outGfa = userInput.outRoute + "/" + userInput.inSequenceName + ".telo.annotated.gfa";
         report.writeToStream(inSequences, outGfa, userInput);
         lg.verbose("Annotated GFA written to " + outGfa);
         return;
@@ -170,6 +203,99 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
     }
 
     threadLog.add("\tCompleted walking segment:\t" + segment->getSeqHeader());
+    {
+        std::lock_guard<std::mutex> lck(mtx);
+        logs.push_back(threadLog);
+    }
+
+    return true;
+}
+
+
+bool Teloscope::walkSegmentForPath(InSegment* segment, InSequences& inSequences,
+                                   char pathOrient, bool isFirst) {
+    Log threadLog;
+    threadLog.add("\n\tWalking segment (path-aware):\t" + segment->getSeqHeader());
+
+    std::string sequence = segment->getInSequence(0, 0);
+    unmaskSequence(sequence);
+
+    SegmentData segmentData = scanSegment(sequence, 0, true);
+
+    // Which physical end of the segment has the path-terminal tip?
+    // First+'+' and Last+'-' => scan START; First+'-' and Last+'+' => scan END
+    bool scanStart = (isFirst == (pathOrient == '+'));
+
+    struct TeloAnnotation {
+        std::string header;
+        std::vector<Tag> tags;
+        char edgeOrient;
+    };
+    std::vector<TeloAnnotation> annotations;
+
+    for (const TelomereBlock& block : segmentData.terminalBlocks) {
+        uint64_t distToStart = block.start;
+        uint64_t distToEnd   = sequence.size() - (block.start + block.blockLen);
+        bool blockAtStart = distToStart <= distToEnd;
+
+        // Only keep the block at the path-terminal end
+        if (blockAtStart != scanStart) continue;
+
+        std::string posLabel = isFirst ? "start" : "end";
+        std::string header = "telomere_"
+                        + segment->getSeqHeader()
+                        + std::string(1, pathOrient)
+                        + "_" + posLabel;
+
+        // skip duplicate within this call
+        bool duplicate = false;
+        for (const auto& ann : annotations) {
+            if (ann.header == header) { duplicate = true; break; }
+        }
+        if (duplicate) continue;
+
+        // Edge orientation rule: START = pathOrient, END = flip(pathOrient)
+        char edgeOrient = isFirst ? pathOrient : (pathOrient == '+' ? '-' : '+');
+
+        annotations.push_back({header, {
+            Tag{'i', "LN", "6"},
+            Tag{'i', "RC", "6000"},
+            Tag{'i', "TL", std::to_string(block.blockLen)}
+        }, edgeOrient});
+    }
+
+    for (auto& ann : annotations) {
+        // Deduplicate across paths: check if this telomere node already exists
+        {
+            std::lock_guard<std::mutex> lck(mtx);
+            auto* hash = inSequences.getHash1();
+            if (hash->find(ann.header) != hash->end()) continue;
+        }
+
+        Sequence teloSeq{ann.header, "", new std::string("*")};
+        inSequences.traverseInSegmentWrapper(&teloSeq, ann.tags);
+
+        unsigned int teloUid;
+        {
+            std::lock_guard<std::mutex> lck(mtx);
+            teloUid = inSequences.getHash1()->at(ann.header);
+        }
+
+        InEdge inEdge;
+        inEdge.newEdge(
+          0,
+          teloUid,
+          segment->getuId(),
+          '+',
+          ann.edgeOrient,
+          "0M",
+          "",
+          std::vector<Tag>{ Tag{'i',"RC","0"} }
+        );
+        inSequences.appendEdge(inEdge);
+    }
+
+    threadLog.add("\tCompleted walking segment (path-aware):\t" + segment->getSeqHeader());
     {
         std::lock_guard<std::mutex> lck(mtx);
         logs.push_back(threadLog);
