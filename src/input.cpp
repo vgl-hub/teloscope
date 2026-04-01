@@ -50,6 +50,29 @@ void Input::read(InSequences &inSequences) {
         jobWait(threadPool);
         lg.verbose("\nAll telomere annotation jobs completed.");
 
+        // Create L lines from path adjacency for BandageNG graph layout
+        for (InPath& path : inSequences.getInPaths()) {
+            std::vector<PathComponent> components = path.getComponents();
+            unsigned int prevSegId = 0;
+            char prevOrient = '+';
+            bool hasPrev = false;
+
+            for (const auto& comp : components) {
+                if (comp.componentType == SEGMENT && comp.orientation != '0') {
+                    if (hasPrev) {
+                        InEdge edge;
+                        edge.newEdge(0, prevSegId, comp.id,
+                                     prevOrient, comp.orientation,
+                                     "0M", "", {});
+                        inSequences.appendEdge(edge);
+                    }
+                    prevSegId = comp.id;
+                    prevOrient = comp.orientation;
+                    hasPrev = true;
+                }
+            }
+        }
+
         // Write annotated GFA
         Report report;
         std::string outGfa = userInput.outRoute + "/assembly.telo.annotated.gfa";
