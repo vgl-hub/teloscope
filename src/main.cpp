@@ -6,7 +6,7 @@
 #include <mach-o/dyld.h>
 #endif
 
-std::string version = "0.1.3";
+std::string version = "0.1.4";
 
 // global
 std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();

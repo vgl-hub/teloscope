@@ -47,7 +47,13 @@ jobs:
       - name: Build
         run: make
       - name: Zip
-        run: zip -j result.zip build/bin/teloscope*
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            powershell Compress-Archive -Path build/bin/teloscope* -DestinationPath result.zip
+          else
+            zip -j result.zip build/bin/teloscope*
+          fi
+        shell: bash
       - name: Upload binaries
         uses: softprops/action-gh-release@v2
         with:
