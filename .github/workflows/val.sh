@@ -204,7 +204,7 @@ check_output_contains "short contig: no crash, type=none" "none" "$OUT"
 
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/gfa_telo.gfa -o "$TMPDIR" 2>/dev/null
-GFA_OUT="$TMPDIR/assembly.telo.annotated.gfa"
+GFA_OUT="$TMPDIR/gfa_telo.gfa.telo.annotated.gfa"
 
 # Check annotated GFA was produced
 if [ -f "$GFA_OUT" ]; then
