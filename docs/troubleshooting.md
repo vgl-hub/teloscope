@@ -1,52 +1,86 @@
-[← Back to README](../README.md)
+[Back to README](../README.md)
 
-Troubleshooting
-============
+# Troubleshooting
 
-### Compressed input on stdin is not supported
+## Build fails because `gfalibs` is missing
 
-```
-Error: Compressed input on stdin is not supported. Decompress first:
-  zcat file.fa.gz | teloscope -o results/
-```
+Teloscope needs the `gfalibs` submodule for GFA support.
 
-Teloscope can read `.fa.gz` files directly when passed as a file argument (`teloscope asm.fa.gz`). However, piping gzipped data through stdin is not supported. Decompress first with `zcat` or `gunzip -c`:
+Fix:
 
 ```sh
-# This works
-teloscope asm.fa.gz
+git submodule update --init --recursive
+make -j
+```
 
-# This does NOT work
+## `--plot-report` fails because Python packages are missing
+
+The report generator needs:
+
+- `matplotlib`
+- `numpy`
+- `pandas`
+
+Install them in the Python environment that will run `scripts/teloscope_report.py`.
+
+## Compressed stdin is not supported
+
+This fails:
+
+```sh
 cat asm.fa.gz | teloscope -o results/
+```
 
-# This works (decompress before piping)
+Use one of these instead:
+
+```sh
+teloscope asm.fa.gz
 zcat asm.fa.gz | teloscope -o results/
 ```
 
-### Unusually high pattern count
+## GFA run writes no telomere nodes
 
+Common reasons:
+
+- the graph segment sequence is `*`, so there are no bases to scan
+- the detected repeat block is shorter than `-l`
+- the repeat density is below `-y`
+- paths are present and the segment end is not path-terminal
+
+If you want to inspect the graph result, make sure the output file exists:
+
+```sh
+ls results/*.telo.annotated.gfa
 ```
-Warning: 2400 patterns is unusually high and may be slow on large genomes.
-  Consider fewer IUPAC wildcards or a lower -x value.
-```
 
-Pattern count grows multiplicatively: IUPAC wildcards expand first (e.g., `N` = 4 bases), then edit distance generates substitution variants on top. Some combinations:
+## Very large pattern sets are slow
 
-| Input | `-x` | Patterns (after dedup) |
-|-------|------|----------------------|
-| `TTAGGG` | 1 | 38 |
-| `TTAGGG` | 2 | 308 |
-| `NNNGGG` | 0 | 127 |
-| `NNNGGG` | 1 | 1,180 |
-| `NNNGGG` | 2 | 3,367 |
-| `NNNNNN` | 2 | 4,096 |
+Pattern count grows quickly when IUPAC expansion and edit distance are combined.
 
-The trie handles large pattern sets correctly, but scanning a multi-gigabase genome against thousands of patterns generates proportionally more matches, increasing memory use and runtime. If you are using IUPAC wildcards to approximate fuzzy matching, use `-x 1` with concrete patterns instead.
+Examples:
 
-### Output directory is not writable
+| Input | `-x` | Concrete patterns after expansion |
+| --- | --- | --- |
+| `TTAGGG` | `1` | `38` |
+| `TTAGGG` | `2` | `308` |
+| `NNNGGG` | `0` | `127` |
+| `NNNGGG` | `1` | `1180` |
+| `NNNGGG` | `2` | `3367` |
+| `NNNNNN` | `2` | `4096` |
 
-```
+If runtime is high, reduce ambiguity in `-p` or lower `-x`.
+
+## Output directory is not writable
+
+If you see:
+
+```text
 Error: Output directory '/path/to/dir' is not writable.
 ```
 
-Teloscope checks that the output directory is writable before starting analysis. Check that the directory exists, has write permissions, and that the filesystem has free space.
+Check:
+
+- the directory exists
+- you have write permission
+- the filesystem has free space
+- another process is not writing conflicting outputs into the same directory

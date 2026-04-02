@@ -7,15 +7,15 @@ import shutil
 import tempfile
 import unittest
 
-from matplotlib.legend import Legend
-import matplotlib.text as mtext
-import numpy as np
-
-
 ROOT = Path(__file__).resolve().parents[1]
 MPLCONFIGDIR = tempfile.mkdtemp(prefix="mplconfig_teloscope_test_")
 os.environ["MPLCONFIGDIR"] = MPLCONFIGDIR
 atexit.register(shutil.rmtree, MPLCONFIGDIR, ignore_errors=True)
+
+from matplotlib.legend import Legend
+import matplotlib.text as mtext
+import numpy as np
+
 
 MODULE_PATH = ROOT / "scripts" / "teloscope_report.py"
 SPEC = importlib.util.spec_from_file_location("teloscope_report_under_test", MODULE_PATH)

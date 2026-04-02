@@ -1,81 +1,126 @@
-[← Back to README](../README.md)
+[Back to README](../README.md)
 
-Parameters
-============
+# Parameters
 
-To check out all options and flags, please use:
-`teloscope -h`
+For the full built-in help:
 
-### Input/Output
+```sh
+teloscope -h
+```
 
-| Flag | Long form | Description | Default |
-|------|-----------|-------------|---------|
-| `-f` | `--input-sequence` | Input FASTA/GFA file (or pass as first positional argument) | *required* |
-| `-o` | `--output` | Output directory | Input file directory |
-| `-j` | `--threads` | Number of threads | All available |
+Basic usage:
 
-### Pattern Configuration
+```sh
+teloscope input.fa [options]
+teloscope input.fa.gz [options]
+teloscope input.gfa [options]
+teloscope -f input.fa [options]
+```
 
-| Flag | Long form | Description | Default |
-|------|-----------|-------------|---------|
-| `-c` | `--canonical` | Canonical telomere repeat used as the reference motif | `TTAGGG` |
-| `-p` | `--patterns` | Comma-separated list of repeat patterns to search for | Canonical and its reverse complement |
-| `-x` | `--edit-distance` | Allow up to this many mismatches per repeat (0, 1, or 2). Generates all substitution variants of each input pattern. | `1` |
+## Input and output
 
-Both the provided patterns and their reverse complements are searched automatically.
+| Flag | Long form | Meaning | Default |
+| --- | --- | --- | --- |
+| `-f` | `--input-sequence` | input FASTA, FASTA.gz, or GFA file | required unless passed positionally |
+| `-o` | `--output` | output directory | input file directory |
+| `-j` | `--threads` | maximum worker threads | all available |
 
-> **Why `-c` and `-p` are separate.**
-> `-c` sets the reference motif (determines canonical vs. non-canonical classification and `p`/`q` labeling). `-p` sets what to search for. When `-p` is omitted, Teloscope derives search patterns from `-c` automatically. This means you can switch to a plant canonical (`-c CCCTAAA`) without also passing `-p`.
+## Pattern control
 
-### Sliding Window
+| Flag | Long form | Meaning | Default |
+| --- | --- | --- | --- |
+| `-c` | `--canonical` | reference telomere repeat | `TTAGGG` |
+| `-p` | `--patterns` | comma-separated search patterns | derived from `-c` |
+| `-x` | `--edit-distance` | allowed mismatches per repeat unit | `1` |
 
-| Flag | Long form | Description | Default |
-|------|-----------|-------------|---------|
-| `-w` | `--window` | Window size in bp | `1000` |
-| `-s` | `--step` | Step size in bp | `1000` (non-overlapping) |
+Notes:
 
-**Note:** When step equals window size, windows are non-overlapping bins. This produces valid single-value BEDgraph files compatible with IGV and UCSC genome browsers. Use a smaller `-s` for overlapping windows.
+- Reverse complements are always searched automatically.
+- IUPAC ambiguity codes are allowed in `-p`.
+- `-c` controls canonical versus non-canonical counting even when `-p` is set explicitly.
 
-### Block Detection
+## Windowing
 
-| Flag | Long form | Description | Default |
-|------|-----------|-------------|---------|
-| `-k` | `--max-match-distance` | Maximum gap (bp) between two repeat matches before they are treated as separate | `50` |
-| `-d` | `--max-block-distance` | Maximum gap (bp) between two blocks before they stop being merged | `200` |
-| `-l` | `--min-block-length` | Minimum block length (bp) to keep in the output | `500` |
-| `-y` | `--min-block-density` | Minimum fraction of a block covered by repeat matches (0.0 to 1.0) | `0.5` |
-| `-t` | `--terminal-limit` | How far from each contig end (bp) a telomere can be and still count as scaffold-terminal | `50000` |
+| Flag | Long form | Meaning | Default |
+| --- | --- | --- | --- |
+| `-w` | `--window` | window size in bp | `1000` |
+| `-s` | `--step` | step size in bp | `1000` |
 
-### Output Control
+When `-s` equals `-w`, window outputs are non-overlapping BEDgraph bins.
 
-| Flag | Long form | Description | Default |
-|------|-----------|-------------|---------|
-| `-r` | `--out-win-repeats` | Output per-window repeat density, canonical ratio, and strand ratio | `false` |
-| `-g` | `--out-gc` | Output per-window GC content | `false` |
-| `-e` | `--out-entropy` | Output per-window Shannon entropy | `false` |
-| `-m` | `--out-matches` | Output individual match coordinates for canonical and terminal non-canonical repeats | `false` |
-| `-i` | `--out-its` | Output interstitial telomere (ITS) blocks | `false` |
-| `-u` | `--ultra-fast` | Only scan near contig ends; skip genome-wide analysis | `true` |
-| `-n` | `--manual-curation` | Include contig-terminal telomeres in BED output (not just scaffold-terminal) | `false` |
-| | `--plot-report` | Generate a PDF report after analysis (requires Python 3 + matplotlib) | `false` |
-| `-v` | `--version` | Print current software version | |
-| `-h` | `--help` | Print help | |
-| | `--verbose` | Verbose output | |
-| | `--cmd` | Print command line | |
+## Block calling
 
-**Note:** Enabling any genome-wide output flag (`-r`, `-g`, `-e`, `-m`, `-i`) automatically disables ultra-fast mode.
+| Flag | Long form | Meaning | Default |
+| --- | --- | --- | --- |
+| `-k` | `--max-match-distance` | max gap between matches before splitting them | `50` |
+| `-d` | `--max-block-distance` | max gap between nearby repeat groups before extension stops | `200` |
+| `-l` | `--min-block-length` | minimum block length to keep | `500` |
+| `-y` | `--min-block-density` | minimum repeat-covered fraction for a block | `0.5` |
+| `-t` | `--terminal-limit` | distance from a sequence end that still counts as terminal | `50000` |
 
-### Piping from stdin
+## Output flags
 
-Teloscope accepts input from stdin when no file is given. Gzipped input must be decompressed first (`zcat`).
+| Flag | Long form | Meaning | Default |
+| --- | --- | --- | --- |
+| `-r` | `--out-win-repeats` | write repeat density, canonical ratio, and strand ratio tracks | `false` |
+| `-g` | `--out-gc` | write GC BEDgraph | `false` |
+| `-e` | `--out-entropy` | write entropy BEDgraph | `false` |
+| `-m` | `--out-matches` | write canonical and terminal non-canonical match BED files | `false` |
+| `-i` | `--out-its` | write interstitial telomere BED | `false` |
+| `-u` | `--ultra-fast` | scan sequence ends only | `true` |
+| `-n` | `--manual-curation` | include contig-terminal blocks in BED output | `false` |
+|  | `--plot-report` | write a PDF report after the run | `false` |
+
+Any of `-r`, `-g`, `-e`, `-m`, or `-i` disables ultra-fast mode automatically.
+
+## Informational flags
+
+| Flag | Long form | Meaning |
+| --- | --- | --- |
+| `-v` | `--version` | print the program version |
+| `-h` | `--help` | print help text |
+|  | `--verbose` | print extra progress messages |
+|  | `--cmd` | print the resolved command line |
+
+## Common command patterns
+
+Default vertebrate run:
+
+```sh
+teloscope asm.fa
+```
+
+Plant canonical repeat:
+
+```sh
+teloscope asm.fa -c CCCTAAA
+```
+
+Explicit search patterns:
+
+```sh
+teloscope asm.fa -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG
+```
+
+All optional FASTA outputs plus the report:
+
+```sh
+teloscope asm.fa -o results/ -r -g -e -m -i --plot-report
+```
+
+Graph annotation:
+
+```sh
+teloscope asm.gfa -o results/
+```
+
+## Stdin
+
+Teloscope reads from stdin when no input file is given:
 
 ```sh
 cat asm.fa | teloscope -o results/
 zcat asm.fa.gz | teloscope -o results/
 ```
 
-Download and analyze directly from NCBI:
-```sh
-datasets download genome accession GCF_000001405.40 --include genome --filename ncbi.zip
-unzip -p ncbi.zip '*.fna' | teloscope -o results/
-```
+Compressed stdin is not supported. Decompress first.

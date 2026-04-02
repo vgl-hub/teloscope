@@ -1,51 +1,115 @@
-[← Back to README](../README.md)
+[Back to README](../README.md)
 
-Outputs
-============
+# Outputs
 
-### GFA mode
+Teloscope writes different outputs in FASTA mode and GFA mode.
 
-When the input is a GFA file, Teloscope scans each segment for terminal telomeric repeats and writes an annotated GFA:
+## File naming
 
-* `<input>.telo.annotated.gfa` The original graph with synthetic telomere nodes appended. Each telomere node is a placeholder segment (`S telomere_<seg><orient>_<start|end> * LN:i:6 RC:i:6000 TL:i:<len>`) linked to the parent assembly segment (`L telomere_... + <seg> <orient> 0M`). The `TL` tag records the actual telomere block length in bp. When paths are present, only path-terminal segments are annotated, and edge orientation follows the path context. Designed for visualization in BandageNG.
+FASTA outputs keep the input file name as a prefix:
 
-No BED or BEDgraph files are produced in GFA mode.
+- `asm.fa_terminal_telomeres.bed`
+- `asm.fa_gaps.bed`
+- `asm.fa_report.tsv`
 
-### FASTA mode
+GFA mode writes one graph file:
 
-Teloscope always produces the following files:
+- `asm.gfa.telo.annotated.gfa`
 
-* `terminal_telomeres.bed` Telomere block annotations for the assembly.
+## FASTA mode outputs
 
-    Columns: `chr`, `start`, `end`, `length`, `label`, `fwdCount`, `revCount`, `canonCount`, `nonCanonCount`, `chrSize`, `type`.
+Always written:
 
-    The `label` column assigns each block to an arm: `p` (mostly forward-strand matches), `q` (mostly reverse-strand), or `b` (balanced). The `type` column is either `scaffold` (block is near a scaffold end) or `contig` (block is near a contig end but not a scaffold end). By default only scaffold-terminal telomeres are reported; use `-n`/`--manual-curation` to also include contig-terminal blocks.
+| File | Purpose |
+| --- | --- |
+| `*_terminal_telomeres.bed` | terminal telomere blocks |
+| `*_gaps.bed` | gap intervals from runs of `N` |
+| `*_report.tsv` | per-sequence and assembly summaries |
 
-* `gaps.bed` Assembly gap coordinates (runs of Ns). Columns: `chr`, `start`, `end`.
+Optional:
 
-* `report.tsv` The Path Summary and Assembly Summary tables (also printed to stdout), written as a TSV file for downstream parsing.
+| File | Flag | Purpose |
+| --- | --- | --- |
+| `*_window_repeat_density.bedgraph` | `-r` | repeat density per window |
+| `*_window_canonical_ratio.bedgraph` | `-r` | canonical-share track per window |
+| `*_window_strand_ratio.bedgraph` | `-r` | forward-strand share per window |
+| `*_window_gc.bedgraph` | `-g` | GC content per window |
+| `*_window_entropy.bedgraph` | `-e` | Shannon entropy per window |
+| `*_canonical_matches.bed` | `-m` | canonical repeat matches |
+| `*_noncanonical_matches.bed` | `-m` | terminal non-canonical repeat matches |
+| `*_interstitial_telomeres.bed` | `-i` | interstitial telomere-like blocks |
+| `*_plot_report.pdf` | `--plot-report` | PDF summary report |
 
-Additional optional outputs (disabled in ultra-fast mode):
+## `*_terminal_telomeres.bed`
 
-* `window_repeat_density.bedgraph` Fraction of each window covered by any repeat match, 0 to 1 (`-r`).
-* `window_canonical_ratio.bedgraph` Canonical share of repeat density per window, 0 to 1; -1 when no matches (`-r`).
-* `window_strand_ratio.bedgraph` Forward-strand share of repeat density per window, 0 to 1; -1 when no matches (`-r`).
-* `window_gc.bedgraph` GC content per window (`-g`).
-* `window_entropy.bedgraph` Shannon entropy per window (`-e`).
-* `canonical_matches.bed` Coordinates of every canonical repeat match in the assembly (`-m`).
-* `noncanonical_matches.bed` Coordinates of non-canonical repeat matches in terminal regions (`-m`).
-* `interstitial_telomeres.bed` Telomere-like blocks found away from contig ends, i.e., interstitial telomeres or ITSs (`-i`).
+Columns:
 
-All output filenames are prefixed with the input filename (e.g., `asm.fa_terminal_telomeres.bed`).
+1. `chr`
+2. `start`
+3. `end`
+4. `length`
+5. `label`
+6. `fwdCount`
+7. `revCount`
+8. `canonCount`
+9. `nonCanonCount`
+10. `chrSize`
+11. `type`
 
-### Summary report
+`label` is `p`, `q`, or `b`. `type` is `scaffold` for scaffold-terminal blocks and `contig` for contig-terminal blocks that are only emitted with `-n/--manual-curation`.
 
-Teloscope prints two tables to stdout and writes them to `report.tsv`:
+## `*_gaps.bed`
 
-**Path Summary Report.** One row per sequence. Columns in ultra-fast mode: `pos`, `header`, `telomeres`, `labels`, `gaps`, `type`, `granular`. In full-scan mode, three columns are added: `its`, `canonical`, `windows`.
+Columns:
 
-**Assembly Summary Report.** Aggregated counts including:
-* Total paths, gaps, and telomeres
-* Telomere length statistics (mean, median, min, max)
-* Chromosome counts by telomere number (two, one, zero)
-* Chromosome classification counts (see [Classification](classification.md))
+1. `chr`
+2. `start`
+3. `end`
+
+Each row marks one contiguous run of `N`.
+
+## `*_report.tsv`
+
+The report contains two tables.
+
+Path Summary columns in ultra-fast mode:
+
+- `pos`
+- `header`
+- `telomeres`
+- `labels`
+- `gaps`
+- `type`
+- `granular`
+
+Full-scan mode adds:
+
+- `its`
+- `canonical`
+- `windows`
+
+Assembly Summary reports totals and counts for:
+
+- paths
+- gaps
+- telomeres
+- telomere length statistics
+- chromosomes with two, one, or zero telomeres
+- each scaffold class
+
+## GFA mode output
+
+GFA mode writes the original graph plus synthetic telomere segments and links:
+
+- segment lines start with `S telomere_...`
+- link lines start with `L telomere_...`
+
+Each synthetic telomere segment includes:
+
+- `LN:i:6`
+- `RC:i:6000`
+- `TL:i:<detected_block_length_bp>`
+
+Each telomere link points from the synthetic node to the assembly segment with `0M` overlap. When paths are present, only path-terminal segment ends are annotated and the link orientation follows the path context. When no paths are present, segments are scanned independently.
+
+No BED, BEDgraph, or TSV files are written in GFA mode.

@@ -1,56 +1,83 @@
-[← Back to README](../README.md)
+[Back to README](../README.md)
 
-Simulation and validation
-============
+# Simulation and validation
 
-Teloscope includes a simulation framework for benchmarking detection accuracy across mutation rates. Build with:
+Teloscope includes a synthetic benchmark generator and evaluator in `teloscope-simulate`.
+
+Build it with:
+
 ```sh
 make simulate
 ```
 
-This produces `teloscope-simulate`, a standalone tool with two modes:
+The binary is written to `build/bin/teloscope-simulate`.
 
-**Generate mode** produces synthetic multi-contig FASTA files with known telomere positions:
+## Generate synthetic assemblies
+
+Example:
+
 ```sh
-teloscope-simulate -n 1000 -r 1e-4 -s 42 -o testFiles/simulate/rate_1e-4
+build/bin/teloscope-simulate -n 1000 -r 1e-4 -s 42 -o testFiles/simulate/rate_1e-4
 ```
 
-Each synthetic sequence (~50 kbp) is built from five segments:
+This writes:
 
-1. **p-arm canonical** 12 kbp or 2000 exact copies of CCCTAA.
-2. **p-arm TVR** 600 bp or 100 copies of CCCTAA, each with one random substitution.
-3. **Central segment** 25 kbp of random nucleotides.
-4. **q-arm TVR** 600 bp or 100 copies of TTAGGG, each with one random substitution.
-5. **q-arm canonical** 12 kbp or 2000 exact copies of TTAGGG.
+- `sequences.fa`
+- `ground_truth.tsv`
 
-After construction, per-base mutations are applied across the entire sequence at the specified rate (`-r`). The TVR regions have exactly one mismatch per repeat, so they are detectable at `-x 1` but not at `-x 0`. This tests both default and edit-distance modes.
+Each synthetic sequence contains:
 
-Outputs: `sequences.fa` (synthetic FASTA) and `ground_truth.tsv` (per-contig telomere coordinates with exact boundaries for each segment).
+1. left canonical telomere
+2. left TVR block
+3. random internal sequence
+4. right TVR block
+5. right canonical telomere
 
-**Evaluate mode** compares teloscope BED output against the ground truth:
+After the sequence is built, the requested mutation rate is applied across the whole sequence.
+
+## Evaluate Teloscope output
+
+Run Teloscope on the synthetic FASTA, then compare the called terminal BED file to the ground truth:
+
 ```sh
-teloscope-simulate --evaluate -g ground_truth.tsv -b terminal_telomeres.bed
+build/bin/teloscope -f testFiles/simulate/rate_1e-4/sequences.fa -o testFiles/simulate/rate_1e-4/teloscope_out
+build/bin/teloscope-simulate --evaluate \
+  -g testFiles/simulate/rate_1e-4/ground_truth.tsv \
+  -b testFiles/simulate/rate_1e-4/teloscope_out/sequences.fa_terminal_telomeres.bed
 ```
 
-Output columns: `total_tips`, `detected`, `sensitivity`, `mean_bias_bp`, `mean_abs_err_bp`, `tvr_rate`, `fp_blocks`.
+The evaluator prints:
 
-### Simulation parameters
+- `total_tips`
+- `detected`
+- `sensitivity`
+- `mean_bias_bp`
+- `mean_abs_err_bp`
+- `tvr_rate`
+- `fp_blocks`
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `-n` | Number of sequences to generate | `1000` |
-| `-R` | Canonical repeats per tip (each repeat is 6 bp) | `2000` |
-| `-T` | TVR (variant) repeats per tip (each repeat is 6 bp with 1 substitution) | `100` |
-| `-L` | Central segment length in bp | `25000` |
-| `-r` | Per-base mutation rate applied to the full sequence | `0.0` |
-| `-s` | Random seed for reproducibility | `42` |
-| `-o` | Output directory | `testFiles/simulate` |
+## Generator parameters
 
-### Pipeline script
+| Flag | Meaning | Default |
+| --- | --- | --- |
+| `-n` | number of sequences | `1000` |
+| `-R` | canonical repeats per telomere end | `2000` |
+| `-T` | TVR repeats per telomere end | `100` |
+| `-L` | internal random segment length in bp | `25000` |
+| `-r` | per-base mutation rate | `0.0` |
+| `-s` | random seed | `42` |
+| `-o` | output directory | `testFiles/simulate` |
 
-A sweep across mutation rates (1e-6 through 1e-2) can be run with:
+## Sweep script
+
+The repo includes a shell wrapper for mutation-rate sweeps:
+
 ```sh
 bash .github/workflows/val-simulate.sh
 ```
 
-Configurable via environment: `SIM_N=1000000 SIM_SEED=42 bash .github/workflows/val-simulate.sh`
+Optional environment overrides:
+
+```sh
+SIM_N=1000000 SIM_SEED=42 bash .github/workflows/val-simulate.sh
+```
