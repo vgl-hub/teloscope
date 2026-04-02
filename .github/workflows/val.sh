@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Run standard .tst validation (53 tests)
+# Run standard .tst validation
 build/bin/teloscope-validate validateFiles
 
 # File count and output pattern tests

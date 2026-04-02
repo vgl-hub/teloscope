@@ -801,8 +801,11 @@ int main(int argc, char **argv) {
         const fs::path stderrPath = baseDir / "stderr.txt";
         fs::create_directories(baseDir);
 
+        const bool needsOutDir =
+            testCase.command.find("%OUTDIR%") != std::string::npos ||
+            !testCase.directives.outputName.empty();
         std::string command = replaceAll(testCase.command, "%OUTDIR%", outDir.string());
-        if (command.find("%OUTDIR%") != std::string::npos || !testCase.directives.outputName.empty())
+        if (needsOutDir)
             fs::create_directories(outDir);
 
 #ifdef _WIN32
