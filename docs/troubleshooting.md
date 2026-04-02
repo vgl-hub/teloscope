@@ -232,10 +232,7 @@ When paths are present, Teloscope annotates path-terminal segment ends. It does 
 
 ### Telomere nodes draw long lines across the graph
 
-BandageNG can lay out many synthetic leaf nodes poorly in dense components. Try these in order:
-
-- use the current annotated output, which writes telomere connectors as `J` records instead of direct `L` adjacency links
-- if the graph still looks cluttered, inspect the component in BandageNG after layout reset because the viewer redraw is still layout-dependent
+Telomere connectors use `J` jump records so they do not add force-layout edges. If the graph still looks cluttered, try a layout reset in BandageNG.
 
 ### You want to confirm that telomere nodes were added
 
