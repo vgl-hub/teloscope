@@ -1,0 +1,4 @@
+H	VN:Z:1.2
+S	seg_noseq_a	*	LN:i:200
+S	seg_noseq_b	*	LN:i:200
+L	seg_noseq_a	+	seg_noseq_b	+	0M

@@ -1,0 +1,3 @@
+path	segment	terminal_role	path_orient	node_name	seg_edge_orient	tl_bp
+.	seg_gfa2_left	start	.	telomere_seg_gfa2_left_start	+	72
+.	seg_gfa2_right	end	.	telomere_seg_gfa2_right_end	-	72

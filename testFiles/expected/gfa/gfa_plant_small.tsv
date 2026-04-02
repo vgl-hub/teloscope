@@ -1,0 +1,3 @@
+path	segment	terminal_role	path_orient	node_name	seg_edge_orient	tl_bp
+.	seg_plant	start	.	telomere_seg_plant_start	+	84
+.	seg_plant	end	.	telomere_seg_plant_end	-	84

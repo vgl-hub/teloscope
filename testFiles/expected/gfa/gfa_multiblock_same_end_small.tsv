@@ -1,0 +1,2 @@
+path	segment	terminal_role	path_orient	node_name	seg_edge_orient	tl_bp
+.	segMulti	start	.	telomere_segMulti_start	+	72
