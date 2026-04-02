@@ -99,10 +99,7 @@ Assembly Summary reports totals and counts for:
 
 ## GFA mode output
 
-GFA mode writes the original graph plus synthetic telomere segments and links:
-
-- segment lines start with `S telomere_...`
-- link lines start with `L telomere_...`
+GFA mode writes the original graph plus synthetic telomere segments connected back to the carrier segment with `J telomere_...` jump records.
 
 Each synthetic telomere segment includes:
 
@@ -110,6 +107,6 @@ Each synthetic telomere segment includes:
 - `RC:i:6000`
 - `TL:i:<detected_block_length_bp>`
 
-Each telomere link points from the synthetic node to the assembly segment with `0M` overlap. When paths are present, only path-terminal segment ends are annotated and the link orientation follows the path context. When no paths are present, segments are scanned independently.
+Each telomere jump points from the synthetic node to the assembly segment with an unspecified jump distance (`*`). When paths are present, only path-terminal segment ends are annotated and the connection orientation follows the path context. When no paths are present, segments are scanned independently.
 
 No BED, BEDgraph, or TSV files are written in GFA mode.

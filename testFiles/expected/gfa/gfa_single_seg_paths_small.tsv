@@ -1,5 +1,5 @@
-path	segment	terminal_role	path_orient	node_name	seg_edge_orient	tl_bp
-path_plus	seg_shared	start	+	telomere_seg_shared+_start	+	72
-path_plus	seg_shared	end	+	telomere_seg_shared+_end	-	72
-path_minus	seg_shared	start	-	telomere_seg_shared-_start	-	72
-path_minus	seg_shared	end	-	telomere_seg_shared-_end	+	72
+path	segment	terminal_role	path_orient	node_name	seg_edge_orient	connector_type	connector_value	tl_bp
+path_plus	seg_shared	start	+	telomere_seg_shared+_start	+	J	*	72
+path_plus	seg_shared	end	+	telomere_seg_shared+_end	-	J	*	72
+path_minus	seg_shared	start	-	telomere_seg_shared-_start	-	J	*	72
+path_minus	seg_shared	end	-	telomere_seg_shared-_end	+	J	*	72

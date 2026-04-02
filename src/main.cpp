@@ -97,7 +97,7 @@ int main(int argc, char **argv) {
         userInput.inSequenceName   = real.filename().string();
         userInput.outRoute         = userInput.inSequencePrefix;
     };
-    
+
     static struct option long_options[] = { // struct mapping long options
         {"input-sequence", required_argument, 0, 'f'},
         {"output", required_argument, 0, 'o'},

@@ -1,2 +1,2 @@
-path	segment	terminal_role	path_orient	node_name	seg_edge_orient	tl_bp
-.	segMulti	start	.	telomere_segMulti_start	+	72
+path	segment	terminal_role	path_orient	node_name	seg_edge_orient	connector_type	connector_value	tl_bp
+.	segMulti	start	.	telomere_segMulti_start	+	J	*	72

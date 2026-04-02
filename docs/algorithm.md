@@ -32,12 +32,12 @@ If any genome-wide output flag is enabled (`-r`, `-g`, `-e`, `-m`, or `-i`), ult
 2. Decide which segment ends are valid scan targets.
 3. Scan the available segment sequence for terminal telomeric repeats.
 4. Create one synthetic telomere segment for each detected terminal block.
-5. Link each synthetic node back to the matching assembly segment end.
+5. Connect each synthetic node back to the matching assembly segment end with GFA `J` jump records.
 6. Write the result as `<input>.telo.annotated.gfa`.
 
 When paths are present, Teloscope annotates only path-terminal segment ends. This keeps the graph output aligned with assembly path ends rather than every raw segment end. When no paths are present, each segment is treated independently.
 
-Synthetic telomere nodes are placeholders. They carry tags that preserve the detected telomere length while keeping the graph easy to display in BandageNG.
+Synthetic telomere nodes are placeholders. They carry tags that preserve the detected telomere length while keeping the graph easier to display in BandageNG.
 
 ## Pattern handling
 

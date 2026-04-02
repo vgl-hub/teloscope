@@ -1,5 +1,5 @@
-path	segment	terminal_role	path_orient	node_name	seg_edge_orient	tl_bp
-path_pp	seg_fp	start	+	telomere_seg_fp+_start	+	72
-path_pp	seg_lp	end	+	telomere_seg_lp+_end	-	72
-path_nn	seg_fn	start	-	telomere_seg_fn-_start	-	72
-path_nn	seg_ln	end	-	telomere_seg_ln-_end	+	72
+path	segment	terminal_role	path_orient	node_name	seg_edge_orient	connector_type	connector_value	tl_bp
+path_pp	seg_fp	start	+	telomere_seg_fp+_start	+	J	*	72
+path_pp	seg_lp	end	+	telomere_seg_lp+_end	-	J	*	72
+path_nn	seg_fn	start	-	telomere_seg_fn-_start	-	J	*	72
+path_nn	seg_ln	end	-	telomere_seg_ln-_end	+	J	*	72

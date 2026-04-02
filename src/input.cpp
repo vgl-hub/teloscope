@@ -1,4 +1,5 @@
 #include <iostream>
+#include <algorithm>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string>
@@ -20,6 +21,53 @@
 #include "teloscope.h"
 #include "output.h"
 #include "input.h"
+
+namespace {
+
+struct PendingTelomereAnnotation {
+    std::string dedupeKey;
+    std::string header;
+    bool atStart = false;
+    uint32_t blockLen = 0;
+    char segOrient = '+';
+};
+
+std::vector<Tag> makeSyntheticTelomereTags(uint32_t blockLen) {
+    return {
+        Tag{'i', "LN", "6"},
+        Tag{'i', "RC", "6000"},
+        Tag{'i', "TL", std::to_string(blockLen)}
+    };
+}
+
+void queueAnnotation(std::vector<PendingTelomereAnnotation> &annotations,
+                     const std::string &dedupeKey,
+                     const std::string &header,
+                     bool atStart,
+                     uint32_t blockLen,
+                     char segOrient) {
+    for (auto &ann : annotations) {
+        if (ann.dedupeKey == dedupeKey) {
+            ann.blockLen = std::max(ann.blockLen, blockLen);
+            return;
+        }
+    }
+
+    annotations.push_back({dedupeKey, header, atStart, blockLen, segOrient});
+}
+
+void appendTelomereConnection(InSequences &inSequences,
+                              unsigned int telomereUid,
+                              unsigned int segmentUid,
+                              char segmentOrient) {
+    InGap jump;
+    jump.newGap(0, telomereUid, segmentUid, '+', segmentOrient, 0, "",
+                std::vector<Tag>{Tag{'i', "RC", "0"}});
+    std::lock_guard<std::mutex> lck(mtx);
+    inSequences.addGap(jump);
+}
+
+} // namespace
 
 
 void Input::load(UserInputTeloscope userInput) {
@@ -116,8 +164,9 @@ void Input::read(InSequences &inSequences) {
 
     // path-based annotation
     for (InPath& inPath : inPaths) {
-        threadPool.queueJob([&inPath, this, inSegments, inGaps, &teloscope]() {
-            return teloscope.walkPath(&inPath, *inSegments, *inGaps);
+        InPath* pathPtr = &inPath;
+        threadPool.queueJob([pathPtr, inSegments, inGaps, &teloscope]() {
+            return teloscope.walkPath(pathPtr, *inSegments, *inGaps);
         });
     }
     lg.verbose("Waiting for jobs to complete");
@@ -141,65 +190,32 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
 
     SegmentData segmentData = scanSegment(sequence, 0, true); // tipsOnly = true for GFA segments
 
-    // collect annotations before locking
-    struct TeloAnnotation {
-        std::string header;
-        std::vector<Tag> tags;
-        char segOrient; // orientation of the assembly segment in the edge
-    };
-    std::vector<TeloAnnotation> annotations;
+    std::vector<PendingTelomereAnnotation> annotations;
 
     for (const TelomereBlock& block : segmentData.terminalBlocks) {
         uint64_t distToStart = block.start;
         uint64_t distToEnd   = sequence.size() - (block.start + block.blockLen);
         bool atStart = distToStart <= distToEnd;
 
-        std::string header = "telomere_"
-                        + segment->getSeqHeader()
-                        + (atStart ? "_start" : "_end");
-
-        // skip duplicate
-        bool duplicate = false;
-        for (const auto& ann : annotations) {
-            if (ann.header == header) { duplicate = true; break; }
-        }
-        if (duplicate) continue;
-
         // edge orientation: + = start, - = end
         char segOrient = atStart ? '+' : '-';
-
-        annotations.push_back({header, {
-            Tag{'i', "LN", "6"},
-            Tag{'i', "RC", "6000"},
-            Tag{'i', "TL", std::to_string(block.blockLen)}
-        }, segOrient});
+        const std::string header = "telomere_"
+                        + segment->getSeqHeader()
+                        + (atStart ? "_start" : "_end");
+        queueAnnotation(annotations, header, header, atStart, block.blockLen, segOrient);
     }
 
-    // traverseInSegmentWrapper and appendEdge lock mtx internally
     for (auto& ann : annotations) {
         Sequence teloSeq{ann.header, "", new std::string("*")};
-        inSequences.traverseInSegmentWrapper(&teloSeq, ann.tags);
+        inSequences.traverseInSegmentWrapper(&teloSeq, makeSyntheticTelomereTags(ann.blockLen));
 
-        // read UID under lock
         unsigned int teloUid;
         {
             std::lock_guard<std::mutex> lck(mtx);
             teloUid = inSequences.getHash1()->at(ann.header);
         }
 
-        // edge
-        InEdge inEdge;
-        inEdge.newEdge(
-          0,                      // auto-assign UID in appendEdge
-          teloUid,                // source = telomere node
-          segment->getuId(),      // target = assembly segment
-          '+',                    // telomere always + orientation
-          ann.segOrient,          // segment orient: + for start, - for end
-          "0M",
-          "",
-          std::vector<Tag>{ Tag{'i',"RC","0"} }
-        );
-        inSequences.appendEdge(inEdge);
+        appendTelomereConnection(inSequences, teloUid, segment->getuId(), ann.segOrient);
     }
 
     threadLog.add("\tCompleted walking segment:\t" + segment->getSeqHeader());
@@ -226,12 +242,7 @@ bool Teloscope::walkSegmentForPath(InSegment* segment, InSequences& inSequences,
     // First+'+' and Last+'-' => scan START; First+'-' and Last+'+' => scan END
     bool scanStart = (isFirst == (pathOrient == '+'));
 
-    struct TeloAnnotation {
-        std::string header;
-        std::vector<Tag> tags;
-        char edgeOrient;
-    };
-    std::vector<TeloAnnotation> annotations;
+    std::vector<PendingTelomereAnnotation> annotations;
 
     for (const TelomereBlock& block : segmentData.terminalBlocks) {
         uint64_t distToStart = block.start;
@@ -247,21 +258,9 @@ bool Teloscope::walkSegmentForPath(InSegment* segment, InSequences& inSequences,
                         + std::string(1, pathOrient)
                         + "_" + posLabel;
 
-        // skip duplicate within this call
-        bool duplicate = false;
-        for (const auto& ann : annotations) {
-            if (ann.header == header) { duplicate = true; break; }
-        }
-        if (duplicate) continue;
-
         // Edge orientation rule: START = pathOrient, END = flip(pathOrient)
         char edgeOrient = isFirst ? pathOrient : (pathOrient == '+' ? '-' : '+');
-
-        annotations.push_back({header, {
-            Tag{'i', "LN", "6"},
-            Tag{'i', "RC", "6000"},
-            Tag{'i', "TL", std::to_string(block.blockLen)}
-        }, edgeOrient});
+        queueAnnotation(annotations, header, header, blockAtStart, block.blockLen, edgeOrient);
     }
 
     for (auto& ann : annotations) {
@@ -273,7 +272,7 @@ bool Teloscope::walkSegmentForPath(InSegment* segment, InSequences& inSequences,
         }
 
         Sequence teloSeq{ann.header, "", new std::string("*")};
-        inSequences.traverseInSegmentWrapper(&teloSeq, ann.tags);
+        inSequences.traverseInSegmentWrapper(&teloSeq, makeSyntheticTelomereTags(ann.blockLen));
 
         unsigned int teloUid;
         {
@@ -281,18 +280,7 @@ bool Teloscope::walkSegmentForPath(InSegment* segment, InSequences& inSequences,
             teloUid = inSequences.getHash1()->at(ann.header);
         }
 
-        InEdge inEdge;
-        inEdge.newEdge(
-          0,
-          teloUid,
-          segment->getuId(),
-          '+',
-          ann.edgeOrient,
-          "0M",
-          "",
-          std::vector<Tag>{ Tag{'i',"RC","0"} }
-        );
-        inSequences.appendEdge(inEdge);
+        appendTelomereConnection(inSequences, teloUid, segment->getuId(), ann.segOrient);
     }
 
     threadLog.add("\tCompleted walking segment (path-aware):\t" + segment->getSeqHeader());

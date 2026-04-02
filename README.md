@@ -9,7 +9,7 @@
 
 Teloscope scans assembly ends for telomeric repeats. It reads `FASTA`, `FASTA.gz`, and `GFA` inputs, merges repeat matches into telomere blocks, classifies scaffolds in FASTA mode, and writes files that are easy to inspect in BED, TSV, BEDgraph, PDF, or GFA form.
 
-In FASTA mode, Teloscope writes terminal telomere annotations, gap coordinates, and a summary table. In GFA mode, it writes an annotated graph with synthetic telomere nodes so the result can be opened directly in BandageNG.
+In FASTA mode, Teloscope writes terminal telomere annotations, gap coordinates, and a summary table. In GFA mode, it writes an annotated graph for BandageNG. By default, synthetic telomere nodes are connected back to the assembly with GFA `J` jump records instead of hard-adjacency `L` links to reduce disruptive force-layout lines.
 
 ## What Teloscope writes
 
@@ -70,6 +70,7 @@ Notes:
 - Teloscope always searches both each input pattern and its reverse complement.
 - If `-p` is omitted, Teloscope derives the search set from `-c`.
 - Any genome-wide output flag (`-r`, `-g`, `-e`, `-m`, `-i`) disables ultra-fast mode automatically.
+- GFA mode uses GFA `J` jump records for telomere connectors instead of direct `L` adjacency links.
 - Gzipped stdin is not supported. Decompress before piping.
 
 ## Typical output layout

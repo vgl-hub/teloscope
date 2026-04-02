@@ -1,3 +1,3 @@
-path	segment	terminal_role	path_orient	node_name	seg_edge_orient	tl_bp
-.	seg_plant	start	.	telomere_seg_plant_start	+	84
-.	seg_plant	end	.	telomere_seg_plant_end	-	84
+path	segment	terminal_role	path_orient	node_name	seg_edge_orient	connector_type	connector_value	tl_bp
+.	seg_plant	start	.	telomere_seg_plant_start	+	J	*	84
+.	seg_plant	end	.	telomere_seg_plant_end	-	J	*	84

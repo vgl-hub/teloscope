@@ -72,7 +72,9 @@ gfa_preserve_input strict
 4. `path_orient`
 5. `node_name`
 6. `seg_edge_orient`
-7. `tl_bp`
+7. `connector_type` (optional, defaults to `L`)
+8. `connector_value` (optional, defaults to `0M`)
+9. `tl_bp`
 
 The validator parses the annotated GFA and checks:
 

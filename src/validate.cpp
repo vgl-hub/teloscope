@@ -157,12 +157,13 @@ struct GfaSegment {
     std::map<std::string, TagValue> tags;
 };
 
-struct GfaLink {
+struct GfaConnection {
+    char recordType = '\0';
     std::string from;
     char fromOrient = '\0';
     std::string to;
     char toOrient = '\0';
-    std::string cigar;
+    std::string payload;
     std::map<std::string, TagValue> tags;
 };
 
@@ -171,7 +172,7 @@ struct GfaDocument {
     std::multiset<std::string> nonTelomereRawLines;
     std::multiset<std::string> nonTelomereSegmentKeys;
     std::vector<GfaSegment> telomereSegments;
-    std::vector<GfaLink> telomereLinks;
+    std::vector<GfaConnection> telomereConnections;
 };
 
 struct GfaExpectRow {
@@ -181,6 +182,8 @@ struct GfaExpectRow {
     char pathOrient = '.';
     std::string nodeName;
     char segEdgeOrient = '\0';
+    char connectorType = 'L';
+    std::string connectorValue = "0M";
     int tlBp = 0;
 };
 
@@ -417,17 +420,18 @@ GfaDocument parseGfa(const fs::path &path) {
             continue;
         }
 
-        if (recordType == "L" && fields.size() >= 6) {
-            const bool telomereLink = isTelomereName(fields[1]) || isTelomereName(fields[3]);
-            GfaLink link;
-            link.from = fields[1];
-            link.fromOrient = fields[2].empty() ? '\0' : fields[2][0];
-            link.to = fields[3];
-            link.toOrient = fields[4].empty() ? '\0' : fields[4][0];
-            link.cigar = fields[5];
-            link.tags = parseTags(fields, 6);
-            if (telomereLink)
-                doc.telomereLinks.push_back(link);
+        if ((recordType == "L" || recordType == "J") && fields.size() >= 6) {
+            const bool telomereConnection = isTelomereName(fields[1]) || isTelomereName(fields[3]);
+            GfaConnection connection;
+            connection.recordType = recordType[0];
+            connection.from = fields[1];
+            connection.fromOrient = fields[2].empty() ? '\0' : fields[2][0];
+            connection.to = fields[3];
+            connection.toOrient = fields[4].empty() ? '\0' : fields[4][0];
+            connection.payload = fields[5];
+            connection.tags = parseTags(fields, 6);
+            if (telomereConnection)
+                doc.telomereConnections.push_back(connection);
             else
                 doc.nonTelomereRawLines.insert(line);
             continue;
@@ -477,6 +481,12 @@ std::vector<GfaExpectRow> parseGfaExpectations(const fs::path &path) {
         row.nodeName = getField("node_name");
         const std::string segOrient = getField("seg_edge_orient");
         row.segEdgeOrient = segOrient.empty() ? '\0' : segOrient[0];
+        const std::string connectorType = getField("connector_type");
+        if (!connectorType.empty())
+            row.connectorType = connectorType[0];
+        const std::string connectorValue = getField("connector_value");
+        if (!connectorValue.empty())
+            row.connectorValue = connectorValue;
         const std::string tl = getField("tl_bp");
         row.tlBp = tl.empty() ? 0 : std::stoi(tl);
         rows.push_back(row);
@@ -596,10 +606,10 @@ bool checkGfaExpectations(const GfaDocument &outputDoc,
         return false;
     }
 
-    if (outputDoc.telomereLinks.size() != expectedRows.size()) {
-        printFAIL(inputFile.c_str(), "unexpected number of telomere links");
+    if (outputDoc.telomereConnections.size() != expectedRows.size()) {
+        printFAIL(inputFile.c_str(), "unexpected number of telomere connectors");
         std::cout << "    expected: " << expectedRows.size() << std::endl;
-        std::cout << "    actual: " << outputDoc.telomereLinks.size() << std::endl;
+        std::cout << "    actual: " << outputDoc.telomereConnections.size() << std::endl;
         return false;
     }
 
@@ -635,25 +645,26 @@ bool checkGfaExpectations(const GfaDocument &outputDoc,
             return false;
         }
 
-        std::vector<GfaLink> matchingLinks;
-        for (const auto &link : outputDoc.telomereLinks) {
-            if (link.from == row.nodeName)
-                matchingLinks.push_back(link);
+        std::vector<GfaConnection> matchingConnections;
+        for (const auto &connection : outputDoc.telomereConnections) {
+            if (connection.from == row.nodeName)
+                matchingConnections.push_back(connection);
         }
-        if (matchingLinks.size() != 1) {
-            printFAIL(inputFile.c_str(), "expected exactly one telomere link", row.nodeName.c_str());
+        if (matchingConnections.size() != 1) {
+            printFAIL(inputFile.c_str(), "expected exactly one telomere connector", row.nodeName.c_str());
             return false;
         }
 
-        const auto &link = matchingLinks.front();
-        if (link.fromOrient != '+' || link.to != row.segment ||
-            link.toOrient != row.segEdgeOrient || link.cigar != "0M") {
-            printFAIL(inputFile.c_str(), "telomere link mismatch", row.nodeName.c_str());
+        const auto &connection = matchingConnections.front();
+        if (connection.recordType != row.connectorType ||
+            connection.fromOrient != '+' || connection.to != row.segment ||
+            connection.toOrient != row.segEdgeOrient || connection.payload != row.connectorValue) {
+            printFAIL(inputFile.c_str(), "telomere connector mismatch", row.nodeName.c_str());
             return false;
         }
-        const auto rcTag = link.tags.find("RC");
-        if (rcTag == link.tags.end() || rcTag->second.content != "0") {
-            printFAIL(inputFile.c_str(), "telomere link RC tag mismatch", row.nodeName.c_str());
+        const auto rcTag = connection.tags.find("RC");
+        if (rcTag == connection.tags.end() || rcTag->second.content != "0") {
+            printFAIL(inputFile.c_str(), "telomere connector RC tag mismatch", row.nodeName.c_str());
             return false;
         }
     }
