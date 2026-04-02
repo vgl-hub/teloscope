@@ -5,7 +5,7 @@
 Teloscope can generate a PDF report during a FASTA run:
 
 ```sh
-teloscope asm.fa -o results/ -r --plot-report
+teloscope asm.fa -o results/ -r -e -g -i --plot-report
 ```
 
 This writes `results/asm.fa_plot_report.pdf`.
