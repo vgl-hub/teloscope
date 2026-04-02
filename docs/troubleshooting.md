@@ -155,6 +155,13 @@ That is expected. GFA mode writes only:
 
 ## Calls look wrong
 
+Start with the two files that drive most debugging:
+
+- `*_terminal_telomeres.bed`
+- `*_report.tsv`
+
+Most surprises come from `-c`, `-t`, `-l`, `-y`, `-k`, `-d`, or `-x`.
+
 ### No telomeres were called
 
 Check these first:
@@ -163,45 +170,42 @@ Check these first:
 - `-t` is large enough to include the terminal block
 - `-l` is not too strict
 - `-y` is not too strict
-- `-x 0` is not too strict for the assembly
+- `-x` is not too strict for the assembly
 
-A useful debugging run is:
+Use one permissive run first:
 
 ```sh
 teloscope asm.fa -t 100000 -l 200 -y 0.3 -x 1 --verbose
 ```
 
-Then tighten one parameter at a time.
+Then restore one threshold at a time.
 
-### Telomeres are split into too many small blocks
+### Blocks are split or merged incorrectly
 
-`-k` and `-d` are probably too small.
+`-k` and `-d` control merging.
 
-- `-k` controls how far apart repeat matches can be before they stop merging
-- `-d` controls how far apart nearby repeat groups can be before block extension stops
+- Low `-k` or `-d` splits nearby repeat runs into separate blocks.
+- High `-k` or `-d` fuses distinct repeat runs into one block.
 
-Increase them gradually if blocks are fragmenting.
-
-### Too much sequence merged into one block
-
-`-k` or `-d` is probably too large. Lower them if unrelated repeat runs are being fused.
+If blocks fragment, raise them gradually. If blocks fuse, lower them.
 
 ### Classification looks wrong
 
-Check:
+`*_report.tsv` is based on scaffold-terminal blocks.
 
-- the canonical motif in `-c`
-- whether the telomere block is still within `-t`
-- whether you are comparing scaffold-terminal logic to contig-terminal BED output
-
-Remember:
-
-- `*_report.tsv` classifies from scaffold-terminal blocks
 - `-n` affects BED retention, not classification
+- `-n` keeps contig-terminal rows in `*_terminal_telomeres.bed`
+- `-n` does not change `t2t`, `incomplete`, `misassembly`, `discordant`, or `none`
 
-### Pattern matching became very slow
+If classification looks wrong, recheck:
 
-This usually means the search set exploded because of:
+- `-c`
+- `-t`
+- whether you are comparing scaffold-terminal calls in `*_report.tsv` to contig-terminal rows in `*_terminal_telomeres.bed`
+
+### Pattern matching is slow or labels look wrong
+
+If runtime jumps after changing `-p` or `-x`, the search set likely got too large because of:
 
 - many entries in `-p`
 - IUPAC ambiguity codes
@@ -209,9 +213,7 @@ This usually means the search set exploded because of:
 
 If Teloscope warns that pattern count is unusually high, reduce ambiguity in `-p` or lower `-x`.
 
-### `p` and `q` labels look reversed for the organism
-
-`-c` defines the canonical repeat used for canonical counting and strand labeling. If `-c` is wrong, the labels can look wrong even if repeat matching itself succeeded.
+If `p` and `q` labels look wrong, recheck `-c`. It sets the canonical repeat used for canonical counting and strand labeling.
 
 ## GFA-specific behavior
 
