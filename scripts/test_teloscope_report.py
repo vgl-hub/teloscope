@@ -239,7 +239,7 @@ class TeloscopeReportTests(unittest.TestCase):
         self.assertIn("<", text_strings)
         self.assertIn(">", text_strings)
         self.assertGreaterEqual(min(font_sizes), REPORT.MIN_TEXT_SIZE)
-        self.assertEqual(REPORT.COLORS["Misassembly"], "#8278F4")
+        self.assertEqual(REPORT.COLORS["Misassembly"], "#E6AB02")
         self.assertEqual(REPORT.BLOCK_GLYPHS["b"], "<>")
 
     def test_flagged_scaffold_labels_are_right_aligned_without_category_suffix(self):
