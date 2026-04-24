@@ -43,16 +43,16 @@ FIG_WIDTH_DOUBLE = 7.20    # inches (183 mm)
 
 COLORS = {
     # Classification palette (colorblind-friendly, quality-graduated)
-    "T2T":                 "#1B7A6E",    # deep teal (best)
-    "Gapped T2T":          "#7CC5B8",    # light teal
-    "Incomplete":          "#3A6FB0",    # steel blue
-    "Gapped Incomplete":   "#8FB8DE",    # light blue
-    "Misassembly":         "#8278F4",    # muted periwinkle
-    "Gapped Misassembly":  "#C6C1FA",    # light periwinkle
-    "Discordant":          "#C44E52",    # muted vermillion
-    "Gapped Discordant":   "#E09A9C",    # light vermillion
-    "No telomeres":        "#8C8C8C",    # medium grey (worst)
-    "Gapped No telomeres": "#CCCCCC",    # light grey
+    "T2T":                 "#08519C",
+    "Gapped T2T":          "#9ECAE1",
+    "Incomplete":          "#66A61E",
+    "Gapped Incomplete":   "#B3D38F",
+    "Misassembly":         "#E6AB02",
+    "Gapped Misassembly":  "#F2D580",
+    "Discordant":          "#D7191C",
+    "Gapped Discordant":   "#EB8C8D",
+    "No telomeres":        "#762A83",
+    "Gapped No telomeres": "#BB95C1",
     # Arm / track colors
     "p":            "#0072B2",
     "q":            "#D55E00",
