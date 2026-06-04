@@ -242,6 +242,9 @@ void Input::read(InSequences &inSequences) {
 
 void Input::readFastqSubset(std::ostream &out) {
     UserInputTeloscope fastqInput = userInput;
+    if (!fastqInput.minBlockLenSet) {
+        fastqInput.minBlockLen = 60;
+    }
     fastqInput.terminalLimit = std::numeric_limits<uint32_t>::max() / 2;
     fastqInput.ultraFastMode = true;
     fastqInput.outFasta = false;

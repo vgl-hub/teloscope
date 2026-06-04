@@ -3,6 +3,7 @@ INCLUDE_DIR ?= -I./include -Igfalibs/include
 WARNINGS = -Wall -Wextra
 
 CXXFLAGS = -g -std=gnu++17 -O3 $(INCLUDE_DIR) $(WARNINGS) $(CFLAGS)
+DEPFLAGS = -MMD -MP
 
 TARGET = teloscope
 TEST_TARGET = validate
@@ -23,9 +24,10 @@ GFALIBS_DIR := $(CURDIR)/gfalibs
 
 OBJS := main teloscope input tools
 BINS := $(addprefix $(BINDIR)/, $(OBJS))
+DEPFILES := $(addsuffix .d, $(BINS))
 
 head: $(BINS) gfalibs | $(BUILD)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $(BUILD)/$(TARGET) $(wildcard $(BINDIR)/*) $(GFALIBS_DIR)/*.o $(LIBS)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $(BUILD)/$(TARGET) $(BINS) $(GFALIBS_DIR)/*.o $(LIBS)
 	
 debug: CXXFLAGS += -DDEBUG -O0
 debug: head
@@ -35,7 +37,7 @@ all: head validate regenerate simulate
 $(OBJS): %: $(BINDIR)/%
 	@
 $(BINDIR)%: $(SOURCE)/%.cpp $(INCLUDE)/%.h | $(BINDIR)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) -c $(SOURCE)/$(notdir $@).cpp -o $@
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) $(LDFLAGS) -c $(SOURCE)/$(notdir $@).cpp -o $@
 	
 .PHONY: gfalibs
 gfalibs:
@@ -62,3 +64,5 @@ test-gaps: head
 clean:
 	$(RM) -r build
 	$(MAKE) -C $(GFALIBS_DIR) clean
+
+-include $(DEPFILES)

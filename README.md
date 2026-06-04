@@ -75,6 +75,7 @@ Notes:
 - GFA mode uses GFA `J` jump records for telomere connectors instead of direct `L` adjacency links.
 - Gzipped stdin is not supported. Decompress before piping.
 - `--fastq-subset` writes FASTQ to stdout and diagnostics to stderr.
+- `--fastq-subset` uses a `60` bp default minimum block length; assembly annotation keeps the `500` bp default. Use `-l` to override either mode.
 
 ## Typical output layout
 

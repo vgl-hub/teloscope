@@ -34,6 +34,7 @@ struct UserInputTeloscope : UserInput {
 
     unsigned short int maxMatchDist = 50;
     unsigned short int minBlockLen = 500; // Only for all blocks
+    bool minBlockLenSet = false;
     unsigned short int maxBlockDist = 200;
     unsigned short int minBlockCounts = 2;
     float minBlockDensity = 0.5f;
