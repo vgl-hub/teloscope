@@ -6,6 +6,7 @@ Teloscope has two input modes:
 
 - FASTA mode scans sequence ends, groups telomeric matches into blocks, and classifies each path or scaffold.
 - GFA mode scans graph segments and writes an annotated graph with synthetic telomere nodes.
+- FASTQ subset mode streams reads and writes only records with Teloscope-valid telomeric blocks.
 
 ## FASTA mode
 
@@ -38,6 +39,10 @@ If any genome-wide output flag is enabled (`-r`, `-g`, `-e`, `-m`, or `-i`), ult
 When paths are present, Teloscope annotates only path-terminal segment ends. This keeps the graph output aligned with assembly path ends rather than every raw segment end. When no paths are present, each segment is treated independently.
 
 Synthetic telomere nodes are placeholders. They carry tags that preserve the detected telomere length while keeping the graph easier to display in BandageNG.
+
+## FASTQ subset mode
+
+`--fastq-subset` reads FASTQ records in bounded batches, scans each read as a whole sequence with the same pattern expansion and block filters used by FASTA mode, and writes unchanged passing FASTQ records to stdout. Read order is preserved. Diagnostics and final counts are written to stderr so stdout can be piped directly into a mapper.
 
 ## Pattern handling
 

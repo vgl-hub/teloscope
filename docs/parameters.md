@@ -15,15 +15,17 @@ teloscope input.fa [options]
 teloscope input.fa.gz [options]
 teloscope input.gfa [options]
 teloscope -f input.fa [options]
+teloscope --fastq-subset input.fq.gz [options] > telomeric.fq
 ```
 
 ## Input and output
 
 | Flag | Long form | Meaning | Default |
 | --- | --- | --- | --- |
-| `-f` | `--input-sequence` | input FASTA, FASTA.gz, or GFA file | required unless passed positionally |
+| `-f` | `--input-sequence` | input FASTA, FASTA.gz, GFA, or FASTQ file | required unless passed positionally |
 | `-o` | `--output` | output directory | input file directory |
 | `-j` | `--threads` | maximum worker threads | all available |
+|  | `--fastq-subset` | stream FASTQ reads with Teloscope-valid telomeric blocks to stdout | `false` |
 
 ## Pattern control
 
@@ -114,6 +116,12 @@ Graph annotation:
 teloscope asm.gfa -o results/
 ```
 
+FASTQ read subset before mapping:
+
+```sh
+teloscope --fastq-subset reads.fq.gz -j 32 | minimap2 -ax map-hifi ref.fa -
+```
+
 ## Stdin
 
 Teloscope reads from stdin when no input file is given:
@@ -121,6 +129,7 @@ Teloscope reads from stdin when no input file is given:
 ```sh
 cat asm.fa | teloscope -o results/
 zcat asm.fa.gz | teloscope -o results/
+zcat reads.fq.gz | teloscope --fastq-subset > telomeric.fq
 ```
 
 Compressed stdin is not supported. Decompress first.

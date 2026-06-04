@@ -47,6 +47,7 @@ struct UserInputTeloscope : UserInput {
     bool ultraFastMode = true;
     bool manualCuration = false;
     bool outPlotReport = false;
+    bool fastqSubset = false;
 
     double maxMem = 0;
     std::string prefix = ".", outFile = "";
@@ -63,6 +64,7 @@ public:
 
     void load(UserInputTeloscope userInput);
     void read(InSequences &inSequence);
+    void readFastqSubset(std::ostream &out);
 
 };
 

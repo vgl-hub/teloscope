@@ -83,7 +83,7 @@ int main(int argc, char **argv) {
     
     if (argc == 1 && !isPipe) { // case: with no arguments and no pipe
 
-        printf("teloscope input.[fa|fa.gz|gfa] [options]\nteloscope -f input.[fa|fa.gz|gfa] -o /output/path/\nUse -h for additional help.\n");
+        printf("teloscope input.[fa|fa.gz|gfa] [options]\nteloscope --fastq-subset input.[fq|fq.gz] > telomeric.fq\nUse -h for additional help.\n");
         exit(0);
 
     }
@@ -122,6 +122,7 @@ int main(int argc, char **argv) {
         {"ultra-fast", no_argument, 0, 'u'},
         {"manual-curation", no_argument, 0, 'n'},
         {"plot-report", no_argument, 0, 0},
+        {"fastq-subset", no_argument, 0, 0},
         {"verbose", no_argument, &verbose_flag, 1},
         {"cmd", no_argument, &cmd_flag, 1},
         {"version", no_argument, 0, 'v'},
@@ -156,6 +157,8 @@ int main(int argc, char **argv) {
             case 0: // long options without short options
                 if (strcmp(long_options[option_index].name, "plot-report") == 0)
                     userInput.outPlotReport = true;
+                else if (strcmp(long_options[option_index].name, "fastq-subset") == 0)
+                    userInput.fastqSubset = true;
                 break;
 
 
@@ -455,8 +458,9 @@ int main(int argc, char **argv) {
             case 'h': // help
                 printf("teloscope input.[fa|fa.gz|gfa] [options]\n");
                 printf("teloscope -f input.[fa|fa.gz|gfa] [options]\n");
+                printf("teloscope --fastq-subset input.[fq|fq.gz] [options] > telomeric.fq\n");
                 printf("\nRequired Parameters:\n");
-                printf("\t'-f'\t--input-sequence\tInput fasta file (or pass as first positional argument).\n");
+                printf("\t'-f'\t--input-sequence\tInput FASTA, GFA, or FASTQ file (or pass as first positional argument).\n");
                 printf("\t'-o'\t--output\tSet output route. [Default: Input path]\n");
                 printf("\t'-c'\t--canonical\tSet canonical pattern. [Default: TTAGGG]\n");
                 printf("\t'-p'\t--patterns\tSet patterns to explore, separate them by commas [Default: TTAGGG]\n");
@@ -479,6 +483,7 @@ int main(int argc, char **argv) {
                 printf("\t'-u'\t--ultra-fast\tUltra-fast mode. Only scans terminal telomeres at contig ends. [Default: true]\n");
                 printf("\t'-n'\t--manual-curation\tRetain all terminal telomeres (contig + scaffold) in BED output. [Default: scaffold only]\n");
                 printf("\t\t--plot-report\tGenerate a PDF plot report after analysis (requires Python 3 + matplotlib). [Default: false]\n");
+                printf("\t\t--fastq-subset\tStream FASTQ reads with Teloscope-valid telomeric blocks to stdout. [Default: false]\n");
 
                 printf("\t'-v'\t--version\tPrint current software version.\n");
                 printf("\t'-h'\t--help\tPrint current software options.\n");
@@ -523,7 +528,7 @@ int main(int argc, char **argv) {
     }
 
     // writable check
-    if (!userInput.outRoute.empty()) {
+    if (!userInput.outRoute.empty() && !userInput.fastqSubset) {
         std::string testPath = userInput.outRoute + "/.teloscope_write_test";
         std::ofstream test(testPath);
         if (!test.is_open()) {
@@ -585,6 +590,12 @@ int main(int argc, char **argv) {
     if (!outputSummary.empty()) {
         fprintf(stderr, "Outputs: %s.\n", outputSummary.c_str());
     }
+    if (userInput.fastqSubset &&
+        (userInput.outFasta || userInput.outWinRepeats || userInput.outGC ||
+         userInput.outEntropy || userInput.outMatches || userInput.outITS ||
+         userInput.outPlotReport || userInput.manualCuration)) {
+        fprintf(stderr, "Warning: assembly output flags are ignored in --fastq-subset mode.\n");
+    }
 
     // command echo
     if (cmd_flag) {
@@ -601,7 +612,13 @@ int main(int argc, char **argv) {
     Input in;
     in.load(userInput); // load user input
     lg.verbose("Loaded user input");
-    
+
+    if (userInput.fastqSubset) {
+        in.readFastqSubset(std::cout);
+        threadPool.join();
+        exit(EXIT_SUCCESS);
+    }
+
     InSequences inSequences; // initialize sequence collection object
     lg.verbose("Sequence object generated");
     in.read(inSequences); // read input content to inSequences container
