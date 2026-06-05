@@ -178,6 +178,12 @@ void Input::read(InSequences &inSequences) {
     // GFA-based annotation
     if (userInput.inSequence.find(".gfa") != std::string::npos) {
 
+        // One scan job per terminal end. Resolve every job before queuing any:
+        // worker threads append telomere nodes to the live segment vector, so
+        // reading or iterating it while jobs run would race that growth.
+        struct TeloJob { InSegment* seg; char orient; bool isFirst; bool pathAware; };
+        std::vector<TeloJob> jobs;
+
         if (!inPaths.empty()) {
             // Unique (segment, orientation, isFirst) terminal ends: one job per node.
             std::set<std::tuple<unsigned int, char, bool>> terminalEnds;
@@ -201,21 +207,37 @@ void Input::read(InSequences &inSequences) {
                 }
             }
 
-            for (const auto& end : terminalEnds) {
-                InSegment* seg = inSequences.getInSegment(std::get<0>(end));
-                char orient = std::get<1>(end);
-                bool isFirst = std::get<2>(end);
+            for (const auto& end : terminalEnds)
+                jobs.push_back({inSequences.getInSegment(std::get<0>(end)),
+                                std::get<1>(end), std::get<2>(end), true});
+        } else {
+            // Fallback: path-less GFA, scan all segments (implicit + orientation)
+            for (InSegment* inSegment : *inSegments)
+                jobs.push_back({inSegment, '+', false, false});
+        }
+
+        // Count missing sequence now, while the segment vector is still stable.
+        size_t segmentsScanned = jobs.size(), segmentsNoSeq = 0;
+        for (const TeloJob& job : jobs)
+            if (job.seg->getInSequencePtr() == NULL) ++segmentsNoSeq;
+
+        // No DNA means nothing to scan: say so instead of silently annotating nothing.
+        if (segmentsNoSeq > 0)
+            fprintf(stderr, "Warning: %zu of %zu GFA segment(s) had no sequence (*); skipped for telomere annotation.\n",
+                    segmentsNoSeq, segmentsScanned);
+
+        for (const TeloJob& job : jobs) {
+            InSegment* seg = job.seg;
+            char orient = job.orient;
+            bool isFirst = job.isFirst;
+            if (job.pathAware)
                 threadPool.queueJob([seg, &inSequences, &teloscope, orient, isFirst]() {
                     return teloscope.walkSegmentForPath(seg, inSequences, orient, isFirst);
                 });
-            }
-        } else {
-            // Fallback: path-less GFA, scan all segments (implicit + orientation)
-            for (InSegment* inSegment : *inSegments) {
-                threadPool.queueJob([inSegment, &inSequences, &teloscope]() {
-                    return teloscope.walkSegment(inSegment, inSequences);
+            else
+                threadPool.queueJob([seg, &inSequences, &teloscope]() {
+                    return teloscope.walkSegment(seg, inSequences);
                 });
-            }
         }
 
         lg.verbose("Waiting for telomere annotation jobs to complete");

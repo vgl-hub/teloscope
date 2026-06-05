@@ -215,20 +215,21 @@ else
 fi
 
 # Check telomere nodes exist for segments with telomeres
-check_output_contains "GFA: seg_t2t start node" "telomere_seg_t2t_start" "$(cat "$GFA_OUT")"
-check_output_contains "GFA: seg_t2t end node" "telomere_seg_t2t_end" "$(cat "$GFA_OUT")"
-check_output_contains "GFA: seg_ponly start node" "telomere_seg_ponly_start" "$(cat "$GFA_OUT")"
-check_output_contains "GFA: seg_qonly end node" "telomere_seg_qonly_end" "$(cat "$GFA_OUT")"
+# Path-less segments are scanned as '+', so the orientation is encoded in the node name
+check_output_contains "GFA: seg_t2t start node" "telomere_seg_t2t+_start" "$(cat "$GFA_OUT")"
+check_output_contains "GFA: seg_t2t end node" "telomere_seg_t2t+_end" "$(cat "$GFA_OUT")"
+check_output_contains "GFA: seg_ponly start node" "telomere_seg_ponly+_start" "$(cat "$GFA_OUT")"
+check_output_contains "GFA: seg_qonly end node" "telomere_seg_qonly+_end" "$(cat "$GFA_OUT")"
 
 # Check no telomere nodes for seg_none
 check_output_not_contains "GFA: no telomere for seg_none" "telomere_seg_none" "$(cat "$GFA_OUT")"
 
 # Check edge orientations: start → L telo + seg +, end → L telo + seg -
 GFA_CONTENT=$(cat "$GFA_OUT")
-check_output_contains "GFA: start edge orient (+)" "telomere_seg_t2t_start	+	seg_t2t	+" "$GFA_CONTENT"
-check_output_contains "GFA: end edge orient (-)" "telomere_seg_t2t_end	+	seg_t2t	-" "$GFA_CONTENT"
-check_output_contains "GFA: ponly start edge" "telomere_seg_ponly_start	+	seg_ponly	+" "$GFA_CONTENT"
-check_output_contains "GFA: qonly end edge" "telomere_seg_qonly_end	+	seg_qonly	-" "$GFA_CONTENT"
+check_output_contains "GFA: start edge orient (+)" "telomere_seg_t2t+_start	+	seg_t2t	+" "$GFA_CONTENT"
+check_output_contains "GFA: end edge orient (-)" "telomere_seg_t2t+_end	+	seg_t2t	-" "$GFA_CONTENT"
+check_output_contains "GFA: ponly start edge" "telomere_seg_ponly+_start	+	seg_ponly	+" "$GFA_CONTENT"
+check_output_contains "GFA: qonly end edge" "telomere_seg_qonly+_end	+	seg_qonly	-" "$GFA_CONTENT"
 
 # Check original edges are preserved
 check_output_contains "GFA: original edge preserved" "seg_t2t	+	seg_ponly	+	0M" "$GFA_CONTENT"
