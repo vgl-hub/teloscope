@@ -83,7 +83,7 @@ int main(int argc, char **argv) {
     
     if (argc == 1 && !isPipe) { // case: with no arguments and no pipe
 
-        printf("teloscope input.[fa|fa.gz|gfa] [options]\nteloscope -f input.[fa|fa.gz|gfa] -o /output/path/\nUse -h for additional help.\n");
+        printf("teloscope input.[fa|fa.gz|gfa] [options]\nteloscope --fastq-subset input.[fq|fq.gz] > telomeric.fq\nUse -h for additional help.\n");
         exit(0);
 
     }
@@ -95,7 +95,8 @@ int main(int argc, char **argv) {
         userInput.inSequence       = real.string();
         userInput.inSequencePrefix = real.parent_path().string();
         userInput.inSequenceName   = real.filename().string();
-        userInput.outRoute         = userInput.inSequencePrefix;
+        if (!userInput.outRouteSet) // an explicit -o is not overridden by the input directory
+            userInput.outRoute = userInput.inSequencePrefix;
     };
 
     static struct option long_options[] = { // struct mapping long options
@@ -122,6 +123,7 @@ int main(int argc, char **argv) {
         {"ultra-fast", no_argument, 0, 'u'},
         {"manual-curation", no_argument, 0, 'n'},
         {"plot-report", no_argument, 0, 0},
+        {"fastq-subset", no_argument, 0, 0},
         {"verbose", no_argument, &verbose_flag, 1},
         {"cmd", no_argument, &cmd_flag, 1},
         {"version", no_argument, 0, 'v'},
@@ -156,6 +158,8 @@ int main(int argc, char **argv) {
             case 0: // long options without short options
                 if (strcmp(long_options[option_index].name, "plot-report") == 0)
                     userInput.outPlotReport = true;
+                else if (strcmp(long_options[option_index].name, "fastq-subset") == 0)
+                    userInput.fastqSubset = true;
                 break;
 
 
@@ -181,6 +185,7 @@ int main(int argc, char **argv) {
             case 'o': // output route
                 {
                     userInput.outRoute = optarg;
+                    userInput.outRouteSet = true;
 
                     if (userInput.outRoute.empty()) {
                         userInput.outRoute = userInput.inSequencePrefix;
@@ -326,6 +331,7 @@ int main(int argc, char **argv) {
             case 'l': {
                 try {
                     userInput.minBlockLen = std::stoi(optarg);
+                    userInput.minBlockLenSet = true;
                     
                     if (userInput.minBlockLen <= 0) {
                         fprintf(stderr, "Error: Min block length (-l or --min-block-length) must be > 0.\n");
@@ -455,8 +461,9 @@ int main(int argc, char **argv) {
             case 'h': // help
                 printf("teloscope input.[fa|fa.gz|gfa] [options]\n");
                 printf("teloscope -f input.[fa|fa.gz|gfa] [options]\n");
+                printf("teloscope --fastq-subset input.[fq|fq.gz] [options] > telomeric.fq\n");
                 printf("\nRequired Parameters:\n");
-                printf("\t'-f'\t--input-sequence\tInput fasta file (or pass as first positional argument).\n");
+                printf("\t'-f'\t--input-sequence\tInput FASTA, GFA, or FASTQ file (or pass as first positional argument).\n");
                 printf("\t'-o'\t--output\tSet output route. [Default: Input path]\n");
                 printf("\t'-c'\t--canonical\tSet canonical pattern. [Default: TTAGGG]\n");
                 printf("\t'-p'\t--patterns\tSet patterns to explore, separate them by commas [Default: TTAGGG]\n");
@@ -464,7 +471,7 @@ int main(int argc, char **argv) {
                 printf("\t'-t'\t--terminal-limit\tSet terminal limit for exploring telomere variant regions (TVRs). [Default: 50000]\n");
                 printf("\t'-k'\t--max-match-distance\tSet maximum distance for merging matches. [Default: 50]\n");
                 printf("\t'-d'\t--max-block-distance\tSet maximum block distance for extension. [Default: 200]\n");
-                printf("\t'-l'\t--min-block-length\tSet minimum block length. [Default: 500]\n");
+                printf("\t'-l'\t--min-block-length\tSet minimum block length. [Default: 500 assembly, 60 --fastq-subset]\n");
                 printf("\t'-y'\t--min-block-density\tSet minimum block density. [Default: 0.5]\n");
                 printf("\t'-x'\t--edit-distance\tSet edit distance for pattern matching (0-2). [Default: 1]\n");
 
@@ -479,6 +486,7 @@ int main(int argc, char **argv) {
                 printf("\t'-u'\t--ultra-fast\tUltra-fast mode. Only scans terminal telomeres at contig ends. [Default: true]\n");
                 printf("\t'-n'\t--manual-curation\tRetain all terminal telomeres (contig + scaffold) in BED output. [Default: scaffold only]\n");
                 printf("\t\t--plot-report\tGenerate a PDF plot report after analysis (requires Python 3 + matplotlib). [Default: false]\n");
+                printf("\t\t--fastq-subset\tStream FASTQ reads with Teloscope-valid telomeric blocks to stdout, or save to a file with -o. [Default: false]\n");
 
                 printf("\t'-v'\t--version\tPrint current software version.\n");
                 printf("\t'-h'\t--help\tPrint current software options.\n");
@@ -523,7 +531,7 @@ int main(int argc, char **argv) {
     }
 
     // writable check
-    if (!userInput.outRoute.empty()) {
+    if (!userInput.outRoute.empty() && !userInput.fastqSubset) {
         std::string testPath = userInput.outRoute + "/.teloscope_write_test";
         std::ofstream test(testPath);
         if (!test.is_open()) {
@@ -585,6 +593,12 @@ int main(int argc, char **argv) {
     if (!outputSummary.empty()) {
         fprintf(stderr, "Outputs: %s.\n", outputSummary.c_str());
     }
+    if (userInput.fastqSubset &&
+        (userInput.outFasta || userInput.outWinRepeats || userInput.outGC ||
+         userInput.outEntropy || userInput.outMatches || userInput.outITS ||
+         userInput.outPlotReport || userInput.manualCuration)) {
+        fprintf(stderr, "Warning: assembly output flags are ignored in --fastq-subset mode.\n");
+    }
 
     // command echo
     if (cmd_flag) {
@@ -601,7 +615,26 @@ int main(int argc, char **argv) {
     Input in;
     in.load(userInput); // load user input
     lg.verbose("Loaded user input");
-    
+
+    if (userInput.fastqSubset) {
+        if (userInput.outRouteSet) { // -o given: save to a file instead of streaming to stdout
+            std::string fastqOutPath = userInput.outRoute + "/" + userInput.inSequenceName + "_telomeric.fastq";
+            std::ofstream fastqOut(fastqOutPath);
+            if (!fastqOut.is_open()) {
+                fprintf(stderr, "Error: Cannot write telomeric reads to '%s'.\n", fastqOutPath.c_str());
+                threadPool.join();
+                exit(EXIT_FAILURE);
+            }
+            in.readFastqSubset(fastqOut);
+            fastqOut.close();
+            fprintf(stderr, "Wrote telomeric reads to %s.\n", fastqOutPath.c_str());
+        } else {
+            in.readFastqSubset(std::cout); // default: stream to stdout for piping
+        }
+        threadPool.join();
+        exit(EXIT_SUCCESS);
+    }
+
     InSequences inSequences; // initialize sequence collection object
     lg.verbose("Sequence object generated");
     in.read(inSequences); // read input content to inSequences container

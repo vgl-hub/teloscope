@@ -1,10 +1,12 @@
 #include <iostream>
 #include <algorithm>
 #include <stdint.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string>
 #include <unordered_map>
 #include <stdexcept> // jack: std::runtime_error
+#include <limits>
 
 #include "log.h"
 #include "global.h"
@@ -30,6 +32,19 @@ struct PendingTelomereAnnotation {
     bool atStart = false;
     uint32_t blockLen = 0;
     char segOrient = '+';
+};
+
+struct FastqRecord {
+    std::string header;
+    std::string sequence;
+    std::string plus;
+    std::string quality;
+};
+
+struct FastqChunkResult {
+    std::string output;
+    uint64_t scanned = 0;
+    uint64_t passed = 0;
 };
 
 std::vector<Tag> makeSyntheticTelomereTags(uint32_t blockLen) {
@@ -65,6 +80,77 @@ void appendTelomereConnection(InSequences &inSequences,
                 std::vector<Tag>{Tag{'i', "RC", "0"}});
     std::lock_guard<std::mutex> lck(mtx);
     inSequences.addGap(jump);
+}
+
+[[noreturn]] void fastqExitFailure() {
+    threadPool.join();
+    exit(EXIT_FAILURE);
+}
+
+size_t logicalLineLength(const std::string &line) {
+    if (!line.empty() && line.back() == '\r') {
+        return line.size() - 1;
+    }
+    return line.size();
+}
+
+[[noreturn]] void fastqInputError(uint64_t recordNumber, const std::string &message) {
+    if (recordNumber > 0) {
+        fprintf(stderr, "Error: FASTQ record %" PRIu64 ": %s.\n",
+                recordNumber, message.c_str());
+    } else {
+        fprintf(stderr, "Error: %s.\n", message.c_str());
+    }
+    fastqExitFailure();
+}
+
+bool readFastqRecord(std::istream &stream, FastqRecord &record, uint64_t recordNumber) {
+    // Skip blank lines (including a lone '\r') before a header so a trailing newline
+    // or a stray blank line does not abort an otherwise valid stream.
+    do {
+        if (!std::getline(stream, record.header)) {
+            return false;
+        }
+    } while (logicalLineLength(record.header) == 0);
+    if (!std::getline(stream, record.sequence) ||
+        !std::getline(stream, record.plus) ||
+        !std::getline(stream, record.quality)) {
+        fastqInputError(recordNumber, "truncated FASTQ record");
+    }
+
+    if (record.header.empty() || record.header.front() != '@') {
+        fastqInputError(recordNumber, "expected header line starting with '@'");
+    }
+    if (record.plus.empty() || record.plus.front() != '+') {
+        fastqInputError(recordNumber, "expected separator line starting with '+'");
+    }
+    if (logicalLineLength(record.sequence) != logicalLineLength(record.quality)) {
+        fastqInputError(recordNumber, "sequence and quality length differ");
+    }
+
+    return true;
+}
+
+void appendFastqRecord(std::string &out, const FastqRecord &record) {
+    out += record.header;
+    out += '\n';
+    out += record.sequence;
+    out += '\n';
+    out += record.plus;
+    out += '\n';
+    out += record.quality;
+    out += '\n';
+}
+
+bool hasTelomericBlock(Teloscope &teloscope, const FastqRecord &record) {
+    std::string sequence = record.sequence;
+    if (!sequence.empty() && sequence.back() == '\r') {
+        sequence.pop_back();
+    }
+    unmaskSequence(sequence);
+
+    SegmentData segmentData = teloscope.scanSegment(sequence, 0, true);
+    return !segmentData.terminalBlocks.empty();
 }
 
 } // namespace
@@ -155,6 +241,124 @@ void Input::read(InSequences &inSequences) {
 
     teloscope.handleBEDFile();
     lg.verbose("\nReport and BED/BEDgraph files generated.");
+}
+
+
+void Input::readFastqSubset(std::ostream &out) {
+    UserInputTeloscope fastqInput = userInput;
+    if (!fastqInput.minBlockLenSet) {
+        fastqInput.minBlockLen = 60;
+    }
+    // Scan each read end-to-end with an ultralong terminal limit (the -t parameter): any
+    // read is shorter than this, so the whole read counts as the terminal zone. We use
+    // max/2 (not max) because scanSegment evaluates 2*terminalLimit, and 2*max would overflow
+    // uint32_t and wrap to a small value, collapsing back to terminal-only scanning.
+    constexpr uint32_t wholeReadTerminalLimit = std::numeric_limits<uint32_t>::max() / 2;
+    fastqInput.terminalLimit = wholeReadTerminalLimit;
+    fastqInput.ultraFastMode = true;
+    fastqInput.outFasta = false;
+    fastqInput.outWinRepeats = false;
+    fastqInput.outGC = false;
+    fastqInput.outEntropy = false;
+    fastqInput.outMatches = false;
+    fastqInput.outITS = false;
+    fastqInput.outPlotReport = false;
+    fastqInput.manualCuration = false;
+
+    StreamObj streamObj;
+    std::shared_ptr<std::istream> stream = streamObj.openStream(fastqInput, 'f');
+    if (!stream) {
+        fprintf(stderr, "Error: Stream not successful: %s.\n", fastqInput.inSequence.c_str());
+        fastqExitFailure();
+    }
+
+    int first = stream->peek();
+    if (first == EOF) {
+        fastqInputError(0, "FASTQ input is empty");
+    }
+    if (first != '@') {
+        fastqInputError(0, "FASTQ input must start with '@'");
+    }
+
+    const uint32_t threads = std::max<uint32_t>(1, threadPool.totalThreads());
+    const size_t recordsPerBatch = std::min<size_t>(
+        2048, std::max<size_t>(256, static_cast<size_t>(threads) * 32));
+
+    std::vector<FastqRecord> batch;
+    batch.reserve(recordsPerBatch);
+
+    uint64_t recordNumber = 0;
+    uint64_t totalReads = 0;
+    uint64_t passedReads = 0;
+
+    auto processBatch = [&]() {
+        if (batch.empty()) {
+            return;
+        }
+
+        const size_t chunkCount = std::min<size_t>(threads, batch.size());
+        const size_t chunkSize = (batch.size() + chunkCount - 1) / chunkCount;
+        std::vector<FastqChunkResult> results(chunkCount);
+
+        for (size_t chunk = 0; chunk < chunkCount; ++chunk) {
+            const size_t start = chunk * chunkSize;
+            const size_t end = std::min(batch.size(), start + chunkSize);
+            if (start >= end) {
+                continue;
+            }
+
+            threadPool.queueJob([&, chunk, start, end]() {
+                Teloscope teloscope(fastqInput);
+                FastqChunkResult &result = results[chunk];
+                result.scanned = end - start;
+
+                for (size_t i = start; i < end; ++i) {
+                    if (hasTelomericBlock(teloscope, batch[i])) {
+                        appendFastqRecord(result.output, batch[i]);
+                        result.passed++;
+                    }
+                }
+
+                return true;
+            });
+        }
+
+        jobWait(threadPool);
+
+        for (const auto &result : results) {
+            if (!result.output.empty()) {
+                out.write(result.output.data(), static_cast<std::streamsize>(result.output.size()));
+            }
+            totalReads += result.scanned;
+            passedReads += result.passed;
+        }
+
+        if (!out.good()) {
+            fprintf(stderr, "Error: failed while writing FASTQ subset to stdout.\n");
+            fastqExitFailure();
+        }
+
+        batch.clear();
+    };
+
+    while (true) {
+        FastqRecord record;
+        if (!readFastqRecord(*stream, record, recordNumber + 1)) {
+            break;
+        }
+        recordNumber++;
+        batch.push_back(std::move(record));
+
+        if (batch.size() == recordsPerBatch) {
+            processBatch();
+        }
+    }
+
+    processBatch();
+    out.flush();
+
+    fprintf(stderr, "FASTQ subset: kept %" PRIu64 " of %" PRIu64 " reads.\n",
+            passedReads, totalReads);
 }
 
 

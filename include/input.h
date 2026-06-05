@@ -17,6 +17,7 @@ struct UserInputTeloscope : UserInput {
     std::string inSequencePrefix;
     std::string inSequenceName;
     std::string outRoute;
+    bool outRouteSet = false;
     std::unordered_map<std::string, uint8_t> hammingDistances;
 
     std::string canonicalFwd = "CCCTAA";
@@ -34,6 +35,7 @@ struct UserInputTeloscope : UserInput {
 
     unsigned short int maxMatchDist = 50;
     unsigned short int minBlockLen = 500; // Only for all blocks
+    bool minBlockLenSet = false;
     unsigned short int maxBlockDist = 200;
     unsigned short int minBlockCounts = 2;
     float minBlockDensity = 0.5f;
@@ -47,6 +49,7 @@ struct UserInputTeloscope : UserInput {
     bool ultraFastMode = true;
     bool manualCuration = false;
     bool outPlotReport = false;
+    bool fastqSubset = false;
 
     double maxMem = 0;
     std::string prefix = ".", outFile = "";
@@ -63,6 +66,7 @@ public:
 
     void load(UserInputTeloscope userInput);
     void read(InSequences &inSequence);
+    void readFastqSubset(std::ostream &out);
 
 };
 

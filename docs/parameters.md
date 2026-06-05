@@ -15,15 +15,17 @@ teloscope input.fa [options]
 teloscope input.fa.gz [options]
 teloscope input.gfa [options]
 teloscope -f input.fa [options]
+teloscope --fastq-subset input.fq.gz [options] > telomeric.fq
 ```
 
 ## Input and output
 
 | Flag | Long form | Meaning | Default |
 | --- | --- | --- | --- |
-| `-f` | `--input-sequence` | input FASTA, FASTA.gz, or GFA file | required unless passed positionally |
+| `-f` | `--input-sequence` | input FASTA, FASTA.gz, GFA, or FASTQ file | required unless passed positionally |
 | `-o` | `--output` | output directory | input file directory |
 | `-j` | `--threads` | maximum worker threads | all available |
+|  | `--fastq-subset` | stream FASTQ reads with Teloscope-valid telomeric blocks to stdout, or to a file with `-o` | `false` |
 
 ## Pattern control
 
@@ -54,7 +56,7 @@ When `-s` equals `-w`, window outputs are non-overlapping BEDgraph bins.
 | --- | --- | --- | --- |
 | `-k` | `--max-match-distance` | max gap between matches before splitting them | `50` |
 | `-d` | `--max-block-distance` | max gap between nearby repeat groups before extension stops | `200` |
-| `-l` | `--min-block-length` | minimum block length to keep | `500` |
+| `-l` | `--min-block-length` | minimum block length to keep | `500` for assembly, `60` for `--fastq-subset` |
 | `-y` | `--min-block-density` | minimum repeat-covered fraction for a block | `0.5` |
 | `-t` | `--terminal-limit` | distance from a sequence end that still counts as terminal | `50000` |
 
@@ -114,6 +116,14 @@ Graph annotation:
 teloscope asm.gfa -o results/
 ```
 
+FASTQ read subset before mapping:
+
+```sh
+teloscope --fastq-subset reads.fq.gz -j 32 | minimap2 -ax map-hifi ref.fa -
+```
+
+In FASTQ subset mode, the default `-l` is `60` bp. This is a read-filtering default intended to retain reads with at least about ten telomeric repeat units after Teloscope's block and density filters. Assembly annotation keeps the stricter `500` bp default.
+
 ## Stdin
 
 Teloscope reads from stdin when no input file is given:
@@ -121,6 +131,7 @@ Teloscope reads from stdin when no input file is given:
 ```sh
 cat asm.fa | teloscope -o results/
 zcat asm.fa.gz | teloscope -o results/
+zcat reads.fq.gz | teloscope --fastq-subset > telomeric.fq
 ```
 
 Compressed stdin is not supported. Decompress first.

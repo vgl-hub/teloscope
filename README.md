@@ -7,7 +7,7 @@
 [![Anaconda-Server Badge](https://anaconda.org/bioconda/teloscope/badges/license.svg)](https://anaconda.org/bioconda/teloscope)
 [![Anaconda-Server Badge](https://anaconda.org/bioconda/teloscope/badges/downloads.svg)](https://anaconda.org/bioconda/teloscope)
 
-Teloscope scans assembly ends for telomeric repeats. It reads `FASTA`, `FASTA.gz`, and `GFA` inputs, merges repeat matches into telomere blocks, classifies scaffolds in FASTA mode, and writes files that are easy to inspect in BED, TSV, BEDgraph, PDF, or GFA form.
+Teloscope scans assembly ends for telomeric repeats. It reads `FASTA`, `FASTA.gz`, and `GFA` inputs, merges repeat matches into telomere blocks, classifies scaffolds in FASTA mode, and writes files that are easy to inspect in BED, TSV, BEDgraph, PDF, or GFA form. It can also stream FASTQ reads and emit only reads with Teloscope-valid telomeric blocks.
 
 In FASTA mode, Teloscope writes terminal telomere annotations, gap coordinates, and a summary table. In GFA mode, it writes an annotated graph for BandageNG. By default, synthetic telomere nodes are connected back to the assembly with GFA `J` jump records instead of hard-adjacency `L` links to reduce disruptive force-layout lines.
 
@@ -15,6 +15,7 @@ In FASTA mode, Teloscope writes terminal telomere annotations, gap coordinates, 
 
 - FASTA mode: `*_terminal_telomeres.bed`, `*_gaps.bed`, `*_report.tsv`, plus optional window tracks, match BED files, ITS BED files, and a PDF report.
 - GFA mode: `<input>.telo.annotated.gfa` with telomere placeholder segments and links attached to the original graph.
+- FASTQ subset mode: unchanged passing FASTQ records on stdout.
 
 ## Install
 
@@ -63,6 +64,7 @@ For `--plot-report`, install Python 3 with `matplotlib`, `numpy`, and `pandas`.
 | Switch to a plant canonical repeat | `teloscope asm.fa -c CCCTAAA` |
 | Search explicit motif variants | `teloscope asm.fa -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG` |
 | Annotate a graph for BandageNG | `teloscope asm.gfa -o results/` |
+| Subset telomeric HiFi reads before mapping | `teloscope --fastq-subset reads.fq.gz -j 32 \| minimap2 -ax map-hifi ref.fa -` |
 | Read decompressed stdin | `zcat asm.fa.gz | teloscope -o results/` |
 
 Notes:
@@ -72,6 +74,8 @@ Notes:
 - Any genome-wide output flag (`-r`, `-g`, `-e`, `-m`, `-i`) disables ultra-fast mode automatically.
 - GFA mode uses GFA `J` jump records for telomere connectors instead of direct `L` adjacency links.
 - Gzipped stdin is not supported. Decompress before piping.
+- `--fastq-subset` writes FASTQ to stdout and diagnostics to stderr. Pass `-o` to save the reads to a file instead of streaming them.
+- `--fastq-subset` uses a `60` bp default minimum block length; assembly annotation keeps the `500` bp default. Use `-l` to override either mode.
 
 ## Typical output layout
 
