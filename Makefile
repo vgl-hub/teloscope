@@ -61,6 +61,9 @@ $(BINDIR):
 test-gaps: head
 	bash scripts/test_gaps_bed.sh
 
+gfa-oracle: head
+	bash scripts/compare_to_reference.sh
+
 clean:
 	$(RM) -r build
 	$(MAKE) -C $(GFALIBS_DIR) clean

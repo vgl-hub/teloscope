@@ -9,12 +9,12 @@
 
 Teloscope scans assembly ends for telomeric repeats. It reads `FASTA`, `FASTA.gz`, and `GFA` inputs, merges repeat matches into telomere blocks, classifies scaffolds in FASTA mode, and writes files that are easy to inspect in BED, TSV, BEDgraph, PDF, or GFA form. It can also stream FASTQ reads and emit only reads with Teloscope-valid telomeric blocks.
 
-In FASTA mode, Teloscope writes terminal telomere annotations, gap coordinates, and a summary table. In GFA mode, it writes an annotated graph for BandageNG. By default, synthetic telomere nodes are connected back to the assembly with GFA `J` jump records instead of hard-adjacency `L` links to reduce disruptive force-layout lines.
+In FASTA mode, Teloscope writes terminal telomere annotations, gap coordinates, and a summary table. In GFA mode, it writes an annotated graph for BandageNG. Synthetic telomere nodes attach to the assembly with `L` links at `0M` overlap, the direct adjacency a cap represents, so BandageNG draws them as caps. `J` jump records stay reserved for real assembly gaps.
 
 ## What Teloscope writes
 
 - FASTA mode: `*_terminal_telomeres.bed`, `*_gaps.bed`, `*_report.tsv`, plus optional window tracks, match BED files, ITS BED files, and a PDF report.
-- GFA mode: `<input>.telo.annotated.gfa` with telomere placeholder segments and links attached to the original graph.
+- GFA mode: `<input>.telo.annotated.gfa` with telomere placeholder segments linked to the original graph, plus `<input>.telo.annotated.colors.csv` that paints the caps green for BandageNG.
 - FASTQ subset mode: unchanged passing FASTQ records on stdout.
 
 ## Install
@@ -72,7 +72,7 @@ Notes:
 - Teloscope always searches both each input pattern and its reverse complement.
 - If `-p` is omitted, Teloscope derives the search set from `-c`.
 - Any genome-wide output flag (`-r`, `-g`, `-e`, `-m`, `-i`) disables ultra-fast mode automatically.
-- GFA mode uses GFA `J` jump records for telomere connectors instead of direct `L` adjacency links.
+- GFA mode attaches telomere caps with `L` links at `0M` overlap; `J` records stay reserved for real assembly gaps.
 - Gzipped stdin is not supported. Decompress before piping.
 - `--fastq-subset` writes FASTQ to stdout and diagnostics to stderr. Pass `-o` to save the reads to a file instead of streaming them.
 - `--fastq-subset` uses a `60` bp default minimum block length; assembly annotation keeps the `500` bp default. Use `-l` to override either mode.
@@ -97,6 +97,7 @@ GFA run:
 ```text
 results/
   asm.gfa.telo.annotated.gfa
+  asm.gfa.telo.annotated.colors.csv
 ```
 
 ## Documentation

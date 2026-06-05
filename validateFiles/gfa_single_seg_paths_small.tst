@@ -5,3 +5,4 @@ expect_output_name gfa_single_seg_paths_small.gfa.telo.annotated.gfa
 expect_gfa_header 1.2
 gfa_expect testFiles/expected/gfa/gfa_single_seg_paths_small.tsv
 gfa_preserve_input strict
+expect_gfa_colors 1

@@ -99,7 +99,7 @@ Assembly Summary reports totals and counts for:
 
 ## GFA mode output
 
-GFA mode writes the original graph plus synthetic telomere segments connected back to the carrier segment with `J telomere_...` jump records.
+GFA mode writes the original graph plus synthetic telomere segments connected back to the carrier segment with `L telomere_...` links at `0M` overlap. It also writes `<input>.telo.annotated.colors.csv`, which paints every cap green (`#008000`) for BandageNG.
 
 Each synthetic telomere segment includes:
 
@@ -107,6 +107,6 @@ Each synthetic telomere segment includes:
 - `RC:i:6000`
 - `TL:i:<detected_block_length_bp>`
 
-Each telomere jump points from the synthetic node to the assembly segment with an unspecified jump distance (`*`). When paths are present, only path-terminal segment ends are annotated and the connection orientation follows the path context. When no paths are present, segments are scanned independently.
+Each telomere link points from the synthetic node (`+`) to the assembly segment, with the segment-side orientation set so the cap sits on the correct physical end (`+` at a start, `-` at an end), and carries `RC:i:0`. `J` jump records stay reserved for real assembly gaps. When paths are present, only path-terminal segment ends are annotated and the orientation follows the path context. When no paths are present, segments are scanned independently.
 
 No BED, BEDgraph, or TSV files are written in GFA mode.

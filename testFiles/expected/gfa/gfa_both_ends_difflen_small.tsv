@@ -1,2 +1,3 @@
 path	segment	terminal_role	path_orient	node_name	seg_edge_orient	connector_type	connector_value	tl_bp
-.	segMulti	start	.	telomere_segMulti+_start	+	L	0M	72
+.	seg_dl	start	.	telomere_seg_dl+_start	+	L	0M	72
+.	seg_dl	end	.	telomere_seg_dl+_end	-	L	0M	108

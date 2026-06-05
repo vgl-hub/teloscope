@@ -47,6 +47,7 @@ Supported directives:
 - `expect_gfa_header <version>`
 - `gfa_expect <path-to-tsv>`
 - `gfa_preserve_input strict|subset|segments_only|skip`
+- `expect_gfa_colors 1`
 
 Example:
 
@@ -58,6 +59,7 @@ expect_output_name gfa_pathless_small.gfa.telo.annotated.gfa
 expect_gfa_header 1.2
 gfa_expect testFiles/expected/gfa/gfa_pathless_small.tsv
 gfa_preserve_input strict
+expect_gfa_colors 1
 ```
 
 `%OUTDIR%` is replaced with a temporary output directory created for that test.
@@ -83,6 +85,8 @@ The validator parses the annotated GFA and checks:
 - `LN:i:6`, `RC:i:6000`, and `TL:i:<bp>` tags are correct
 - no unexpected telomere segments or telomere links were added
 - non-telomere graph content is preserved under the requested mode
+
+With `expect_gfa_colors 1`, it also checks the companion `<output>.colors.csv` lists exactly the telomere nodes, each painted `#008000`.
 
 Preservation modes:
 

@@ -1,0 +1,3 @@
+path	segment	terminal_role	path_orient	node_name	seg_edge_orient	connector_type	connector_value	tl_bp
+path_internal	seg_start	start	+	telomere_seg_start+_start	+	L	0M	72
+path_internal	seg_end	end	+	telomere_seg_end+_end	-	L	0M	72

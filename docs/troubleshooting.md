@@ -232,7 +232,7 @@ When paths are present, Teloscope annotates path-terminal segment ends. It does 
 
 ### Telomere nodes draw long lines across the graph
 
-Telomere connectors use `J` jump records so they do not add force-layout edges. If the graph still looks cluttered, try a layout reset in BandageNG.
+Telomere caps use `L` links at `0M` overlap, the direct adjacency a cap represents, so BandageNG draws them as short caps. If the graph still looks cluttered, try a layout reset in BandageNG.
 
 ### You want to confirm that telomere nodes were added
 

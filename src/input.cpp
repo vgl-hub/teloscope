@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <string>
 #include <unordered_map>
+#include <set>
+#include <tuple>
+#include <fstream>
 #include <stdexcept> // jack: std::runtime_error
 #include <limits>
 
@@ -75,11 +78,11 @@ void appendTelomereConnection(InSequences &inSequences,
                               unsigned int telomereUid,
                               unsigned int segmentUid,
                               char segmentOrient) {
-    InGap jump;
-    jump.newGap(0, telomereUid, segmentUid, '+', segmentOrient, 0, "",
-                std::vector<Tag>{Tag{'i', "RC", "0"}});
-    std::lock_guard<std::mutex> lck(mtx);
-    inSequences.addGap(jump);
+    // Telomere cap is a direct adjacency: an L link with 0M overlap, not a J gap.
+    InEdge edge;
+    edge.newEdge(0, telomereUid, segmentUid, '+', segmentOrient, "0M", "",
+                 std::vector<Tag>{Tag{'i', "RC", "0"}});
+    inSequences.appendEdge(edge);
 }
 
 [[noreturn]] void fastqExitFailure() {
@@ -176,33 +179,35 @@ void Input::read(InSequences &inSequences) {
     if (userInput.inSequence.find(".gfa") != std::string::npos) {
 
         if (!inPaths.empty()) {
-            // Path-aware mode: only annotate path-terminal segments
+            // Unique (segment, orientation, isFirst) terminal ends: one job per node.
+            std::set<std::tuple<unsigned int, char, bool>> terminalEnds;
             for (InPath& path : inPaths) {
                 std::vector<PathComponent> components = path.getComponents();
 
-                // Find first SEGMENT component
+                // First SEGMENT component => contig start (isFirst = true)
                 for (const auto& comp : components) {
                     if (comp.componentType == SEGMENT && comp.orientation != '0') {
-                        InSegment* seg = inSequences.getInSegment(comp.id);
-                        char orient = comp.orientation;
-                        threadPool.queueJob([seg, &inSequences, &teloscope, orient]() {
-                            return teloscope.walkSegmentForPath(seg, inSequences, orient, true);
-                        });
+                        terminalEnds.emplace(comp.id, comp.orientation, true);
                         break;
                     }
                 }
 
-                // Find last SEGMENT component (reverse iteration)
+                // Last SEGMENT component => contig end (isFirst = false)
                 for (auto it = components.rbegin(); it != components.rend(); ++it) {
                     if (it->componentType == SEGMENT && it->orientation != '0') {
-                        InSegment* seg = inSequences.getInSegment(it->id);
-                        char orient = it->orientation;
-                        threadPool.queueJob([seg, &inSequences, &teloscope, orient]() {
-                            return teloscope.walkSegmentForPath(seg, inSequences, orient, false);
-                        });
+                        terminalEnds.emplace(it->id, it->orientation, false);
                         break;
                     }
                 }
+            }
+
+            for (const auto& end : terminalEnds) {
+                InSegment* seg = inSequences.getInSegment(std::get<0>(end));
+                char orient = std::get<1>(end);
+                bool isFirst = std::get<2>(end);
+                threadPool.queueJob([seg, &inSequences, &teloscope, orient, isFirst]() {
+                    return teloscope.walkSegmentForPath(seg, inSequences, orient, isFirst);
+                });
             }
         } else {
             // Fallback: path-less GFA, scan all segments (implicit + orientation)
@@ -222,6 +227,21 @@ void Input::read(InSequences &inSequences) {
         std::string outGfa = userInput.outRoute + "/" + userInput.inSequenceName + ".telo.annotated.gfa";
         report.writeToStream(inSequences, outGfa, userInput);
         lg.verbose("Annotated GFA written to " + outGfa);
+
+        // Companion colours CSV: every telomere node green (#008000), read from the graph.
+        std::string outColors = userInput.outRoute + "/" + userInput.inSequenceName + ".telo.annotated.colors.csv";
+        std::ofstream colorsStream(outColors);
+        if (colorsStream) {
+            colorsStream << "node\tcolor\n";
+            for (InSegment* seg : *inSequences.getInSegments()) {
+                const std::string& name = seg->getSeqHeader();
+                if (name.rfind("telomere_", 0) == 0)
+                    colorsStream << name << "\t#008000\n";
+            }
+            lg.verbose("Telomere colours CSV written to " + outColors);
+        } else {
+            fprintf(stderr, "Warning: could not write telomere colours CSV to %s.\n", outColors.c_str());
+        }
         return;
     }
 
@@ -380,8 +400,10 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
 
         // edge orientation: + = start, - = end
         char segOrient = atStart ? '+' : '-';
+        // Path-less segments are scanned as '+', so encode '+' in the node name.
         const std::string header = "telomere_"
                         + segment->getSeqHeader()
+                        + "+"
                         + (atStart ? "_start" : "_end");
         queueAnnotation(annotations, header, header, atStart, block.blockLen, segOrient);
     }
@@ -419,8 +441,7 @@ bool Teloscope::walkSegmentForPath(InSegment* segment, InSequences& inSequences,
 
     SegmentData segmentData = scanSegment(sequence, 0, true);
 
-    // Which physical end of the segment has the path-terminal tip?
-    // First+'+' and Last+'-' => scan START; First+'-' and Last+'+' => scan END
+    // Physical end holding the path-terminal tip (start when isFirst == (orient=='+')).
     bool scanStart = (isFirst == (pathOrient == '+'));
 
     std::vector<PendingTelomereAnnotation> annotations;
@@ -445,13 +466,7 @@ bool Teloscope::walkSegmentForPath(InSegment* segment, InSequences& inSequences,
     }
 
     for (auto& ann : annotations) {
-        // Deduplicate across paths: check if this telomere node already exists
-        {
-            std::lock_guard<std::mutex> lck(mtx);
-            auto* hash = inSequences.getHash1();
-            if (hash->find(ann.header) != hash->end()) continue;
-        }
-
+        // Terminal ends were de-duplicated upstream, so each header is created once.
         Sequence teloSeq{ann.header, "", new std::string("*")};
         inSequences.traverseInSegmentWrapper(&teloSeq, makeSyntheticTelomereTags(ann.blockLen));
 

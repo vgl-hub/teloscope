@@ -137,6 +137,7 @@ struct DirectiveSpec {
     std::string gfaExpectPath;
     std::string gfaPreserveInput = "skip";
     std::string expectGfaHeader;
+    bool gfaCheckColors = false;
 };
 
 struct TestCase {
@@ -267,6 +268,8 @@ bool parseTestFile(const std::string &path, TestCase &testCase, std::string &err
             testCase.directives.gfaExpectPath = value;
         } else if (key == "gfa_preserve_input") {
             testCase.directives.gfaPreserveInput = value;
+        } else if (key == "expect_gfa_colors") {
+            testCase.directives.gfaCheckColors = value.empty() || value == "1" || value == "true";
         } else {
             error = "unknown directive: " + key;
             return false;
@@ -579,8 +582,9 @@ bool checkGfaPreservation(const DirectiveSpec &spec,
 }
 
 std::string expectedNodeName(const GfaExpectRow &row) {
+    // Path-less segments are scanned as '+', so the node name carries '+'.
     if (row.pathOrient == '.')
-        return "telomere_" + row.segment + "_" + row.terminalRole;
+        return "telomere_" + row.segment + "+_" + row.terminalRole;
     return "telomere_" + row.segment + std::string(1, row.pathOrient) + "_" + row.terminalRole;
 }
 
@@ -672,6 +676,48 @@ bool checkGfaExpectations(const GfaDocument &outputDoc,
     return true;
 }
 
+bool checkGfaColors(const GfaDocument &outputDoc, const fs::path &colorsPath,
+                    const std::string &inputFile) {
+    std::ifstream stream(colorsPath);
+    if (!stream) {
+        printFAIL(inputFile.c_str(), "telomere colours CSV missing", colorsPath.string().c_str());
+        return false;
+    }
+
+    std::multiset<std::string> expected;
+    for (const auto &segment : outputDoc.telomereSegments)
+        expected.insert(segment.name);
+
+    std::multiset<std::string> actual;
+    std::string line;
+    bool headerSeen = false;
+    while (std::getline(stream, line)) {
+        line = stripCarriageReturn(line);
+        if (line.empty())
+            continue;
+        if (!headerSeen) {
+            headerSeen = true;
+            if (line != "node\tcolor") {
+                printFAIL(inputFile.c_str(), "telomere colours CSV header mismatch", line.c_str());
+                return false;
+            }
+            continue;
+        }
+        const std::vector<std::string> fields = split(line, '\t');
+        if (fields.size() < 2 || fields[1] != "#008000") {
+            printFAIL(inputFile.c_str(), "telomere colours CSV colour mismatch", line.c_str());
+            return false;
+        }
+        actual.insert(fields[0]);
+    }
+
+    if (actual != expected) {
+        printFAIL(inputFile.c_str(), "telomere colours CSV node set mismatch");
+        return false;
+    }
+    return true;
+}
+
 std::string extractInputPath(const std::string &command) {
     const std::vector<std::string> tokens = split(command, ' ');
     for (size_t i = 0; i < tokens.size(); ++i) {
@@ -733,7 +779,8 @@ bool runDirectiveAssertions(const TestCase &testCase,
 
     const std::string inputGfaPath = extractInputPath(command);
     const bool needsGfa = !spec.gfaExpectPath.empty() || !spec.expectGfaHeader.empty() ||
-                          !spec.outputName.empty() || spec.gfaPreserveInput != "skip";
+                          !spec.outputName.empty() || spec.gfaPreserveInput != "skip" ||
+                          spec.gfaCheckColors;
     if (!needsGfa)
         return ok;
 
@@ -759,6 +806,12 @@ bool runDirectiveAssertions(const TestCase &testCase,
         if (!spec.gfaExpectPath.empty()) {
             const std::vector<GfaExpectRow> expectedRows = parseGfaExpectations(spec.gfaExpectPath);
             ok = checkGfaExpectations(outputDoc, expectedRows, inputFile) && ok;
+        }
+
+        if (spec.gfaCheckColors) {
+            fs::path colorsPath = outputPath;
+            colorsPath.replace_extension(".colors.csv");
+            ok = checkGfaColors(outputDoc, colorsPath, inputFile) && ok;
         }
     } catch (const std::exception &e) {
         printFAIL(inputFile.c_str(), "GFA assertion error", e.what());
