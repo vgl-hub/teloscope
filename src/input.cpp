@@ -105,9 +105,13 @@ size_t logicalLineLength(const std::string &line) {
 }
 
 bool readFastqRecord(std::istream &stream, FastqRecord &record, uint64_t recordNumber) {
-    if (!std::getline(stream, record.header)) {
-        return false;
-    }
+    // Skip blank lines (including a lone '\r') before a header so a trailing newline
+    // or a stray blank line does not abort an otherwise valid stream.
+    do {
+        if (!std::getline(stream, record.header)) {
+            return false;
+        }
+    } while (logicalLineLength(record.header) == 0);
     if (!std::getline(stream, record.sequence) ||
         !std::getline(stream, record.plus) ||
         !std::getline(stream, record.quality)) {
@@ -245,7 +249,12 @@ void Input::readFastqSubset(std::ostream &out) {
     if (!fastqInput.minBlockLenSet) {
         fastqInput.minBlockLen = 60;
     }
-    fastqInput.terminalLimit = std::numeric_limits<uint32_t>::max() / 2;
+    // Scan each read end-to-end with an ultralong terminal limit (the -t parameter): any
+    // read is shorter than this, so the whole read counts as the terminal zone. We use
+    // max/2 (not max) because scanSegment evaluates 2*terminalLimit, and 2*max would overflow
+    // uint32_t and wrap to a small value, collapsing back to terminal-only scanning.
+    constexpr uint32_t wholeReadTerminalLimit = std::numeric_limits<uint32_t>::max() / 2;
+    fastqInput.terminalLimit = wholeReadTerminalLimit;
     fastqInput.ultraFastMode = true;
     fastqInput.outFasta = false;
     fastqInput.outWinRepeats = false;
