@@ -74,7 +74,7 @@ Notes:
 - Any genome-wide output flag (`-r`, `-g`, `-e`, `-m`, `-i`) disables ultra-fast mode automatically.
 - GFA mode uses GFA `J` jump records for telomere connectors instead of direct `L` adjacency links.
 - Gzipped stdin is not supported. Decompress before piping.
-- `--fastq-subset` writes FASTQ to stdout and diagnostics to stderr.
+- `--fastq-subset` writes FASTQ to stdout and diagnostics to stderr. Pass `-o` to save the reads to a file instead of streaming them.
 - `--fastq-subset` uses a `60` bp default minimum block length; assembly annotation keeps the `500` bp default. Use `-l` to override either mode.
 
 ## Typical output layout

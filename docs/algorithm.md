@@ -42,7 +42,7 @@ Synthetic telomere nodes are placeholders. They carry tags that preserve the det
 
 ## FASTQ subset mode
 
-`--fastq-subset` reads FASTQ records in bounded batches, scans each read as a whole sequence with the same pattern expansion and block filters used by FASTA mode, and writes unchanged passing FASTQ records to stdout. Read order is preserved. Diagnostics and final counts are written to stderr so stdout can be piped directly into a mapper. FASTQ subset mode defaults to a 60 bp minimum block length, while assembly annotation keeps the 500 bp default.
+`--fastq-subset` reads FASTQ records in bounded batches, scans each read as a whole sequence with the same pattern expansion and block filters used by FASTA mode, and writes unchanged passing FASTQ records to stdout. Read order is preserved. By default records stream to stdout so the output can be piped straight into a mapper; pass `-o` to save them to `<output>/<input>_telomeric.fastq` instead. Diagnostics and final counts are written to stderr. FASTQ subset mode defaults to a 60 bp minimum block length, while assembly annotation keeps the 500 bp default.
 
 ## Pattern handling
 

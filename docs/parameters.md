@@ -25,7 +25,7 @@ teloscope --fastq-subset input.fq.gz [options] > telomeric.fq
 | `-f` | `--input-sequence` | input FASTA, FASTA.gz, GFA, or FASTQ file | required unless passed positionally |
 | `-o` | `--output` | output directory | input file directory |
 | `-j` | `--threads` | maximum worker threads | all available |
-|  | `--fastq-subset` | stream FASTQ reads with Teloscope-valid telomeric blocks to stdout | `false` |
+|  | `--fastq-subset` | stream FASTQ reads with Teloscope-valid telomeric blocks to stdout, or to a file with `-o` | `false` |
 
 ## Pattern control
 

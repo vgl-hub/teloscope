@@ -95,7 +95,8 @@ int main(int argc, char **argv) {
         userInput.inSequence       = real.string();
         userInput.inSequencePrefix = real.parent_path().string();
         userInput.inSequenceName   = real.filename().string();
-        userInput.outRoute         = userInput.inSequencePrefix;
+        if (!userInput.outRouteSet) // an explicit -o is not overridden by the input directory
+            userInput.outRoute = userInput.inSequencePrefix;
     };
 
     static struct option long_options[] = { // struct mapping long options
@@ -184,6 +185,7 @@ int main(int argc, char **argv) {
             case 'o': // output route
                 {
                     userInput.outRoute = optarg;
+                    userInput.outRouteSet = true;
 
                     if (userInput.outRoute.empty()) {
                         userInput.outRoute = userInput.inSequencePrefix;
@@ -484,7 +486,7 @@ int main(int argc, char **argv) {
                 printf("\t'-u'\t--ultra-fast\tUltra-fast mode. Only scans terminal telomeres at contig ends. [Default: true]\n");
                 printf("\t'-n'\t--manual-curation\tRetain all terminal telomeres (contig + scaffold) in BED output. [Default: scaffold only]\n");
                 printf("\t\t--plot-report\tGenerate a PDF plot report after analysis (requires Python 3 + matplotlib). [Default: false]\n");
-                printf("\t\t--fastq-subset\tStream FASTQ reads with Teloscope-valid telomeric blocks to stdout. [Default: false]\n");
+                printf("\t\t--fastq-subset\tStream FASTQ reads with Teloscope-valid telomeric blocks to stdout, or save to a file with -o. [Default: false]\n");
 
                 printf("\t'-v'\t--version\tPrint current software version.\n");
                 printf("\t'-h'\t--help\tPrint current software options.\n");
@@ -615,7 +617,20 @@ int main(int argc, char **argv) {
     lg.verbose("Loaded user input");
 
     if (userInput.fastqSubset) {
-        in.readFastqSubset(std::cout);
+        if (userInput.outRouteSet) { // -o given: save to a file instead of streaming to stdout
+            std::string fastqOutPath = userInput.outRoute + "/" + userInput.inSequenceName + "_telomeric.fastq";
+            std::ofstream fastqOut(fastqOutPath);
+            if (!fastqOut.is_open()) {
+                fprintf(stderr, "Error: Cannot write telomeric reads to '%s'.\n", fastqOutPath.c_str());
+                threadPool.join();
+                exit(EXIT_FAILURE);
+            }
+            in.readFastqSubset(fastqOut);
+            fastqOut.close();
+            fprintf(stderr, "Wrote telomeric reads to %s.\n", fastqOutPath.c_str());
+        } else {
+            in.readFastqSubset(std::cout); // default: stream to stdout for piping
+        }
         threadPool.join();
         exit(EXIT_SUCCESS);
     }
