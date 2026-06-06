@@ -22,7 +22,7 @@ endif
 
 GFALIBS_DIR := $(CURDIR)/gfalibs
 
-OBJS := main teloscope input tools
+OBJS := main teloscope input tools read-filter bgzf bam
 BINS := $(addprefix $(BINDIR)/, $(OBJS))
 DEPFILES := $(addsuffix .d, $(BINS))
 
@@ -60,6 +60,9 @@ $(BINDIR):
 
 test-gaps: head
 	bash scripts/test_gaps_bed.sh
+
+test-bam: head
+	python3 scripts/test_bam_subset.py
 
 gfa-oracle: head
 	bash scripts/compare_to_reference.sh

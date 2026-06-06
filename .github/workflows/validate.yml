@@ -31,3 +31,6 @@ jobs:
       if: runner.os == 'Windows'
       shell: pwsh
       run: .\.github\workflows\val.bat
+
+    - name: Validate BAM subset
+      run: python3 scripts/test_bam_subset.py

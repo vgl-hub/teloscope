@@ -7,6 +7,7 @@ Teloscope has two input modes:
 - FASTA mode scans sequence ends, groups telomeric matches into blocks, and classifies each path or scaffold.
 - GFA mode scans graph segments and writes an annotated graph with synthetic telomere nodes.
 - FASTQ subset mode streams reads and writes only records with Teloscope-valid telomeric blocks.
+- BAM subset mode streams alignments and writes only records whose stored `SEQ` has a valid block.
 
 ## FASTA mode
 
@@ -43,6 +44,14 @@ Synthetic telomere nodes are placeholders. They carry tags that preserve the det
 ## FASTQ subset mode
 
 `--fastq-subset` reads FASTQ records in bounded batches, scans each read as a whole sequence with the same pattern expansion and block filters used by FASTA mode, and writes unchanged passing FASTQ records to stdout. Read order is preserved. By default records stream to stdout so the output can be piped straight into a mapper; pass `-o` to save them to `<output>/<input>_telomeric.fastq` instead. Diagnostics and final counts are written to stderr. FASTQ subset mode defaults to a 60 bp minimum block length, while assembly annotation keeps the 500 bp default.
+
+## BAM subset mode
+
+`--bam-subset` reads BGZF-compressed BAM without external libraries, preserves the BAM header, scans each record's stored `SEQ`, and writes passing records unchanged. Primary, secondary, supplementary, mapped, and unmapped records are evaluated independently. Records without `SEQ` are dropped and counted separately.
+
+Records are processed in bounded byte and record batches. Worker threads score sequences while the main thread writes passing records in input order. The output is valid BGZF with an EOF marker; no index is copied or generated. Missing input EOF markers produce a warning, while malformed BGZF or BAM data is rejected.
+
+FASTQ and BAM use the same read-scoring wrapper and 60 bp default. BAM I/O is isolated from scoring so a future SAM parser or optional CRAM backend can reuse the same filter.
 
 ## Pattern handling
 

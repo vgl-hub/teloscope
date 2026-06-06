@@ -79,6 +79,16 @@ teloscope asm.fa.gz
 zcat asm.fa.gz | teloscope -o results/
 ```
 
+BAM is the exception because `--bam-subset` reads BGZF directly:
+
+```sh
+cat reads.bam | teloscope --bam-subset > telomeric.bam
+```
+
+### BAM subset rejects the input
+
+`--bam-subset` requires BGZF-compressed BAM, not SAM, CRAM, plain gzip, or an uncompressed BAM payload. Teloscope rejects invalid block sizes, checksums, headers, and record boundaries. A missing BGZF EOF marker is accepted with a warning.
+
 ### Output directory is not writable
 
 If you see `Cannot create output directory`, `Output directory ... is not writable`, or `Could not open ... for writing`, check:
