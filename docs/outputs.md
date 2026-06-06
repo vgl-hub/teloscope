@@ -2,7 +2,7 @@
 
 # Outputs
 
-Teloscope writes different outputs in FASTA mode and GFA mode.
+Teloscope writes different outputs in assembly and read subset modes.
 
 ## File naming
 
@@ -15,6 +15,10 @@ FASTA outputs keep the input file name as a prefix:
 GFA mode writes one graph file:
 
 - `asm.gfa.telo.annotated.gfa`
+
+BAM subset mode with `-o results/` writes:
+
+- `results/reads_telomeric.bam`
 
 ## FASTA mode outputs
 
@@ -110,3 +114,7 @@ Each synthetic telomere segment includes:
 Each telomere link points from the synthetic node (`+`) to the assembly segment, with the segment-side orientation set so the cap sits on the correct physical end (`+` at a start, `-` at an end), and carries `RC:i:0`. `J` jump records stay reserved for real assembly gaps. When paths are present, only path-terminal segment ends are annotated and the orientation follows the path context. When no paths are present, segments are scanned independently.
 
 No BED, BEDgraph, or TSV files are written in GFA mode.
+
+## BAM subset output
+
+BAM subset output contains the original BAM header and unchanged passing records in input order. Records without `SEQ` are omitted. The output has a standard BGZF EOF marker but no `.bai` or `.csi` index.

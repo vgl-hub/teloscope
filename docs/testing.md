@@ -89,6 +89,14 @@ bash scripts/test_gaps_bed.sh
 
 This script compares generated `*_gaps.bed` files against the checked-in expected files in `testFiles/expected/`.
 
+## BAM subset regression script
+
+```sh
+python3 scripts/test_bam_subset.py
+```
+
+The script uses only the Python standard library. It generates BAM/BGZF fixtures in a temporary directory and checks record preservation, scoring parity, malformed input handling, batching, and thread determinism.
+
 ## Useful local runs
 
 Quick validator pass:

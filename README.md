@@ -7,7 +7,7 @@
 [![Anaconda-Server Badge](https://anaconda.org/bioconda/teloscope/badges/license.svg)](https://anaconda.org/bioconda/teloscope)
 [![Anaconda-Server Badge](https://anaconda.org/bioconda/teloscope/badges/downloads.svg)](https://anaconda.org/bioconda/teloscope)
 
-Teloscope scans assembly ends for telomeric repeats. It reads `FASTA`, `FASTA.gz`, and `GFA` inputs, merges repeat matches into telomere blocks, classifies scaffolds in FASTA mode, and writes files that are easy to inspect in BED, TSV, BEDgraph, PDF, or GFA form. It can also stream FASTQ reads and emit only reads with Teloscope-valid telomeric blocks.
+Teloscope scans assembly ends for telomeric repeats. It reads `FASTA`, `FASTA.gz`, and `GFA` inputs, merges repeat matches into telomere blocks, classifies scaffolds in FASTA mode, and writes files that are easy to inspect in BED, TSV, BEDgraph, PDF, or GFA form. It can also subset telomeric FASTQ reads and BAM records.
 
 In FASTA mode, Teloscope writes terminal telomere annotations, gap coordinates, and a summary table. In GFA mode, it writes an annotated graph for BandageNG. Synthetic telomere nodes attach to the assembly with `L` links at `0M` overlap, the direct adjacency a cap represents, so BandageNG draws them as caps. `J` jump records stay reserved for real assembly gaps.
 
@@ -16,6 +16,7 @@ In FASTA mode, Teloscope writes terminal telomere annotations, gap coordinates, 
 - FASTA mode: `*_terminal_telomeres.bed`, `*_gaps.bed`, `*_report.tsv`, plus optional window tracks, match BED files, ITS BED files, and a PDF report.
 - GFA mode: `<input>.telo.annotated.gfa` with telomere placeholder segments linked to the original graph, plus `<input>.telo.annotated.colors.csv` that paints the caps green for BandageNG.
 - FASTQ subset mode: unchanged passing FASTQ records on stdout.
+- BAM subset mode: a valid BAM stream containing the original header and unchanged passing alignment records.
 
 ## Install
 
@@ -65,6 +66,7 @@ For `--plot-report`, install Python 3 with `matplotlib`, `numpy`, and `pandas`.
 | Search explicit motif variants | `teloscope asm.fa -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG` |
 | Annotate a graph for BandageNG | `teloscope asm.gfa -o results/` |
 | Subset telomeric HiFi reads before mapping | `teloscope --fastq-subset reads.fq.gz -j 32 \| minimap2 -ax map-hifi ref.fa -` |
+| Subset telomeric records from BAM | `teloscope --bam-subset reads.bam -j 32 > telomeric.bam` |
 | Read decompressed stdin | `zcat asm.fa.gz | teloscope -o results/` |
 
 Notes:
@@ -75,7 +77,9 @@ Notes:
 - GFA mode attaches telomere caps with `L` links at `0M` overlap; `J` records stay reserved for real assembly gaps.
 - Gzipped stdin is not supported. Decompress before piping.
 - `--fastq-subset` writes FASTQ to stdout and diagnostics to stderr. Pass `-o` to save the reads to a file instead of streaming them.
-- `--fastq-subset` uses a `60` bp default minimum block length; assembly annotation keeps the `500` bp default. Use `-l` to override either mode.
+- `--bam-subset` writes BAM to stdout and diagnostics to stderr. Pass `-o` to write `<input_stem>_telomeric.bam`.
+- Read subset modes use a `60` bp default minimum block length; assembly annotation keeps the `500` bp default. Use `-l` to override either mode.
+- BAM support uses the existing `zlib` dependency and does not require HTSlib or `samtools`.
 
 ## Typical output layout
 

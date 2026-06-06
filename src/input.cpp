@@ -9,7 +9,6 @@
 #include <tuple>
 #include <fstream>
 #include <stdexcept> // jack: std::runtime_error
-#include <limits>
 
 #include "log.h"
 #include "global.h"
@@ -26,6 +25,7 @@
 #include "teloscope.h"
 #include "output.h"
 #include "input.h"
+#include "read-filter.h"
 
 namespace {
 
@@ -143,17 +143,6 @@ void appendFastqRecord(std::string &out, const FastqRecord &record) {
     out += '\n';
     out += record.quality;
     out += '\n';
-}
-
-bool hasTelomericBlock(Teloscope &teloscope, const FastqRecord &record) {
-    std::string sequence = record.sequence;
-    if (!sequence.empty() && sequence.back() == '\r') {
-        sequence.pop_back();
-    }
-    unmaskSequence(sequence);
-
-    SegmentData segmentData = teloscope.scanSegment(sequence, 0, true);
-    return !segmentData.terminalBlocks.empty();
 }
 
 } // namespace
@@ -287,30 +276,10 @@ void Input::read(InSequences &inSequences) {
 
 
 void Input::readFastqSubset(std::ostream &out) {
-    UserInputTeloscope fastqInput = userInput;
-    if (!fastqInput.minBlockLenSet) {
-        fastqInput.minBlockLen = 60;
-    }
-    // Scan each read end-to-end with an ultralong terminal limit (the -t parameter): any
-    // read is shorter than this, so the whole read counts as the terminal zone. We use
-    // max/2 (not max) because scanSegment evaluates 2*terminalLimit, and 2*max would overflow
-    // uint32_t and wrap to a small value, collapsing back to terminal-only scanning.
-    constexpr uint32_t wholeReadTerminalLimit = std::numeric_limits<uint32_t>::max() / 2;
-    fastqInput.terminalLimit = wholeReadTerminalLimit;
-    fastqInput.ultraFastMode = true;
-    fastqInput.outFasta = false;
-    fastqInput.outWinRepeats = false;
-    fastqInput.outGC = false;
-    fastqInput.outEntropy = false;
-    fastqInput.outMatches = false;
-    fastqInput.outITS = false;
-    fastqInput.outPlotReport = false;
-    fastqInput.manualCuration = false;
-
     StreamObj streamObj;
-    std::shared_ptr<std::istream> stream = streamObj.openStream(fastqInput, 'f');
+    std::shared_ptr<std::istream> stream = streamObj.openStream(userInput, 'f');
     if (!stream) {
-        fprintf(stderr, "Error: Stream not successful: %s.\n", fastqInput.inSequence.c_str());
+        fprintf(stderr, "Error: Stream not successful: %s.\n", userInput.inSequence.c_str());
         fastqExitFailure();
     }
 
@@ -350,12 +319,12 @@ void Input::readFastqSubset(std::ostream &out) {
             }
 
             threadPool.queueJob([&, chunk, start, end]() {
-                Teloscope teloscope(fastqInput);
+                ReadTelomereFilter filter(userInput);
                 FastqChunkResult &result = results[chunk];
                 result.scanned = end - start;
 
                 for (size_t i = start; i < end; ++i) {
-                    if (hasTelomericBlock(teloscope, batch[i])) {
+                    if (filter.matches(batch[i].sequence)) {
                         appendFastqRecord(result.output, batch[i]);
                         result.passed++;
                     }
