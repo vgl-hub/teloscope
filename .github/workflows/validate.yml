@@ -10,7 +10,7 @@ jobs:
     name: Validate
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-2025]
+        os: [macos-latest, ubuntu-latest, windows-2025-vs2026]
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
