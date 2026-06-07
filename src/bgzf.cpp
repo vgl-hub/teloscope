@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <istream>
-#include <limits>
 #include <ostream>
 #include <stdexcept>
 #include <string>
@@ -42,13 +41,6 @@ void putU32(uint8_t *data, uint32_t value) {
     data[1] = static_cast<uint8_t>(value >> 8);
     data[2] = static_cast<uint8_t>(value >> 16);
     data[3] = static_cast<uint8_t>(value >> 24);
-}
-
-size_t checkedAdd(size_t left, size_t right) {
-    if (right > std::numeric_limits<size_t>::max() - left) {
-        throw std::runtime_error("BGZF extra field overflow");
-    }
-    return left + right;
 }
 
 } // namespace
@@ -97,7 +89,7 @@ bool BgzfReader::loadBlock() {
                 throw std::runtime_error("malformed BGZF extra field");
             }
             const uint16_t subfieldLength = getU16(extra.data() + pos + 2);
-            const size_t end = checkedAdd(pos + 4, subfieldLength);
+            const size_t end = pos + 4 + subfieldLength;
             if (end > extra.size()) {
                 throw std::runtime_error("malformed BGZF extra subfield");
             }
@@ -150,10 +142,6 @@ bool BgzfReader::loadBlock() {
             }
             payloadOffset += 2;
         }
-        if (payloadOffset > footerOffset) {
-            throw std::runtime_error("invalid BGZF payload offset");
-        }
-
         const uint32_t expectedCrc = getU32(block.data() + footerOffset);
         const uint32_t expectedSize = getU32(block.data() + footerOffset + 4);
         if (expectedSize > MAX_BLOCK_SIZE) {
@@ -171,11 +159,16 @@ bool BgzfReader::loadBlock() {
             throw std::runtime_error("could not initialize BGZF decompressor");
         }
         const int inflateStatus = inflate(&stream, Z_FINISH);
-        inflateEnd(&stream);
+        const size_t inflatedSize = stream.total_out;
+        const size_t consumedSize = stream.total_in;
+        const int inflateEndStatus = inflateEnd(&stream);
         if (inflateStatus != Z_STREAM_END ||
-            stream.total_out != expectedSize ||
-            stream.total_in != footerOffset - payloadOffset) {
+            inflatedSize != expectedSize ||
+            consumedSize != footerOffset - payloadOffset) {
             throw std::runtime_error("invalid BGZF deflate payload");
+        }
+        if (inflateEndStatus != Z_OK) {
+            throw std::runtime_error("could not finalize BGZF decompressor");
         }
 
         const uLong actualCrc = crc32(
@@ -243,9 +236,12 @@ std::vector<uint8_t> BgzfWriter::compressRaw(const uint8_t *data, size_t size) {
     stream.avail_out = static_cast<uInt>(compressed.size());
     const int status = deflate(&stream, Z_FINISH);
     const size_t compressedSize = stream.total_out;
-    deflateEnd(&stream);
+    const int endStatus = deflateEnd(&stream);
     if (status != Z_STREAM_END) {
         throw std::runtime_error("could not compress BGZF block");
+    }
+    if (endStatus != Z_OK) {
+        throw std::runtime_error("could not finalize BGZF compressor");
     }
     compressed.resize(compressedSize);
     return compressed;

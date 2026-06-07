@@ -7,7 +7,6 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
-#include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -47,20 +46,6 @@ int32_t getI32(const uint8_t *data) {
     int32_t result;
     std::memcpy(&result, &value, sizeof(result));
     return result;
-}
-
-size_t checkedAdd(size_t left, size_t right, const char *message) {
-    if (right > std::numeric_limits<size_t>::max() - left) {
-        throw std::runtime_error(message);
-    }
-    return left + right;
-}
-
-size_t checkedMultiply(size_t left, size_t right, const char *message) {
-    if (left != 0 && right > std::numeric_limits<size_t>::max() / left) {
-        throw std::runtime_error(message);
-    }
-    return left * right;
 }
 
 struct BamRecord {
@@ -137,10 +122,6 @@ void copyBamHeader(BgzfReader &reader, BgzfWriter &writer) {
 std::string decodeSequence(const std::vector<uint8_t> &raw) {
     const uint8_t *core = raw.data() + 4;
     const size_t payloadSize = raw.size() - 4;
-    if (payloadSize < BAM_CORE_SIZE) {
-        throw std::runtime_error("BAM record is smaller than its core fields");
-    }
-
     const size_t readNameLength = core[8];
     const size_t cigarCount = getU16(core + 12);
     const int32_t signedSequenceLength = getI32(core + 16);
@@ -149,19 +130,22 @@ std::string decodeSequence(const std::vector<uint8_t> &raw) {
     }
     const size_t sequenceLength = static_cast<size_t>(signedSequenceLength);
 
-    size_t sequenceOffset = checkedAdd(BAM_CORE_SIZE, readNameLength,
-                                       "BAM record offset overflow");
-    sequenceOffset = checkedAdd(
-        sequenceOffset,
-        checkedMultiply(cigarCount, 4, "BAM CIGAR size overflow"),
-        "BAM record offset overflow");
-    const size_t packedLength = checkedAdd(sequenceLength, 1,
-                                           "BAM sequence length overflow") / 2;
-    const size_t qualityOffset = checkedAdd(sequenceOffset, packedLength,
-                                            "BAM record offset overflow");
-    const size_t auxOffset = checkedAdd(qualityOffset, sequenceLength,
-                                        "BAM record offset overflow");
-    if (auxOffset > payloadSize) {
+    size_t sequenceOffset = BAM_CORE_SIZE;
+    if (readNameLength > payloadSize - sequenceOffset) {
+        throw std::runtime_error("BAM read name exceeds block_size");
+    }
+    sequenceOffset += readNameLength;
+    const size_t cigarBytes = cigarCount * 4;
+    if (cigarBytes > payloadSize - sequenceOffset) {
+        throw std::runtime_error("BAM CIGAR exceeds block_size");
+    }
+    sequenceOffset += cigarBytes;
+    const size_t packedLength = sequenceLength / 2 + sequenceLength % 2;
+    if (packedLength > payloadSize - sequenceOffset) {
+        throw std::runtime_error("BAM sequence exceeds block_size");
+    }
+    const size_t qualityOffset = sequenceOffset + packedLength;
+    if (sequenceLength > payloadSize - qualityOffset) {
         throw std::runtime_error("BAM record fields exceed block_size");
     }
     if (core[BAM_CORE_SIZE + readNameLength - 1] != 0) {
@@ -263,8 +247,7 @@ BamSubsetStats subsetBam(std::istream &input,
              record.raw.size() > BAM_BATCH_BYTES - std::min(batchBytes, BAM_BATCH_BYTES))) {
             processBatch();
         }
-        batchBytes = checkedAdd(batchBytes, record.raw.size(),
-                                "BAM batch size overflow");
+        batchBytes += record.raw.size();
         batch.push_back(std::move(record));
         record = BamRecord();
     }

@@ -64,6 +64,18 @@ test-gaps: head
 test-bam: head
 	python3 scripts/test_bam_subset.py
 
+.PHONY: test-bam-hardening test-bam-coverage test-bam-sanitize
+test-bam-hardening: head
+	TELOSCOPE="$(BUILD)/$(TARGET)" BAM_MUTATION_CASES="$${BAM_MUTATION_CASES:-512}" python3 scripts/test_bam_subset.py
+	BUILD_DIR="$(BUILD)" CXX="$(CXX)" bash scripts/test_bgzf_faults.sh
+	TELOSCOPE="$(BUILD)/$(TARGET)" python3 scripts/test_bam_samtools.py
+
+test-bam-coverage:
+	CXX="$(CXX)" bash scripts/test_bam_coverage.sh
+
+test-bam-sanitize:
+	CXX="$(CXX)" bash scripts/test_bam_sanitized.sh
+
 gfa-oracle: head
 	bash scripts/compare_to_reference.sh
 
