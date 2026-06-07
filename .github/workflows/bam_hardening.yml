@@ -1,0 +1,34 @@
+name: BAM Hardening
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  mutation-and-oracle:
+    name: Extended mutation and samtools oracle
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Install samtools
+      run: sudo apt-get update && sudo apt-get install -y samtools
+
+    - name: Run extended hardening tests
+      run: BAM_MUTATION_CASES=4096 make test-bam-hardening
+
+  sanitized-mutation:
+    name: Extended ASan and UBSan mutation
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Run extended sanitized tests
+      run: BAM_MUTATION_CASES=4096 make test-bam-sanitize

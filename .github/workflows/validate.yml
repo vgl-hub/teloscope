@@ -34,3 +34,42 @@ jobs:
 
     - name: Validate BAM subset
       run: python3 scripts/test_bam_subset.py
+
+  bam-coverage:
+    name: BAM 100% executable-line coverage
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Run strict BAM coverage
+      run: make test-bam-coverage
+
+  bam-sanitizers:
+    name: BAM ASan and UBSan
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Run sanitized BAM tests
+      run: make test-bam-sanitize
+
+  bam-oracle:
+    name: BAM samtools oracle and fault injection
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Install samtools
+      run: sudo apt-get update && sudo apt-get install -y samtools
+
+    - name: Run BAM hardening tests
+      run: make test-bam-hardening

@@ -140,13 +140,17 @@ def split_bam(payload):
 
 
 def run(args, stdin=None):
-    return subprocess.run(
-        [str(TELOSCOPE), *args],
-        input=stdin,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    try:
+        return subprocess.run(
+            [str(TELOSCOPE), *args],
+            input=stdin,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise AssertionError(f"Teloscope timed out: {' '.join(args)}") from error
 
 
 def require(condition, message):
@@ -419,6 +423,27 @@ def test_cli_guards_and_cleanup(tmp):
     require(failed.returncode != 0, "truncated file unexpectedly succeeded")
     require(not (out_dir / "broken_telomeric.bam").exists(), "partial BAM output was retained")
 
+    if os.name != "nt" and os.geteuid() != 0:
+        unreadable = tmp / "unreadable.bam"
+        unreadable.write_bytes(input_bam)
+        unreadable.chmod(0)
+        try:
+            failed = run(explicit_args(unreadable))
+            require(failed.returncode != 0, "unreadable BAM unexpectedly succeeded")
+            require(b"cannot open BAM input" in failed.stderr, "input open failure was unclear")
+        finally:
+            unreadable.chmod(0o600)
+
+        unwritable = tmp / "unwritable"
+        unwritable.mkdir()
+        unwritable.chmod(0o500)
+        try:
+            failed = run([*explicit_args(input_path), "-o", str(unwritable)])
+            require(failed.returncode != 0, "unwritable output unexpectedly succeeded")
+            require(b"cannot write telomeric records" in failed.stderr, "output open failure was unclear")
+        finally:
+            unwritable.chmod(0o700)
+
 
 def test_failures(tmp):
     record = bam_record("pass", "TTAGGG" * 3, flag=0x4)
@@ -543,6 +568,10 @@ def test_failures(tmp):
     struct.pack_into("<i", negative_sequence_length, record_offset + 20, -1)
     cases["negative_sequence_length"] = bgzf(bytes(negative_sequence_length))
 
+    oversized_sequence = bytearray(payload)
+    struct.pack_into("<i", oversized_sequence, record_offset + 20, 10000)
+    cases["oversized_sequence"] = bgzf(bytes(oversized_sequence))
+
     oversized_cigar = bytearray(payload)
     struct.pack_into("<H", oversized_cigar, record_offset + 16, 65535)
     cases["oversized_cigar"] = bgzf(bytes(oversized_cigar))
@@ -557,13 +586,51 @@ def test_failures(tmp):
         require(b"BAM subset failed" in result.stderr, f"{name} lacked a clear error")
 
 
-def test_random_malformed_inputs(tmp):
+def test_mutation_robustness(tmp):
+    case_count = int(os.environ.get("BAM_MUTATION_CASES", "48"))
     generator = random.Random(91)
-    for index in range(48):
-        size = generator.randrange(0, 2048)
-        data = bytes(generator.getrandbits(8) for _ in range(size))
+    records = [
+        bam_record(f"record_{index}", "TTAGGG" * (3 + index % 5), flag=0x4)
+        for index in range(8)
+    ]
+    payload = bam_payload(records)
+    header, split_records = split_bam(payload)
+    record_offset = len(header)
+
+    for index in range(case_count):
+        mode = index % 7
+        if mode == 0:
+            size = generator.randrange(0, 2048)
+            data = bytes(generator.getrandbits(8) for _ in range(size))
+        elif mode == 1:
+            data = bgzf(payload[:generator.randrange(len(payload) + 1)])
+        elif mode == 2:
+            mutated = bytearray(payload)
+            target = generator.randrange(record_offset + 36, len(mutated))
+            mutated[target] ^= 1 << generator.randrange(8)
+            data = bgzf(bytes(mutated))
+        elif mode == 3:
+            mutated = bytearray(payload)
+            struct.pack_into("<i", mutated, record_offset, generator.randrange(-16, 129))
+            data = bgzf(bytes(mutated))
+        elif mode == 4:
+            mutated = bytearray(payload)
+            mutated[record_offset + 12] = generator.randrange(256)
+            data = bgzf(bytes(mutated))
+        elif mode == 5:
+            mutated = bytearray(payload)
+            struct.pack_into("<H", mutated, record_offset + 16, generator.randrange(65536))
+            data = bgzf(bytes(mutated))
+        else:
+            kept = split_records[:generator.randrange(len(split_records) + 1)]
+            data = bgzf(header + b"".join(kept))
+
         result = run(["--bam-subset", "-j", "1"], data)
-        require(result.returncode != 0, f"random malformed input {index} unexpectedly succeeded")
+        if result.returncode == 0:
+            split_bam(unpack_bgzf(result.stdout))
+        else:
+            require(b"BAM subset failed" in result.stderr,
+                    f"mutation {index} lacked a clear error")
 
 
 def main():
@@ -582,7 +649,7 @@ def main():
         test_randomized_fastq_bam_parity(tmp)
         test_cli_guards_and_cleanup(tmp)
         test_failures(tmp)
-        test_random_malformed_inputs(tmp)
+        test_mutation_robustness(tmp)
     print("PASS BAM subset integration")
 
 
