@@ -15,16 +15,6 @@ int main(int, char **argv) {
         std::exit(0);
     }
 
-    std::cout << "deleting old validate files..." << std::endl;
-    for(auto &file : list_dir("validateFiles")) {
-        if(getFileExt(file) != "tst") continue; // dont delete README
-        file = "validateFiles/"+file;
-        if(remove(file.c_str()) != 0) {
-            std::cerr << "error deleting <" << file << ">" << std::endl;
-            return -1;
-        }
-    }
-
     std::cout << "generating new validate files..." << std::endl;
 
     std::string exePath = getExePath(argv[0]);
@@ -222,6 +212,23 @@ int main(int, char **argv) {
     };
 
     const std::set<std::string> exclude {"agp", "sak"};
+
+    // Clear only this generator's own .tst (matched by file prefix) so hand-written tests survive.
+    std::set<std::string> ownedFiles;
+    for(const std::string &file : list_dir("testFiles")) {
+        std::string ext = getFileExt(file);
+        if(exclude.count(ext)) continue;
+        for(const auto &pair : ext_args)
+            if(pair.first.count(ext)) { ownedFiles.insert(file); break; }
+    }
+    for(const auto &pair : file_args)
+        for(const std::string &f : pair.first)
+            ownedFiles.insert(f);
+    for(const std::string &tst : list_dir("validateFiles")) {
+        if(getFileExt(tst) != "tst") continue;
+        for(const std::string &f : ownedFiles)
+            if(tst.rfind(f + ".", 0) == 0) { remove(("validateFiles/"+tst).c_str()); break; }
+    }
 
     for(const std::string &file : list_dir("testFiles")) {
         std::string ext = getFileExt(file);

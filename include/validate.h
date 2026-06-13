@@ -81,10 +81,15 @@ void get_recursive(const std::string &path, std::set<std::string> &paths) {
     }
 }
 
-int i = 0;
+// stable, order-independent .tst id: FNV-1a hash of the command
+unsigned long long tstHash(const std::string &s) {
+    unsigned long long h = 1469598103934665603ULL;
+    for (unsigned char c : s) { h ^= c; h *= 1099511628211ULL; }
+    return h;
+}
 
 void genTest(std::string exePath, const std::string &file, const std::string &args){
-    std::string tstFile = "validateFiles/"+file+"."+std::to_string(i)+".tst";
+    std::string tstFile = "validateFiles/"+file+"."+std::to_string(tstHash("testFiles/"+file+" "+args))+".tst";
     std::cout << "generating: " << tstFile << std::endl;
     std::ofstream ostream;
     ostream.open(tstFile);
@@ -100,7 +105,6 @@ void genTest(std::string exePath, const std::string &file, const std::string &ar
         ostream << cmd << std::endl;
         ostream << "Command executed.";
     }
-    ++i;
 };
 
 #endif // #ifndef TELOSCOPE_VALIDATE_H
