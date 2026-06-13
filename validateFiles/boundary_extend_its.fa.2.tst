@@ -3,7 +3,7 @@ embedded
 
 +++ Path Summary Report +++
 pos	header	telomeres	labels	gaps	type	granular
-1	chr_boundary_ext_its	2	pq	0	t2t	PQ
+1	chr_boundary_ext_its	2	pq	0	t2t	PqQ
 
 +++ Assembly Summary Report +++
 Total paths:	1

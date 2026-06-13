@@ -3,7 +3,7 @@ embedded
 
 +++ Path Summary Report +++
 pos	header	telomeres	labels	gaps	type	granular	its	canonical	windows
-1	chr_discordant_pp	1	p	0	discordant	P*	0	183	5
+1	chr_discordant_pp	1	p	0	discordant	p*P*	0	183	5
 
 +++ Assembly Summary Report +++
 Total paths:	1

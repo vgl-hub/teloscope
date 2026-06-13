@@ -3,7 +3,7 @@ embedded
 
 +++ Path Summary Report +++
 pos	header	telomeres	labels	gaps	type	granular
-1	chr_gapped_misassembly_qq	1	q	1	gapped_misassembly	Qq
+1	chr_gapped_misassembly_qq	1	q	1	gapped_incomplete	Q
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -11,23 +11,23 @@ Total gaps:	1
 Total telomeres:	1
 
 +++ Telomere Statistics +++
-Mean length:	600
-Median length:	600
-Min length:	600
-Max length:	600
+Mean length:	1600
+Median length:	1600
+Min length:	1600
+Max length:	1600
 
 +++ Chromosome Telomere Counts+++
-Two telomeres:	1
-One telomere:	0
+Two telomeres:	0
+One telomere:	1
 Zero telomeres:	0
 
 +++ Chromosome Telomere/Gap Completeness+++
 T2T:	0
 Gapped T2T:	0
 Misassembled:	0
-Gapped misassembled:	1
+Gapped misassembled:	0
 Incomplete:	0
-Gapped incomplete:	0
+Gapped incomplete:	1
 No telomeres:	0
 Gapped no telomeres:	0
 Discordant:	0

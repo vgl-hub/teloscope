@@ -57,8 +57,8 @@ When `-s` equals `-w`, window outputs are non-overlapping BEDgraph bins.
 | Flag | Long form | Meaning | Default |
 | --- | --- | --- | --- |
 | `-k` | `--max-match-distance` | max gap between matches before splitting them | `50` |
-| `-d` | `--max-block-distance` | max gap between nearby repeat groups before extension stops | `200` |
-| `-l` | `--min-block-length` | minimum block length to keep | `500` for assembly, `60` for read subsets |
+| `-d` | `--max-block-distance` | max gap between nearby repeat groups before extension stops | `500` |
+| `-l` | `--min-block-length` | minimum block length to keep | `300` for assembly, `60` for read subsets |
 | `-y` | `--min-block-density` | minimum repeat-covered fraction for a block | `0.5` |
 | `-t` | `--terminal-limit` | distance from a sequence end that still counts as terminal | `50000` |
 
@@ -130,7 +130,7 @@ BAM record subset:
 teloscope --bam-subset reads.bam -j 32 > telomeric.bam
 ```
 
-In read subset modes, the default `-l` is `60` bp. This is intended to retain reads with at least about ten telomeric repeat units after Teloscope's block and density filters. Assembly annotation keeps the stricter `500` bp default.
+In read subset modes, the default `-l` is `60` bp. This is intended to retain reads with at least about ten telomeric repeat units after Teloscope's block and density filters. Assembly annotation keeps the stricter `300` bp default.
 
 ## Stdin
 

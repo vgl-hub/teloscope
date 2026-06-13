@@ -3,13 +3,13 @@ embedded
 
 +++ Path Summary Report +++
 pos	header	telomeres	labels	gaps	type	granular	its	canonical	windows
-1	chr_extra_invalid_p	1	p	0	incomplete	P	1	183	5
+1	chr_extra_invalid_p	1	p	0	incomplete	Pp*	0	183	5
 
 +++ Assembly Summary Report +++
 Total paths:	1
 Total gaps:	0
 Total telomeres:	1
-Total ITS blocks:	1
+Total ITS blocks:	0
 Total canonical matches:	183
 Total windows analyzed:	5
 

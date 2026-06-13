@@ -73,7 +73,8 @@ uint64_t Teloscope::getTerminalBlocks(
     };
 
     auto finalizeSubBlock = [&]() {
-        if (blockCounts >= minBlockCounts && canonicalCount > 0) {
+        if (blockCounts >= minBlockCounts && canonicalCount > 0 &&
+            canCovered >= minBlockDensity * (blockEnd - blockStart)) {
             TelomereBlock block;
             block.start = blockStart;
             block.blockLen = static_cast<uint32_t>(blockEnd - blockStart);
@@ -129,10 +130,7 @@ uint64_t Teloscope::getTerminalBlocks(
     TelomereBlock current = subBlocks[0];
 
     auto finalizeExtended = [&]() {
-        float density = (current.blockLen > 0)
-            ? static_cast<float>(current.canCovered) / current.blockLen : 0.0f;
-
-        if (current.blockLen >= minBlockLen && density >= minBlockDensity) {
+        if (current.blockLen >= minBlockLen) {
             current.blockLabel = fromStart ? 'p' : 'q';
 
             uint64_t relStart = current.start - absPos;

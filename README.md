@@ -78,7 +78,7 @@ Notes:
 - Gzipped stdin is not supported. Decompress before piping.
 - `--fastq-subset` writes FASTQ to stdout and diagnostics to stderr. Pass `-o` to save the reads to a file instead of streaming them.
 - `--bam-subset` writes BAM to stdout and diagnostics to stderr. Pass `-o` to write `<input_stem>_telomeric.bam`.
-- Read subset modes use a `60` bp default minimum block length; assembly annotation keeps the `500` bp default. Use `-l` to override either mode.
+- Read subset modes use a `60` bp default minimum block length; assembly annotation keeps the `300` bp default. Use `-l` to override either mode.
 - BAM support has no external bioinformatics runtime dependency: it uses `zlib` directly and does not require HTSlib, `samtools`, or another converter.
 
 ## Typical output layout
