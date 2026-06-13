@@ -338,8 +338,8 @@ def test_byte_bounded_batch(tmp):
 
 def test_default_threshold_parity(tmp):
     sequences = {
-        "short": "TTAGGG" * 9,
-        "default_pass": "TTAGGG" * 10,
+        "short": "TTAGGG" * 6,
+        "default_pass": "TTAGGG" * 7,
         "long": "CCCTAA" * 15,
         "fail": "ACGT" * 20,
     }

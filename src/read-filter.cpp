@@ -10,7 +10,7 @@ namespace {
 UserInputTeloscope makeReadFilterInput(const UserInputTeloscope &input) {
     UserInputTeloscope readInput = input;
     if (!readInput.minBlockLenSet) {
-        readInput.minBlockLen = 60;
+        readInput.minBlockLen = 42; // ~7 telomeric repeats
     }
 
     // max/2 keeps the full read terminal without overflowing scanSegment's doubled limit.
