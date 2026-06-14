@@ -56,7 +56,7 @@ uint64_t Teloscope::getTerminalBlocks(
 
     bool inBlock = false;
     uint64_t blockStart = 0, blockEnd = 0, prevPosition = 0;
-    uint16_t blockCounts = 0, forwardCount = 0, canonicalCount = 0;
+    uint32_t blockCounts = 0, forwardCount = 0, canonicalCount = 0;
     uint32_t totalCovered = 0, fwdCovered = 0, canCovered = 0;
 
     auto startNewBlock = [&](const MatchInfo& m) {
@@ -192,7 +192,7 @@ void Teloscope::getInterstitialBlocks(
 
     bool inBlock = false;
     uint64_t blockStart = 0, blockEnd = 0, prevPosition = 0;
-    uint16_t blockCounts = 0, forwardCount = 0, canonicalCount = 0;
+    uint32_t blockCounts = 0, forwardCount = 0, canonicalCount = 0;
     uint32_t totalCovered = 0, fwdCovered = 0, canCovered = 0;
 
     auto startNewBlock = [&](const MatchInfo& m) {

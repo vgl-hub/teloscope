@@ -102,11 +102,11 @@ struct GapInfo {
 struct TelomereBlock {
     uint64_t start = 0;
     uint32_t blockLen = 0; // End = start + blockLen
-    uint16_t blockCounts = 0;
-    uint16_t forwardCount = 0;
-    uint16_t reverseCount = 0;
-    uint16_t canonicalCount = 0;
-    uint16_t nonCanonicalCount = 0;
+    uint32_t blockCounts = 0;
+    uint32_t forwardCount = 0;
+    uint32_t reverseCount = 0;
+    uint32_t canonicalCount = 0;
+    uint32_t nonCanonicalCount = 0;
     uint32_t totalCovered = 0;
     uint32_t fwdCovered = 0;
     uint32_t canCovered = 0;
@@ -211,7 +211,7 @@ class Teloscope {
     }
 
 
-    static inline char computeBlockLabel(uint16_t forwardCount, uint16_t blockCounts) {
+    static inline char computeBlockLabel(uint32_t forwardCount, uint32_t blockCounts) {
         float forwardRatio = (forwardCount * 100.0f) / blockCounts;
         if (forwardRatio > 66.6f) return 'p';
         if (forwardRatio < 33.3f) return 'q';
