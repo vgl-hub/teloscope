@@ -957,6 +957,10 @@ void Teloscope::handleBEDFile() {
 
 
 void Teloscope::computeSummaryCounts() {
+    std::vector<uint64_t> scaffoldLens;
+    std::vector<uint64_t> contigLens;
+    scaffoldLens.reserve(allPathData.size());
+
     for (const auto& pathData : allPathData) {
         switch (pathData.scaffoldType) {
             case ScaffoldType::T2T:                   totalT2T++; break;
@@ -970,7 +974,22 @@ void Teloscope::computeSummaryCounts() {
             case ScaffoldType::DISCORDANT:            totalDiscordant++; break;
             case ScaffoldType::GAPPED_DISCORDANT:     totalGappedDiscordant++; break;
         }
+
+        // contig lengths = runs between gaps
+        scaffoldLens.push_back(pathData.pathSize);
+        std::vector<GapInfo> gaps = pathData.gapInfos;
+        std::sort(gaps.begin(), gaps.end(),
+                  [](const GapInfo& a, const GapInfo& b) { return a.start < b.start; });
+        uint64_t prevEnd = 0;
+        for (const auto& g : gaps) {
+            if (g.start > prevEnd) contigLens.push_back(g.start - prevEnd);
+            prevEnd = g.start + g.length;
+        }
+        if (pathData.pathSize > prevEnd) contigLens.push_back(pathData.pathSize - prevEnd);
     }
+
+    scaffoldN50 = computeN50(scaffoldLens);
+    contigN50 = computeN50(contigLens);
 }
 
 
@@ -988,6 +1007,8 @@ void Teloscope::printSummary(std::ofstream& reportFile) {
     out("\n+++ Assembly Summary Report +++\n");
     out("Total paths:\t", totalPaths, "\n");
     out("Total gaps:\t", totalGaps, "\n");
+    out("Scaffold N50:\t", scaffoldN50, "\n");
+    out("Contig N50:\t", contigN50, "\n");
     out("Total telomeres:\t", totalTelomeres, "\n");
 
     if (!userInput.ultraFastMode) {

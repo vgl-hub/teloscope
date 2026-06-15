@@ -61,6 +61,9 @@ $(BINDIR):
 test-gaps: head
 	bash scripts/test_gaps_bed.sh
 
+test-n50: head
+	bash scripts/test_n50.sh
+
 test-bam: head
 	python3 scripts/test_bam_subset.py
 
