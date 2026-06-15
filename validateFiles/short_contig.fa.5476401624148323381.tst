@@ -8,6 +8,8 @@ pos	header	telomeres	labels	gaps	type	granular
 +++ Assembly Summary Report +++
 Total paths:	1
 Total gaps:	0
+Scaffold N50:	100
+Contig N50:	100
 Total telomeres:	0
 
 +++ Telomere Statistics +++
