@@ -8,6 +8,8 @@ pos	header	telomeres	labels	gaps	type	granular	its	canonical	windows
 +++ Assembly Summary Report +++
 Total paths:	1
 Total gaps:	0
+Scaffold N50:	6700
+Contig N50:	6700
 Total telomeres:	1
 Total ITS blocks:	0
 Total canonical matches:	200

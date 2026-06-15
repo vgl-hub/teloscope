@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <array>
+#include <algorithm>
 
 class Trie {
     struct TrieNode {
@@ -174,6 +175,8 @@ class Teloscope {
     uint32_t totalITS = 0;
     uint32_t totalCanMatches = 0;
     uint32_t totalGaps = 0;
+    uint64_t scaffoldN50 = 0;
+    uint64_t contigN50 = 0;
 
     // Telomere stats
     float teloMean = 0.0f;
@@ -216,6 +219,19 @@ class Teloscope {
         if (forwardRatio > 66.6f) return 'p';
         if (forwardRatio < 33.3f) return 'q';
         return 'b';
+    }
+
+    static inline uint64_t computeN50(std::vector<uint64_t>& lengths) {
+        if (lengths.empty()) return 0;
+        std::sort(lengths.begin(), lengths.end(), [](uint64_t a, uint64_t b) { return a > b; });
+        uint64_t total = 0;
+        for (uint64_t l : lengths) total += l;
+        uint64_t cum = 0;
+        for (uint64_t l : lengths) {
+            cum += l;
+            if (cum * 2 >= total) return l;
+        }
+        return lengths.back();
     }
 
     void computeSummaryCounts();
