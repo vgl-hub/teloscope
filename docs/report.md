@@ -39,6 +39,15 @@ python3 scripts/teloscope_report.py results/ --png -o figures/
 
 The script auto-detects the Teloscope files in that directory.
 
+For a single interstitial telomeric sequence locus, use `plot_its.py` on the same output directory:
+
+```sh
+python3 scripts/plot_its.py results/ CHROM:START-END -o its.pdf
+python3 scripts/plot_its.py results/ CHROM --png -o its_figures/
+```
+
+A bare `CHROM` auto-centers on the largest interstitial telomere cluster on that scaffold.
+
 Minimum required input:
 
 - `*_terminal_telomeres.bed`

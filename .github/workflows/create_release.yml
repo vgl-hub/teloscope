@@ -46,18 +46,20 @@ jobs:
       - name: Build
         run: make
       - name: Zip
+        id: package
         run: |
+          asset="${RUNNER_TEMP}/teloscope.${{ github.ref_name }}-${{ matrix.OS_NAME }}.zip"
           if [ "$RUNNER_OS" = "Windows" ]; then
-            powershell Compress-Archive -Path build/bin/teloscope* -DestinationPath result.zip
+            powershell -NoProfile -Command "Compress-Archive -Path 'build/bin/teloscope*' -DestinationPath '${asset}'"
           else
-            zip -j result.zip build/bin/teloscope*
+            zip -j "$asset" build/bin/teloscope*
           fi
+          echo "asset=$asset" >> "$GITHUB_OUTPUT"
         shell: bash
       - name: Upload binaries
         uses: softprops/action-gh-release@v2
         with:
-          files: result.zip
-          asset_name: teloscope.${{ github.ref_name }}-${{matrix.OS_NAME}}.zip
+          files: ${{ steps.package.outputs.asset }}
 
   add_submodules:
     needs: create_release
@@ -70,9 +72,12 @@ jobs:
         with:
             submodules: true
       - name: Zip
-        run: zip -r result.zip .
+        id: package
+        run: |
+          asset="${RUNNER_TEMP}/teloscope.${{ github.ref_name }}-with_submodules.zip"
+          zip -r "$asset" . -x ".git/*"
+          echo "asset=$asset" >> "$GITHUB_OUTPUT"
       - name: Upload source
         uses: softprops/action-gh-release@v2
         with:
-          files: result.zip
-          asset_name: teloscope.${{ github.ref_name }}-with_submodules.zip
+          files: ${{ steps.package.outputs.asset }}

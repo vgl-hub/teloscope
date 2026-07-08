@@ -112,16 +112,17 @@ results/
 | [Outputs](docs/outputs.md) | every output file, naming rules, and column layouts |
 | [Classification](docs/classification.md) | FASTA scaffold classes and the `granular` labels |
 | [Algorithm](docs/algorithm.md) | how FASTA mode and GFA mode are processed |
-| [Report generation](docs/report.md) | `--plot-report`, standalone plotting, and report inputs |
+| [Report generation](docs/report.md) | `--plot-report`, ITS plotting, standalone plotting, and report inputs |
 | [Simulation](docs/simulation.md) | the synthetic benchmark generator and evaluator |
 | [Testing](docs/testing.md) | validator runs, report regression checks, and test regeneration |
 | [Troubleshooting](docs/troubleshooting.md) | common build, input, and runtime failures |
+| [Release checklist](docs/release.md) | GitHub, Bioconda, and Zenodo release steps |
 | [Validation format](validateFiles/README.md) | the `.tst` harness, including directive-mode GFA cases |
 
 ## Repo layout
 
 - `src/` and `include/`: main C++ implementation and headers
-- `scripts/`: Python and shell helpers, including `teloscope_report.py` and its regression script
+- `scripts/`: Python and shell helpers, including `teloscope_report.py`, `plot_its.py`, and plotting regression checks
 - `docs/`: user-facing documentation
 - `testFiles/`: public FASTA and GFA fixtures plus expected outputs
 - `validateFiles/`: `.tst` manifests used by `teloscope-validate`

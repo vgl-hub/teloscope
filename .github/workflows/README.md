@@ -8,3 +8,5 @@ where * is the version number.
 Example:
 `git tag v1.2.1`
 `git push origin v1.2.1`
+
+See `docs/release.md` for the Bioconda and Zenodo release checklist.

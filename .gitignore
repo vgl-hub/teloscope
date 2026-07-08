@@ -79,6 +79,8 @@ fastlane/test_output
 /*.gcno
 
 .DS_Store
+__pycache__/
+*.pyc
 *.pbxproj
 *.xcworkspacedata
 *.plist
@@ -96,6 +98,8 @@ output/
 .vs/
 testFiles/simulate/
 testFiles/tmp/
+testFiles/*_gaps.bed
+testFiles/*_report.tsv
 testFiles/*_terminal_telomeres.bed
 testFiles/*_canonical_matches.bed
 testFiles/*_noncanonical_matches.bed
