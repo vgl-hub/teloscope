@@ -15,12 +15,17 @@ jobs:
       uses: actions/checkout@v6
       with:
         submodules: recursive
+    # Create as a draft so the release is invisible until every asset is
+    # attached. Bioconda's autobump bot downloads
+    # teloscope.v<version>-with_submodules.zip to compute the recipe sha256; if
+    # the release published before that (slow) upload finished, the bot could
+    # 404 and land a bad hash. publish_release flips draft->false at the end.
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         name: teloscope ${{ github.ref_name }}
         generate_release_notes: true
-        draft: false
+        draft: true
         prerelease: false
 
   add_resources:
@@ -81,3 +86,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.package.outputs.asset }}
+
+  # Publish only after all assets are uploaded, so the release (and its
+  # download URLs) become visible to the Bioconda autobump bot atomically.
+  publish_release:
+    needs: [add_resources, add_submodules]
+    name: Publish Release
+    permissions: write-all
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          name: teloscope ${{ github.ref_name }}
+          draft: false
