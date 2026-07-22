@@ -1,4 +1,4 @@
-[Back to README](../README.md)
+[Back to README](index.md)
 
 # Testing
 
@@ -58,7 +58,7 @@ gfa_expect testFiles/expected/gfa/gfa_pathless_small.tsv
 gfa_preserve_input strict
 ```
 
-`%OUTDIR%` is replaced by a per-test temporary directory. GFA expectations are semantic, not raw file diffs. See [validateFiles/README.md](../validateFiles/README.md) for the full format.
+`%OUTDIR%` is replaced by a per-test temporary directory. GFA expectations are semantic, not raw file diffs. See [validateFiles/README.md](https://github.com/vgl-hub/teloscope/blob/main/validateFiles/README.md) for the full format.
 
 ## Regenerate legacy expected outputs
 
