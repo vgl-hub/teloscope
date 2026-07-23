@@ -35,6 +35,9 @@ jobs:
     - name: Validate BAM subset
       run: python3 scripts/test_bam_subset.py
 
+    - name: Validate assembly record filters
+      run: python3 scripts/test_sequence_filters.py
+
   bam-coverage:
     name: BAM 100% executable-line coverage
     runs-on: ubuntu-latest

@@ -62,6 +62,8 @@ For `--plot-report`, install Python 3 with `matplotlib`, `numpy`, and `pandas`.
 | Scan a vertebrate assembly with the default motif | `teloscope asm.fa` |
 | Read compressed FASTA directly | `teloscope asm.fa.gz` |
 | Write all optional FASTA outputs | `teloscope asm.fa -o results/ -r -g -e -m -i --plot-report` |
+| Keep one inspected submitter naming family | `teloscope asm.fa --include-prefix hap1_chr -o results/` |
+| Keep exact sequence IDs from a BED/list file (safest for database assemblies) | `teloscope asm.fa --include-bed chromosomes.ids -o results/` |
 | Switch to a plant canonical repeat | `teloscope asm.fa -c CCCTAAA` |
 | Search explicit motif variants | `teloscope asm.fa -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG` |
 | Annotate a graph for BandageNG | `teloscope asm.gfa -o results/` |
@@ -80,6 +82,49 @@ Notes:
 - `--bam-subset` writes BAM to stdout and diagnostics to stderr. Pass `-o` to write `<input_stem>_telomeric.bam`.
 - Read subset modes use a `42` bp default minimum block length; assembly annotation keeps the `300` bp default. Use `-l` to override either mode.
 - BAM support has no external bioinformatics runtime dependency: it uses `zlib` directly and does not require HTSlib, `samtools`, or another converter.
+
+## Filter assembly records
+
+Record filtering is off by default, so existing FASTA and GFA behavior is unchanged. When filtering is active, the selection domain is every FASTA record, every supported GFA1 `P` path, or every segment in a pathless GFA1 graph.
+
+| Flag | Value | Default | Effect |
+| --- | --- | --- | --- |
+| `--include-bed FILE` | BED or one-ID-per-line file | not set | keep records whose complete primary ID occurs in column 1 |
+| `--exclude-bed FILE` | BED or one-ID-per-line file | not set | remove records whose complete primary ID occurs in column 1 |
+| `--include-prefix LIST` | comma-separated literal prefixes | not set | keep records whose primary ID starts with any listed prefix |
+| `--exclude-prefix LIST` | comma-separated literal prefixes | not set | remove records whose primary ID starts with any listed prefix |
+
+The BED pair uses the familiar gfastats flag names for an auditable exact-ID workflow, but Teloscope deliberately treats column 1 as a whole-record selector. This avoids coordinate edits that could change terminal context. The options are long-only because Teloscope already uses `-i` for ITS output and `-e` for entropy output. The prefix pair handles a known accession family without forcing users to generate a list or enabling error-prone regex syntax.
+
+All four flags can be repeated. If no include flag is set, every input record starts selected. If one or more include flags are set, their matches form one union. All exclude matches are then removed from that union, so exclusion wins. Exact IDs and prefixes are case-sensitive. Prefixes are literal text, not regular expressions or globs: use `--include-prefix sample_`, not `sample_*`. Spaces around comma-separated prefixes are trimmed; an empty prefix is an error.
+
+For FASTA, the primary ID is the first whitespace-delimited token after `>`. An NCBI header such as `>NC_000001.11 Homo sapiens chromosome 1` therefore has the ID `NC_000001.11`. Matching includes the accession version. For GFA1 with `P` records, selectors match path names. A pathless GFA1 graph uses segment names. Filtering does not remove supported original topology or excluded paths; it limits the terminal segment ends that Teloscope scans.
+
+Each `--include-bed` or `--exclude-bed` file may mix one-column ID rows and BED3+ rows. Blank lines, `#` comments, `track` lines, and `browser` lines are ignored. BED start and end fields must be unsigned integers with start no greater than end. Coordinates are validated but are not used to crop, splice, or remap a sequence: selection always applies to the whole record.
+
+Every exact ID and every prefix must match at least one ID in the input domain. Teloscope exits on an unmatched selector, duplicate FASTA primary ID, invalid selector file, or an empty final selection. It prints the selected and input counts to stderr. FASTA summary output also records both counts, and all BED, BEDgraph, TSV, and plot-report outputs contain selected records only. Filtering happens after the assembly is loaded, so it reduces scanning and output size but not input parsing or peak loader memory.
+
+These four flags apply only to FASTA and supported GFA1 assembly files. Uncompressed filtered stdin is treated as FASTA; filtered GFA input must use a `.gfa` or `.gfa.gz` filename. Filtered GFA2, GFA1 `C` containment and `W` walk records, and unknown GFA record types are rejected because the current graph writer cannot preserve them safely. Teloscope also rejects filtered FASTQ/BAM input and rejects the flags with `--fastq-subset` or `--bam-subset`.
+
+### Database FASTA names
+
+Do not treat one prefix as a universal chromosome label. In NCBI assembly packages, `GCA_...` and `GCF_...` identify the assembly; they are not the sequence IDs at the start of `*_genomic.fna` headers. Those FASTA IDs are sequence accession.version values. RefSeq families such as `NC_`, `NT_`, `NW_`, and `NZ_` describe broad record classes. GenBank/INSDC WGS accessions use project-specific four- or six-letter series, and NCBI classifies `CM` as a scaffold/CON accession family rather than a universal chromosome class. Ensembl, UCSC, and submitter FASTAs use other schemes.
+
+For a rigorous chromosome-only set, use the role and molecule type in the NCBI [genome sequence report](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/reference-docs/data-reports/genome-sequence/) or [assembly report](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/data-processing/policies-annotation/genomeftp/), then pass the matching sequence accessions as an exact list. In an assembly report, column 4 distinguishes chromosomes from mitochondria and other assembled molecules; column 5 matches a GenBank/GCA genomic FASTA, while column 7 matches a paired RefSeq/GCF genomic FASTA:
+
+```sh
+# GenBank/GCA FASTA IDs
+awk -F '\t' '$1 !~ /^#/ && $2 == "assembled-molecule" && $4 == "Chromosome" {print $5}' \
+  assembly_report.txt > chromosomes.ids
+
+# RefSeq/GCF FASTA IDs
+awk -F '\t' '$1 !~ /^#/ && $2 == "assembled-molecule" && $4 == "Chromosome" && $7 != "na" {print $7}' \
+  assembly_report.txt > chromosomes.ids
+
+teloscope assembly_genomic.fna.gz --include-bed chromosomes.ids -o results/
+```
+
+Use `--include-prefix` when you have inspected the actual headers and a prefix cleanly represents the set you want. NCBI’s [accession-prefix table](https://www.ncbi.nlm.nih.gov/genbank/acc_prefix/) lists INSDC formats, but the assembly/sequence role remains the safer chromosome classifier.
 
 ## Typical output layout
 

@@ -12,6 +12,14 @@ This writes `results/asm.fa_plot_report.pdf`.
 
 `-r` is recommended with `--plot-report` so the report includes repeat-density, canonical-ratio, and strand-bias tracks. GC and entropy tracks are added automatically when their files are present.
 
+Assembly record filters apply before these files are written. This example uses exact chromosome accession.version IDs derived from assembly metadata and omits every other record from the TSV, BED/BEDgraph files, and PDF:
+
+```sh
+teloscope asm.fa -o results/ --include-bed chromosomes.ids -r --plot-report
+```
+
+Prefix filters are also available, but database prefixes are not universal chromosome labels. Inspect the FASTA primary IDs before using `--include-prefix`.
+
 ## What the report contains
 
 - page 1: assembly overview, scaffold classes, and flagged scaffolds

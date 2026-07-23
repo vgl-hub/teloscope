@@ -101,6 +101,8 @@ Assembly Summary reports totals and counts for:
 - chromosomes with two, one, or zero telomeres
 - each scaffold class
 
+When an assembly record filter is active, the summary also reports the number of input and selected paths. `Total paths` and every other statistic describe the selected paths only.
+
 ## GFA mode output
 
 GFA mode writes the original graph plus synthetic telomere segments connected back to the carrier segment with `L telomere_...` links at `0M` overlap. It also writes `<input>.telo.annotated.colors.csv`, which paints every cap green (`#008000`) for BandageNG.
@@ -111,9 +113,9 @@ Each synthetic telomere segment includes:
 - `RC:i:6000`
 - `TL:i:<detected_block_length_bp>`
 
-Each telomere link points from the synthetic node (`+`) to the assembly segment, with the segment-side orientation set so the cap sits on the correct physical end (`+` at a start, `-` at an end), and carries `RC:i:0`. `J` jump records stay reserved for real assembly gaps. When paths are present, only path-terminal segment ends are annotated and the orientation follows the path context. When no paths are present, segments are scanned independently.
+Each telomere link points from the synthetic node (`+`) to the assembly segment, with the segment-side orientation set so the cap sits on the correct physical end (`+` at a start, `-` at an end), and carries `RC:i:0`. `J` jump records stay reserved for real assembly gaps. With GFA1 `P` paths, only terminal segment ends reached from selected paths are scanned and orientation follows the path context. In a pathless GFA1 graph, selected segments are scanned independently. Caps are graph-level, so a shared annotated segment end is visible from selected and excluded paths. Filtered GFA2, GFA1 `C` containment and `W` walk records, and unknown GFA record types are rejected.
 
-No BED, BEDgraph, or TSV files are written in GFA mode.
+No BED, BEDgraph, or TSV files are written in GFA mode. Record filters do not delete supported original graph records; they limit which terminal segment ends Teloscope scans for new annotations.
 
 ## BAM subset output
 

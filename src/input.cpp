@@ -5,10 +5,13 @@
 #include <stdlib.h>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <set>
 #include <tuple>
 #include <fstream>
 #include <stdexcept> // jack: std::runtime_error
+#include <cctype>
+#include <cstring>
 
 #include "log.h"
 #include "global.h"
@@ -145,6 +148,420 @@ void appendFastqRecord(std::string &out, const FastqRecord &record) {
     out += '\n';
 }
 
+[[noreturn]] void sequenceFilterError(const std::string &message) {
+    fprintf(stderr, "Error: %s\n", message.c_str());
+    threadPool.join();
+    exit(EXIT_FAILURE);
+}
+
+std::string trimFilterLine(const std::string &value) {
+    const size_t first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return "";
+    const size_t last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+std::string sequenceFilterId(const std::string &header) {
+    const size_t firstWhitespace = header.find_first_of(" \t\r\n\f\v");
+    return header.substr(0, firstWhitespace);
+}
+
+bool hasCaseInsensitiveSuffix(const std::string &value, const std::string &suffix) {
+    if (value.size() < suffix.size()) return false;
+    return std::equal(suffix.rbegin(), suffix.rend(), value.rbegin(),
+        [](unsigned char left, unsigned char right) {
+            return std::tolower(left) == std::tolower(right);
+        });
+}
+
+bool isGfaAssemblyPath(const std::string &path) {
+    return hasCaseInsensitiveSuffix(path, ".gfa") ||
+           hasCaseInsensitiveSuffix(path, ".gfa.gz") ||
+           hasCaseInsensitiveSuffix(path, ".gfa2") ||
+           hasCaseInsensitiveSuffix(path, ".gfa2.gz");
+}
+
+bool readGzipLine(gzFile input, std::vector<char> &buffer, std::string &line,
+                  const std::string &path) {
+    line.clear();
+    while (true) {
+        char *chunk = gzgets(input, buffer.data(), static_cast<int>(buffer.size()));
+        if (chunk == nullptr) {
+            if (gzeof(input)) return !line.empty();
+            int errorNumber = Z_OK;
+            const char *errorMessage = gzerror(input, &errorNumber);
+            sequenceFilterError("Could not read assembly input '" + path + "': " +
+                                (errorMessage ? errorMessage : "zlib error") + ".");
+        }
+        const size_t chunkLength = std::strlen(chunk);
+        line.append(chunk, chunkLength);
+        if (chunkLength > 0 && line.back() == '\n') {
+            line.pop_back();
+            return true;
+        }
+        if (gzeof(input)) return true;
+    }
+}
+
+void validateFilteredGfaInput(const UserInputTeloscope &input) {
+    if (hasCaseInsensitiveSuffix(input.inSequence, ".gfa2") ||
+        hasCaseInsensitiveSuffix(input.inSequence, ".gfa2.gz")) {
+        sequenceFilterError("Assembly record filters do not support GFA2; use GFA1 P paths or a pathless GFA1 graph.");
+    }
+
+    gzFile stream = gzopen(input.inSequence.c_str(), "rb");
+    if (stream == nullptr) {
+        sequenceFilterError("Could not open assembly input '" + input.inSequence + "'.");
+    }
+    gzbuffer(stream, 1U << 20);
+    std::vector<char> buffer(1U << 16);
+    std::string validationError;
+    uint64_t lineNumber = 0;
+    for (std::string line; readGzipLine(stream, buffer, line, input.inSequence); ) {
+        lineNumber++;
+        line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
+        if (line.empty() || line.front() == '#') continue;
+        if (line.rfind("H\t", 0) == 0 && line.find("\tVN:Z:2") != std::string::npos) {
+            validationError = "Assembly record filters do not support GFA2 at line " +
+                              std::to_string(lineNumber) +
+                              "; use GFA1 P paths or a pathless GFA1 graph.";
+            break;
+        }
+        if (line.size() < 2 || line[1] != '\t') {
+            validationError = "Assembly record filters found a malformed or unsupported GFA record at line " +
+                              std::to_string(lineNumber) + ".";
+            break;
+        }
+        const char recordType = line.front();
+        if (recordType == 'O' || recordType == 'U' || recordType == 'E' ||
+            recordType == 'G' || recordType == 'F') {
+            validationError = std::string("Assembly record filters do not support GFA2 record type '") +
+                              recordType + "' at line " + std::to_string(lineNumber) +
+                              "; use GFA1 P paths or a pathless GFA1 graph.";
+            break;
+        }
+        if (recordType == 'W') {
+            validationError = "Assembly record filters do not support GFA1 W walks at line " +
+                              std::to_string(lineNumber) +
+                              "; use GFA1 P paths or a pathless GFA1 graph.";
+            break;
+        }
+        if (recordType == 'C') {
+            validationError = "Assembly record filters do not support GFA1 C containment records at line " +
+                              std::to_string(lineNumber) + ".";
+            break;
+        }
+        if (recordType == 'S') {
+            const size_t secondTab = line.find('\t', 2);
+            const size_t thirdTab = secondTab == std::string::npos
+                ? std::string::npos : line.find('\t', secondTab + 1);
+            if (thirdTab != std::string::npos) {
+                const std::string lengthField = line.substr(secondTab + 1,
+                                                            thirdTab - secondTab - 1);
+                if (!lengthField.empty() &&
+                    std::all_of(lengthField.begin(), lengthField.end(),
+                                [](unsigned char c) { return std::isdigit(c); })) {
+                    validationError = "Assembly record filters do not support GFA2 segment records at line " +
+                                      std::to_string(lineNumber) +
+                                      "; use GFA1 P paths or a pathless GFA1 graph.";
+                    break;
+                }
+            }
+        }
+        if (recordType != 'H' && recordType != 'S' && recordType != 'L' &&
+            recordType != 'J' && recordType != 'P') {
+            validationError = std::string("Assembly record filters do not support GFA record type '") +
+                              recordType + "' at line " + std::to_string(lineNumber) + ".";
+            break;
+        }
+    }
+    const int closeResult = gzclose(stream);
+    if (closeResult != Z_OK) {
+        sequenceFilterError("Could not close assembly input '" + input.inSequence + "'.");
+    }
+    if (!validationError.empty()) sequenceFilterError(validationError);
+}
+
+void loadNormalizedFastaAssembly(UserInputTeloscope &input, InSequences &sequences) {
+    gzFile gzipInput = nullptr;
+    std::istream *plainInput = nullptr;
+    if (input.inSequence.empty()) {
+        plainInput = &std::cin;
+    } else {
+        gzipInput = gzopen(input.inSequence.c_str(), "rb");
+        if (gzipInput == nullptr) {
+            sequenceFilterError("Could not open assembly input '" + input.inSequence + "'.");
+        }
+        gzbuffer(gzipInput, 1U << 20);
+    }
+
+    std::vector<char> gzipBuffer(1U << 16);
+    auto readLine = [&](std::string &line) {
+        if (plainInput != nullptr) return static_cast<bool>(std::getline(*plainInput, line));
+        return readGzipLine(gzipInput, gzipBuffer, line, input.inSequence);
+    };
+
+    uint32_t sequencePosition = 0;
+    std::unordered_set<std::string> seenIds;
+    std::string primaryId;
+    std::string comment;
+    std::string *sequence = nullptr;
+    auto appendRecord = [&]() {
+        if (sequence == nullptr) return;
+        if (sequence->empty()) {
+            delete sequence;
+            sequenceFilterError("FASTA record '" + primaryId + "' has no sequence.");
+        }
+        Sequence *record = new Sequence{primaryId, comment, sequence, nullptr, sequencePosition++};
+        sequences.appendSequence(record, input.hc_cutoff);
+        sequence = nullptr;
+    };
+
+    bool firstLine = true;
+    for (std::string line; readLine(line); ) {
+        line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
+        if (firstLine && line.size() >= 3 &&
+            static_cast<unsigned char>(line[0]) == 0xef &&
+            static_cast<unsigned char>(line[1]) == 0xbb &&
+            static_cast<unsigned char>(line[2]) == 0xbf) {
+            line.erase(0, 3);
+        }
+        firstLine = false;
+
+        if (!line.empty() && line.front() == '>') {
+            appendRecord();
+            const std::string headerLine = line.substr(1);
+            primaryId = sequenceFilterId(headerLine);
+            if (primaryId.empty()) {
+                sequenceFilterError("FASTA input contains an empty primary sequence ID.");
+            }
+            if (!seenIds.insert(primaryId).second) {
+                sequenceFilterError("Input contains duplicate primary sequence ID: '" + primaryId + "'.");
+            }
+            const size_t firstWhitespace = headerLine.find_first_of(" \t\r\n\f\v");
+            comment = firstWhitespace == std::string::npos
+                ? "" : trimFilterLine(headerLine.substr(firstWhitespace + 1));
+            sequence = new std::string;
+        } else {
+            if (sequence == nullptr) {
+                sequenceFilterError("Assembly record filters require FASTA input or a recognized GFA file.");
+            }
+            sequence->append(line);
+        }
+    }
+
+    appendRecord();
+    if (sequencePosition == 0) sequenceFilterError("Assembly input is empty.");
+    if (gzipInput != nullptr && gzclose(gzipInput) != Z_OK) {
+        sequenceFilterError("Could not close assembly input '" + input.inSequence + "'.");
+    }
+
+    jobWait(threadPool);
+    sequences.updateStats();
+}
+
+bool parseUnsignedCoordinate(const std::string &value, uint64_t &coordinate) {
+    if (value.empty() ||
+        !std::all_of(value.begin(), value.end(), [](unsigned char c) { return std::isdigit(c); })) {
+        return false;
+    }
+    try {
+        size_t parsed = 0;
+        const unsigned long long result = std::stoull(value, &parsed);
+        if (parsed != value.size()) return false;
+        coordinate = static_cast<uint64_t>(result);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+struct SequenceSelection {
+    std::unordered_set<std::string> names;
+    uint64_t selectedCount = 0;
+};
+
+class SequenceSelector {
+    std::unordered_set<std::string> includeIds;
+    std::unordered_set<std::string> excludeIds;
+    std::vector<std::string> includePrefixes;
+    std::vector<std::string> excludePrefixes;
+    bool active = false;
+
+    static bool startsWith(const std::string &value, const std::string &prefix) {
+        return value.size() >= prefix.size() &&
+               value.compare(0, prefix.size(), prefix) == 0;
+    }
+
+    static void deduplicatePrefixes(std::vector<std::string> &prefixes) {
+        std::unordered_set<std::string> seen;
+        std::vector<std::string> unique;
+        unique.reserve(prefixes.size());
+        for (const std::string &prefix : prefixes) {
+            if (seen.insert(prefix).second) unique.push_back(prefix);
+        }
+        prefixes.swap(unique);
+    }
+
+    static void loadSelectorFiles(const std::vector<std::string> &files,
+                                  std::unordered_set<std::string> &ids,
+                                  const char *optionName) {
+        for (const std::string &path : files) {
+            std::ifstream input(path);
+            if (!input.is_open()) {
+                sequenceFilterError(std::string("Could not open ") + optionName + " file '" + path + "'.");
+            }
+
+            uint64_t idLines = 0;
+            uint64_t lineNumber = 0;
+            for (std::string raw; std::getline(input, raw); ) {
+                lineNumber++;
+                if (lineNumber == 1 && raw.size() >= 3 &&
+                    static_cast<unsigned char>(raw[0]) == 0xef &&
+                    static_cast<unsigned char>(raw[1]) == 0xbb &&
+                    static_cast<unsigned char>(raw[2]) == 0xbf) {
+                    raw.erase(0, 3);
+                }
+                const std::string line = trimFilterLine(raw);
+                if (line.empty() || line.front() == '#') continue;
+
+                std::istringstream fieldsStream(line);
+                std::vector<std::string> fields;
+                for (std::string field; fieldsStream >> field; ) fields.push_back(field);
+                if (fields.empty()) continue;
+                if (fields[0] == "track" || fields[0] == "browser") continue;
+                if (fields.size() == 2) {
+                    sequenceFilterError(path + ":" + std::to_string(lineNumber) +
+                                        " must contain either one ID column or at least three BED columns.");
+                }
+                if (fields.size() >= 3) {
+                    uint64_t begin = 0, end = 0;
+                    if (!parseUnsignedCoordinate(fields[1], begin) ||
+                        !parseUnsignedCoordinate(fields[2], end) || begin > end) {
+                        sequenceFilterError(path + ":" + std::to_string(lineNumber) +
+                                            " has invalid BED start/end coordinates.");
+                    }
+                }
+
+                ids.insert(fields[0]);
+                idLines++;
+            }
+
+            if (idLines == 0) {
+                sequenceFilterError(std::string(optionName) + " file '" + path +
+                                    "' contains no sequence IDs.");
+            }
+        }
+    }
+
+    static bool matchesAnyPrefix(const std::string &name,
+                                 const std::vector<std::string> &prefixes) {
+        return std::any_of(prefixes.begin(), prefixes.end(),
+                           [&](const std::string &prefix) { return startsWith(name, prefix); });
+    }
+
+    static std::string describeUnmatched(const std::vector<std::string> &values) {
+        constexpr size_t displayLimit = 10;
+        std::ostringstream message;
+        const size_t shown = std::min(values.size(), displayLimit);
+        for (size_t i = 0; i < shown; ++i) {
+            if (i > 0) message << ", ";
+            message << "'" << values[i] << "'";
+        }
+        if (values.size() > shown) message << " (and " << (values.size() - shown) << " more)";
+        return message.str();
+    }
+
+    void validateSelectors(const std::vector<std::string> &names,
+                           const std::string &domainLabel) const {
+        const std::unordered_set<std::string> available(names.begin(), names.end());
+        std::vector<std::string> unmatchedIds;
+        std::vector<std::string> unmatchedPrefixes;
+
+        for (const std::string &id : includeIds)
+            if (available.count(id) == 0) unmatchedIds.push_back(id);
+        for (const std::string &id : excludeIds)
+            if (available.count(id) == 0) unmatchedIds.push_back(id);
+
+        auto validatePrefixList = [&](const std::vector<std::string> &prefixes) {
+            for (const std::string &prefix : prefixes) {
+                const bool matched = std::any_of(names.begin(), names.end(),
+                    [&](const std::string &name) { return startsWith(name, prefix); });
+                if (!matched) unmatchedPrefixes.push_back(prefix);
+            }
+        };
+        validatePrefixList(includePrefixes);
+        validatePrefixList(excludePrefixes);
+
+        if (!unmatchedIds.empty()) {
+            std::sort(unmatchedIds.begin(), unmatchedIds.end());
+            unmatchedIds.erase(std::unique(unmatchedIds.begin(), unmatchedIds.end()),
+                               unmatchedIds.end());
+            sequenceFilterError("Sequence filter ID(s) matched no input " + domainLabel + ": " +
+                                describeUnmatched(unmatchedIds) + ".");
+        }
+        if (!unmatchedPrefixes.empty()) {
+            std::sort(unmatchedPrefixes.begin(), unmatchedPrefixes.end());
+            unmatchedPrefixes.erase(std::unique(unmatchedPrefixes.begin(), unmatchedPrefixes.end()),
+                                    unmatchedPrefixes.end());
+            sequenceFilterError("Sequence filter prefix(es) matched no input " + domainLabel + ": " +
+                                describeUnmatched(unmatchedPrefixes) + ".");
+        }
+    }
+
+public:
+    explicit SequenceSelector(const UserInputTeloscope &input)
+        : includePrefixes(input.includePrefixes), excludePrefixes(input.excludePrefixes),
+          active(input.sequenceFilterActive) {
+        loadSelectorFiles(input.includeBedFiles, includeIds, "--include-bed");
+        loadSelectorFiles(input.excludeBedFiles, excludeIds, "--exclude-bed");
+        deduplicatePrefixes(includePrefixes);
+        deduplicatePrefixes(excludePrefixes);
+    }
+
+    SequenceSelection select(const std::vector<std::string> &candidateNames,
+                             const std::string &domainLabel) const {
+        SequenceSelection selection;
+        selection.names.reserve(candidateNames.size());
+
+        if (active) {
+            std::unordered_set<std::string> uniqueNames;
+            std::vector<std::string> duplicateNames;
+            for (const std::string &name : candidateNames) {
+                if (name.empty()) {
+                    sequenceFilterError("Input contains an empty primary sequence ID.");
+                }
+                if (!uniqueNames.insert(name).second) duplicateNames.push_back(name);
+            }
+            if (!duplicateNames.empty()) {
+                std::sort(duplicateNames.begin(), duplicateNames.end());
+                duplicateNames.erase(std::unique(duplicateNames.begin(), duplicateNames.end()),
+                                     duplicateNames.end());
+                sequenceFilterError("Input contains duplicate primary sequence ID(s): " +
+                                    describeUnmatched(duplicateNames) + ".");
+            }
+            validateSelectors(candidateNames, domainLabel);
+        }
+
+        const bool hasIncludes = !includeIds.empty() || !includePrefixes.empty();
+        for (const std::string &name : candidateNames) {
+            const bool included = !hasIncludes || includeIds.count(name) != 0 ||
+                                  matchesAnyPrefix(name, includePrefixes);
+            const bool excluded = excludeIds.count(name) != 0 ||
+                                  matchesAnyPrefix(name, excludePrefixes);
+            if (included && !excluded) {
+                selection.names.insert(name);
+                selection.selectedCount++;
+            }
+        }
+
+        if (active && selection.selectedCount == 0) {
+            sequenceFilterError("Sequence filters excluded all input " + domainLabel + ".");
+        }
+        return selection;
+    }
+};
+
 } // namespace
 
 
@@ -156,16 +573,56 @@ void Input::load(UserInputTeloscope userInput) {
 
 
 void Input::read(InSequences &inSequences) {
-    loadGenome(userInput, inSequences);
+    SequenceSelector selector(userInput);
+    const bool isGfa = isGfaAssemblyPath(userInput.inSequence);
+    if (isGfa && userInput.sequenceFilterActive) validateFilteredGfaInput(userInput);
+    if (isGfa || !userInput.sequenceFilterActive) {
+        loadGenome(userInput, inSequences);
+    } else {
+        loadNormalizedFastaAssembly(userInput, inSequences);
+    }
     lg.verbose("Finished loading genome assembly");
 
-    std::vector<InPath> inPaths = inSequences.getInPaths();
     std::vector<InSegment*> *inSegments = inSequences.getInSegments();
     std::vector<InGap> *inGaps = inSequences.getInGaps();
+
+    std::vector<InPath> inPaths = inSequences.getInPaths();
+    if (!isGfa && userInput.sequenceFilterActive) {
+        // Normalize FASTA primary IDs at the first ASCII whitespace character.
+        for (InPath &path : inPaths) path.setHeader(sequenceFilterId(path.getHeader()));
+    }
+
+    const bool filterSegments = isGfa && inPaths.empty();
+    std::vector<std::string> candidateNames;
+    if (filterSegments) {
+        candidateNames.reserve(inSegments->size());
+        for (InSegment *segment : *inSegments)
+            candidateNames.push_back(sequenceFilterId(segment->getSeqHeader()));
+    } else {
+        candidateNames.reserve(inPaths.size());
+        for (InPath &path : inPaths)
+            candidateNames.push_back(sequenceFilterId(path.getHeader()));
+    }
+
+    const std::string domainLabel = filterSegments ? "segments" : "paths";
+    const SequenceSelection selection = selector.select(candidateNames, domainLabel);
+    if (userInput.sequenceFilterActive) {
+        userInput.filterInputCount = candidateNames.size();
+        userInput.filterSelectedCount = selection.selectedCount;
+        fprintf(stderr, "Sequence filter: selected %" PRIu64 " of %" PRIu64 " %s.\n",
+                userInput.filterSelectedCount, userInput.filterInputCount, domainLabel.c_str());
+    }
+    if (!filterSegments) {
+        inPaths.erase(std::remove_if(inPaths.begin(), inPaths.end(),
+            [&](InPath &path) {
+                return selection.names.count(sequenceFilterId(path.getHeader())) == 0;
+            }), inPaths.end());
+    }
+
     Teloscope teloscope(userInput);
 
     // GFA-based annotation
-    if (userInput.inSequence.find(".gfa") != std::string::npos) {
+    if (isGfa) {
 
         // One scan job per terminal end. Resolve every job before queuing any:
         // worker threads append telomere nodes to the live segment vector, so
@@ -201,8 +658,10 @@ void Input::read(InSequences &inSequences) {
                                 std::get<1>(end), std::get<2>(end), true});
         } else {
             // Fallback: path-less GFA, scan all segments (implicit + orientation)
-            for (InSegment* inSegment : *inSegments)
-                jobs.push_back({inSegment, '+', false, false});
+            for (InSegment* inSegment : *inSegments) {
+                if (selection.names.count(sequenceFilterId(inSegment->getSeqHeader())) != 0)
+                    jobs.push_back({inSegment, '+', false, false});
+            }
         }
 
         // Count missing sequence now, while the segment vector is still stable.
