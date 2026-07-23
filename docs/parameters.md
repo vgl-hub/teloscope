@@ -33,26 +33,24 @@ teloscope --bam-subset input.bam [options] > telomeric.bam
 
 | Long form | Value | Meaning | Default |
 | --- | --- | --- | --- |
-| `--include-bed FILE` | BED or one-ID-per-line file | analyze whole records whose exact primary IDs occur in column 1 | unset |
-| `--exclude-bed FILE` | BED or one-ID-per-line file | exclude whole records whose exact primary IDs occur in column 1 | unset |
-| `--include-prefix LIST` | comma-separated literal prefixes | analyze IDs that start with any listed prefix | unset |
-| `--exclude-prefix LIST` | comma-separated literal prefixes | exclude IDs that start with any listed prefix | unset |
+| `--include-bed` | `FILE` | keep IDs listed in column 1 | unset |
+| `--exclude-bed` | `FILE` | remove IDs listed in column 1 | unset |
+| `--include-prefix` | `LIST` | keep IDs with any comma-separated prefix | unset |
+| `--exclude-prefix` | `LIST` | remove IDs with any comma-separated prefix | unset |
 
-Exact files keep metadata-derived selections explicit and auditable. Prefix lists cover known accession families without requiring a generated file or regular-expression syntax. These options are long-only because `-i` and `-e` already control ITS and entropy output.
+Filtering is off when all four flags are unset. Flags can be repeated. Includes form a union and exclusions run last; without includes, all records start selected. Matching is case-sensitive, and prefixes are literal strings rather than globs or regular expressions.
 
-Filtering is off when all four options are unset. With no include option, every record starts selected. Repeated include files and prefix lists form one union. All exclusion matches are removed afterward, so exclusion wins. Exact IDs and prefixes are case-sensitive. Prefixes are literal strings, not globs or regular expressions; use `sample_`, not `sample_*`.
+FASTA matching uses the first token after `>`, including accession versions. GFA1 matching uses `P` path names or `S` segment names when no paths exist.
 
-For FASTA, matching uses the first whitespace-delimited token after `>`, including an accession version such as `.11`. For GFA1 `P` records, matching uses path names. A pathless GFA1 graph uses segment names.
+Selector files accept one-ID rows or BED3+ rows and skip blank, `#`, `track`, and `browser` lines. BED coordinates must be unsigned integers with start no greater than end, but they never crop or remap a sequence.
 
-Selector files may mix one-column ID rows and BED3+ rows. Blank lines, `#` comments, `track` lines, and `browser` lines are skipped. BED start and end must be unsigned integers with start no greater than end. Coordinates are validated but never crop, join, or remap a sequence; selection always applies to the complete record.
+Every exact ID and prefix must match at least one input name. Teloscope rejects unmatched selectors, duplicate FASTA IDs, invalid or empty selector files, invalid BED coordinates, and empty final selections. It reports selected and input counts to stderr and in the FASTA summary.
 
-Every exact ID and every prefix must match at least one input-domain ID. Teloscope exits on an unmatched selector, duplicate FASTA primary ID, invalid or empty selector file, invalid BED coordinates, or an empty final selection. It reports the selected and input counts to stderr and in the FASTA summary.
+Filters require FASTA or supported GFA1 input. GFA filtering preserves supported graph records and only limits scanned terminal ends. Filtered GFA accepts `H`, `S`, `L`, `J`, and `P` records; it rejects GFA2, `C`, `W`, and unknown records. Filtered stdin is parsed as FASTA, so GFA input needs a `.gfa` or `.gfa.gz` filename. FASTQ, BAM, and both read-subset modes reject filters.
 
-Filtering a GFA does not delete supported original graph records. It scans terminal segment ends reached from selected paths, or selected segments in a pathless graph. Caps and links are graph-level annotations, so an annotated segment end shared by selected and excluded paths is visible to both. Filtered GFA2, GFA1 `C` containment and `W` walk records, and unknown GFA record types are rejected because the current writer cannot preserve them safely.
+Filtering occurs after input loading. It reduces scanning and output size, including `--plot-report`, but not parsing or peak memory. FASTA BED, BEDgraph, TSV, and report outputs contain selected records only.
 
-Filtering happens after the assembly is loaded. It reduces scanning and output size, including `--plot-report`, but not input parsing or peak loader memory. Filters require FASTA or supported GFA1 input; uncompressed filtered stdin is treated as FASTA, and filtered GFA input must use a `.gfa` or `.gfa.gz` filename. Filtered FASTQ/BAM input and both read-subset modes are rejected.
-
-Database prefixes are format-specific. `GCA_` and `GCF_` are NCBI assembly accessions, not sequence IDs. `CM` is a GenBank/INSDC scaffold/CON family rather than a universal chromosome label, and `NC_` works only when that text starts the actual FASTA primary ID. For chromosome-only selection, prefer exact accession.version IDs derived from the NCBI sequence or assembly report. See [Database FASTA names](../README.md#database-fasta-names).
+For database FASTA, use exact accession.version IDs from the NCBI [genome sequence report](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/reference-docs/data-reports/genome-sequence/) or [assembly report](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/data-processing/policies-annotation/genomeftp/). `GCA_` and `GCF_` are assembly accessions, and prefixes such as `CM` or `NC_` are not universal chromosome rules. Use prefixes only after checking the input headers.
 
 ## Pattern control
 
@@ -119,22 +117,11 @@ Default vertebrate run:
 teloscope asm.fa
 ```
 
-One inspected submitter naming family:
-
-```sh
-teloscope asm.fa --include-prefix hap1_chr -o results/
-```
-
-Exact chromosome IDs derived from assembly metadata:
-
-```sh
-teloscope asm.fa --include-bed chromosomes.ids -o results/
-```
-
-Exact include list with a final exclusion list:
+Filter assembly records:
 
 ```sh
 teloscope asm.fa --include-bed primary.ids --exclude-bed do_not_plot.ids -o results/
+teloscope asm.fa --include-prefix hap1_chr,hap2_chr -o results/
 ```
 
 Plant canonical repeat:
