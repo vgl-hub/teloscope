@@ -18,6 +18,13 @@ struct UserInputTeloscope : UserInput {
     std::string inSequenceName;
     std::string outRoute;
     bool outRouteSet = false;
+    std::vector<std::string> includeBedFiles;
+    std::vector<std::string> excludeBedFiles;
+    std::vector<std::string> includePrefixes;
+    std::vector<std::string> excludePrefixes;
+    bool sequenceFilterActive = false;
+    uint64_t filterInputCount = 0;
+    uint64_t filterSelectedCount = 0;
     std::unordered_map<std::string, uint8_t> hammingDistances;
 
     std::string canonicalFwd = "CCCTAA";

@@ -100,9 +100,59 @@ int main(int argc, char **argv) {
             userInput.outRoute = userInput.inSequencePrefix;
     };
 
+    auto addBedFilterFile = [&](const char* path, std::vector<std::string>& files,
+                                const char* optionName) {
+        const std::filesystem::path selectorPath(path ? path : "");
+        std::error_code error;
+        if (selectorPath.empty() || !std::filesystem::exists(selectorPath, error) || error) {
+            fprintf(stderr, "Error: %s file does not exist: '%s'.\n", optionName,
+                    path ? path : "");
+            exit(EXIT_FAILURE);
+        }
+        if (!std::filesystem::is_regular_file(selectorPath, error) || error) {
+            fprintf(stderr, "Error: %s file '%s' is not a regular file.\n", optionName, path);
+            exit(EXIT_FAILURE);
+        }
+        const std::filesystem::path resolved = std::filesystem::canonical(selectorPath, error);
+        if (error) {
+            fprintf(stderr, "Error: Could not resolve %s file '%s': %s.\n", optionName,
+                    path, error.message().c_str());
+            exit(EXIT_FAILURE);
+        }
+        files.push_back(resolved.string());
+        userInput.sequenceFilterActive = true;
+    };
+
+    auto addPrefixFilters = [&](const char* value, std::vector<std::string>& prefixes,
+                                const char* optionName) {
+        std::istringstream stream(value ? value : "");
+        std::string prefix;
+        bool found = false;
+        while (std::getline(stream, prefix, ',')) {
+            const size_t first = prefix.find_first_not_of(" \t\r\n");
+            const size_t last = prefix.find_last_not_of(" \t\r\n");
+            if (first == std::string::npos) {
+                fprintf(stderr, "Error: %s contains an empty prefix.\n", optionName);
+                exit(EXIT_FAILURE);
+            }
+            prefix = prefix.substr(first, last - first + 1);
+            prefixes.push_back(prefix);
+            found = true;
+        }
+        if (!found || (value && value[0] != '\0' && value[strlen(value) - 1] == ',')) {
+            fprintf(stderr, "Error: %s contains an empty prefix.\n", optionName);
+            exit(EXIT_FAILURE);
+        }
+        userInput.sequenceFilterActive = true;
+    };
+
     static struct option long_options[] = { // struct mapping long options
         {"input-sequence", required_argument, 0, 'f'},
         {"output", required_argument, 0, 'o'},
+        {"include-bed", required_argument, 0, 0},
+        {"exclude-bed", required_argument, 0, 0},
+        {"include-prefix", required_argument, 0, 0},
+        {"exclude-prefix", required_argument, 0, 0},
         {"patterns", required_argument, 0, 'p'},
         {"window", required_argument, 0, 'w'},
         {"step", required_argument, 0, 's'},
@@ -145,15 +195,14 @@ int main(int argc, char **argv) {
         }
         switch (c) {
             case ':': // handle options without arguments
-                switch (optopt) { // the command line option last matched
-                    // case 'b':
-                    //     break;
-                        
-                    default:
-                        fprintf(stderr, "Error: Option -%c is missing a required argument\n", optopt);
-                        return EXIT_FAILURE;
+                if (optopt == 0 && optind > 0 && optind <= argc &&
+                    strncmp(argv[optind - 1], "--", 2) == 0) {
+                    fprintf(stderr, "Error: Option %s is missing a required argument\n",
+                            argv[optind - 1]);
+                } else {
+                    fprintf(stderr, "Error: Option -%c is missing a required argument\n", optopt);
                 }
-                break;
+                return EXIT_FAILURE;
             default: // handle positional arguments
 
 
@@ -164,6 +213,14 @@ int main(int argc, char **argv) {
                     userInput.fastqSubset = true;
                 else if (strcmp(long_options[option_index].name, "bam-subset") == 0)
                     userInput.bamSubset = true;
+                else if (strcmp(long_options[option_index].name, "include-bed") == 0)
+                    addBedFilterFile(optarg, userInput.includeBedFiles, "--include-bed");
+                else if (strcmp(long_options[option_index].name, "exclude-bed") == 0)
+                    addBedFilterFile(optarg, userInput.excludeBedFiles, "--exclude-bed");
+                else if (strcmp(long_options[option_index].name, "include-prefix") == 0)
+                    addPrefixFilters(optarg, userInput.includePrefixes, "--include-prefix");
+                else if (strcmp(long_options[option_index].name, "exclude-prefix") == 0)
+                    addPrefixFilters(optarg, userInput.excludePrefixes, "--exclude-prefix");
                 break;
 
 
@@ -483,6 +540,11 @@ int main(int argc, char **argv) {
                 printf("\nOptional Parameters:\n");
                 printf("\t'-w'\t--window\tSet sliding window size. [Default: 1000]\n");
                 printf("\t'-s'\t--step\tSet sliding window step. [Default: 1000 (non-overlapping)]\n");
+                printf("\t\t--include-bed FILE\tAnalyze whole records whose IDs occur in BED/list column 1. Repeatable. [Default: unset]\n");
+                printf("\t\t--exclude-bed FILE\tExclude whole records whose IDs occur in BED/list column 1. Repeatable. [Default: unset]\n");
+                printf("\t\t--include-prefix LIST\tAnalyze IDs with a literal, comma-separated prefix. Repeatable. [Default: unset]\n");
+                printf("\t\t--exclude-prefix LIST\tExclude IDs with a literal, comma-separated prefix. Repeatable. [Default: unset]\n");
+                printf("\t\tRecord filters are off by default. Matching is case-sensitive; includes form a union and exclusions apply last. FASTA uses the first ID token; BED never crops records.\n");
                 printf("\t'-r'\t--out-win-repeats\tOutput per-window repeat density, canonical ratio, and strand ratio. [Default: false]\n");
                 printf("\t'-g'\t--out-gc\tOutput GC content for each window. [Default: false]\n");
                 printf("\t'-e'\t--out-entropy\tOutput Shannon entropy for each window. [Default: false]\n");
@@ -528,6 +590,12 @@ int main(int argc, char **argv) {
 
     if (userInput.fastqSubset && userInput.bamSubset) {
         fprintf(stderr, "Error: --fastq-subset and --bam-subset are mutually exclusive.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (userInput.sequenceFilterActive && (userInput.fastqSubset || userInput.bamSubset)) {
+        fprintf(stderr, "Error: --include-bed/--exclude-bed/--include-prefix/--exclude-prefix "
+                        "filter assembly records and cannot be used in read subset mode.\n");
         exit(EXIT_FAILURE);
     }
 

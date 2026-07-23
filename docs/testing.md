@@ -89,6 +89,14 @@ bash scripts/test_gaps_bed.sh
 
 This script compares generated `*_gaps.bed` files against the checked-in expected files in `testFiles/expected/`.
 
+## Assembly record filter regression script
+
+```sh
+make test-filters
+```
+
+This builds temporary FASTA and GFA fixtures and checks exact-ID and prefix selection, include/exclude precedence, selector validation, compressed input, line endings, unsupported modes, and output isolation. The CI workflow runs the same script on Linux, macOS, and Windows.
+
 ## BAM subset regression script
 
 ```sh

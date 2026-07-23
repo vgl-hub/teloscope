@@ -67,6 +67,10 @@ test-n50: head
 test-bam: head
 	python3 scripts/test_bam_subset.py
 
+.PHONY: test-filters
+test-filters: head
+	TELOSCOPE="$(BUILD)/$(TARGET)" python3 scripts/test_sequence_filters.py
+
 .PHONY: test-bam-hardening test-bam-coverage test-bam-sanitize
 test-bam-hardening: head
 	TELOSCOPE="$(BUILD)/$(TARGET)" BAM_MUTATION_CASES="$${BAM_MUTATION_CASES:-512}" python3 scripts/test_bam_subset.py

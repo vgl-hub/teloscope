@@ -81,6 +81,23 @@ Notes:
 - Read subset modes use a `42` bp default minimum block length; assembly annotation keeps the `300` bp default. Use `-l` to override either mode.
 - BAM support has no external bioinformatics runtime dependency: it uses `zlib` directly and does not require HTSlib, `samtools`, or another converter.
 
+## Filter assembly records
+
+Filtering is off by default. All four flags can be repeated, and matching is case-sensitive.
+
+| Flag | Effect | Default |
+| --- | --- | --- |
+| `--include-bed FILE` | keep IDs listed in column 1 | unset |
+| `--exclude-bed FILE` | remove IDs listed in column 1 | unset |
+| `--include-prefix LIST` | keep IDs with any comma-separated prefix | unset |
+| `--exclude-prefix LIST` | remove IDs with any comma-separated prefix | unset |
+
+Includes form a union and exclusions run last. Without an include flag, all records start selected. Prefixes are literal strings. Selector files accept one ID per line or BED3+ rows; column 1 selects a whole record, and BED coordinates never crop sequences.
+
+FASTA matching uses the first token after `>`. GFA1 matching uses `P` names or, in a pathless graph, `S` names. Filters reject FASTQ, BAM, and read-subset modes. Every selector must match, and an empty selection fails. See [Parameters](docs/parameters.md#assembly-record-filters) for validation and GFA limits.
+
+For NCBI FASTA, prefer exact accession.version IDs from the [genome sequence report](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/reference-docs/data-reports/genome-sequence/) or [assembly report](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/data-processing/policies-annotation/genomeftp/). `GCA_` and `GCF_` name assemblies, not FASTA records, and prefixes such as `CM` or `NC_` are not universal chromosome tests.
+
 ## Typical output layout
 
 FASTA run:

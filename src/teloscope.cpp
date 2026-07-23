@@ -1006,6 +1006,10 @@ void Teloscope::printSummary(std::ofstream& reportFile) {
 
     out("\n+++ Assembly Summary Report +++\n");
     out("Total paths:\t", totalPaths, "\n");
+    if (userInput.sequenceFilterActive) {
+        out("Filter input paths:\t", userInput.filterInputCount, "\n");
+        out("Filter selected paths:\t", userInput.filterSelectedCount, "\n");
+    }
     out("Total gaps:\t", totalGaps, "\n");
     out("Scaffold N50:\t", scaffoldN50, "\n");
     out("Contig N50:\t", contigN50, "\n");
