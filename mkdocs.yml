@@ -1,0 +1,69 @@
+site_name: Teloscope
+site_description: Scan assembly ends for telomeric repeats — FASTA, FASTA.gz, and GFA aware.
+site_url: https://teloscope.readthedocs.io/
+repo_url: https://github.com/vgl-hub/teloscope
+repo_name: vgl-hub/teloscope
+edit_uri: edit/main/docs/
+copyright: Part of the gfastar tool suite.
+
+docs_dir: docs
+
+theme:
+  name: material
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: green
+      accent: green
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: green
+      accent: green
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  - include-markdown
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Parameters: parameters.md
+  - Outputs: outputs.md
+  - Classification: classification.md
+  - Algorithm: algorithm.md
+  - Report generation: report.md
+  - Simulation: simulation.md
+  - Testing: testing.md
+  - Troubleshooting: troubleshooting.md
+  - Release checklist: release.md
+  - Validation format: https://github.com/vgl-hub/teloscope/blob/main/validateFiles/README.md

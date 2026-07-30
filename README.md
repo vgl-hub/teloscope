@@ -134,7 +134,7 @@ results/
 | [Testing](docs/testing.md) | validator runs, report regression checks, and test regeneration |
 | [Troubleshooting](docs/troubleshooting.md) | common build, input, and runtime failures |
 | [Release checklist](docs/release.md) | GitHub, Bioconda, and Zenodo release steps |
-| [Validation format](validateFiles/README.md) | the `.tst` harness, including directive-mode GFA cases |
+| [Validation format](https://github.com/vgl-hub/teloscope/blob/main/validateFiles/README.md) | the `.tst` harness, including directive-mode GFA cases |
 
 ## Repo layout
 
