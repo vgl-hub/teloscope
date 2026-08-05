@@ -1,5 +1,7 @@
 import atexit
+import contextlib
 import importlib.util
+import io
 import os
 from collections import OrderedDict
 from pathlib import Path
@@ -50,6 +52,46 @@ def _synthetic_terminal_dataset(chrom_size=20_000):
 
 
 class TeloscopeReportTests(unittest.TestCase):
+    def test_parse_terminal_bed_accepts_joint_and_legacy_count_schemas(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bed_path = Path(tmpdir) / "blocks.bed"
+            bed_path.write_text(
+                "chrNew\t10\t70\tp\t3\t2\t5\t7\t100\tscaffold\n"
+                "chrLegacy\t20\t80\t60\tq\t4\t6\t7\t3\t100\tcontig\n",
+                encoding="utf-8",
+            )
+
+            parsed = REPORT.parse_terminal_bed(str(bed_path))
+
+        new = parsed["chrNew"][0]
+        self.assertEqual((new["length"], new["fwd"], new["rev"]), (60, 8, 9))
+        self.assertEqual((new["can"], new["noncan"]), (5, 12))
+        self.assertEqual(
+            (new["fwdCan"], new["revCan"], new["fwdNonCan"], new["revNonCan"]),
+            (3, 2, 5, 7),
+        )
+        self.assertEqual(new["term"], "scaffold")
+
+        legacy = parsed["chrLegacy"][0]
+        self.assertEqual((legacy["length"], legacy["fwd"], legacy["rev"]), (60, 4, 6))
+        self.assertEqual((legacy["can"], legacy["noncan"]), (7, 3))
+        self.assertIsNone(legacy["fwdCan"])
+        self.assertEqual(legacy["term"], "contig")
+
+    def test_parse_terminal_bed_skips_truncated_legacy_row(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bed_path = Path(tmpdir) / "blocks.bed"
+            bed_path.write_text(
+                "chrBroken\t20\t80\t60\tq\t4\t6\t7\t3\n",
+                encoding="utf-8",
+            )
+
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                parsed = REPORT.parse_terminal_bed(str(bed_path))
+
+        self.assertEqual(dict(parsed), {})
+        self.assertIn("expected at least 10 legacy BED columns", stderr.getvalue())
+
     def test_parse_report_maps_expected_categories(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             report_path = Path(tmpdir) / "synthetic_report.tsv"

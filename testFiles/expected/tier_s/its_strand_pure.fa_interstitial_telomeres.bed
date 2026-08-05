@@ -1,2 +1,1 @@
-# Pooled 13:7 strand counts label b; the 13 canonical matches are all forward.
-chr_its_strand_pure	100	220	120	b	13	7	13	7	320	interstitial	13	0	0.6500	1.0000
+chr_its_strand_pure	100	220	b	13	0	0	7	320

@@ -67,7 +67,7 @@ expect_gfa_colors 1
 
 ## Generated-file checks
 
-`expect_file` resolves its first argument strictly as a basename under `%OUTDIR%`; directory components are rejected. The golden path is resolved from the validator's working directory. Comparison is line-oriented and exact after carriage returns, blank lines, and lines whose first non-whitespace character is `#` are removed. This keeps provenance headers out of content goldens while still checking every data row and column. Missing output or golden files fail explicitly.
+`expect_file` resolves its first argument strictly as a basename under `%OUTDIR%`; directory components are rejected. The golden path is resolved from the validator's working directory. Comparison is line-oriented and exact after carriage returns, blank lines, and lines whose first non-whitespace character is `#` are removed. This keeps comment metadata out of content comparisons while still checking every data row and column. Missing output or golden files fail explicitly.
 
 The directive may appear more than once. For example:
 

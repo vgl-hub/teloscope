@@ -706,7 +706,7 @@ def test_fasta_in_gfa_named_directory_is_not_misclassified(tmp):
     require(not list(out_dir.glob("*.telo.annotated.gfa")), "FASTA path was misclassified as GFA")
 
 
-def test_output_provenance_headers(tmp):
+def test_output_metadata_and_bed_compatibility(tmp):
     out_dir = tmp / "provenance_out"
     result = run_fasta(
         MULTI_FASTA,
@@ -723,53 +723,94 @@ def test_output_provenance_headers(tmp):
     for marker in ("#teloscope", "#params", "#columns"):
         require(marker not in stdout, f"file provenance marker {marker!r} leaked to stdout")
 
-    schemas = {
-        "multi.fa_window_repeat_density.bedgraph": "chr\tstart\tend\trepeatDensity",
-        "multi.fa_window_canonical_ratio.bedgraph": "chr\tstart\tend\tcanonicalRatio",
-        "multi.fa_window_strand_ratio.bedgraph": "chr\tstart\tend\tstrandRatio",
-        "multi.fa_window_gc.bedgraph": "chr\tstart\tend\tgcContent",
-        "multi.fa_window_entropy.bedgraph": "chr\tstart\tend\tshannonEntropy",
-        "multi.fa_canonical_matches.bed": "chr\tstart\tend\tmatchSeq",
-        "multi.fa_noncanonical_matches.bed": "chr\tstart\tend\tmatchSeq",
-        "multi.fa_terminal_telomeres.bed": (
-            "chr\tstart\tend\tlength\tlabel\tfwdCount\trevCount\tcanonCount\t"
-            "nonCanonCount\tchrSize\tblockType\tcanFwd\tcanRev\tcanCov\trepCov"
-        ),
-        "multi.fa_interstitial_telomeres.bed": (
-            "chr\tstart\tend\tlength\tlabel\tfwdCount\trevCount\tcanonCount\t"
-            "nonCanonCount\tchrSize\tblockType\tcanFwd\tcanRev\tcanCov\trepCov"
-        ),
-        "multi.fa_gaps.bed": "chr\tstart\tend",
-        "multi.fa_report.tsv": (
-            "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular\tits\tcanonical\twindows"
-        ),
+    expected_names = {
+        "multi.fa_window_repeat_density.bedgraph",
+        "multi.fa_window_canonical_ratio.bedgraph",
+        "multi.fa_window_strand_ratio.bedgraph",
+        "multi.fa_window_gc.bedgraph",
+        "multi.fa_window_entropy.bedgraph",
+        "multi.fa_canonical_matches.bed",
+        "multi.fa_noncanonical_matches.bed",
+        "multi.fa_terminal_telomeres.bed",
+        "multi.fa_interstitial_telomeres.bed",
+        "multi.fa_gaps.bed",
+        "multi.fa_report.tsv",
     }
     outputs = {path.name: path for path in out_dir.iterdir() if path.is_file()}
-    require(outputs.keys() == schemas.keys(), f"unexpected provenance output set: {sorted(outputs)}")
+    require(outputs.keys() == expected_names, f"unexpected output set: {sorted(outputs)}")
 
     expected_params = (
         "#params canonical=CCCTAA/TTAGGG patterns=2 window=200 step=100 "
         "terminal_limit=700 max_match_dist=40 max_block_dist=300 min_block_len=100 "
         "min_block_density=0.4 edit_distance=0 ultra_fast=false manual_curation=true"
     )
-    for name, schema in schemas.items():
-        lines = outputs[name].read_text(encoding="utf-8").splitlines()
-        require(len(lines) >= 3, f"{name} lacks three provenance lines")
-        require(
-            re.fullmatch(r"#teloscope version=0\.1\.6 commit=(?:[0-9a-f]+|unknown)", lines[0]) is not None,
-            f"{name} has an invalid version/commit header: {lines[0]!r}",
-        )
-        require(lines[1] == expected_params, f"{name} has incorrect parameters: {lines[1]!r}")
-        require(lines[2] == f"#columns\t{schema}", f"{name} has incorrect columns: {lines[2]!r}")
-        leading_comments = 0
-        for line in lines:
-            if not line.startswith("#"):
-                break
-            leading_comments += 1
-        require(leading_comments == 3, f"{name} has {leading_comments} leading comment lines, expected 3")
+    report_lines = outputs["multi.fa_report.tsv"].read_text(encoding="utf-8").splitlines()
+    require(len(report_lines) >= 3, "report lacks three provenance lines")
+    require(
+        re.fullmatch(r"#teloscope version=0\.1\.6 commit=(?:[0-9a-f]+|unknown)", report_lines[0]) is not None,
+        f"report has an invalid version/commit header: {report_lines[0]!r}",
+    )
+    require(report_lines[1] == expected_params, f"report has incorrect parameters: {report_lines[1]!r}")
+    report_schema = "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular\tits\tcanonical\twindows"
+    require(report_lines[2] == f"#columns\t{report_schema}",
+            f"report has incorrect columns: {report_lines[2]!r}")
+
+    for name, path in outputs.items():
+        if name.endswith("_report.tsv"):
+            continue
+        lines = path.read_text(encoding="utf-8").splitlines()
+        require(not any(line.startswith("#") for line in lines),
+                f"{name} contains a non-data comment header")
         if name.endswith(".bedgraph"):
-            require(len(lines) >= 4 and lines[3].startswith("track type=bedGraph"),
-                    f"{name} track declaration does not follow provenance")
+            require(lines and lines[0].startswith("track type=bedGraph"),
+                    f"{name} lacks its standard track declaration")
+
+    terminal_rows = output_data_lines(outputs["multi.fa_terminal_telomeres.bed"])
+    require(terminal_rows, "terminal BED has no data rows")
+    for row in terminal_rows:
+        fields = row.split("\t")
+        require(len(fields) == 10, f"terminal BED row has {len(fields)} fields, expected BED4+6")
+        require(fields[3] in {"p", "q", "b"}, f"terminal BED name is not a block label: {fields[3]!r}")
+        require(all(value.isdigit() for value in fields[4:9]), "terminal BED count/size field is not numeric")
+        require(fields[9] in {"scaffold", "contig"}, f"invalid terminal block type: {fields[9]!r}")
+
+    joint_out = tmp / "joint_count_out"
+    joint_result = run_fasta(
+        ROOT / "testFiles" / "its_headtohead.fa",
+        joint_out,
+        ["-i", "-n", "-t", "50", "-x", "1"],
+    )
+    require_success(joint_result, "four-cell ITS output run")
+    joint_rows = output_data_lines(next(joint_out.glob("*_interstitial_telomeres.bed")))
+    require(len(joint_rows) == 1, f"expected one four-cell ITS row, found {len(joint_rows)}")
+    joint_fields = joint_rows[0].split("\t")
+    require(len(joint_fields) == 9, f"ITS row has {len(joint_fields)} fields, expected BED4+5")
+    require(joint_fields[3] == "b", f"four-cell ITS label changed: {joint_fields[3]!r}")
+    require(joint_fields[4:8] == ["20", "20", "7", "7"],
+            f"four-cell ITS counts are wrong: {joint_fields[4:8]}")
+
+
+def test_balanced_label_threshold_is_strict(tmp):
+    fasta = tmp / "threshold.fa"
+    flank = "ACGT" * 25
+    write_fasta(
+        fasta,
+        [("threshold", flank + ("CCCTAA" * 333) + ("TTAGGG" * 167) + flank)],
+    )
+    out_dir = tmp / "threshold_out"
+    result = run_fasta(
+        fasta,
+        out_dir,
+        ["-i", "-n", "-t", "50", "-x", "0", "-w", "10000", "-s", "10000"],
+    )
+    require_success(result, "strict 66.6-percent label threshold run")
+
+    rows = output_data_lines(next(out_dir.glob("*_interstitial_telomeres.bed")))
+    require(len(rows) == 1, f"expected one threshold ITS row, found {len(rows)}")
+    fields = rows[0].split("\t")
+    require(fields[4:8] == ["333", "167", "0", "0"],
+            f"threshold four-cell counts are wrong: {fields[4:8]}")
+    require(fields[3] == "b", f"exactly 66.6% forward matches must be balanced, found {fields[3]!r}")
 
 
 def test_cli_surface_and_read_subset_guards(tmp):
@@ -829,7 +870,8 @@ TESTS = (
     test_gfa_shared_terminal_selection_is_orientation_specific,
     test_unsupported_gfa_records_are_rejected,
     test_fasta_in_gfa_named_directory_is_not_misclassified,
-    test_output_provenance_headers,
+    test_output_metadata_and_bed_compatibility,
+    test_balanced_label_threshold_is_strict,
     test_cli_surface_and_read_subset_guards,
 )
 

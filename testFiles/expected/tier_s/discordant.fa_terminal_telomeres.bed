@@ -1,2 +1,1 @@
-# Expected non-header rows.
-chr_discordant	2800	3400	600	p	99	0	99	0	3400	scaffold	99	0	0.9900	0.9900
+chr_discordant	2800	3400	p	99	0	0	0	3400	scaffold

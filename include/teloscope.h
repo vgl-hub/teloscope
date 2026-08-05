@@ -103,15 +103,10 @@ struct GapInfo {
 struct TelomereBlock {
     uint64_t start = 0;
     uint32_t blockLen = 0; // End = start + blockLen
-    uint32_t blockCounts = 0;
-    uint32_t forwardCount = 0;
-    uint32_t reverseCount = 0;
-    uint32_t canonicalCount = 0;
-    uint32_t canonicalFwdCount = 0;
-    uint32_t nonCanonicalCount = 0;
-    uint32_t totalCovered = 0;
-    uint32_t fwdCovered = 0;
-    uint32_t canCovered = 0;
+    uint32_t fwdCanCount = 0;
+    uint32_t revCanCount = 0;
+    uint32_t fwdNonCanCount = 0;
+    uint32_t revNonCanCount = 0;
     bool hasValidOr = true;
     bool isLongest = false;
     char blockLabel = '\0'; // 'p', 'q', 'b' (balanced)
@@ -215,13 +210,15 @@ class Teloscope {
     }
 
 
-    static constexpr float forwardLabelThresholdPct = 66.6f;
-    static constexpr float reverseLabelThresholdPct = 33.3f;
+    static constexpr uint64_t labelThresholdScale = 1000;
+    static constexpr uint64_t forwardLabelThreshold = 666;
+    static constexpr uint64_t reverseLabelThreshold = 333;
 
-    static inline char computeBlockLabel(uint32_t forwardCount, uint32_t blockCounts) {
-        float forwardRatio = (forwardCount * 100.0f) / blockCounts;
-        if (forwardRatio > forwardLabelThresholdPct) return 'p';
-        if (forwardRatio < reverseLabelThresholdPct) return 'q';
+    static inline char computeBlockLabel(uint64_t forwardCount, uint64_t blockCounts) {
+        if (blockCounts == 0) return 'b';
+        const uint64_t scaledForward = forwardCount * labelThresholdScale;
+        if (scaledForward > blockCounts * forwardLabelThreshold) return 'p';
+        if (scaledForward < blockCounts * reverseLabelThreshold) return 'q';
         return 'b';
     }
 

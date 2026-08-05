@@ -44,9 +44,9 @@ Optional:
 | `*_interstitial_telomeres.bed` | `-i` | interstitial telomere-like blocks |
 | `*_plot_report.pdf` | `--plot-report` | PDF summary report |
 
-## Provenance headers
+## Run provenance
 
-Every BED, BEDGraph, and `*_report.tsv` file written in FASTA mode starts with three comment lines:
+The always-written `*_report.tsv` starts with three comment lines:
 
 ```text
 #teloscope version=0.1.6 commit=<short-commit-or-unknown>
@@ -54,44 +54,49 @@ Every BED, BEDGraph, and `*_report.tsv` file written in FASTA mode starts with t
 #columns	<tab-separated column names>
 ```
 
-`patterns` is the number of search patterns after expansion and deduplication. `commit` is the short commit checked out when the binary was built, or `unknown` when Git metadata was unavailable. It does not indicate whether that commit was built from a clean worktree. The headers are written to files only; the normal report on standard output is unchanged. BEDGraph `track` lines follow these headers.
+`patterns` is the number of search patterns after expansion and deduplication. `commit` is the short commit checked out when the binary was built, or `unknown` when Git metadata was unavailable. It does not indicate whether that commit was built from a clean worktree. The normal report on standard output is unchanged.
+
+BED files contain BED records only. BEDGraph files begin with their standard browser `track` declaration followed by four-column data. Keeping run metadata in the companion report avoids comment headers that strict coordinate converters reject. Telomere block files still have explicitly documented custom fields, so schema-aware converters must be told their BED4+ field count.
 
 ## Telomere block BED files
 
-`*_terminal_telomeres.bed` and `*_interstitial_telomeres.bed` have the same 15-column layout. Coordinates are zero-based, half-open, so `length = end - start`.
+Both block files use zero-based, half-open coordinates. Their first four fields form a standard BED4 prefix; column 4 is the BED `name` field and contains Teloscope's `p`, `q`, or `b` label. Later fields are Teloscope-specific, rather than BED `score` or `strand` fields with invented semantics. Readers that only understand predefined BED fields should consume the first four columns. Schema-aware readers should declare these files as BED4+5 or BED4+6 as appropriate. UCSC bigBed conversion additionally requires a matching AutoSql definition for custom fields. See the [UCSC BED specification](https://genome.ucsc.edu/FAQ/FAQformat.html#format1) and [bigBed custom-field documentation](https://genome.ucsc.edu/goldenPath/help/bigBed.html).
 
-| Column | Name | Terminal BED | Interstitial BED |
-| ---: | --- | --- | --- |
-| 1 | `chr` | FASTA record ID | FASTA record ID |
-| 2 | `start` | block start | block start |
-| 3 | `end` | block end | block end |
-| 4 | `length` | block span in bp | block span in bp |
-| 5 | `label` | `p` or `q`, set by the terminal scan direction | `p`, `q`, or `b`, set from all forward/reverse matches |
-| 6 | `fwdCount` | forward-oriented matches | forward-oriented matches |
-| 7 | `revCount` | reverse-oriented matches | reverse-oriented matches |
-| 8 | `canonCount` | exact canonical matches | exact canonical matches |
-| 9 | `nonCanonCount` | variant matches | variant matches |
-| 10 | `chrSize` | full FASTA record length | full FASTA record length |
-| 11 | `blockType` | `scaffold` or `contig` | `interstitial` |
-| 12 | `canFwd` | exact forward canonical matches | exact forward canonical matches |
-| 13 | `canRev` | exact reverse canonical matches | exact reverse canonical matches |
-| 14 | `canCov` | canonical matched bp divided by `length` | canonical matched bp divided by `length` |
-| 15 | `repCov` | all matched bp divided by `length` | all matched bp divided by `length` |
+Schema migration: the v0.1.6 layout moves the label from column 5 to the standard BED `name` field in column 4 and replaces the former length and marginal-count fields with the four joint counts below. Positional consumers must update their indices; `scripts/teloscope_report.py` accepts both layouts during migration.
 
-`canCov` and `repCov` are written to four decimal places. Matched bp is the sum of match lengths, not the size of their interval union. Matches may overlap, so `repCov` can exceed `1.0`; `canCov` can also exceed `1.0` for a self-overlapping custom canonical motif.
+Common BED4+5 fields:
 
-The count columns obey these identities:
+| Column | Name | Meaning |
+| ---: | --- | --- |
+| 1 | `chrom` | FASTA record ID |
+| 2 | `chromStart` | block start |
+| 3 | `chromEnd` | block end; block length is `chromEnd - chromStart` |
+| 4 | `name` | `p`, `q`, or `b` block label |
+| 5 | `fwdCan` | exact forward canonical matches |
+| 6 | `revCan` | exact reverse canonical matches |
+| 7 | `fwdNonCan` | forward-oriented variant matches |
+| 8 | `revNonCan` | reverse-oriented variant matches |
+| 9 | `chromSize` | full FASTA record length |
+
+`*_terminal_telomeres.bed` is BED4+6: it adds column 10, `blockType`, whose value is `scaffold` or `contig`. The interstitial file needs no type column because every row in that file is interstitial.
+
+The four count cells are mutually exclusive. All useful marginal totals are derived from them:
 
 ```text
-canFwd + canRev = canonCount
-fwdCount + revCount = canonCount + nonCanonCount
+forward matches       = fwdCan + fwdNonCan
+reverse matches       = revCan + revNonCan
+canonical matches     = fwdCan + revCan
+non-canonical matches = fwdNonCan + revNonCan
+all matches           = fwdCan + revCan + fwdNonCan + revNonCan
 ```
+
+Canonical matched bases are `(fwdCan + revCan) * canonical motif length`, and canonical block density divides that value by `chromEnd - chromStart`. With a fixed-length pattern set, total matched-base coverage can be derived the same way. Counts alone do not determine total matched bases when one run mixes non-canonical motifs of different lengths.
 
 For an interstitial block, `p` means more than 66.6% of all matches are forward-oriented, `q` means less than 33.3%, and `b` is the interval between those thresholds. Terminal blocks retain `p` or `q` from the end-specific scan; their labels are not recalculated from the counts.
 
 “Forward” is a sequence-family convention, not a reference `+` strand annotation. Teloscope orders the canonical motif and its reverse complement lexicographically and calls the smaller string forward. With the default motif pair, forward is `CCCTAA`, normally seen at a chromosome start, and reverse is `TTAGGG`, normally seen at a chromosome end. Each concrete seed after IUPAC expansion is assigned to the closer canonical orientation (ties go to forward), and its edit-distance variants inherit that orientation.
 
-`blockType=scaffold` marks a block within `terminal_limit` of a FASTA record end. `blockType=contig` marks a block found by a terminal scan of an internal ungapped-segment end; these rows are emitted only with `-n/--manual-curation`. The shared layout means the two files can be combined without reshaping, while column 11 retains the block context.
+`blockType=scaffold` marks a block within `terminal_limit` of a FASTA record end. `blockType=contig` marks a block found by a terminal scan of an internal ungapped-segment end; these rows are emitted only with `-n/--manual-curation`.
 
 ## `*_gaps.bed`
 
@@ -103,15 +108,17 @@ Columns:
 
 Each row marks one contiguous run of `N`, `n`, `X`, or `x`. Teloscope splits a FASTA record into ungapped segments at every such run and builds blocks within one segment at a time. A terminal or interstitial block therefore cannot span a row in `*_gaps.bed`.
 
-To attach the nearest gap to each terminal and interstitial block with BEDTools:
+A gap acts as a contig boundary. Teloscope never fuses repeats on opposite sides of an unknown run into one block, even when the match-merging distance is longer than the run.
+
+To attach the nearest gap to each terminal and interstitial block with BEDTools, first select their common BED4 prefix:
 
 ```sh
-awk '!/^#/' asm.fa_terminal_telomeres.bed asm.fa_interstitial_telomeres.bed > blocks.data.bed
-awk '!/^#/' asm.fa_gaps.bed > gaps.data.bed
-bedtools closest -a blocks.data.bed -b gaps.data.bed -d > blocks_with_nearest_gap.tsv
+cut -f1-4 asm.fa_terminal_telomeres.bed > blocks.bed
+cut -f1-4 asm.fa_interstitial_telomeres.bed >> blocks.bed
+bedtools closest -a blocks.bed -b asm.fa_gaps.bed -d > blocks_with_nearest_gap.tsv
 ```
 
-The output contains the 15 block columns, the three gap columns, and the block-to-gap distance. This join is optional: column 11 already distinguishes scaffold-terminal, contig-terminal, and interstitial blocks.
+The output contains the four block fields, the three gap fields, and the block-to-gap distance.
 
 ## `*_report.tsv`
 

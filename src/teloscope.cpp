@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <iomanip>
 #include <type_traits>
 #include <chrono>
 
@@ -61,33 +60,32 @@ void writeProvenanceHeader(std::ofstream& file, const UserInputTeloscope& input,
 
 void writeBlockRow(std::ofstream& file, std::string_view pathName,
                    const TelomereBlock& block, uint64_t pathSize,
-                   std::string_view blockType) {
+                   std::string_view blockType = {}) {
     const uint64_t blockEnd = block.start + block.blockLen;
-    const uint32_t canonicalRevCount = block.canonicalCount - block.canonicalFwdCount;
-    const double canCov = block.blockLen == 0
-        ? 0.0
-        : static_cast<double>(block.canCovered) / static_cast<double>(block.blockLen);
-    const double repCov = block.blockLen == 0
-        ? 0.0
-        : static_cast<double>(block.totalCovered) / static_cast<double>(block.blockLen);
-
-    std::ostringstream coverage;
-    coverage << std::fixed << std::setprecision(4) << canCov << '\t' << repCov;
 
     file << pathName << '\t'
          << block.start << '\t'
          << blockEnd << '\t'
-         << block.blockLen << '\t'
          << block.blockLabel << '\t'
-         << block.forwardCount << '\t'
-         << block.reverseCount << '\t'
-         << block.canonicalCount << '\t'
-         << block.nonCanonicalCount << '\t'
-         << pathSize << '\t'
-         << blockType << '\t'
-         << block.canonicalFwdCount << '\t'
-         << canonicalRevCount << '\t'
-         << coverage.str() << '\n';
+         << block.fwdCanCount << '\t'
+         << block.revCanCount << '\t'
+         << block.fwdNonCanCount << '\t'
+         << block.revNonCanCount << '\t'
+         << pathSize;
+    if (!blockType.empty()) file << '\t' << blockType;
+    file << '\n';
+}
+
+void incrementMatchCounts(const MatchInfo& match,
+                          uint32_t& fwdCanCount, uint32_t& revCanCount,
+                          uint32_t& fwdNonCanCount, uint32_t& revNonCanCount) {
+    if (match.isCanonical) {
+        if (match.isForward) ++fwdCanCount;
+        else ++revCanCount;
+    } else {
+        if (match.isForward) ++fwdNonCanCount;
+        else ++revNonCanCount;
+    }
 }
 
 } // namespace
@@ -123,39 +121,34 @@ uint64_t Teloscope::getTerminalBlocks(
 
     bool inBlock = false;
     uint64_t blockStart = 0, blockEnd = 0, prevPosition = 0;
-    uint32_t blockCounts = 0, forwardCount = 0, canonicalCount = 0;
-    uint32_t canonicalFwdCount = 0;
-    uint32_t totalCovered = 0, fwdCovered = 0, canCovered = 0;
+    uint32_t fwdCanCount = 0, revCanCount = 0;
+    uint32_t fwdNonCanCount = 0, revNonCanCount = 0;
 
     auto startNewBlock = [&](const MatchInfo& m) {
         blockStart = m.position;
         blockEnd = m.position + m.matchSize;
         prevPosition = m.position;
-        blockCounts = 1;
-        forwardCount = m.isForward;
-        canonicalCount = m.isCanonical;
-        canonicalFwdCount = m.isCanonical && m.isForward;
-        totalCovered = m.matchSize;
-        fwdCovered = m.isForward * m.matchSize;
-        canCovered = m.isCanonical * m.matchSize;
+        fwdCanCount = revCanCount = 0;
+        fwdNonCanCount = revNonCanCount = 0;
+        incrementMatchCounts(m, fwdCanCount, revCanCount,
+                             fwdNonCanCount, revNonCanCount);
         inBlock = true;
     };
 
     auto finalizeSubBlock = [&]() {
+        const uint64_t canonicalCount =
+            static_cast<uint64_t>(fwdCanCount) + revCanCount;
+        const uint64_t blockCounts = canonicalCount + fwdNonCanCount + revNonCanCount;
+        const uint64_t canonicalCovered = canonicalCount * userInput.canonicalSize;
         if (blockCounts >= minBlockCounts && canonicalCount > 0 &&
-            canCovered >= minBlockDensity * (blockEnd - blockStart)) {
+            canonicalCovered >= minBlockDensity * (blockEnd - blockStart)) {
             TelomereBlock block;
             block.start = blockStart;
             block.blockLen = static_cast<uint32_t>(blockEnd - blockStart);
-            block.blockCounts = blockCounts;
-            block.forwardCount = forwardCount;
-            block.reverseCount = blockCounts - forwardCount;
-            block.canonicalCount = canonicalCount;
-            block.canonicalFwdCount = canonicalFwdCount;
-            block.nonCanonicalCount = blockCounts - canonicalCount;
-            block.totalCovered = totalCovered;
-            block.fwdCovered = fwdCovered;
-            block.canCovered = canCovered;
+            block.fwdCanCount = fwdCanCount;
+            block.revCanCount = revCanCount;
+            block.fwdNonCanCount = fwdNonCanCount;
+            block.revNonCanCount = revNonCanCount;
             subBlocks.push_back(block);
         }
         inBlock = false;
@@ -175,13 +168,8 @@ uint64_t Teloscope::getTerminalBlocks(
             if (gap <= matchDist) {
                 if (fromStart) blockEnd = m.position + m.matchSize;
                 else blockStart = m.position;
-                blockCounts++;
-                forwardCount += m.isForward;
-                canonicalCount += m.isCanonical;
-                canonicalFwdCount += m.isCanonical && m.isForward;
-                totalCovered += m.matchSize;
-                fwdCovered += m.isForward * m.matchSize;
-                canCovered += m.isCanonical * m.matchSize;
+                incrementMatchCounts(m, fwdCanCount, revCanCount,
+                                     fwdNonCanCount, revNonCanCount);
                 prevPosition = m.position;
             } else {
                 finalizeSubBlock();
@@ -228,15 +216,10 @@ uint64_t Teloscope::getTerminalBlocks(
                 current.blockLen = (current.start + current.blockLen) - next.start;
                 current.start = next.start;
             }
-            current.blockCounts += next.blockCounts;
-            current.forwardCount += next.forwardCount;
-            current.reverseCount += next.reverseCount;
-            current.canonicalCount += next.canonicalCount;
-            current.canonicalFwdCount += next.canonicalFwdCount;
-            current.nonCanonicalCount += next.nonCanonicalCount;
-            current.totalCovered += next.totalCovered;
-            current.fwdCovered += next.fwdCovered;
-            current.canCovered += next.canCovered;
+            current.fwdCanCount += next.fwdCanCount;
+            current.revCanCount += next.revCanCount;
+            current.fwdNonCanCount += next.fwdNonCanCount;
+            current.revNonCanCount += next.revNonCanCount;
         } else {
             finalizeExtended();
             current = next;
@@ -264,43 +247,41 @@ void Teloscope::getInterstitialBlocks(
 
     bool inBlock = false;
     uint64_t blockStart = 0, blockEnd = 0, prevPosition = 0;
-    uint32_t blockCounts = 0, forwardCount = 0, canonicalCount = 0;
-    uint32_t canonicalFwdCount = 0;
-    uint32_t totalCovered = 0, fwdCovered = 0, canCovered = 0;
+    uint32_t fwdCanCount = 0, revCanCount = 0;
+    uint32_t fwdNonCanCount = 0, revNonCanCount = 0;
 
     auto startNewBlock = [&](const MatchInfo& m) {
         blockStart = m.position;
         blockEnd = m.position + m.matchSize;
         prevPosition = m.position;
-        blockCounts = 1;
-        forwardCount = m.isForward;
-        canonicalCount = m.isCanonical;
-        canonicalFwdCount = m.isCanonical && m.isForward;
-        totalCovered = m.matchSize;
-        fwdCovered = m.isForward * m.matchSize;
-        canCovered = m.isCanonical * m.matchSize;
+        fwdCanCount = revCanCount = 0;
+        fwdNonCanCount = revNonCanCount = 0;
+        incrementMatchCounts(m, fwdCanCount, revCanCount,
+                             fwdNonCanCount, revNonCanCount);
         inBlock = true;
     };
 
     auto finalizeBlock = [&]() {
         uint32_t blockLen = static_cast<uint32_t>(blockEnd - blockStart);
+        const uint64_t forwardCount =
+            static_cast<uint64_t>(fwdCanCount) + fwdNonCanCount;
+        const uint64_t reverseCount =
+            static_cast<uint64_t>(revCanCount) + revNonCanCount;
+        const uint64_t blockCounts = forwardCount + reverseCount;
+        const uint64_t canonicalCount =
+            static_cast<uint64_t>(fwdCanCount) + revCanCount;
         char label = computeBlockLabel(forwardCount, blockCounts);
 
         if (blockLen >= minLength && canonicalCount >= minCanonicalCount &&
-            !(label == 'b' && forwardCount < 2 && (blockCounts - forwardCount) < 2)) {
+            !(label == 'b' && forwardCount < 2 && reverseCount < 2)) {
 
             TelomereBlock block;
             block.start = blockStart;
             block.blockLen = blockLen;
-            block.blockCounts = blockCounts;
-            block.forwardCount = forwardCount;
-            block.reverseCount = blockCounts - forwardCount;
-            block.canonicalCount = canonicalCount;
-            block.canonicalFwdCount = canonicalFwdCount;
-            block.nonCanonicalCount = blockCounts - canonicalCount;
-            block.totalCovered = totalCovered;
-            block.fwdCovered = fwdCovered;
-            block.canCovered = canCovered;
+            block.fwdCanCount = fwdCanCount;
+            block.revCanCount = revCanCount;
+            block.fwdNonCanCount = fwdNonCanCount;
+            block.revNonCanCount = revNonCanCount;
             block.blockLabel = label;
             outBlocks.push_back(block);
         }
@@ -314,13 +295,8 @@ void Teloscope::getInterstitialBlocks(
             startNewBlock(m);
         } else if (m.position - prevPosition <= mergeDist) {
             blockEnd = m.position + m.matchSize;
-            blockCounts++;
-            forwardCount += m.isForward;
-            canonicalCount += m.isCanonical;
-            canonicalFwdCount += m.isCanonical && m.isForward;
-            totalCovered += m.matchSize;
-            fwdCovered += m.isForward * m.matchSize;
-            canCovered += m.isCanonical * m.matchSize;
+            incrementMatchCounts(m, fwdCanCount, revCanCount,
+                                 fwdNonCanCount, revNonCanCount);
             prevPosition = m.position;
         } else {
             finalizeBlock();
@@ -380,17 +356,19 @@ void Teloscope::labelTerminalBlocks(
     // longest p and q among scaffold-terminal blocks
     TelomereBlock* longest_p = nullptr;
     TelomereBlock* longest_q = nullptr;
-    uint64_t max_p_coverage = 0;
-    uint64_t max_q_coverage = 0;
+    uint64_t max_p_canonical_count = 0;
+    uint64_t max_q_canonical_count = 0;
 
     for (auto* block : scaffoldBlocks) {
-        if (block->blockLabel == 'p' && block->canCovered > max_p_coverage) {
+        const uint64_t canonicalCount =
+            static_cast<uint64_t>(block->fwdCanCount) + block->revCanCount;
+        if (block->blockLabel == 'p' && canonicalCount > max_p_canonical_count) {
             longest_p = block;
-            max_p_coverage = block->canCovered;
+            max_p_canonical_count = canonicalCount;
         }
-        else if (block->blockLabel == 'q' && block->canCovered > max_q_coverage) {
+        else if (block->blockLabel == 'q' && canonicalCount > max_q_canonical_count) {
             longest_q = block;
-            max_q_coverage = block->canCovered;
+            max_q_canonical_count = canonicalCount;
         }
     }
 
@@ -746,29 +724,8 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
                             std::ofstream& gapFile,
                             std::ofstream& reportFile) {
 
-    constexpr std::string_view blockColumns =
-        "chr\tstart\tend\tlength\tlabel\tfwdCount\trevCount\tcanonCount\t"
-        "nonCanonCount\tchrSize\tblockType\tcanFwd\tcanRev\tcanCov\trepCov";
-
-    // Provenance must precede browser track declarations and data rows.
-    // The helper ignores optional streams that were not opened.
-    writeProvenanceHeader(windowDensityFile, userInput,
-                          "chr\tstart\tend\trepeatDensity");
-    writeProvenanceHeader(windowCanonicalRatioFile, userInput,
-                          "chr\tstart\tend\tcanonicalRatio");
-    writeProvenanceHeader(windowStrandRatioFile, userInput,
-                          "chr\tstart\tend\tstrandRatio");
-    writeProvenanceHeader(windowGCFile, userInput,
-                          "chr\tstart\tend\tgcContent");
-    writeProvenanceHeader(windowEntropyFile, userInput,
-                          "chr\tstart\tend\tshannonEntropy");
-    writeProvenanceHeader(canonicalMatchFile, userInput,
-                          "chr\tstart\tend\tmatchSeq");
-    writeProvenanceHeader(noncanonicalMatchFile, userInput,
-                          "chr\tstart\tend\tmatchSeq");
-    writeProvenanceHeader(terminalBlocksFile, userInput, blockColumns);
-    writeProvenanceHeader(interstitialBlocksFile, userInput, blockColumns);
-    writeProvenanceHeader(gapFile, userInput, "chr\tstart\tend");
+    // Keep BED and BEDGraph streams free of non-data comments. The always-written
+    // report is the single run-level provenance record for their shared basename.
     writeProvenanceHeader(
         reportFile, userInput,
         userInput.ultraFastMode
@@ -838,8 +795,7 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
         // Interstitial blocks
         if (userInput.outITS) {
             for (const auto& block : pathData.interstitialBlocks) {
-                writeBlockRow(interstitialBlocksFile, header, block, pathSize,
-                              "interstitial");
+                writeBlockRow(interstitialBlocksFile, header, block, pathSize);
             }
         }
 

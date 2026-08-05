@@ -556,14 +556,16 @@ make_filler() {
 } > "$DIR/its_strand_pure.fa"
 
 # ============================================================
-# 41. its_headtohead.fa — Balanced canonical forward/reverse ITS
+# 41. its_headtohead.fa — All four canonicality/orientation count cells
 # ============================================================
 {
     echo ">chr_its_headtohead"
     flank=$(make_filler 100)
-    forward=$(repeat_motif "CCCTAA" 20)
-    reverse=$(repeat_motif "TTAGGG" 20)
-    echo "${flank}${forward}${reverse}${flank}"
+    fwd_can=$(repeat_motif "CCCTAA" 20)
+    fwd_noncan=$(repeat_motif "CTCTAA" 7)
+    rev_noncan=$(repeat_motif "TTAGGA" 7)
+    rev_can=$(repeat_motif "TTAGGG" 20)
+    echo "${flank}${fwd_can}${fwd_noncan}${rev_noncan}${rev_can}${flank}"
 } > "$DIR/its_headtohead.fa"
 
 echo "Generated $(ls -1 "$DIR"/*.fa "$DIR"/*.gfa 2>/dev/null | wc -l) synthetic test files in $DIR/"
