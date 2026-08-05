@@ -2,7 +2,9 @@ CXX ?= g++
 INCLUDE_DIR ?= -I./include -Igfalibs/include
 WARNINGS = -Wall -Wextra
 
-CXXFLAGS = -g -std=gnu++17 -O3 $(INCLUDE_DIR) $(WARNINGS) $(CFLAGS)
+TELOSCOPE_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || printf '%s' unknown)
+
+CXXFLAGS = -g -std=gnu++17 -O3 $(INCLUDE_DIR) $(WARNINGS) $(CFLAGS) -DTELOSCOPE_COMMIT=\"$(TELOSCOPE_COMMIT)\"
 DEPFLAGS = -MMD -MP
 
 TARGET = teloscope
@@ -25,6 +27,7 @@ GFALIBS_DIR := $(CURDIR)/gfalibs
 OBJS := main teloscope input tools read-filter bgzf bam
 BINS := $(addprefix $(BINDIR)/, $(OBJS))
 DEPFILES := $(addsuffix .d, $(BINS))
+COMMIT_STATE := $(BINDIR)/.teloscope-commit
 
 head: $(BINS) gfalibs | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $(BUILD)/$(TARGET) $(BINS) $(GFALIBS_DIR)/*.o $(LIBS)
@@ -36,8 +39,21 @@ all: head validate regenerate simulate
 
 $(OBJS): %: $(BINDIR)/%
 	@
+$(BINDIR)/teloscope: $(COMMIT_STATE)
 $(BINDIR)%: $(SOURCE)/%.cpp $(INCLUDE)/%.h | $(BINDIR)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) $(LDFLAGS) -c $(SOURCE)/$(notdir $@).cpp -o $@
+
+.PHONY: FORCE
+FORCE:
+
+# CXXFLAGS are not make prerequisites. Keep a content-sensitive stamp so the
+# object that embeds the commit is rebuilt after HEAD changes, but not on every
+# incremental build.
+$(COMMIT_STATE): FORCE | $(BINDIR)
+	@current="$$(test -f "$@" && sed -n '1p' "$@")"; \
+	if test "$$current" != "$(TELOSCOPE_COMMIT)"; then \
+		printf '%s\n' "$(TELOSCOPE_COMMIT)" > "$@"; \
+	fi
 	
 .PHONY: gfalibs
 gfalibs:

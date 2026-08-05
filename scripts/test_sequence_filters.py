@@ -3,6 +3,7 @@
 import gzip
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -97,6 +98,14 @@ def only_report(out_dir):
     return reports[0]
 
 
+def output_data_lines(path):
+    return [
+        line
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith(("#", "track"))
+    ]
+
+
 def assert_fasta_selection(result, out_dir, expected_names, input_count):
     require_success(result, "filtered FASTA run")
     expected_names = list(expected_names)
@@ -175,7 +184,7 @@ def test_exact_id_and_all_text_outputs(tmp):
     require(density.exists(), "repeat-density output was not generated")
     density_ids = {
         fields[0]
-        for line in density.read_text(encoding="utf-8").splitlines()
+        for line in output_data_lines(density)
         if len(fields := line.split("\t")) >= 4
     }
     require(density_ids == {"contig_t2t"}, "BEDgraph contains an unselected record")
@@ -339,8 +348,8 @@ def test_fasta_primary_ids_with_crlf_and_tab_descriptions(tmp):
         == parse_report_table(only_report(lf_out).read_text(encoding="utf-8")),
         "CRLF changed report classification or component counts for terminal N/X records",
     )
-    lf_gaps = next(lf_out.glob("*_gaps.bed")).read_text(encoding="utf-8")
-    crlf_gaps = next(crlf_terminal_out.glob("*_gaps.bed")).read_text(encoding="utf-8")
+    lf_gaps = output_data_lines(next(lf_out.glob("*_gaps.bed")))
+    crlf_gaps = output_data_lines(next(crlf_terminal_out.glob("*_gaps.bed")))
     require(crlf_gaps == lf_gaps, "CRLF changed terminal N/X gap coordinates")
 
     tab_fasta = tmp / "tab_header.fa"
@@ -403,9 +412,9 @@ def test_wrapped_gap_lf_crlf_parity(tmp):
     lf_report = parse_report_table(only_report(lf_out).read_text(encoding="utf-8"))
     crlf_report = parse_report_table(only_report(crlf_out).read_text(encoding="utf-8"))
     require(crlf_report == lf_report, "wrapped CRLF input changed the report row")
-    lf_gaps = next(lf_out.glob("*_gaps.bed")).read_text(encoding="utf-8")
-    crlf_gaps = next(crlf_out.glob("*_gaps.bed")).read_text(encoding="utf-8")
-    require(lf_gaps == "CMgap\t6\t12\n", f"wrapped LF gap coordinates are wrong: {lf_gaps!r}")
+    lf_gaps = output_data_lines(next(lf_out.glob("*_gaps.bed")))
+    crlf_gaps = output_data_lines(next(crlf_out.glob("*_gaps.bed")))
+    require(lf_gaps == ["CMgap\t6\t12"], f"wrapped LF gap coordinates are wrong: {lf_gaps!r}")
     require(crlf_gaps == lf_gaps, "wrapped CRLF input changed gap coordinates")
 
 
@@ -697,6 +706,72 @@ def test_fasta_in_gfa_named_directory_is_not_misclassified(tmp):
     require(not list(out_dir.glob("*.telo.annotated.gfa")), "FASTA path was misclassified as GFA")
 
 
+def test_output_provenance_headers(tmp):
+    out_dir = tmp / "provenance_out"
+    result = run_fasta(
+        MULTI_FASTA,
+        out_dir,
+        [
+            "-r", "-g", "-e", "-m", "-i", "-n",
+            "-w", "200", "-s", "100", "-t", "700",
+            "-k", "40", "-d", "300", "-l", "100",
+            "-y", "0.4", "-x", "0",
+        ],
+    )
+    require_success(result, "provenance output run")
+    stdout = decode(result.stdout)
+    for marker in ("#teloscope", "#params", "#columns"):
+        require(marker not in stdout, f"file provenance marker {marker!r} leaked to stdout")
+
+    schemas = {
+        "multi.fa_window_repeat_density.bedgraph": "chr\tstart\tend\trepeatDensity",
+        "multi.fa_window_canonical_ratio.bedgraph": "chr\tstart\tend\tcanonicalRatio",
+        "multi.fa_window_strand_ratio.bedgraph": "chr\tstart\tend\tstrandRatio",
+        "multi.fa_window_gc.bedgraph": "chr\tstart\tend\tgcContent",
+        "multi.fa_window_entropy.bedgraph": "chr\tstart\tend\tshannonEntropy",
+        "multi.fa_canonical_matches.bed": "chr\tstart\tend\tmatchSeq",
+        "multi.fa_noncanonical_matches.bed": "chr\tstart\tend\tmatchSeq",
+        "multi.fa_terminal_telomeres.bed": (
+            "chr\tstart\tend\tlength\tlabel\tfwdCount\trevCount\tcanonCount\t"
+            "nonCanonCount\tchrSize\tblockType\tcanFwd\tcanRev\tcanCov\trepCov"
+        ),
+        "multi.fa_interstitial_telomeres.bed": (
+            "chr\tstart\tend\tlength\tlabel\tfwdCount\trevCount\tcanonCount\t"
+            "nonCanonCount\tchrSize\tblockType\tcanFwd\tcanRev\tcanCov\trepCov"
+        ),
+        "multi.fa_gaps.bed": "chr\tstart\tend",
+        "multi.fa_report.tsv": (
+            "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular\tits\tcanonical\twindows"
+        ),
+    }
+    outputs = {path.name: path for path in out_dir.iterdir() if path.is_file()}
+    require(outputs.keys() == schemas.keys(), f"unexpected provenance output set: {sorted(outputs)}")
+
+    expected_params = (
+        "#params canonical=CCCTAA/TTAGGG patterns=2 window=200 step=100 "
+        "terminal_limit=700 max_match_dist=40 max_block_dist=300 min_block_len=100 "
+        "min_block_density=0.4 edit_distance=0 ultra_fast=false manual_curation=true"
+    )
+    for name, schema in schemas.items():
+        lines = outputs[name].read_text(encoding="utf-8").splitlines()
+        require(len(lines) >= 3, f"{name} lacks three provenance lines")
+        require(
+            re.fullmatch(r"#teloscope version=0\.1\.6 commit=(?:[0-9a-f]+|unknown)", lines[0]) is not None,
+            f"{name} has an invalid version/commit header: {lines[0]!r}",
+        )
+        require(lines[1] == expected_params, f"{name} has incorrect parameters: {lines[1]!r}")
+        require(lines[2] == f"#columns\t{schema}", f"{name} has incorrect columns: {lines[2]!r}")
+        leading_comments = 0
+        for line in lines:
+            if not line.startswith("#"):
+                break
+            leading_comments += 1
+        require(leading_comments == 3, f"{name} has {leading_comments} leading comment lines, expected 3")
+        if name.endswith(".bedgraph"):
+            require(len(lines) >= 4 and lines[3].startswith("track type=bedGraph"),
+                    f"{name} track declaration does not follow provenance")
+
+
 def test_cli_surface_and_read_subset_guards(tmp):
     help_result = run(["--help"])
     require_success(help_result, "--help")
@@ -706,7 +781,7 @@ def test_cli_surface_and_read_subset_guards(tmp):
 
     version_result = run(["--version"])
     require_success(version_result, "--version")
-    require("Teloscope v0.1.5" in decode(version_result.stdout), "binary version changed before release")
+    require("Teloscope v0.1.6" in decode(version_result.stdout), "binary version is not the release version")
 
     for mode in ("--fastq-subset", "--bam-subset"):
         result = run([mode, "--include-prefix", "contig"], stdin=b"")
@@ -754,6 +829,7 @@ TESTS = (
     test_gfa_shared_terminal_selection_is_orientation_specific,
     test_unsupported_gfa_records_are_rejected,
     test_fasta_in_gfa_named_directory_is_not_misclassified,
+    test_output_provenance_headers,
     test_cli_surface_and_read_subset_guards,
 )
 

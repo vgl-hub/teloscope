@@ -107,6 +107,7 @@ struct TelomereBlock {
     uint32_t forwardCount = 0;
     uint32_t reverseCount = 0;
     uint32_t canonicalCount = 0;
+    uint32_t canonicalFwdCount = 0;
     uint32_t nonCanonicalCount = 0;
     uint32_t totalCovered = 0;
     uint32_t fwdCovered = 0;
@@ -214,10 +215,13 @@ class Teloscope {
     }
 
 
+    static constexpr float forwardLabelThresholdPct = 66.6f;
+    static constexpr float reverseLabelThresholdPct = 33.3f;
+
     static inline char computeBlockLabel(uint32_t forwardCount, uint32_t blockCounts) {
         float forwardRatio = (forwardCount * 100.0f) / blockCounts;
-        if (forwardRatio > 66.6f) return 'p';
-        if (forwardRatio < 33.3f) return 'q';
+        if (forwardRatio > forwardLabelThresholdPct) return 'p';
+        if (forwardRatio < reverseLabelThresholdPct) return 'q';
         return 'b';
     }
 

@@ -42,6 +42,7 @@ Supported directives:
 
 - `expect_exit <code>`
 - `expect_stdout ignore|<path>`
+- `expect_file <output-basename> <golden-path>`
 - `expect_stderr_substr <text>`
 - `expect_output_name <basename>`
 - `expect_gfa_header <version>`
@@ -63,6 +64,22 @@ expect_gfa_colors 1
 ```
 
 `%OUTDIR%` is replaced with a temporary output directory created for that test.
+
+## Generated-file checks
+
+`expect_file` resolves its first argument strictly as a basename under `%OUTDIR%`; directory components are rejected. The golden path is resolved from the validator's working directory. Comparison is line-oriented and exact after carriage returns, blank lines, and lines whose first non-whitespace character is `#` are removed. This keeps provenance headers out of content goldens while still checking every data row and column. Missing output or golden files fail explicitly.
+
+The directive may appear more than once. For example:
+
+```text
+-f testFiles/its.fa -i -t 1000 -o %OUTDIR%
+expect_exit 0
+expect_stdout ignore
+expect_file its.fa_terminal_telomeres.bed testFiles/expected/tier_s/its.fa_terminal_telomeres.bed
+expect_file its.fa_interstitial_telomeres.bed testFiles/expected/tier_s/its.fa_interstitial_telomeres.bed
+```
+
+An `expect_file` directive causes the per-test output directory to be created even when the command does not contain `%OUTDIR%`. The command must still direct the program's output there if the generated files are to be found.
 
 ## GFA semantic checks
 

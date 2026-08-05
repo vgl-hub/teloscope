@@ -76,6 +76,18 @@ int main(int, char **argv) {
             "-f testFiles/its.fa -i -o testFiles/tmp",
             "-f testFiles/its.fa -m -i -o testFiles/tmp"
         }},
+        {{"its_gap_split.fa"}, {
+            "-f testFiles/its_gap_split.fa -i -n -t 50 -k 200 -x 1 -o testFiles/tmp"
+        }},
+        {{"its_gap_headtohead.fa"}, {
+            "-f testFiles/its_gap_headtohead.fa -i -n -t 50 -k 200 -x 1 -o testFiles/tmp"
+        }},
+        {{"its_strand_pure.fa"}, {
+            "-f testFiles/its_strand_pure.fa -i -n -t 50 -x 1 -o testFiles/tmp"
+        }},
+        {{"its_headtohead.fa"}, {
+            "-f testFiles/its_headtohead.fa -i -n -t 50 -x 1 -o testFiles/tmp"
+        }},
         {{"multi.fa"}, {
             "-f testFiles/multi.fa -n",
             "-f testFiles/multi.fa -l 100",

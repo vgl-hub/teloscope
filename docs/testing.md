@@ -40,6 +40,7 @@ Directive mode is used for GFA and file-oriented checks. Supported directives ar
 
 - `expect_exit`
 - `expect_stdout`
+- `expect_file`
 - `expect_stderr_substr`
 - `expect_output_name`
 - `expect_gfa_header`
@@ -60,6 +61,8 @@ gfa_preserve_input strict
 
 `%OUTDIR%` is replaced by a per-test temporary directory. GFA expectations are semantic, not raw file diffs. See [validateFiles/README.md](https://github.com/vgl-hub/teloscope/blob/main/validateFiles/README.md) for the full format.
 
+Use `expect_file <output-basename> <golden-path>` for generated BED, BEDgraph, or report files. The validator compares the file under `%OUTDIR%` with the golden after dropping blank and `#`-prefixed lines. The directive is repeatable, so one manifest can check several companion files.
+
 ## Regenerate legacy expected outputs
 
 Only regenerate expected outputs when the current behavior is accepted:
@@ -69,7 +72,7 @@ make regenerate
 build/bin/teloscope-generate-tests
 ```
 
-Directive-mode GFA manifests and their TSV expectations are hand-authored and checked in directly.
+Directive-mode manifests and their golden files are hand-authored and checked in directly.
 
 ## Report regression script
 

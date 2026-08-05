@@ -14,6 +14,7 @@ Use this checklist after the release commit is on `main`.
 ```sh
 make all -j
 bash .github/workflows/val.sh
+python3 scripts/test_sequence_filters.py
 python3 scripts/test_teloscope_report.py
 bash scripts/test_gaps_bed.sh
 ```
@@ -23,16 +24,16 @@ bash scripts/test_gaps_bed.sh
 Push a tag from the release commit:
 
 ```sh
-git tag v0.1.5
-git push origin v0.1.5
+git tag v0.1.6
+git push origin v0.1.6
 ```
 
 The `Create Release` workflow should publish these assets:
 
-- `teloscope.v0.1.5-linux.zip`
-- `teloscope.v0.1.5-macOS.zip`
-- `teloscope.v0.1.5-win.zip`
-- `teloscope.v0.1.5-with_submodules.zip`
+- `teloscope.v0.1.6-linux.zip`
+- `teloscope.v0.1.6-macOS.zip`
+- `teloscope.v0.1.6-win.zip`
+- `teloscope.v0.1.6-with_submodules.zip`
 
 The `with_submodules` asset is the source archive used by the Bioconda recipe.
 
@@ -40,7 +41,7 @@ The `with_submodules` asset is the source archive used by the Bioconda recipe.
 
 Bioconda does not update from this repository automatically. After the GitHub release assets exist, open a PR against [`bioconda/bioconda-recipes`](https://github.com/bioconda/bioconda-recipes/tree/master/recipes/teloscope) that updates `recipes/teloscope/meta.yaml`:
 
-- set `version` to `0.1.5`
+- set `version` to `0.1.6`
 - set `source.url` to `https://github.com/vgl-hub/teloscope/releases/download/v{{version}}/teloscope.v{{version}}-with_submodules.zip`
 - replace `source.sha256` with the SHA-256 digest of the new `with_submodules` asset
 - update `doc_url` to point at `v{{ version }}`
