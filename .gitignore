@@ -1,109 +1,55 @@
-# Created by https://www.gitignore.io/api/swift,xcode
-
-### Swift ###
-# Xcode
-#
-# gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore
-
-## Build generated
+# Build artifacts
 build/
-DerivedData/
+*.o
+*.gcno
+*.gcda
+*.gcov
 
-## Various settings
-*.pbxuser
-!default.pbxuser
-*.mode1v3
-!default.mode1v3
-*.mode2v3
-!default.mode2v3
-*.perspectivev3
-!default.perspectivev3
-xcuserdata/
-
-## Other
-*.moved-aside
-*.xccheckout
-*.xcscmblueprint
-
-## Obj-C/Swift specific
-*.hmap
-*.ipa
-*.dSYM.zip
-*.dSYM
-
-## Playgrounds
-timeline.xctimeline
-playground.xcworkspace
-
-# Swift Package Manager
-#
-# Add this line if you want to avoid checking in source code from Swift Package Manager dependencies.
-# Packages/
-# Package.pins
-.build/
-
-# CocoaPods - Refactored to standalone file
-
-# Carthage - Refactored to standalone file
-
-# fastlane
-#
-# It is recommended to not store the screenshots in the git repo. Instead, use fastlane to re-generate the
-# screenshots whenever they are needed.
-# For more information about the recommended setup visit:
-# https://docs.fastlane.tools/best-practices/source-control/#source-control
-
-fastlane/report.xml
-fastlane/Preview.html
-fastlane/screenshots
-fastlane/test_output
-
-### Xcode ###
-# Xcode
-#
-# gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore
-
-## Build generated
-
-## Various settings
-
-## Other
-
-### Xcode Patch ###
-*.xcodeproj
-*.xcodeproj/*
-!*.xcodeproj/project.pbxproj
-*.xcodeproj/xcshareddata/
-!*.xcodeproj/xcuserdata/
-!*.xcworkspace/contents.xcworkspacedata
-/*.gcno
-
+# OS and editors
 .DS_Store
+.vscode/
+.vs/
+
+# Python
 __pycache__/
 *.pyc
-*.pbxproj
-*.xcworkspacedata
-*.plist
 
+# Local agent and tooling config
+.claude/
+/.codex
+.agents/
+CLAUDE.md
 
-# End of https://www.gitignore.io/api/swift,xcode,vscode
-
+# Scratch notes and captured output
 tmp.txt
 err.txt
 TODO.md
-CLAUDE.md
-out
-output/
-.vscode/*
-.vs/
+ASSESSMENT_mar21.md
+GFA_MASTERPLAN.md
+GFA_tests_apr1.md
+
+# Research data and benchmark results
+/gfa/
+/results/
+/out
+/output/
+
+# Generated test outputs
 testFiles/simulate/
 testFiles/tmp/
 testFiles/*_gaps.bed
 testFiles/*_report.tsv
 testFiles/*_terminal_telomeres.bed
+testFiles/*_interstitial_telomeres.bed
 testFiles/*_canonical_matches.bed
 testFiles/*_noncanonical_matches.bed
-testFiles/*_interstitial_telomeres.bed
 testFiles/*_window_*.bedgraph
-GFA_MASTERPLAN.md
-GFA_tests_apr1.md
+
+# Run outputs at the repository root
+/*_gaps.bed
+/*_report.tsv
+/*_terminal_telomeres.bed
+/*_interstitial_telomeres.bed
+/*_canonical_matches.bed
+/*_noncanonical_matches.bed
+/*_window_*.bedgraph
