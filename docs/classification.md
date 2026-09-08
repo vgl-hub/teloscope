@@ -13,7 +13,7 @@ Teloscope classifies each sequence from scaffold-terminal telomere blocks only. 
 | `t2t` | `gapped_t2t` | one `p` block at the left end and one `q` block at the right end |
 | `incomplete` | `gapped_incomplete` | only one terminal arm is present |
 | `misassembly` | `gapped_misassembly` | terminal arms exist but the arrangement is wrong, or the same arm appears twice |
-| `discordant` | `gapped_discordant` | a terminal block is present but its strand composition contradicts its position |
+| `discordant` | `gapped_discordant` | a terminal block is present but it sits closer to the opposite end of the sequence than the end it was scanned from |
 | `none` | `gapped_none` | no scaffold-terminal telomere block was detected |
 
 The `gapped_` prefix is added when the sequence contains assembly gaps.
@@ -29,15 +29,22 @@ Teloscope applies the rules in this order:
 5. One arm present, plus a second scaffold-terminal block of the same arm: `misassembly`
 6. One terminal arm only: `incomplete`
 
+Rule 5 only fires when the opposite arm is absent. When both arms are present, rule 3 or 4 already returns a result first, so a duplicated arm next to a normal opposite arm is not flagged as `misassembly`.
+
 ## Block labels
 
-Each terminal block is labeled from strand balance:
+Terminal blocks are labeled from the end they were scanned from, not from strand balance:
+
+- `p`: found scanning from the start of the sequence
+- `q`: found scanning from the end of the sequence
+
+Interstitial blocks are labeled from strand balance instead:
 
 - `p`: forward-strand dominant
 - `q`: reverse-strand dominant
 - `b`: balanced or mixed
 
-The `granular` column in `*_report.tsv` shows the block pattern for each sequence.
+The `granular` column in `*_report.tsv` shows the block pattern for each sequence. It includes every terminal block along the sequence, not just the two at the scaffold ends, so a gapped scaffold with contig-internal terminal blocks can produce a longer string than the examples below.
 
 Examples:
 
