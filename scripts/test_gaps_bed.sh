@@ -40,13 +40,13 @@ run_test() {
     fi
 
     # Compare content (ignore trailing newlines)
-    if diff <(sed '/^$/d' "$gaps_file") <(sed '/^$/d' "$expected") >/dev/null 2>&1; then
+    if diff <(sed '/^$/d;/^#/d' "$gaps_file") <(sed '/^$/d;/^#/d' "$expected") >/dev/null 2>&1; then
         PASS=$((PASS + 1))
         echo "  $(green PASS) $desc"
     else
         FAIL=$((FAIL + 1))
         echo "  $(red FAIL) $desc — content mismatch:"
-        diff <(sed '/^$/d' "$gaps_file") <(sed '/^$/d' "$expected") || true
+        diff <(sed '/^$/d;/^#/d' "$gaps_file") <(sed '/^$/d;/^#/d' "$expected") || true
     fi
 }
 

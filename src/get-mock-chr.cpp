@@ -33,8 +33,8 @@ struct GroundTruth {
 
 struct BEDEntry {
     std::string chrom;
-    uint64_t start, end;
-    char label; // p, q, b
+    uint64_t start = 0, end = 0;
+    char label = '?'; // p, q, b
 };
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -197,11 +197,17 @@ static std::vector<BEDEntry> readBED(const std::string &path) {
         if (line.empty() || line[0] == '#') continue;
         std::istringstream ss(line);
         BEDEntry e;
-        std::string labelStr;
-        uint32_t blockLen;
-        // BED format: chrom start end blockLen label ...
-        ss >> e.chrom >> e.start >> e.end >> blockLen >> labelStr;
-        e.label = labelStr.empty() ? '?' : labelStr[0];
+        std::string fourthField, labelStr;
+        if (!(ss >> e.chrom >> e.start >> e.end >> fourthField)) continue;
+        // v0.1.6 uses a BED4-compatible prefix with the block label as name.
+        // Accept the legacy custom layout, where length preceded the label, too.
+        if (fourthField == "p" || fourthField == "q" || fourthField == "b") {
+            labelStr = fourthField;
+        } else {
+            if (!(ss >> labelStr)) continue;
+        }
+        if (labelStr != "p" && labelStr != "q" && labelStr != "b") continue;
+        e.label = labelStr[0];
         entries.push_back(e);
     }
     return entries;

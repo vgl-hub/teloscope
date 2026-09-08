@@ -138,6 +138,7 @@ struct DirectiveSpec {
     std::string gfaPreserveInput = "skip";
     std::string expectGfaHeader;
     bool gfaCheckColors = false;
+    std::vector<std::pair<std::string, std::string>> expectedFiles;
 };
 
 struct TestCase {
@@ -258,6 +259,25 @@ bool parseTestFile(const std::string &path, TestCase &testCase, std::string &err
                 error = "expect_stdout requires a value";
                 return false;
             }
+        } else if (key == "expect_file") {
+            std::istringstream fileSpec(value);
+            std::string outputBasename;
+            fileSpec >> outputBasename;
+            std::string goldenPath;
+            std::getline(fileSpec, goldenPath);
+            goldenPath = trim(goldenPath);
+            if (outputBasename.empty() || goldenPath.empty()) {
+                error = "expect_file requires an output basename and golden path";
+                return false;
+            }
+            const fs::path outputName(outputBasename);
+            if (outputName.has_parent_path() || outputName.filename() != outputName ||
+                outputBasename == "." || outputBasename == ".." ||
+                outputBasename.find('\\') != std::string::npos) {
+                error = "expect_file output name must be a basename: " + outputBasename;
+                return false;
+            }
+            testCase.directives.expectedFiles.emplace_back(outputBasename, goldenPath);
         } else if (key == "expect_stderr_substr") {
             testCase.directives.stderrSubstrings.push_back(value);
         } else if (key == "expect_output_name") {
@@ -747,6 +767,48 @@ bool compareDirectiveStdout(const DirectiveSpec &spec,
     return compareLegacyExpected(expected, capturedStdout, inputFile);
 }
 
+std::vector<std::string> significantFileLines(const fs::path &path) {
+    std::vector<std::string> lines;
+    for (std::string line : split(readFile(path), '\n')) {
+        line = stripCarriageReturn(line);
+        const std::string trimmed = trim(line);
+        if (trimmed.empty() || startsWith(trimmed, "#"))
+            continue;
+        lines.push_back(line);
+    }
+    return lines;
+}
+
+bool compareExpectedFile(const fs::path &actualPath,
+                         const fs::path &expectedPath,
+                         const std::string &inputFile) {
+    if (!fs::is_regular_file(expectedPath)) {
+        printFAIL(inputFile.c_str(), "expected-file golden missing", expectedPath.string().c_str());
+        return false;
+    }
+    if (!fs::is_regular_file(actualPath)) {
+        printFAIL(inputFile.c_str(), "expected output file missing", actualPath.string().c_str());
+        return false;
+    }
+
+    const std::vector<std::string> expectedLines = significantFileLines(expectedPath);
+    const std::vector<std::string> actualLines = significantFileLines(actualPath);
+    if (expectedLines == actualLines)
+        return true;
+
+    printFAIL(inputFile.c_str(), "expected file did not match actual output", actualPath.filename().string().c_str());
+    const size_t lineCount = std::max(expectedLines.size(), actualLines.size());
+    for (size_t i = 0; i < lineCount; ++i) {
+        const std::string expected = i < expectedLines.size() ? expectedLines[i] : "<missing>";
+        const std::string actual = i < actualLines.size() ? actualLines[i] : "<missing>";
+        if (expected != actual) {
+            std::cout << "    line " << (i + 1) << " expected: " << expected << std::endl
+                      << "             actual: " << actual << std::endl;
+        }
+    }
+    return false;
+}
+
 bool runDirectiveAssertions(const TestCase &testCase,
                             const std::string &inputFile,
                             const std::string &command,
@@ -768,6 +830,10 @@ bool runDirectiveAssertions(const TestCase &testCase,
     }
 
     ok = compareDirectiveStdout(spec, stdoutPath, inputFile) && ok;
+
+    for (const auto &[outputBasename, goldenPath] : spec.expectedFiles) {
+        ok = compareExpectedFile(outDir / outputBasename, goldenPath, inputFile) && ok;
+    }
 
     const std::string stderrText = readFile(stderrPath);
     for (const std::string &needle : spec.stderrSubstrings) {
@@ -867,7 +933,8 @@ int main(int argc, char **argv) {
 
         const bool needsOutDir =
             testCase.command.find("%OUTDIR%") != std::string::npos ||
-            !testCase.directives.outputName.empty();
+            !testCase.directives.outputName.empty() ||
+            !testCase.directives.expectedFiles.empty();
         std::string command = replaceAll(testCase.command, "%OUTDIR%", outDir.string());
         if (needsOutDir)
             fs::create_directories(outDir);

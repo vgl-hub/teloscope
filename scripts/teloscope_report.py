@@ -178,7 +178,8 @@ def find_files(directory):
 def parse_terminal_bed(path):
     """
     Parse *_terminal_telomeres.bed -> dict[chrom -> list of block dicts].
-    Columns: chrom start end length label fwdCount revCount canCount nonCanCount pathSize terminality
+    v0.1.6 BED4+ columns: chrom start end label fwdCan revCan fwdNonCan
+    revNonCan chromSize [blockType]. Legacy length/marginal-count rows are accepted.
     """
     blocks = defaultdict(list)
     malformed = 0
@@ -188,20 +189,43 @@ def parse_terminal_bed(path):
             if not line or line.startswith("#") or line.startswith("track"):
                 continue
             parts = line.split("\t")
-            if len(parts) < 10:
+            if len(parts) < 9:
                 malformed += 1
                 if malformed <= 3:
-                    _warn(f"{path}:{lineno}: expected at least 10 BED columns, found {len(parts)}; skipping.")
+                    _warn(f"{path}:{lineno}: expected at least 9 BED columns, found {len(parts)}; skipping.")
+                continue
+            joint_schema = parts[3] in {"p", "q", "b"}
+            if not joint_schema and len(parts) < 10:
+                malformed += 1
+                if malformed <= 3:
+                    _warn(f"{path}:{lineno}: expected at least 10 legacy BED columns, found {len(parts)}; skipping.")
                 continue
             try:
                 start = int(parts[1])
                 end = int(parts[2])
-                length = int(parts[3])
-                fwd = int(parts[5])
-                rev = int(parts[6])
-                can = int(parts[7])
-                noncan = int(parts[8])
-                path_size = int(parts[9]) if parts[9] else 0
+                if joint_schema:
+                    label = parts[3]
+                    length = end - start
+                    fwd_can = int(parts[4])
+                    rev_can = int(parts[5])
+                    fwd_noncan = int(parts[6])
+                    rev_noncan = int(parts[7])
+                    fwd = fwd_can + fwd_noncan
+                    rev = rev_can + rev_noncan
+                    can = fwd_can + rev_can
+                    noncan = fwd_noncan + rev_noncan
+                    path_size = int(parts[8]) if parts[8] else 0
+                    terminality = parts[9] if len(parts) > 9 else ""
+                else:
+                    length = int(parts[3])
+                    label = parts[4]
+                    fwd = int(parts[5])
+                    rev = int(parts[6])
+                    can = int(parts[7])
+                    noncan = int(parts[8])
+                    path_size = int(parts[9]) if parts[9] else 0
+                    terminality = parts[10] if len(parts) > 10 else ""
+                    fwd_can = rev_can = fwd_noncan = rev_noncan = None
             except ValueError as exc:
                 malformed += 1
                 if malformed <= 3:
@@ -219,13 +243,17 @@ def parse_terminal_bed(path):
                 "start":    start,
                 "end":      end,
                 "length":   length,
-                "label":    parts[4],
+                "label":    label,
                 "fwd":      fwd,
                 "rev":      rev,
                 "can":      can,
                 "noncan":   noncan,
+                "fwdCan":   fwd_can,
+                "revCan":   rev_can,
+                "fwdNonCan": fwd_noncan,
+                "revNonCan": rev_noncan,
                 "pathSize": path_size,
-                "term":     parts[10] if len(parts) > 10 else "",
+                "term":     terminality,
             })
     if malformed:
         suffix = " (first 3 shown above)" if malformed > 3 else ""

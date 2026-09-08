@@ -514,4 +514,58 @@ make_filler() {
     echo "${parm}${mid1}${its_telo}${mid2}${qarm}"
 } > "$DIR/boundary_extend_its.fa"
 
+# ============================================================
+# 38. its_gap_split.fa — One array split into two ITS blocks by a gap
+# Forward repeats before the gap and reverse repeats after it are on the
+# wrong contig ends for terminal scanning with -t 50. Both halves remain ITS.
+# ============================================================
+{
+    echo ">chr_its_gap_split"
+    flank=$(make_filler 100)
+    left=$(repeat_motif "CCCTAA" 100)
+    gap=$(printf 'N%.0s' $(seq 1 100))
+    right=$(repeat_motif "TTAGGG" 100)
+    echo "${flank}${left}${gap}${right}${flank}"
+} > "$DIR/its_gap_split.fa"
+
+# ============================================================
+# 39. its_gap_headtohead.fa — Gap-adjacent q/p contig terminals
+# Reverse repeats before the gap and forward repeats after it are valid
+# contig terminals. With -n they are emitted separately, never as one ITS.
+# ============================================================
+{
+    echo ">chr_its_gap_headtohead"
+    flank=$(make_filler 100)
+    left=$(repeat_motif "TTAGGG" 100)
+    gap=$(printf 'N%.0s' $(seq 1 100))
+    right=$(repeat_motif "CCCTAA" 100)
+    echo "${flank}${left}${gap}${right}${flank}"
+} > "$DIR/its_gap_headtohead.fa"
+
+# ============================================================
+# 40. its_strand_pure.fa — Canonical-forward core with reverse halo
+# Seven reverse non-canonical variants followed by 13 canonical-forward
+# repeats give a pooled balanced label while the canonical subset is pure.
+# ============================================================
+{
+    echo ">chr_its_strand_pure"
+    flank=$(make_filler 100)
+    rev_halo=$(repeat_motif "TTAGGA" 7)
+    canonical_core=$(repeat_motif "CCCTAA" 13)
+    echo "${flank}${rev_halo}${canonical_core}${flank}"
+} > "$DIR/its_strand_pure.fa"
+
+# ============================================================
+# 41. its_headtohead.fa — All four canonicality/orientation count cells
+# ============================================================
+{
+    echo ">chr_its_headtohead"
+    flank=$(make_filler 100)
+    fwd_can=$(repeat_motif "CCCTAA" 20)
+    fwd_noncan=$(repeat_motif "CTCTAA" 7)
+    rev_noncan=$(repeat_motif "TTAGGA" 7)
+    rev_can=$(repeat_motif "TTAGGG" 20)
+    echo "${flank}${fwd_can}${fwd_noncan}${rev_noncan}${rev_can}${flank}"
+} > "$DIR/its_headtohead.fa"
+
 echo "Generated $(ls -1 "$DIR"/*.fa "$DIR"/*.gfa 2>/dev/null | wc -l) synthetic test files in $DIR/"
