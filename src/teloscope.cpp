@@ -94,7 +94,7 @@ void incrementMatchCounts(const MatchInfo& match,
 uint64_t Teloscope::getTerminalBlocks(
     const std::vector<MatchInfo>& matches,
     std::vector<TelomereBlock>& outBlocks,
-    uint64_t segmentSize, uint64_t absPos, bool fromStart) {
+    uint64_t segmentSize, uint64_t absPos, bool fromStart, bool isForward) {
 
     uint64_t boundary = fromStart ? absPos : (absPos + segmentSize);
     int64_t n = static_cast<int64_t>(matches.size());
@@ -156,6 +156,7 @@ uint64_t Teloscope::getTerminalBlocks(
 
     for (int64_t idx = startIdx; idx != endIdx; idx += step) {
         const MatchInfo& m = matches[idx];
+        if (static_cast<bool>(m.isForward) != isForward) continue;
 
         if (!inBlock) {
             if (inZone(m.position)) {
@@ -549,11 +550,11 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                     if (isForward) {
                         windowData.fwdCounts++;
                         windowData.fwdCovered += matchLen;
-                        segmentData.fwdMatches.push_back(matchInfo);
+                        segmentData.fwdCounts++;
                     } else {
                         windowData.revCounts++;
                         windowData.revCovered += matchLen;
-                        segmentData.revMatches.push_back(matchInfo);
+                        segmentData.revCounts++;
                     }
                     segmentData.allMatches.push_back(matchInfo);
                 }
@@ -613,11 +614,9 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
 
                         MatchInfo matchInfo{absPos + i, len, isCanonical, isForward};
 
-                        if (isForward) {
-                            segmentData.fwdMatches.push_back(matchInfo);
-                        } else {
-                            segmentData.revMatches.push_back(matchInfo);
-                        }
+                        if (isForward) segmentData.fwdCounts++;
+                        else segmentData.revCounts++;
+                        segmentData.allMatches.push_back(matchInfo);
                     }
                 }
             }
@@ -695,12 +694,12 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
     uint64_t fwdBoundary = absPos;
     uint64_t revBoundary = absPos + segmentSize;
 
-    if (segmentData.fwdMatches.size() >= 2)
-        fwdBoundary = getTerminalBlocks(segmentData.fwdMatches, segmentData.terminalBlocks,
-                                         segmentSize, absPos, true);
-    if (segmentData.revMatches.size() >= 2)
-        revBoundary = getTerminalBlocks(segmentData.revMatches, segmentData.terminalBlocks,
-                                         segmentSize, absPos, false);
+    if (segmentData.fwdCounts >= 2)
+        fwdBoundary = getTerminalBlocks(segmentData.allMatches, segmentData.terminalBlocks,
+                                         segmentSize, absPos, true, true);
+    if (segmentData.revCounts >= 2)
+        revBoundary = getTerminalBlocks(segmentData.allMatches, segmentData.terminalBlocks,
+                                         segmentSize, absPos, false, false);
 
     if (!tipsOnly && fwdBoundary < revBoundary && segmentData.allMatches.size() >= 2)
         getInterstitialBlocks(segmentData.allMatches, segmentData.interstitialBlocks,

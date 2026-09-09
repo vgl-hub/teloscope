@@ -145,8 +145,8 @@ struct SegmentData {
     std::vector<MatchSeqInfo> canonicalMatches;
     std::vector<MatchSeqInfo> nonCanonicalMatches;
     uint64_t canonicalCounts = 0;
-    std::vector<MatchInfo> fwdMatches;
-    std::vector<MatchInfo> revMatches;
+    uint64_t fwdCounts = 0;
+    uint64_t revCounts = 0;
     std::vector<MatchInfo> allMatches;
 };
 
@@ -281,7 +281,7 @@ public:
     uint64_t getTerminalBlocks(
         const std::vector<MatchInfo>& matches,
         std::vector<TelomereBlock>& outBlocks,
-        uint64_t segmentSize, uint64_t absPos, bool fromStart);
+        uint64_t segmentSize, uint64_t absPos, bool fromStart, bool isForward);
 
     void getInterstitialBlocks(
         const std::vector<MatchInfo>& allMatches,
