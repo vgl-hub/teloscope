@@ -427,13 +427,13 @@ int main(int argc, char **argv) {
             case 'y': { // min block density
                 try {
                     float v = std::stof(optarg);
-                    if (v <= 0.0f || v >= 1.0f) {
-                        fprintf(stderr, "Error: Min block density (-y/--min-block-density) must be between 0 and 1, exclusive.\n");
+                    if (v < 0.0f || v > 1.0f) {
+                        fprintf(stderr, "Error: Min block density (-y/--min-block-density) must be in the range [0,1].\n");
                         exit(EXIT_FAILURE);
                     }
                     userInput.minBlockDensity = v;
                 } catch (...) {
-                    fprintf(stderr, "Error: Invalid min block density '%s'. Must be a number between 0 and 1.\n", optarg);
+                    fprintf(stderr, "Error: Invalid min block density '%s'. Must be a number [0,1].\n", optarg);
                     exit(EXIT_FAILURE);
                 }
                 break;
