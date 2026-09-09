@@ -1,0 +1,3 @@
+# Scaffolds allowed to change, one line per fixture and scaffold.
+# A scaffold listed here still fails if it moves to a type other than the one pinned below.
+# fixture	scaffold	expected_old_type	expected_new_type	reason	pr
