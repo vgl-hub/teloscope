@@ -148,6 +148,20 @@ int main(int argc, char **argv) {
         userInput.sequenceFilterActive = true;
     };
 
+    auto parsePositive = [](const char* value, const char* optionName) -> uint32_t {
+        try {
+            long v = std::stol(value);
+            if (v <= 0) {
+                fprintf(stderr, "Error: %s must be > 0.\n", optionName);
+                exit(EXIT_FAILURE);
+            }
+            return static_cast<uint32_t>(v);
+        } catch (const std::exception& e) {
+            fprintf(stderr, "Error: Invalid value '%s' for %s. Must be a number.\n", value, optionName);
+            exit(EXIT_FAILURE);
+        }
+    };
+
     static struct option long_options[] = { // struct mapping long options
         {"input-sequence", required_argument, 0, 'f'},
         {"output", required_argument, 0, 'o'},
@@ -166,6 +180,9 @@ int main(int argc, char **argv) {
         {"min-block-length", required_argument, 0, 'l'},
         {"min-block-density", required_argument, 0, 'y'},
         {"edit-distance", required_argument, 0, 'x'},
+        {"terminal-tolerance", required_argument, 0, 0},
+        {"min-its-length", required_argument, 0, 0},
+        {"min-block-counts", required_argument, 0, 0},
 
         {"out-fasta", no_argument, 0, 'a'},
         {"out-win-repeats", no_argument, 0, 'r'},
@@ -223,6 +240,12 @@ int main(int argc, char **argv) {
                     addPrefixFilters(optarg, userInput.includePrefixes, "--include-prefix");
                 else if (strcmp(long_options[option_index].name, "exclude-prefix") == 0)
                     addPrefixFilters(optarg, userInput.excludePrefixes, "--exclude-prefix");
+                else if (strcmp(long_options[option_index].name, "terminal-tolerance") == 0)
+                    userInput.terminalTolerance = parsePositive(optarg, "--terminal-tolerance");
+                else if (strcmp(long_options[option_index].name, "min-its-length") == 0)
+                    userInput.minITSLen = parsePositive(optarg, "--min-its-length");
+                else if (strcmp(long_options[option_index].name, "min-block-counts") == 0)
+                    userInput.minBlockCounts = parsePositive(optarg, "--min-block-counts");
                 break;
 
 
@@ -382,7 +405,7 @@ int main(int argc, char **argv) {
                         fprintf(stderr, "Error: Max match distance (-k/--max-match-distance) must be > 0.\n");
                         exit(EXIT_FAILURE);
                     }
-                    userInput.maxMatchDist = static_cast<unsigned short>(v);
+                    userInput.maxMatchDist = static_cast<uint32_t>(v);
                 } catch (...) {
                     fprintf(stderr, "Error: Invalid max match distance '%s'. Must be a number.\n", optarg);
                     exit(EXIT_FAILURE);
@@ -427,13 +450,13 @@ int main(int argc, char **argv) {
             case 'y': { // min block density
                 try {
                     float v = std::stof(optarg);
-                    if (v < 0.0f || v > 1.0f) {
-                        fprintf(stderr, "Error: Min block density (-y/--min-block-density) must be in the range [0,1].\n");
+                    if (v <= 0.0f || v > 1.0f) {
+                        fprintf(stderr, "Error: Min block density (-y/--min-block-density) must be in the range (0,1].\n");
                         exit(EXIT_FAILURE);
                     }
                     userInput.minBlockDensity = v;
                 } catch (...) {
-                    fprintf(stderr, "Error: Invalid min block density '%s'. Must be a number [0,1].\n", optarg);
+                    fprintf(stderr, "Error: Invalid min block density '%s'. Must be a number in (0,1].\n", optarg);
                     exit(EXIT_FAILURE);
                 }
                 break;
@@ -532,12 +555,15 @@ int main(int argc, char **argv) {
                 printf("\t'-c'\t--canonical\tSet canonical pattern. [Default: TTAGGG]\n");
                 printf("\t'-p'\t--patterns\tSet patterns to explore, separate them by commas [Default: TTAGGG]\n");
                 printf("\t'-j'\t--threads\tSet maximum number of threads. [Default: max. available]\n");
-                printf("\t'-t'\t--terminal-limit\tSet terminal limit for exploring telomere variant regions (TVRs). [Default: 50000]\n");
+                printf("\t'-t'\t--terminal-limit\tSet terminal limit for exploring telomere variant regions (TVRs). Overridden in read subset modes. [Default: 50000]\n");
                 printf("\t'-k'\t--max-match-distance\tSet maximum distance for merging matches. [Default: 50]\n");
-                printf("\t'-d'\t--max-block-distance\tSet maximum block distance for extension. [Default: 500]\n");
+                printf("\t'-d'\t--max-block-distance\tSet maximum N run bridged inside a block. [Default: 500]\n");
                 printf("\t'-l'\t--min-block-length\tSet minimum block length. [Default: 300 assembly, 42 read subset]\n");
                 printf("\t'-y'\t--min-block-density\tSet minimum block density. [Default: 0.5]\n");
                 printf("\t'-x'\t--edit-distance\tSet edit distance for pattern matching (0-2). [Default: 1]\n");
+                printf("\t\t--terminal-tolerance\tSet how far in called bases a block may start and still count as terminal. [Default: 2000]\n");
+                printf("\t\t--min-its-length\tSet minimum interstitial block length. [Default: 100]\n");
+                printf("\t\t--min-block-counts\tSet minimum matches for a block. [Default: 2]\n");
 
                 printf("\nOptional Parameters:\n");
                 printf("\t'-w'\t--window\tSet sliding window size. [Default: 1000]\n");
@@ -642,7 +668,7 @@ int main(int argc, char **argv) {
     userInput.patterns.reserve(userInput.patternInfo.size());
     for (const auto& [pattern, isForward] : userInput.patternInfo) {
         userInput.patterns.push_back(pattern);
-        if (pattern.size() > userInput.windowSize) { // otherwise the scan skips whole windows
+        if (!userInput.ultraFastMode && pattern.size() > userInput.windowSize) { // windows are unused in ultra-fast mode
             fprintf(stderr, "Error: Window size (%u) is smaller than pattern '%s'.\n",
                     userInput.windowSize, pattern.c_str());
             exit(EXIT_FAILURE);
