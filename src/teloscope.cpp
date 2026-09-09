@@ -224,13 +224,15 @@ uint64_t trimInward(const std::vector<CoverRun>& runs, const std::vector<GapInfo
 
     if (toRight) {
         for (const CoverRun& run : runs) {
-            if (run.start < anchor) continue;
+            if (run.start + run.len <= anchor) continue;
             if (run.start >= limit) break;
-            uint64_t gapBases = getGapBases(gaps, prev, run.start, gapCursor);
+            // a run straddling the anchor is clipped to it, never discarded whole
+            uint64_t from = std::max(run.start, anchor);
+            uint64_t gapBases = getGapBases(gaps, prev, from, gapCursor);
             if (gapBases > maxGapBridge) break;
             uint64_t end = std::min<uint64_t>(run.start + run.len, limit);
-            cumulative -= weight * static_cast<double>((run.start - prev) - gapBases);
-            cumulative += end - run.start;
+            cumulative -= weight * static_cast<double>((from - prev) - gapBases);
+            if (end > from) cumulative += end - from;
             // -t is a hard bound on reported extent, not just on where to look
             if (cumulative >= 0.0) bestPos = end;
             prev = run.start + run.len;
@@ -238,13 +240,14 @@ uint64_t trimInward(const std::vector<CoverRun>& runs, const std::vector<GapInfo
     } else {
         for (auto run = runs.rbegin(); run != runs.rend(); ++run) {
             uint64_t end = run->start + run->len;
-            if (end > anchor) continue;
+            if (run->start >= anchor) continue;
             if (end <= limit) break;
-            uint64_t gapBases = getGapBases(gaps, end, prev);
+            uint64_t to = std::min(end, anchor);
+            uint64_t gapBases = getGapBases(gaps, to, prev);
             if (gapBases > maxGapBridge) break;
             uint64_t start = std::max(run->start, limit);
-            cumulative -= weight * static_cast<double>((prev - end) - gapBases);
-            cumulative += end - start;
+            cumulative -= weight * static_cast<double>((prev - to) - gapBases);
+            if (to > start) cumulative += to - start;
             if (cumulative >= 0.0) bestPos = start;
             prev = run->start;
         }
@@ -256,7 +259,8 @@ uint64_t trimInward(const std::vector<CoverRun>& runs, const std::vector<GapInfo
 void getMaximalSegments(const std::vector<CoverRun>& runs, const std::vector<GapInfo>& gaps,
                         uint64_t from, uint64_t to, uint32_t maxGapBridge, float weight,
                         std::vector<std::pair<uint64_t, uint64_t>>& segments) {
-    double cumulative = 0.0, best = 0.0;
+    // same rule as the terminal trim: the furthest position still averaging -y
+    double cumulative = 0.0;
     uint64_t segStart = 0, segEnd = 0, prev = 0;
     size_t gapCursor = 0;
     bool open = false;
@@ -286,10 +290,9 @@ void getMaximalSegments(const std::vector<CoverRun>& runs, const std::vector<Gap
             segStart = start;
             segEnd = start;
             cumulative = 0.0;
-            best = 0.0;
         }
         cumulative += static_cast<double>(end - start);
-        if (cumulative > best) { best = cumulative; segEnd = end; }
+        if (cumulative >= 0.0) segEnd = end;
         prev = end;
     }
     closeSegment();
@@ -325,8 +328,10 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
         if (gap->start + gap->length >= lastBase) lastBase = gap->start;
         tailLimit = (tailLimit > gap->length) ? tailLimit - gap->length : 0;
     }
-    headLimit = std::min<uint64_t>(headLimit, terminalLimit);
-    tailLimit = std::max<uint64_t>(tailLimit, (spanSize > terminalLimit) ? spanSize - terminalLimit : 0);
+    // -t bounds the zone from the first called base, so a leading run of N cannot
+    // clamp the zone shut before the sequence even starts
+    headLimit = std::min<uint64_t>(headLimit, firstBase + terminalLimit);
+    tailLimit = std::max<uint64_t>(tailLimit, (lastBase > terminalLimit) ? lastBase - terminalLimit : 0);
 
     std::vector<CoverRun> canRuns, allRuns;
     getCoverRuns(matches, true, canRuns);
@@ -370,7 +375,7 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
         if (seed.end >= tailLimit && seed.start + seed.end > firstBase + lastBase) continue;
         if (!isSeedTelomeric(seed)) continue;
 
-        uint64_t limit = std::min<uint64_t>(spanSize, terminalLimit);
+        uint64_t limit = std::min<uint64_t>(spanSize, firstBase + terminalLimit);
         // an arm stops at the junction, it does not trim on into the other array
         for (const Seed& other : seeds)
             if (other.start >= seed.end && other.fwd != seed.fwd) {
@@ -388,7 +393,9 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
         // a second accepted array at the same end is a misassembly, not a lost call
         addBlock(seed.start, end, 'p', terminalBlocks);
         if (pTo == 0) pFrom = seed.start;
-        pTo = seed.end;
+        // the trim reaches past the seed as often as it stops short, and the arm has
+        // to claim whichever is further, or it re-accepts what it already reported
+        pTo = std::max(seed.end, end);
     }
 
     // q arm: the same, mirrored, and never the same physical array as the p arm
@@ -402,7 +409,7 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
         if (pTo > 0 && getCoveredBases(allRuns, pTo, seed->start) >= seed->start - pTo &&
             (pFrom > firstBase || seed->end < lastBase)) continue;
 
-        uint64_t limit = (spanSize > terminalLimit) ? (spanSize - terminalLimit) : 0;
+        uint64_t limit = (lastBase > terminalLimit) ? (lastBase - terminalLimit) : 0;
         limit = std::max(limit, pTo);
         for (auto other = seeds.rbegin(); other != seeds.rend(); ++other)
             if (other->end <= seed->start && other->fwd != seed->fwd) {
@@ -418,7 +425,7 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
 
         addBlock(start, seed->end, 'q', terminalBlocks);
         if (qFrom == spanSize) qTo = seed->end;
-        qFrom = seed->start;
+        qFrom = std::min(seed->start, start);
     }
 
     if (tipsOnly) return;
@@ -434,7 +441,9 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
     for (const auto& segment : segments) {
         uint64_t blockLen = segment.second - segment.first;
         if (blockLen < userInput.minITSLen) continue;
-        if (getCoveredBases(allRuns, segment.first, segment.second, allCursor) < density * blockLen) continue;
+        // gaps are bridged free by the segment scoring, so they cannot count here either
+        if (getCoveredBases(allRuns, segment.first, segment.second, allCursor) <
+            density * (blockLen - getGapBases(gapInfos, segment.first, segment.second))) continue;
         // an anchored array canonical enough to have been a telomere but too short
         // is dropped, not relabelled; a variant-rich one was never a candidate
         if (((pTo == 0 && segment.first <= headLimit) ||
