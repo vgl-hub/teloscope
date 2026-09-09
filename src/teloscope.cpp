@@ -997,6 +997,9 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
                 << pathData.terminalLabel;
 
         totalTelomeres += longestCount;
+        if (longestCount == 0) pathsNoTelomeres++;
+        else if (longestCount == 1) pathsOneTelomere++;
+        else pathsTwoTelomeres++;
         totalGaps += gaps;
 
         // Expand path summary
@@ -1206,9 +1209,9 @@ void Teloscope::printSummary(std::ofstream& reportFile) {
     }
 
     out("\n+++ Chromosome Telomere Counts+++\n");
-    out("Two telomeres:\t", totalT2T + totalGappedT2T + totalMisassembly + totalGappedMisassembly, "\n");
-    out("One telomere:\t", totalIncomplete + totalGappedIncomplete, "\n");
-    out("Zero telomeres:\t", totalNone + totalGappedNone, "\n");
+    out("Two telomeres:\t", pathsTwoTelomeres, "\n");
+    out("One telomere:\t", pathsOneTelomere, "\n");
+    out("Zero telomeres:\t", pathsNoTelomeres, "\n");
 
     out("\n+++ Chromosome Telomere/Gap Completeness+++\n");
     out("T2T:\t", totalT2T, "\n");

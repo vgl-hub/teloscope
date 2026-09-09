@@ -180,6 +180,10 @@ class Teloscope {
     uint32_t totalPaths = 0;
     uint32_t totalNWindows = 0;
     uint32_t totalTelomeres = 0;
+    // bucketed on the count actually reported, so every path lands in exactly one
+    uint32_t pathsTwoTelomeres = 0;
+    uint32_t pathsOneTelomere = 0;
+    uint32_t pathsNoTelomeres = 0;
     uint32_t totalITS = 0;
     uint32_t totalCanMatches = 0;
     uint32_t totalGaps = 0;

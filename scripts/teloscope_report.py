@@ -51,6 +51,8 @@ COLORS = {
     "Gapped Misassembly":  "#F2D580",
     "Discordant":          "#D7191C",
     "Gapped Discordant":   "#EB8C8D",
+    "Balanced":            "#1B9E77",
+    "Gapped Balanced":     "#8DD3C7",
     "No telomeres":        "#762A83",
     "Gapped No telomeres": "#BB95C1",
     # Arm / track colors
@@ -411,6 +413,8 @@ _TYPE_MAP = OrderedDict([
     ("gapped_missassembly","Gapped Misassembly"),
     ("discordant",         "Discordant"),
     ("gapped_discordant",  "Gapped Discordant"),
+    ("balanced",           "Balanced"),
+    ("gapped_balanced",    "Gapped Balanced"),
     ("none",               "No telomeres"),
     ("gapped_none",        "Gapped No telomeres"),
 ])
@@ -431,6 +435,8 @@ def parse_report(path):
         ("Gapped Misassembly",  []),
         ("Discordant",          []),
         ("Gapped Discordant",   []),
+        ("Balanced",            []),
+        ("Gapped Balanced",     []),
         ("No telomeres",        []),
         ("Gapped No telomeres", []),
     ])
@@ -1259,6 +1265,7 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
         Patch(facecolor=COLORS["Incomplete"],   label="Incomplete"),
         Patch(facecolor=COLORS["Misassembly"],  label="Misassembly"),
         Patch(facecolor=COLORS["Discordant"],   label="Discordant"),
+        Patch(facecolor=COLORS["Balanced"],     label="Balanced"),
         Patch(facecolor=COLORS["No telomeres"], label="No telomeres"),
     ]
 

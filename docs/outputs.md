@@ -50,17 +50,17 @@ The always-written `*_report.tsv` starts with three comment lines:
 
 ```text
 #teloscope version=0.1.6 commit=<short-commit-or-unknown>
-#params canonical=<forward>/<reverse> patterns=<count> window=<bp> step=<bp> terminal_limit=<bp> max_match_dist=<bp> max_block_dist=<bp> min_block_len=<bp> min_block_density=<fraction> edit_distance=<n> ultra_fast=<true-or-false> manual_curation=<true-or-false>
+#params canonical=<forward>/<reverse> patterns=<count> window=<bp> step=<bp> terminal_limit=<bp> max_match_dist=<bp> max_block_dist=<bp> min_block_len=<bp> min_block_density=<fraction> min_block_counts=<n> min_its_length=<bp> terminal_tolerance=<bp> edit_distance=<n> ultra_fast=<true-or-false> manual_curation=<true-or-false>
 #columns	<tab-separated column names>
 ```
 
 `patterns` is the number of search patterns after expansion and deduplication. `commit` is the short commit checked out when the binary was built, or `unknown` when Git metadata was unavailable. It does not indicate whether that commit was built from a clean worktree. The normal report on standard output is unchanged.
 
-BED files contain BED records only. BEDGraph files begin with their standard browser `track` declaration followed by four-column data. Keeping run metadata in the companion report avoids comment headers that strict coordinate converters reject. Telomere block files still have explicitly documented custom fields, so schema-aware converters must be told their BED4+ field count.
+BED files contain BED records only. BEDGraph files begin with their standard browser `track` declaration followed by four-column data. Keeping run metadata in the companion report avoids comment headers that strict coordinate converters reject. Telomere block files still have explicitly documented custom fields, so schema-aware converters must be told they are BED3 plus fourteen custom fields.
 
 ## Telomere block BED files
 
-Both block files use zero-based, half-open coordinates and share one 17-column layout. Columns 1 to 11 are the v0.1.5 layout and keep their v0.1.5 meaning, so a script written against v0.1.5 column positions keeps working. Columns 12 to 17 are new in v0.1.6. Only the first three fields are standard BED; the rest are Teloscope-specific, so readers that only understand predefined BED fields should consume the first three columns. UCSC bigBed conversion requires a matching AutoSql definition for the custom fields. See the [UCSC BED specification](https://genome.ucsc.edu/FAQ/FAQformat.html#format1) and [bigBed custom-field documentation](https://genome.ucsc.edu/goldenPath/help/bigBed.html).
+Both block files use zero-based, half-open coordinates and share one 17-column layout. Columns 1 to 11 hold the v0.1.5 fields in their v0.1.5 positions, with one change worth knowing: column 5 now means the strand in both files, where v0.1.5 put the scan direction there for terminal blocks. It can also read `b` on a terminal row, which v0.1.5 never produced, so a consumer that switches on `p` or `q` at column 5 needs a case for it. Columns 12 to 17 are new in v0.1.6. Only the first three fields are standard BED; the rest are Teloscope-specific, so readers that only understand predefined BED fields should consume the first three columns. UCSC bigBed conversion requires a matching AutoSql definition for the custom fields. See the [UCSC BED specification](https://genome.ucsc.edu/FAQ/FAQformat.html#format1) and [bigBed custom-field documentation](https://genome.ucsc.edu/goldenPath/help/bigBed.html).
 
 | Column | Name | Meaning |
 | ---: | --- | --- |
