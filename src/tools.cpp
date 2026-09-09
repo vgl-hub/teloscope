@@ -1,3 +1,6 @@
+#include <cstdio>
+#include <cstdlib>
+
 #include "tools.h"
 #include "functions.h"
 
@@ -72,6 +75,11 @@ std::unordered_map<char, std::vector<char>> IUPAC = {
 
 void getCombinations(const std::string &pattern, std::string &current, size_t index, std::vector<std::string> &combinations) {
     if (index == pattern.size()) {
+        if (combinations.size() == maxCombinations) { // fail before allocating a million seeds
+            fprintf(stderr, "Error: Pattern '%s' expands beyond %zu combinations. Use fewer wildcards.\n",
+                    pattern.c_str(), maxCombinations);
+            exit(EXIT_FAILURE);
+        }
         combinations.push_back(current);
         return;
     }

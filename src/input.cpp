@@ -174,12 +174,6 @@ bool hasCaseInsensitiveSuffix(const std::string &value, const std::string &suffi
         });
 }
 
-bool isGfaAssemblyPath(const std::string &path) {
-    return hasCaseInsensitiveSuffix(path, ".gfa") ||
-           hasCaseInsensitiveSuffix(path, ".gfa.gz") ||
-           hasCaseInsensitiveSuffix(path, ".gfa2") ||
-           hasCaseInsensitiveSuffix(path, ".gfa2.gz");
-}
 
 bool readGzipLine(gzFile input, std::vector<char> &buffer, std::string &line,
                   const std::string &path) {
@@ -563,6 +557,13 @@ public:
 };
 
 } // namespace
+
+bool isGfaAssemblyPath(const std::string &path) {
+    return hasCaseInsensitiveSuffix(path, ".gfa") ||
+           hasCaseInsensitiveSuffix(path, ".gfa.gz") ||
+           hasCaseInsensitiveSuffix(path, ".gfa2") ||
+           hasCaseInsensitiveSuffix(path, ".gfa2.gz");
+}
 
 
 void Input::load(UserInputTeloscope userInput) {
@@ -1008,6 +1009,9 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
                     std::make_move_iterator(segmentData.nonCanonicalMatches.begin()),
                     std::make_move_iterator(segmentData.nonCanonicalMatches.end())
                 );
+
+                pathData.canonicalCounts += segmentData.canonicalCounts;
+                pathData.windowCounts += segmentData.windowCounts;
 
             } else {
             }

@@ -640,8 +640,20 @@ int main(int argc, char **argv) {
     
     userInput.patterns.clear();
     userInput.patterns.reserve(userInput.patternInfo.size());
+    // only the assembly FASTA path scans in windows, so only it can outgrow one
+    const bool usesWindows = !userInput.ultraFastMode && !userInput.fastqSubset &&
+                             !userInput.bamSubset && !isGfaAssemblyPath(userInput.inSequence);
     for (const auto& [pattern, isForward] : userInput.patternInfo) {
         userInput.patterns.push_back(pattern);
+        if (pattern.size() > 255) { // a match records its size in eight bits
+            fprintf(stderr, "Error: Pattern '%s' is longer than 255 bases.\n", pattern.c_str());
+            exit(EXIT_FAILURE);
+        }
+        if (usesWindows && pattern.size() > userInput.windowSize) {
+            fprintf(stderr, "Error: Window size (%u) is smaller than pattern '%s'.\n",
+                    userInput.windowSize, pattern.c_str());
+            exit(EXIT_FAILURE);
+        }
     }
 
     fprintf(stderr, "Scanning %zu telomeric variants (includes reverse complements).\n",

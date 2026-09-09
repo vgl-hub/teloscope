@@ -94,7 +94,7 @@ void incrementMatchCounts(const MatchInfo& match,
 uint64_t Teloscope::getTerminalBlocks(
     const std::vector<MatchInfo>& matches,
     std::vector<TelomereBlock>& outBlocks,
-    uint64_t segmentSize, uint64_t absPos, bool fromStart) {
+    uint64_t segmentSize, uint64_t absPos, bool fromStart, bool isForward) {
 
     uint64_t boundary = fromStart ? absPos : (absPos + segmentSize);
     int64_t n = static_cast<int64_t>(matches.size());
@@ -156,6 +156,7 @@ uint64_t Teloscope::getTerminalBlocks(
 
     for (int64_t idx = startIdx; idx != endIdx; idx += step) {
         const MatchInfo& m = matches[idx];
+        if (static_cast<bool>(m.isForward) != isForward) continue;
 
         if (!inBlock) {
             if (inZone(m.position)) {
@@ -337,10 +338,11 @@ void Teloscope::labelTerminalBlocks(
             });
 
     // scaffold-terminal blocks
+    uint64_t terminalEnd = (pathSize > terminalLimit) ? (pathSize - terminalLimit) : 0;
     std::vector<TelomereBlock*> scaffoldBlocks;
     for (auto& block : blocks) {
         uint64_t blockEnd = block.start + block.blockLen;
-        if (block.start < terminalLimit || blockEnd > pathSize - terminalLimit) {
+        if (block.start < terminalLimit || blockEnd > terminalEnd) {
             scaffoldBlocks.push_back(&block);
         }
     }
@@ -464,9 +466,9 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
     bool hasOverlap = (overlapSize != 0);
 
     // trie scan start index
-    uint32_t startIndex = alwaysMainWindow
+    uint32_t startIndex = (alwaysMainWindow || std::min(step, overlapSize) <= longestPatternSize)
                             ? 0
-                            : std::min(step - longestPatternSize, overlapSize - longestPatternSize);
+                            : std::min(step, overlapSize) - longestPatternSize;
 
     for (uint32_t i = startIndex; i < window.size(); ++i) {
         if (computeGC || computeEntropy) {
@@ -512,14 +514,7 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                     isTerminal = (absI <= terminalLimit || absI >= terminalEnd);
                 }
 
-                MatchInfo matchInfo;
-                matchInfo.position = matchPos;
-                matchInfo.isCanonical = isCanonical;
-                matchInfo.isForward = isForward;
-                matchInfo.matchSize = matchLen;
-                if (needMatchSeq) {
-                    matchInfo.matchSeq = std::string(window.data() + i, matchLen);
-                }
+                MatchInfo matchInfo{matchPos, matchLen, isCanonical, isForward};
 
                 // Check dimers
                 if (isCanonical) {
@@ -540,12 +535,15 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                     if (isCanonical) {
                         windowData.canonicalCounts++;
                         windowData.canonicalCovered += matchLen;
-                        segmentData.canonicalMatches.push_back(matchInfo);
+                        segmentData.canonicalCounts++;
+                        if (needMatchSeq) {
+                            segmentData.canonicalMatches.push_back({matchPos, std::string(window.data() + i, matchLen)});
+                        }
                     } else {
                         windowData.nonCanonicalCounts++;
                         windowData.nonCanonicalCovered += matchLen;
-                        if (isTerminal) {
-                            segmentData.nonCanonicalMatches.push_back(matchInfo);
+                        if (isTerminal && needMatchSeq) {
+                            segmentData.nonCanonicalMatches.push_back({matchPos, std::string(window.data() + i, matchLen)});
                         }
                     }
 
@@ -553,11 +551,11 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                     if (isForward) {
                         windowData.fwdCounts++;
                         windowData.fwdCovered += matchLen;
-                        segmentData.fwdMatches.push_back(matchInfo);
+                        segmentData.fwdCounts++;
                     } else {
                         windowData.revCounts++;
                         windowData.revCovered += matchLen;
-                        segmentData.revMatches.push_back(matchInfo);
+                        segmentData.revCounts++;
                     }
                     segmentData.allMatches.push_back(matchInfo);
                 }
@@ -591,6 +589,11 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
 SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool tipsOnly) {
     SegmentData segmentData;
     uint64_t segmentSize = sequence.size();
+    if (absPos + segmentSize > (1ULL << 40)) {
+        // a worker thread cannot exit through the pool it is still parked in
+        std::cerr << "Error: sequence coordinate exceeds the 1.1 Tb limit." << std::endl;
+        std::_Exit(EXIT_FAILURE);
+    }
     uint32_t terminalLimit = userInput.terminalLimit;
     unsigned short int longestPatternSize = this->trie.getLongestPatternSize();
 
@@ -611,17 +614,11 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
                         bool isForward = trie.isForward(node);
                         bool isCanonical = trie.isCanonical(node);
 
-                        MatchInfo matchInfo;
-                        matchInfo.position = absPos + i;
-                        matchInfo.isCanonical = isCanonical;
-                        matchInfo.isForward = isForward;
-                        matchInfo.matchSize = len;
+                        MatchInfo matchInfo{absPos + i, len, isCanonical, isForward};
 
-                        if (isForward) {
-                            segmentData.fwdMatches.push_back(matchInfo);
-                        } else {
-                            segmentData.revMatches.push_back(matchInfo);
-                        }
+                        if (isForward) segmentData.fwdCounts++;
+                        else segmentData.revCounts++;
+                        segmentData.allMatches.push_back(matchInfo);
                     }
                 }
             }
@@ -643,11 +640,14 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
 
         // capped reserve
         constexpr uint64_t maxMatchReserve = 1000000;
-        segmentData.canonicalMatches.reserve(std::min(segmentSize / 6, maxMatchReserve));
-        segmentData.nonCanonicalMatches.reserve(std::min(segmentSize / 6, maxMatchReserve));
+        if (userInput.outMatches) {
+            segmentData.canonicalMatches.reserve(std::min(segmentSize / 6, maxMatchReserve));
+            segmentData.nonCanonicalMatches.reserve(std::min(segmentSize / 6, maxMatchReserve));
+        }
         segmentData.allMatches.reserve(std::min(segmentSize / 3, maxMatchReserve));
 
-        if (segmentSize > windowSize) {
+        bool keepWindows = userInput.outWinRepeats || userInput.outEntropy || userInput.outGC;
+        if (keepWindows && segmentSize > windowSize) {
             segmentData.windows.reserve((segmentSize - windowSize) / step + 2);
         }
 
@@ -677,7 +677,8 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
             // Update windowData
             windowData.windowStart = windowStart + absPos;
             windowData.currentWindowSize = currentWindowSize;
-            windows.emplace_back(windowData);
+            segmentData.windowCounts++;
+            if (keepWindows) windows.emplace_back(windowData);
 
             prevOverlapData = nextOverlapData;
             nextOverlapData = WindowData();
@@ -697,12 +698,12 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
     uint64_t fwdBoundary = absPos;
     uint64_t revBoundary = absPos + segmentSize;
 
-    if (segmentData.fwdMatches.size() >= 2)
-        fwdBoundary = getTerminalBlocks(segmentData.fwdMatches, segmentData.terminalBlocks,
-                                         segmentSize, absPos, true);
-    if (segmentData.revMatches.size() >= 2)
-        revBoundary = getTerminalBlocks(segmentData.revMatches, segmentData.terminalBlocks,
-                                         segmentSize, absPos, false);
+    if (segmentData.fwdCounts >= 2)
+        fwdBoundary = getTerminalBlocks(segmentData.allMatches, segmentData.terminalBlocks,
+                                         segmentSize, absPos, true, true);
+    if (segmentData.revCounts >= 2)
+        revBoundary = getTerminalBlocks(segmentData.allMatches, segmentData.terminalBlocks,
+                                         segmentSize, absPos, false, false);
 
     if (!tipsOnly && fwdBoundary < revBoundary && segmentData.allMatches.size() >= 2)
         getInterstitialBlocks(segmentData.allMatches, segmentData.interstitialBlocks,
@@ -771,12 +772,14 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
         std::string longestLabels;
 
         // Terminal blocks
+        uint64_t terminalEnd = (pathSize > userInput.terminalLimit)
+                                ? (pathSize - userInput.terminalLimit) : 0;
         std::string labels;
         for (const auto& block : pathData.terminalBlocks) {
             uint64_t blockEnd = block.start + block.blockLen;
 
             bool isScaffoldTerminal = block.start < userInput.terminalLimit ||
-                                      blockEnd > pathSize - userInput.terminalLimit;
+                                      blockEnd > terminalEnd;
             const char* blockType = isScaffoldTerminal ? "scaffold" : "contig";
 
             // scaffold-terminal only, unless --manual-curation
@@ -811,14 +814,14 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
             for (const auto& match : pathData.canonicalMatches) {
                 canonicalMatchFile << header << "\t"
                                 << match.position << "\t"
-                                << (match.position + match.matchSize) << "\t"
+                                << (match.position + match.matchSeq.size()) << "\t"
                                 << match.matchSeq << "\n";
             }
 
             for (const auto& match : pathData.nonCanonicalMatches) {
                 noncanonicalMatchFile << header << "\t"
                                     << match.position << "\t"
-                                    << (match.position + match.matchSize) << "\t"
+                                    << (match.position + match.matchSeq.size()) << "\t"
                                     << match.matchSeq << "\n";
             }
         }
@@ -874,16 +877,16 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
         if (!userInput.ultraFastMode) {
             std::cout << "\t"
                     << pathData.interstitialBlocks.size() << "\t"
-                    << pathData.canonicalMatches.size() << "\t"
-                    << windows.size();
+                    << pathData.canonicalCounts << "\t"
+                    << pathData.windowCounts;
             reportFile << "\t"
                     << pathData.interstitialBlocks.size() << "\t"
-                    << pathData.canonicalMatches.size() << "\t"
-                    << windows.size();
+                    << pathData.canonicalCounts << "\t"
+                    << pathData.windowCounts;
 
-            totalNWindows += windows.size();
+            totalNWindows += pathData.windowCounts;
             totalITS += pathData.interstitialBlocks.size();
-            totalCanMatches += pathData.canonicalMatches.size();
+            totalCanMatches += pathData.canonicalCounts;
         }
         std::cout << "\n";
         reportFile << "\n";

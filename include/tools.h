@@ -28,6 +28,8 @@ struct Stats {
 
 Stats getStats(std::vector<float>& values);
 
+constexpr size_t maxCombinations = 4096;
+
 void getCombinations(const std::string &pattern, std::string &current, size_t index, std::vector<std::string> &combinations);
 
 std::vector<std::string> getEditVariants(const std::string &pattern, uint8_t maxDist);

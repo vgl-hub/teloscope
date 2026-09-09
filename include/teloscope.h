@@ -11,6 +11,7 @@
 #include <string_view>
 #include <array>
 #include <algorithm>
+#include <cstdlib>
 
 class Trie {
     struct TrieNode {
@@ -87,10 +88,15 @@ public:
 
 
 struct MatchInfo {
-    bool isCanonical = false;
-    bool isForward = false;
+    uint64_t position : 40; // 1.1 Tb ceiling, checked per segment
+    uint64_t matchSize : 8;
+    uint64_t isCanonical : 1;
+    uint64_t isForward : 1;
+};
+static_assert(sizeof(MatchInfo) == 8, "MatchInfo must stay one word");
+
+struct MatchSeqInfo {
     uint64_t position = 0;
-    uint16_t matchSize = 0;
     std::string matchSeq;
 };
 
@@ -134,12 +140,14 @@ struct WindowData {
 
 struct SegmentData {
     std::vector<WindowData> windows;
+    uint64_t windowCounts = 0;
     std::vector<TelomereBlock> terminalBlocks;
     std::vector<TelomereBlock> interstitialBlocks;
-    std::vector<MatchInfo> canonicalMatches;
-    std::vector<MatchInfo> nonCanonicalMatches;
-    std::vector<MatchInfo> fwdMatches;
-    std::vector<MatchInfo> revMatches;
+    std::vector<MatchSeqInfo> canonicalMatches;
+    std::vector<MatchSeqInfo> nonCanonicalMatches;
+    uint64_t canonicalCounts = 0;
+    uint64_t fwdCounts = 0;
+    uint64_t revCounts = 0;
     std::vector<MatchInfo> allMatches;
 };
 
@@ -150,10 +158,12 @@ struct PathData {
     std::vector<GapInfo> gapInfos;
     uint64_t pathSize;
     std::vector<WindowData> windows;
+    uint64_t windowCounts = 0;
     std::vector<TelomereBlock> terminalBlocks;
     std::vector<TelomereBlock> interstitialBlocks;
-    std::vector<MatchInfo> canonicalMatches;
-    std::vector<MatchInfo> nonCanonicalMatches;
+    std::vector<MatchSeqInfo> canonicalMatches;
+    std::vector<MatchSeqInfo> nonCanonicalMatches;
+    uint64_t canonicalCounts = 0;
     std::string terminalLabel;
     ScaffoldType scaffoldType = ScaffoldType::NONE;
 };
@@ -269,7 +279,7 @@ public:
     uint64_t getTerminalBlocks(
         const std::vector<MatchInfo>& matches,
         std::vector<TelomereBlock>& outBlocks,
-        uint64_t segmentSize, uint64_t absPos, bool fromStart);
+        uint64_t segmentSize, uint64_t absPos, bool fromStart, bool isForward);
 
     void getInterstitialBlocks(
         const std::vector<MatchInfo>& allMatches,
