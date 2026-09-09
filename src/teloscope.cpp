@@ -61,7 +61,7 @@ void writeProvenanceHeader(std::ofstream& file, const UserInputTeloscope& input,
     file << header.str();
 }
 
-// columns 1 to 11 keep their v0.1.5 meaning, 12 to 17 are the v0.1.6 additions
+// columns 1 to 11 hold the v0.1.5 fields in their v0.1.5 positions, 12 to 18 are new
 void writeBlockRow(std::ofstream& file, std::string_view pathName,
                    const TelomereBlock& block, uint64_t pathSize,
                    std::string_view blockType, bool spansGap) {
@@ -81,7 +81,10 @@ void writeBlockRow(std::ofstream& file, std::string_view pathName,
          << block.fwdCanCount << '\t'
          << block.revCanCount << '\t'
          << block.fwdNonCanCount << '\t'
-         << block.revNonCanCount << '\n';
+         << block.revNonCanCount << '\t'
+         // so an anomaly has coordinates a curator can open, not just a scaffold name
+         << (block.strandLabel == 'b' ? "balanced"
+             : (block.strandLabel != block.blockLabel ? "discordant" : "canonical")) << '\n';
 }
 
 constexpr uint32_t minCanonicalCount = 4;
@@ -476,26 +479,18 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
 
 void Teloscope::labelTerminalBlocks(
     std::vector<TelomereBlock>& blocks, uint16_t gaps,
-    std::string& terminalLabel, ScaffoldType& scaffoldType,
+    std::string& terminalLabel, ScaffoldType& scaffoldType, uint8_t& anomalyFlags,
     uint64_t pathSize, uint32_t terminalLimit) {
     (void)pathSize;
     (void)terminalLimit;
+    (void)gaps; // gappedness is read from the gap list where it is needed
 
     for (auto& block : blocks) {
         block.isLongest = false;
     }
 
     terminalLabel = "";
-    bool hasGaps = (gaps > 0);
-
-    auto pickType = [hasGaps](ScaffoldType plain, ScaffoldType gapped) {
-        return hasGaps ? gapped : plain;
-    };
-
-    if (blocks.empty()) {
-        scaffoldType = pickType(ScaffoldType::NONE, ScaffoldType::GAPPED_NONE);
-        return;
-    }
+    anomalyFlags = 0;
 
     std::sort(blocks.begin(), blocks.end(),
             [](const TelomereBlock &a, const TelomereBlock &b) {
@@ -524,11 +519,11 @@ void Teloscope::labelTerminalBlocks(
     if (longest_p) longest_p->isLongest = true;
     if (longest_q) longest_q->isLongest = true;
 
+    // '~' reads as mixed orientation, '*' as the wrong orientation: two different findings
     for (auto& block : blocks) {
         terminalLabel += block.blockLabel;
-        if (!block.hasValidOr) {
-            terminalLabel += '*';
-        }
+        if (block.strandLabel == 'b') terminalLabel += '~';
+        else if (!block.hasValidOr) terminalLabel += '*';
     }
 
     for (size_t i = 0, j = 0; i < blocks.size(); i++) {
@@ -536,46 +531,37 @@ void Teloscope::labelTerminalBlocks(
             terminalLabel[j] = std::toupper(terminalLabel[j]);
         }
         j++; // Move to next label position
-        if (j < terminalLabel.length() && terminalLabel[j] == '*') {
-            j++; // Skip asterisk if present
+        if (j < terminalLabel.length() &&
+            (terminalLabel[j] == '*' || terminalLabel[j] == '~')) {
+            j++; // Skip the marker if present
         }
     }
 
     bool has_P = (longest_p != nullptr);
     bool has_Q = (longest_q != nullptr);
 
-    // both orientations at one arm: a fusion signature, not an ordinary chromosome end
-    if ((has_P && longest_p->strandLabel == 'b') || (has_Q && longest_q->strandLabel == 'b')) {
-        scaffoldType = pickType(ScaffoldType::BALANCED, ScaffoldType::GAPPED_BALANCED);
-        return;
+    // how many arms. Nothing below may override this.
+    if (has_P && has_Q) scaffoldType = ScaffoldType::T2T;
+    else if (has_P || has_Q) scaffoldType = ScaffoldType::INCOMPLETE;
+    else scaffoldType = ScaffoldType::NONE;
+
+    // whether the arms are plausible, accumulated beside the count, never instead of it.
+    // balanced is checked first because a mixed arm always also fails the strand test.
+    if (has_P) {
+        if (longest_p->strandLabel == 'b') anomalyFlags |= ANOM_BAL_P;
+        else if (!longest_p->hasValidOr) anomalyFlags |= ANOM_DISC_P;
+    }
+    if (has_Q) {
+        if (longest_q->strandLabel == 'b') anomalyFlags |= ANOM_BAL_Q;
+        else if (!longest_q->hasValidOr) anomalyFlags |= ANOM_DISC_Q;
     }
 
-    // arm and strand disagree: an inverted terminal repeat
-    if ((has_P && !longest_p->hasValidOr) || (has_Q && !longest_q->hasValidOr)) {
-        scaffoldType = pickType(ScaffoldType::DISCORDANT, ScaffoldType::GAPPED_DISCORDANT);
-        return;
-    }
-
-    // duplicated arm alongside a normal opposite arm
+    // a second array at an end, whichever way it faces
     for (const auto& block : blocks) {
         if (&block == longest_p || &block == longest_q) continue;
-        if (block.hasValidOr) {
-            scaffoldType = pickType(ScaffoldType::MISASSEMBLY, ScaffoldType::GAPPED_MISASSEMBLY);
-            return;
-        }
+        anomalyFlags |= ANOM_EXTRA;
+        break;
     }
-
-    if (has_P && has_Q) {
-        scaffoldType = pickType(ScaffoldType::T2T, ScaffoldType::GAPPED_T2T);
-        return;
-    }
-
-    if (!has_P && !has_Q) {
-        scaffoldType = pickType(ScaffoldType::NONE, ScaffoldType::GAPPED_NONE);
-        return;
-    }
-
-    scaffoldType = pickType(ScaffoldType::INCOMPLETE, ScaffoldType::GAPPED_INCOMPLETE);
 }
 
 
@@ -857,8 +843,8 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
     writeProvenanceHeader(
         reportFile, userInput,
         userInput.ultraFastMode
-            ? "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular"
-            : "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular\tits\tcanonical\twindows");
+            ? "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular"
+            : "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular\tits\tcanonical\twindows");
 
     // BEDgraph headers
     if (userInput.outWinRepeats) {
@@ -876,11 +862,11 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
     // Report header (console + file)
     std::cout << "\n+++ Path Summary Report +++\n";
     if (!userInput.ultraFastMode) {
-        std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular\tits\tcanonical\twindows\n";
-        reportFile << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular\tits\tcanonical\twindows\n";
+        std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular\tits\tcanonical\twindows\n";
+        reportFile << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular\tits\tcanonical\twindows\n";
     } else {
-        std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular\n";
-        reportFile << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular\n";
+        std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular\n";
+        reportFile << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular\n";
     }
 
     // Processing paths
@@ -986,15 +972,18 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
 
         // Output path summary (console + file)
         const char* typeStr = scaffoldTypeToString(pathData.scaffoldType);
+        const std::string anomalyStr = anomalyFlagsToString(pathData.anomalyFlags);
         const char* labelsStr = longestLabels.empty() ? "none" : longestLabels.c_str();
 
         std::cout << pos + 1 << "\t" << header << "\t"
                 << longestCount << "\t" << labelsStr << "\t"
                 << gaps << "\t" << typeStr << "\t"
+                << anomalyStr << "\t"
                 << pathData.terminalLabel;
         reportFile << pos + 1 << "\t" << header << "\t"
                 << longestCount << "\t" << labelsStr << "\t"
                 << gaps << "\t" << typeStr << "\t"
+                << anomalyStr << "\t"
                 << pathData.terminalLabel;
 
         totalTelomeres += longestCount;
@@ -1137,20 +1126,20 @@ void Teloscope::computeSummaryCounts() {
     scaffoldLens.reserve(allPathData.size());
 
     for (const auto& pathData : allPathData) {
+        const bool hasGaps = !pathData.gapInfos.empty();
         switch (pathData.scaffoldType) {
-            case ScaffoldType::T2T:                   totalT2T++; break;
-            case ScaffoldType::GAPPED_T2T:            totalGappedT2T++; break;
-            case ScaffoldType::MISASSEMBLY:          totalMisassembly++; break;
-            case ScaffoldType::GAPPED_MISASSEMBLY:   totalGappedMisassembly++; break;
-            case ScaffoldType::INCOMPLETE:            totalIncomplete++; break;
-            case ScaffoldType::GAPPED_INCOMPLETE:     totalGappedIncomplete++; break;
-            case ScaffoldType::NONE:                  totalNone++; break;
-            case ScaffoldType::GAPPED_NONE:           totalGappedNone++; break;
-            case ScaffoldType::DISCORDANT:            totalDiscordant++; break;
-            case ScaffoldType::GAPPED_DISCORDANT:     totalGappedDiscordant++; break;
-            case ScaffoldType::BALANCED:              totalBalanced++; break;
-            case ScaffoldType::GAPPED_BALANCED:       totalGappedBalanced++; break;
+            case ScaffoldType::T2T:        hasGaps ? totalGappedT2T++ : totalT2T++; break;
+            case ScaffoldType::INCOMPLETE: hasGaps ? totalGappedIncomplete++ : totalIncomplete++; break;
+            case ScaffoldType::NONE:       hasGaps ? totalGappedNone++ : totalNone++; break;
         }
+
+        const uint8_t flags = pathData.anomalyFlags;
+        if (flags) flaggedScaffolds++;
+        if (flags & ANOM_DISC_P) armsDiscordant++;
+        if (flags & ANOM_DISC_Q) armsDiscordant++;
+        if (flags & ANOM_BAL_P) armsBalanced++;
+        if (flags & ANOM_BAL_Q) armsBalanced++;
+        if (flags & ANOM_EXTRA) blocksExtra++;
 
         // contig lengths = runs between gaps
         scaffoldLens.push_back(pathData.pathSize);
@@ -1214,12 +1203,10 @@ void Teloscope::printSummary(std::ofstream& reportFile) {
     out("One telomere:\t", pathsOneTelomere, "\n");
     out("Zero telomeres:\t", pathsNoTelomeres, "\n");
 
+    // these six partition the scaffolds, which is the property worth protecting
     out("\n+++ Chromosome Telomere/Gap Completeness+++\n");
     out("T2T:\t", totalT2T, "\n");
     out("Gapped T2T:\t", totalGappedT2T, "\n");
-
-    out("Misassembled:\t", totalMisassembly, "\n");
-    out("Gapped misassembled:\t", totalGappedMisassembly, "\n");
 
     out("Incomplete:\t", totalIncomplete, "\n");
     out("Gapped incomplete:\t", totalGappedIncomplete, "\n");
@@ -1227,9 +1214,12 @@ void Teloscope::printSummary(std::ofstream& reportFile) {
     out("No telomeres:\t", totalNone, "\n");
     out("Gapped no telomeres:\t", totalGappedNone, "\n");
 
-    out("Discordant:\t", totalDiscordant, "\n");
-    out("Gapped discordant:\t", totalGappedDiscordant, "\n");
-
-    out("Balanced:\t", totalBalanced, "\n");
-    out("Gapped balanced:\t", totalGappedBalanced, "\n");
+    // plausibility, reported beside completeness. The detail lines may sum above
+    // the flagged count, because one scaffold can carry more than one anomaly.
+    out("\n+++ Scaffold Anomalies +++\n");
+    out("Scaffolds flagged:\t", flaggedScaffolds, "\n");
+    out("Scaffolds clean:\t", totalPaths - flaggedScaffolds, "\n");
+    out("Discordant arms:\t", armsDiscordant, "\n");
+    out("Balanced arms:\t", armsBalanced, "\n");
+    out("Extra terminal blocks:\t", blocksExtra, "\n");
 }

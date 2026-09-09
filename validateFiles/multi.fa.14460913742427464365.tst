@@ -2,34 +2,40 @@ testFiles/multi.fa -f testFiles/multi.fa -k 5
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	granular
-1	contig_t2t	0	none	0	none	
-2	contig_none	0	none	0	none	
-3	contig_incomplete	0	none	0	none	
+pos	header	telomeres	labels	gaps	type	anomaly	granular
+1	contig_t2t	2	pq	0	t2t	.	PQ
+2	contig_none	0	none	0	none	.	
+3	contig_incomplete	1	q	0	incomplete	.	Q
 
 +++ Assembly Summary Report +++
 Total paths:	3
 Total gaps:	0
 Scaffold N50:	3000
 Contig N50:	3000
-Total telomeres:	0
+Total telomeres:	3
 
 +++ Telomere Statistics +++
-No telomeres found for statistics.
+Mean length:	600
+Median length:	600
+Min length:	600
+Max length:	600
 
 +++ Chromosome Telomere Counts+++
-Two telomeres:	0
-One telomere:	0
-Zero telomeres:	3
+Two telomeres:	1
+One telomere:	1
+Zero telomeres:	1
 
 +++ Chromosome Telomere/Gap Completeness+++
-T2T:	0
+T2T:	1
 Gapped T2T:	0
-Misassembled:	0
-Gapped misassembled:	0
-Incomplete:	0
+Incomplete:	1
 Gapped incomplete:	0
-No telomeres:	3
+No telomeres:	1
 Gapped no telomeres:	0
-Discordant:	0
-Gapped discordant:	0
+
++++ Scaffold Anomalies +++
+Scaffolds flagged:	0
+Scaffolds clean:	3
+Discordant arms:	0
+Balanced arms:	0
+Extra terminal blocks:	0

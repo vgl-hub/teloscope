@@ -405,6 +405,15 @@ def parse_bedgraph(path):
     return data
 
 
+_GAPPED_OF = {
+    "T2T": "Gapped T2T",
+    "Incomplete": "Gapped Incomplete",
+    "Misassembly": "Gapped Misassembly",
+    "Discordant": "Gapped Discordant",
+    "Balanced": "Gapped Balanced",
+    "No telomeres": "Gapped No telomeres",
+}
+
 _TYPE_MAP = OrderedDict([
     ("t2t",                "T2T"),
     ("gapped_t2t",         "Gapped T2T"),
@@ -445,6 +454,7 @@ def parse_report(path):
     header_idx = None
     type_col = None
     header_col = None
+    gaps_col = None
     parsed_rows = 0
     with open(path) as fh:
         for lineno, line in enumerate(fh, start=1):
@@ -459,17 +469,25 @@ def parse_report(path):
                     try:
                         header_col = parts.index("header")
                         type_col = parts.index("type")
+                        gaps_col = parts.index("gaps") if "gaps" in parts else None
                     except ValueError:
                         _warn(f"{path}:{lineno}: report header is missing required 'header'/'type' columns; skipping section.")
                         header_col = None
                         type_col = None
+                        gaps_col = None
                         continue
                     header_idx = 0
                 continue
             if type_col is None or header_col is None or len(parts) <= max(header_col, type_col):
                 continue
             chrom = parts[header_col]
-            cat = _TYPE_MAP.get(parts[type_col].lower())
+            raw_type = parts[type_col].lower()
+            cat = _TYPE_MAP.get(raw_type)
+            # v0.1.6 splits gappedness out of the type, so re-attach it from the
+            # gaps column; older reports already carry it in the type string.
+            if cat and gaps_col is not None and not raw_type.startswith("gapped_"):
+                if len(parts) > gaps_col and parts[gaps_col].isdigit() and int(parts[gaps_col]) > 0:
+                    cat = _GAPPED_OF.get(cat, cat)
             if cat and cat in cats:
                 cats[cat].append(chrom)
                 parsed_rows += 1

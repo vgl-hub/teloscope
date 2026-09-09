@@ -168,6 +168,7 @@ struct PathData {
     uint64_t canonicalCounts = 0;
     std::string terminalLabel;
     ScaffoldType scaffoldType = ScaffoldType::NONE;
+    uint8_t anomalyFlags = 0;
 };
 
 
@@ -196,19 +197,19 @@ class Teloscope {
     float teloMin = 0.0f;
     float teloMax = 0.0f;
 
-    // Chr/scaffold type summary
+    // completeness, split on gappedness at summary time
     uint32_t totalT2T = 0;
     uint32_t totalGappedT2T = 0;
-    uint32_t totalMisassembly = 0;
-    uint32_t totalGappedMisassembly = 0;
     uint32_t totalIncomplete = 0;
     uint32_t totalGappedIncomplete = 0;
     uint32_t totalNone = 0;
     uint32_t totalGappedNone = 0;
-    uint32_t totalDiscordant = 0;
-    uint32_t totalGappedDiscordant = 0;
-    uint32_t totalBalanced = 0;
-    uint32_t totalGappedBalanced = 0;
+
+    // plausibility, counted beside completeness rather than instead of it
+    uint32_t flaggedScaffolds = 0;
+    uint32_t armsDiscordant = 0;
+    uint32_t armsBalanced = 0;
+    uint32_t blocksExtra = 0;
 
     inline float getShannonEntropy(const uint32_t nucleotideCounts[4], uint32_t windowSize) {
         float entropy = 0.0;
@@ -293,6 +294,7 @@ public:
 
     void labelTerminalBlocks(std::vector<TelomereBlock>& blocks, uint16_t gaps,
                         std::string& terminalLabel, ScaffoldType& scaffoldType,
+                        uint8_t& anomalyFlags,
                         uint64_t pathSize, uint32_t terminalLimit);
     
     void writeBEDFile(std::ofstream& windowDensityFile,

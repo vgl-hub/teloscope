@@ -9,16 +9,23 @@
 #include <algorithm>
 #include <stdexcept>
 
+// completeness only: how many arms. Gappedness comes from the gap list, and whether
+// the arms are plausible is a separate axis, so neither can consume this answer.
 enum class ScaffoldType : uint8_t {
-    T2T, GAPPED_T2T,
-    MISASSEMBLY, GAPPED_MISASSEMBLY,
-    INCOMPLETE, GAPPED_INCOMPLETE,
-    NONE, GAPPED_NONE,
-    DISCORDANT, GAPPED_DISCORDANT,
-    BALANCED, GAPPED_BALANCED
+    T2T, INCOMPLETE, NONE
+};
+
+// plausibility, accumulated as a set so a scaffold can carry more than one
+enum AnomalyFlag : uint8_t {
+    ANOM_DISC_P = 1,
+    ANOM_DISC_Q = 2,
+    ANOM_BAL_P  = 4,
+    ANOM_BAL_Q  = 8,
+    ANOM_EXTRA  = 16
 };
 
 const char* scaffoldTypeToString(ScaffoldType type);
+std::string anomalyFlagsToString(uint8_t flags);
 
 struct Stats {
     float min = 0.0f;

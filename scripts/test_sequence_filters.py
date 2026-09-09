@@ -752,7 +752,7 @@ def test_output_metadata_and_bed_compatibility(tmp):
         f"report has an invalid version/commit header: {report_lines[0]!r}",
     )
     require(report_lines[1] == expected_params, f"report has incorrect parameters: {report_lines[1]!r}")
-    report_schema = "pos\theader\ttelomeres\tlabels\tgaps\ttype\tgranular\tits\tcanonical\twindows"
+    report_schema = "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular\tits\tcanonical\twindows"
     require(report_lines[2] == f"#columns\t{report_schema}",
             f"report has incorrect columns: {report_lines[2]!r}")
 
@@ -770,12 +770,13 @@ def test_output_metadata_and_bed_compatibility(tmp):
     require(terminal_rows, "terminal BED has no data rows")
     for row in terminal_rows:
         fields = row.split("\t")
-        require(len(fields) == 17, f"terminal BED row has {len(fields)} fields, expected 17")
+        require(len(fields) == 18, f"terminal BED row has {len(fields)} fields, expected 18")
         require(fields[4] in {"p", "q", "b"}, f"terminal BED name is not a strand label: {fields[4]!r}")
         require(all(value.isdigit() for value in fields[5:10]), "terminal BED count/size field is not numeric")
         require(fields[10] in {"scaffold", "contig"}, f"invalid terminal block type: {fields[10]!r}")
         require(fields[11] in {"p", "q"}, f"invalid terminal block arm: {fields[11]!r}")
         require(fields[12] in {"contiguous", "gapped"}, f"invalid gap status: {fields[12]!r}")
+        require(fields[17] in {"canonical", "discordant", "balanced"}, f"invalid block status: {fields[17]!r}")
 
     joint_out = tmp / "joint_count_out"
     joint_result = run_fasta(
@@ -787,7 +788,7 @@ def test_output_metadata_and_bed_compatibility(tmp):
     joint_rows = output_data_lines(next(joint_out.glob("*_interstitial_telomeres.bed")))
     require(len(joint_rows) == 1, f"expected one four-cell ITS row, found {len(joint_rows)}")
     joint_fields = joint_rows[0].split("\t")
-    require(len(joint_fields) == 17, f"ITS row has {len(joint_fields)} fields, expected 17")
+    require(len(joint_fields) == 18, f"ITS row has {len(joint_fields)} fields, expected 18")
     require(joint_fields[4] == "b", f"four-cell ITS label changed: {joint_fields[4]!r}")
     require(joint_fields[13:17] == ["20", "20", "7", "7"],
             f"four-cell ITS counts are wrong: {joint_fields[13:17]}")

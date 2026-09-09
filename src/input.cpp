@@ -1036,7 +1036,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
 
     // Filter blocks
     labelTerminalBlocks(pathData.terminalBlocks, static_cast<uint16_t>(pathData.gapInfos.size()),
-                        pathData.terminalLabel, pathData.scaffoldType,
+                        pathData.terminalLabel, pathData.scaffoldType, pathData.anomalyFlags,
                         pathData.pathSize, userInput.terminalLimit);
     threadLog.add("\tCompleted walking path:\t" + path->getHeader());
 

@@ -19,7 +19,7 @@ Teloscope has two input modes:
 6. Treat a seed as terminal only when it starts within `--terminal-tolerance` called bases of a sequence end, then trim it inward to where the coverage score peaks, bounded by `-t/--terminal-limit`. Score everything else as interstitial, with variant matches counted.
 7. Filter blocks by minimum length and minimum repeat density.
 8. Label every block with its strand composition and with the arm it sits on.
-9. Classify the sequence as `t2t`, `incomplete`, `misassembly`, `discordant`, `balanced`, or `none`.
+9. Classify the sequence as `t2t`, `incomplete`, or `none`, and separately record any orientation anomalies.
 10. Write BED, TSV, and optional BEDgraph outputs.
 
 ## FASTA scanning modes

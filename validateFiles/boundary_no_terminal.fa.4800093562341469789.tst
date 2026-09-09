@@ -2,8 +2,8 @@ testFiles/boundary_no_terminal.fa -f testFiles/boundary_no_terminal.fa -t 500 -i
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	granular	its	canonical	windows
-1	chr_boundary_no_term	0	none	0	none		2	199	8
+pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
+1	chr_boundary_no_term	0	none	0	none	.		2	200	8
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -12,7 +12,7 @@ Scaffold N50:	7200
 Contig N50:	7200
 Total telomeres:	0
 Total ITS blocks:	2
-Total canonical matches:	199
+Total canonical matches:	200
 Total windows analyzed:	8
 
 +++ Telomere Statistics +++
@@ -26,11 +26,14 @@ Zero telomeres:	1
 +++ Chromosome Telomere/Gap Completeness+++
 T2T:	0
 Gapped T2T:	0
-Misassembled:	0
-Gapped misassembled:	0
 Incomplete:	0
 Gapped incomplete:	0
 No telomeres:	1
 Gapped no telomeres:	0
-Discordant:	0
-Gapped discordant:	0
+
++++ Scaffold Anomalies +++
+Scaffolds flagged:	0
+Scaffolds clean:	1
+Discordant arms:	0
+Balanced arms:	0
+Extra terminal blocks:	0

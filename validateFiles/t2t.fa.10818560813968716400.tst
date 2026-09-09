@@ -2,8 +2,8 @@ testFiles/t2t.fa -f testFiles/t2t.fa -r -g -e -o testFiles/tmp
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	granular	its	canonical	windows
-1	chr_t2t	2	pq	0	t2t	PQ	0	199	4
+pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
+1	chr_t2t	2	pq	0	t2t	.	PQ	0	200	4
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -12,7 +12,7 @@ Scaffold N50:	3200
 Contig N50:	3200
 Total telomeres:	2
 Total ITS blocks:	0
-Total canonical matches:	199
+Total canonical matches:	200
 Total windows analyzed:	4
 
 +++ Telomere Statistics +++
@@ -29,11 +29,14 @@ Zero telomeres:	0
 +++ Chromosome Telomere/Gap Completeness+++
 T2T:	1
 Gapped T2T:	0
-Misassembled:	0
-Gapped misassembled:	0
 Incomplete:	0
 Gapped incomplete:	0
 No telomeres:	0
 Gapped no telomeres:	0
-Discordant:	0
-Gapped discordant:	0
+
++++ Scaffold Anomalies +++
+Scaffolds flagged:	0
+Scaffolds clean:	1
+Discordant arms:	0
+Balanced arms:	0
+Extra terminal blocks:	0
