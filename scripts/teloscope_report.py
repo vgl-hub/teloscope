@@ -84,6 +84,8 @@ FLAGGED_SCAFFOLD_CATEGORIES = (
     "Gapped Misassembly",
     "Discordant",
     "Gapped Discordant",
+    "Balanced",
+    "Gapped Balanced",
 )
 
 FIGURE_TITLE_SIZE = 9.3

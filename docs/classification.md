@@ -13,8 +13,8 @@ Teloscope classifies each sequence from scaffold-terminal telomere blocks only. 
 | `t2t` | `gapped_t2t` | one `p` block at the left end and one `q` block at the right end |
 | `incomplete` | `gapped_incomplete` | only one terminal arm is present |
 | `misassembly` | `gapped_misassembly` | terminal arms exist but the arrangement is wrong, or the same arm appears twice |
-| `discordant` | `gapped_discordant` | a terminal block is present but it sits closer to the opposite end of the sequence than the end it was scanned from |
-| `balanced` | `gapped_balanced` | a terminal arm carries both strands in similar proportion, which is real biology in some lineages, so it is flagged rather than asserted |
+| `discordant` | `gapped_discordant` | a terminal array points the wrong way for the end it sits at, which is an inverted terminal repeat or a fusion, not an ordinary chromosome end |
+| `balanced` | `gapped_balanced` | a terminal arm carries both orientations in similar proportion, which is what a fusion or an inverted repeat looks like, not an ordinary chromosome end |
 | `none` | `gapped_none` | no scaffold-terminal telomere block was detected |
 
 The `gapped_` prefix is added when the sequence contains assembly gaps.

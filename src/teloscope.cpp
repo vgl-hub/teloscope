@@ -544,7 +544,7 @@ void Teloscope::labelTerminalBlocks(
     bool has_P = (longest_p != nullptr);
     bool has_Q = (longest_q != nullptr);
 
-    // strand balanced at an arm: real biology in some lineages, flagged not asserted
+    // both orientations at one arm: a fusion signature, not an ordinary chromosome end
     if ((has_P && longest_p->strandLabel == 'b') || (has_Q && longest_q->strandLabel == 'b')) {
         scaffoldType = pickType(ScaffoldType::BALANCED, ScaffoldType::GAPPED_BALANCED);
         return;
