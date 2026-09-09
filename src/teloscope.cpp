@@ -153,7 +153,8 @@ void getSeeds(const std::vector<MatchInfo>& matches, uint32_t matchDist,
         seeds.back().counts++;
 
         if (oppLen == inversionRun) { // hand the inverted run to a seed of its own
-            seeds.back().end = keptEnd;
+            // the cut has to leave the seeds disjoint, or the junction clamp misses them
+            seeds.back().end = std::min(keptEnd, oppStart);
             seeds.back().counts -= oppCounts;
             seeds.push_back({oppStart, oppEnd, oppCounts, static_cast<bool>(match.isForward)});
             seedFwd = match.isForward;
@@ -406,8 +407,11 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
         if (seed->start < pTo || !isSeedTelomeric(*seed)) continue;
         // two arms are two arrays: either something between them carries no match,
         // or each one still reaches its own end and the contig is simply all telomere
+        // an array cannot be expected to stop exactly on the last base, so the
+        // "reaches its own end" test carries one motif of slack
+        uint64_t reach = userInput.canonicalSize;
         if (pTo > 0 && getCoveredBases(allRuns, pTo, seed->start) >= seed->start - pTo &&
-            (pFrom > firstBase || seed->end < lastBase)) continue;
+            (pFrom > firstBase + reach || seed->end + reach < lastBase)) continue;
 
         uint64_t limit = (lastBase > terminalLimit) ? (lastBase - terminalLimit) : 0;
         limit = std::max(limit, pTo);
