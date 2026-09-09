@@ -742,7 +742,8 @@ def test_output_metadata_and_bed_compatibility(tmp):
     expected_params = (
         "#params canonical=CCCTAA/TTAGGG patterns=2 window=200 step=100 "
         "terminal_limit=700 max_match_dist=40 max_block_dist=300 min_block_len=100 "
-        "min_block_density=0.4 edit_distance=0 ultra_fast=false manual_curation=true"
+        "min_block_density=0.4 min_block_counts=2 min_its_length=100 "
+        "terminal_tolerance=2000 edit_distance=0 ultra_fast=false manual_curation=true"
     )
     report_lines = outputs["multi.fa_report.tsv"].read_text(encoding="utf-8").splitlines()
     require(len(report_lines) >= 3, "report lacks three provenance lines")
@@ -769,10 +770,12 @@ def test_output_metadata_and_bed_compatibility(tmp):
     require(terminal_rows, "terminal BED has no data rows")
     for row in terminal_rows:
         fields = row.split("\t")
-        require(len(fields) == 10, f"terminal BED row has {len(fields)} fields, expected BED4+6")
-        require(fields[3] in {"p", "q", "b"}, f"terminal BED name is not a block label: {fields[3]!r}")
-        require(all(value.isdigit() for value in fields[4:9]), "terminal BED count/size field is not numeric")
-        require(fields[9] in {"scaffold", "contig"}, f"invalid terminal block type: {fields[9]!r}")
+        require(len(fields) == 17, f"terminal BED row has {len(fields)} fields, expected 17")
+        require(fields[4] in {"p", "q", "b"}, f"terminal BED name is not a strand label: {fields[4]!r}")
+        require(all(value.isdigit() for value in fields[5:10]), "terminal BED count/size field is not numeric")
+        require(fields[10] in {"scaffold", "contig"}, f"invalid terminal block type: {fields[10]!r}")
+        require(fields[11] in {"p", "q"}, f"invalid terminal block arm: {fields[11]!r}")
+        require(fields[12] in {"contiguous", "gapped"}, f"invalid gap status: {fields[12]!r}")
 
     joint_out = tmp / "joint_count_out"
     joint_result = run_fasta(
@@ -784,10 +787,10 @@ def test_output_metadata_and_bed_compatibility(tmp):
     joint_rows = output_data_lines(next(joint_out.glob("*_interstitial_telomeres.bed")))
     require(len(joint_rows) == 1, f"expected one four-cell ITS row, found {len(joint_rows)}")
     joint_fields = joint_rows[0].split("\t")
-    require(len(joint_fields) == 9, f"ITS row has {len(joint_fields)} fields, expected BED4+5")
-    require(joint_fields[3] == "b", f"four-cell ITS label changed: {joint_fields[3]!r}")
-    require(joint_fields[4:8] == ["20", "20", "7", "7"],
-            f"four-cell ITS counts are wrong: {joint_fields[4:8]}")
+    require(len(joint_fields) == 17, f"ITS row has {len(joint_fields)} fields, expected 17")
+    require(joint_fields[4] == "b", f"four-cell ITS label changed: {joint_fields[4]!r}")
+    require(joint_fields[13:17] == ["20", "20", "7", "7"],
+            f"four-cell ITS counts are wrong: {joint_fields[13:17]}")
 
 
 def test_balanced_label_threshold_is_strict(tmp):
@@ -808,9 +811,9 @@ def test_balanced_label_threshold_is_strict(tmp):
     rows = output_data_lines(next(out_dir.glob("*_interstitial_telomeres.bed")))
     require(len(rows) == 1, f"expected one threshold ITS row, found {len(rows)}")
     fields = rows[0].split("\t")
-    require(fields[4:8] == ["333", "167", "0", "0"],
-            f"threshold four-cell counts are wrong: {fields[4:8]}")
-    require(fields[3] == "b", f"exactly 66.6% forward matches must be balanced, found {fields[3]!r}")
+    require(fields[13:17] == ["333", "167", "0", "0"],
+            f"threshold four-cell counts are wrong: {fields[13:17]}")
+    require(fields[4] == "b", f"exactly 66.6% forward matches must be balanced, found {fields[4]!r}")
 
 
 def test_cli_surface_and_read_subset_guards(tmp):

@@ -178,8 +178,9 @@ def find_files(directory):
 def parse_terminal_bed(path):
     """
     Parse *_terminal_telomeres.bed -> dict[chrom -> list of block dicts].
-    v0.1.6 BED4+ columns: chrom start end label fwdCan revCan fwdNonCan
-    revNonCan chromSize [blockType]. Legacy length/marginal-count rows are accepted.
+    v0.1.6 columns: chrom start end length strand fwd rev canonical nonCanonical
+    chromSize blockType arm gapStatus fwdCan revCan fwdNonCan revNonCan. Columns 1
+    to 11 are the v0.1.5 layout; the 10-column interim schema is also accepted.
     """
     blocks = defaultdict(list)
     malformed = 0
@@ -216,6 +217,7 @@ def parse_terminal_bed(path):
                     noncan = fwd_noncan + rev_noncan
                     path_size = int(parts[8]) if parts[8] else 0
                     terminality = parts[9] if len(parts) > 9 else ""
+                    arm = gap_status = ""
                 else:
                     length = int(parts[3])
                     label = parts[4]
@@ -225,7 +227,16 @@ def parse_terminal_bed(path):
                     noncan = int(parts[8])
                     path_size = int(parts[9]) if parts[9] else 0
                     terminality = parts[10] if len(parts) > 10 else ""
-                    fwd_can = rev_can = fwd_noncan = rev_noncan = None
+                    if len(parts) > 16:
+                        arm = parts[11]
+                        gap_status = parts[12]
+                        fwd_can = int(parts[13])
+                        rev_can = int(parts[14])
+                        fwd_noncan = int(parts[15])
+                        rev_noncan = int(parts[16])
+                    else:
+                        arm = gap_status = ""
+                        fwd_can = rev_can = fwd_noncan = rev_noncan = None
             except ValueError as exc:
                 malformed += 1
                 if malformed <= 3:
@@ -254,6 +265,8 @@ def parse_terminal_bed(path):
                 "revNonCan": rev_noncan,
                 "pathSize": path_size,
                 "term":     terminality,
+                "arm":      arm,
+                "gap":      gap_status,
             })
     if malformed:
         suffix = " (first 3 shown above)" if malformed > 3 else ""

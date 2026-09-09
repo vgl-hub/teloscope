@@ -33,24 +33,27 @@ Rule 5 only fires when the opposite arm is absent. When both arms are present, r
 
 ## Block labels
 
-Terminal blocks are labeled from the end they were scanned from, not from strand balance:
+Every block carries two labels, in two separate columns of both BED files.
 
-- `p`: found scanning from the start of the sequence
-- `q`: found scanning from the end of the sequence
+Column 5, `label`, is the strand composition, and it means the same thing in both files:
 
-Interstitial blocks are labeled from strand balance instead:
-
-- `p`: forward-strand dominant
-- `q`: reverse-strand dominant
+- `p`: forward-strand dominant, more than 66.6% of matches
+- `q`: reverse-strand dominant, less than 33.3%
 - `b`: balanced or mixed
 
-The `granular` column in `*_report.tsv` shows the block pattern for each sequence. It includes every terminal block along the sequence, not just the two at the scaffold ends, so a gapped scaffold with contig-internal terminal blocks can produce a longer string than the examples below.
+Column 12, `arm`, is the position:
+
+- `p`: the block sits nearer the start of the called sequence
+- `q`: the block sits nearer the end
+
+For an ordinary telomere the two agree, since a p arm carries the forward motif and a q arm the reverse. They disagree on an inverted terminal repeat, which is what the scaffold type `discordant` reports.
+
+The `granular` column in `*_report.tsv` shows the arm pattern for each sequence. At most one p block and one q block are kept per sequence, so the column holds at most two letters.
 
 Examples:
 
-- `PQ`: one dominant `p` block and one dominant `q` block
-- `P`: one dominant `p` block only
-- `Pq`: one large `p` block and one smaller `q` block
-- `P*`: a `p` block in a discordant position
+- `PQ`: a p arm and a q arm
+- `P`: a p arm only
+- `P*`: a p arm whose strand composition disagrees with its position
 
-Uppercase marks the longest block for that arm. `*` marks positional discordance.
+Uppercase marks the longest block for that arm. `*` marks arm and strand disagreement.

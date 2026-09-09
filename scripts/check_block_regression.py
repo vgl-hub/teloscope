@@ -49,7 +49,7 @@ def parse_report(path):
 
 
 def parse_blocks(path, has_tag):
-    """chrom -> list of (start, end, label, tag), sorted by start."""
+    """chrom -> list of (start, end, arm, tag), sorted by start."""
     out = {}
     if not os.path.exists(path):
         return out
@@ -60,8 +60,13 @@ def parse_blocks(path, has_tag):
             p = line.rstrip("\n").split("\t")
             if len(p) < 4:
                 continue
-            tag = p[9] if has_tag and len(p) > 9 else "."
-            out.setdefault(p[0], []).append((int(p[1]), int(p[2]), p[3], tag))
+            if p[3] in {"p", "q", "b"}:   # 10-column interim schema
+                label = p[3]
+                tag = p[9] if has_tag and len(p) > 9 else "."
+            else:                          # length-first schema, v0.1.5 and v0.1.6
+                label = p[11] if len(p) > 11 else p[4]
+                tag = p[10] if has_tag and len(p) > 10 else "."
+            out.setdefault(p[0], []).append((int(p[1]), int(p[2]), label, tag))
     for v in out.values():
         v.sort()
     return out

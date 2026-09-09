@@ -80,12 +80,15 @@ When `-s` equals `-w`, window outputs are non-overlapping BEDgraph bins.
 | Flag | Long form | Meaning | Default |
 | --- | --- | --- | --- |
 | `-k` | `--max-match-distance` | max gap between matches before splitting them | `50` |
-| `-d` | `--max-block-distance` | max gap between nearby repeat groups before extension stops | `500` |
+| `-d` | `--max-block-distance` | longest run of `N` a block may bridge | `500` |
 | `-l` | `--min-block-length` | minimum block length to keep | `300` for assembly, `42` for read subsets |
-| `-y` | `--min-block-density` | minimum repeat-covered fraction for a block | `0.5` |
-| `-t` | `--terminal-limit` | distance from a sequence end that still counts as terminal | `50000` |
+| `-y` | `--min-block-density` | minimum repeat-covered fraction for a block, in `(0,1]` | `0.5` |
+| `-t` | `--terminal-limit` | how far in from a sequence end to look, and the hard bound on terminal block extent | `50000` |
+|  | `--terminal-tolerance` | how far in, in called bases, a block may start and still count as terminal | `2000` |
+|  | `--min-its-length` | minimum interstitial block length | `100` |
+|  | `--min-block-counts` | minimum matches for a block | `2` |
 
-A terminal sub-block also needs at least 2 matches before Teloscope keeps it. This minimum has no CLI flag.
+`--terminal-tolerance` counts called bases, so a leading or trailing run of `N` does not push a real telomere out of the terminal zone. It is capped at `-t/--terminal-limit`.
 
 ## Output flags
 
@@ -97,7 +100,7 @@ A terminal sub-block also needs at least 2 matches before Teloscope keeps it. Th
 | `-m` | `--out-matches` | write canonical and terminal non-canonical match BED files | `false` |
 | `-i` | `--out-its` | write interstitial telomere BED | `false` |
 | `-u` | `--ultra-fast` | scan sequence ends only | `true` |
-| `-n` | `--manual-curation` | include contig-terminal blocks in BED output | `false` |
+| `-n` | `--manual-curation` | accepted for compatibility; every terminal block is written either way | `false` |
 |  | `--plot-report` | write a PDF report after the run | `false` |
 
 Any of `-r`, `-g`, `-e`, `-m`, or `-i` disables ultra-fast mode automatically.
