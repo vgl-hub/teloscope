@@ -732,8 +732,9 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
     SegmentData segmentData;
     uint64_t segmentSize = sequence.size();
     if (absPos + segmentSize > (1ULL << 40)) {
-        std::cerr << "Error: sequence coordinate exceeds the 1.1 Tb limit.\n";
-        std::exit(EXIT_FAILURE);
+        // a worker thread cannot exit through the pool it is still parked in
+        std::cerr << "Error: sequence coordinate exceeds the 1.1 Tb limit." << std::endl;
+        std::_Exit(EXIT_FAILURE);
     }
     uint32_t terminalLimit = userInput.terminalLimit;
     unsigned short int longestPatternSize = this->trie.getLongestPatternSize();

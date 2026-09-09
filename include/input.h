@@ -65,6 +65,8 @@ struct UserInputTeloscope : UserInput {
     std::string prefix = ".", outFile = "";
 };
 
+bool isGfaAssemblyPath(const std::string &path);
+
 class Input {
 
     UserInputTeloscope userInput;
