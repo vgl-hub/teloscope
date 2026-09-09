@@ -1009,6 +1009,8 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
                     std::make_move_iterator(segmentData.nonCanonicalMatches.end())
                 );
 
+                pathData.canonicalCounts += segmentData.canonicalCounts;
+
             } else {
             }
             

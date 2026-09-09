@@ -11,6 +11,7 @@
 #include <string_view>
 #include <array>
 #include <algorithm>
+#include <cstdlib>
 
 class Trie {
     struct TrieNode {
@@ -87,10 +88,15 @@ public:
 
 
 struct MatchInfo {
-    bool isCanonical = false;
-    bool isForward = false;
+    uint64_t position : 40; // 1.1 Tb ceiling, checked per segment
+    uint64_t matchSize : 8;
+    uint64_t isCanonical : 1;
+    uint64_t isForward : 1;
+};
+static_assert(sizeof(MatchInfo) == 8, "MatchInfo must stay one word");
+
+struct MatchSeqInfo {
     uint64_t position = 0;
-    uint16_t matchSize = 0;
     std::string matchSeq;
 };
 
@@ -136,8 +142,9 @@ struct SegmentData {
     std::vector<WindowData> windows;
     std::vector<TelomereBlock> terminalBlocks;
     std::vector<TelomereBlock> interstitialBlocks;
-    std::vector<MatchInfo> canonicalMatches;
-    std::vector<MatchInfo> nonCanonicalMatches;
+    std::vector<MatchSeqInfo> canonicalMatches;
+    std::vector<MatchSeqInfo> nonCanonicalMatches;
+    uint64_t canonicalCounts = 0;
     std::vector<MatchInfo> fwdMatches;
     std::vector<MatchInfo> revMatches;
     std::vector<MatchInfo> allMatches;
@@ -152,8 +159,9 @@ struct PathData {
     std::vector<WindowData> windows;
     std::vector<TelomereBlock> terminalBlocks;
     std::vector<TelomereBlock> interstitialBlocks;
-    std::vector<MatchInfo> canonicalMatches;
-    std::vector<MatchInfo> nonCanonicalMatches;
+    std::vector<MatchSeqInfo> canonicalMatches;
+    std::vector<MatchSeqInfo> nonCanonicalMatches;
+    uint64_t canonicalCounts = 0;
     std::string terminalLabel;
     ScaffoldType scaffoldType = ScaffoldType::NONE;
 };
@@ -244,6 +252,10 @@ public:
             bool isCanonical = (pattern == this->userInput.canonicalFwd ||
                                 pattern == this->userInput.canonicalRev);
             trie.insertPattern(pattern, isForward, isCanonical);
+        }
+        if (trie.getLongestPatternSize() > 255) {
+            std::cerr << "Error: pattern longer than 255 bases.\n";
+            std::exit(EXIT_FAILURE);
         }
     }
 
