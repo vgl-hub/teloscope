@@ -17,7 +17,7 @@ Teloscope has two input modes:
 4. Build a multi-pattern search structure and scan each sequence.
 5. Merge nearby matches into repeat groups, then merge nearby groups into telomere blocks.
 6. Filter blocks by minimum length and minimum repeat density.
-7. Label each surviving block as `p`, `q`, or `b` from strand composition.
+7. Label each surviving terminal block `p` or `q` from scan direction; label interstitial blocks `p`, `q`, or `b` from strand composition.
 8. Mark blocks as scaffold-terminal or contig-terminal from `-t/--terminal-limit`.
 9. Classify the sequence as `t2t`, `incomplete`, `misassembly`, `discordant`, or `none`.
 10. Write BED, TSV, and optional BEDgraph outputs.

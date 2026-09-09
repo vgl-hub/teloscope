@@ -85,6 +85,8 @@ When `-s` equals `-w`, window outputs are non-overlapping BEDgraph bins.
 | `-y` | `--min-block-density` | minimum repeat-covered fraction for a block | `0.5` |
 | `-t` | `--terminal-limit` | distance from a sequence end that still counts as terminal | `50000` |
 
+A terminal sub-block also needs at least 2 matches before Teloscope keeps it. This minimum has no CLI flag.
+
 ## Output flags
 
 | Flag | Long form | Meaning | Default |
@@ -161,6 +163,8 @@ teloscope --bam-subset reads.bam -j 32 > telomeric.bam
 ```
 
 In read subset modes, the default `-l` is `42` bp. This is intended to retain reads with at least about seven telomeric repeat units after Teloscope's block and density filters. Assembly annotation keeps the stricter `300` bp default.
+
+Read subset modes also ignore `-t/--terminal-limit`: it is internally overridden so the whole read counts as terminal, regardless of the value passed on the command line.
 
 ## Stdin
 
