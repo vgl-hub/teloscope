@@ -241,7 +241,8 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
     const uint32_t tolerance = userInput.terminalTolerance;
     const uint32_t maxGapBridge = userInput.maxBlockDist;
     const float density = userInput.minBlockDensity;
-    const float weight = density / (1.0f - density);
+    // at full density no uncovered base may be bridged, so the weight saturates
+    const float weight = (density >= 1.0f) ? 1e9f : density / (1.0f - density);
 
     // first and last called base, so a leading gap cannot unanchor a real telomere
     uint64_t firstBase = 0, lastBase = spanSize;
@@ -299,23 +300,21 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
     }
 
     // q arm: the same, mirrored, and never the same physical array as the p arm
-    if (spanSize > 2 * static_cast<uint64_t>(tolerance)) {
-        for (auto seed = seeds.rbegin(); seed != seeds.rend(); ++seed) {
-            if (seed->end + tolerance < lastBase) break;
-            if (seed->start < pEnd || !isSeedTelomeric(*seed)) continue;
+    for (auto seed = seeds.rbegin(); seed != seeds.rend(); ++seed) {
+        if (seed->end + tolerance < lastBase) break;
+        if (seed->start < pEnd || !isSeedTelomeric(*seed)) continue;
 
-            uint64_t limit = (spanSize > terminalLimit) ? (spanSize - terminalLimit) : 0;
-            limit = std::max(limit, pEnd);
-            uint64_t start = trimInward(canRuns, gapInfos, seed->end, limit,
-                                        maxGapBridge, weight, false);
-            uint64_t blockLen = seed->end - start;
-            if (blockLen < userInput.minBlockLen) continue;
-            if (getCoveredBases(canRuns, start, seed->end) < density * blockLen) continue;
+        uint64_t limit = (spanSize > terminalLimit) ? (spanSize - terminalLimit) : 0;
+        limit = std::max(limit, pEnd);
+        uint64_t start = trimInward(canRuns, gapInfos, seed->end, limit,
+                                    maxGapBridge, weight, false);
+        uint64_t blockLen = seed->end - start;
+        if (blockLen < userInput.minBlockLen) continue;
+        if (getCoveredBases(canRuns, start, seed->end) < density * blockLen) continue;
 
-            addBlock(start, seed->end, 'q', terminalBlocks);
-            qStart = start;
-            break;
-        }
+        addBlock(start, seed->end, 'q', terminalBlocks);
+        qStart = start;
+        break;
     }
 
     if (tipsOnly) return;
@@ -327,6 +326,9 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
     for (const auto& segment : segments) {
         uint64_t blockLen = segment.second - segment.first;
         if (blockLen < userInput.minITSLen) continue;
+        // an anchored array that failed terminal acceptance is dropped, not relabelled
+        if (pEnd == 0 && segment.first <= firstBase + tolerance) continue;
+        if (qStart == spanSize && segment.second + tolerance >= lastBase) continue;
         if (getCoveredBases(allRuns, segment.first, segment.second) < density * blockLen) continue;
 
         TelomereBlock block;
