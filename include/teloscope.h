@@ -255,10 +255,6 @@ public:
                                 pattern == this->userInput.canonicalRev);
             trie.insertPattern(pattern, isForward, isCanonical);
         }
-        if (trie.getLongestPatternSize() > 255) {
-            std::cerr << "Error: pattern longer than 255 bases.\n";
-            std::exit(EXIT_FAILURE);
-        }
     }
 
     bool walkSegment(InSegment* segment, InSequences& inSequences);

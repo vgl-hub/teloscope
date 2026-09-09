@@ -642,7 +642,12 @@ int main(int argc, char **argv) {
     userInput.patterns.reserve(userInput.patternInfo.size());
     for (const auto& [pattern, isForward] : userInput.patternInfo) {
         userInput.patterns.push_back(pattern);
-        if (pattern.size() > userInput.windowSize) { // otherwise the scan skips whole windows
+        if (pattern.size() > 255) { // a match records its size in eight bits
+            fprintf(stderr, "Error: Pattern '%s' is longer than 255 bases.\n", pattern.c_str());
+            exit(EXIT_FAILURE);
+        }
+        // windows are unused in ultra-fast mode, which is the default and both subset modes
+        if (!userInput.ultraFastMode && pattern.size() > userInput.windowSize) {
             fprintf(stderr, "Error: Window size (%u) is smaller than pattern '%s'.\n",
                     userInput.windowSize, pattern.c_str());
             exit(EXIT_FAILURE);
