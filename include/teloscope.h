@@ -140,6 +140,7 @@ struct WindowData {
 
 struct SegmentData {
     std::vector<WindowData> windows;
+    uint64_t windowCounts = 0;
     std::vector<TelomereBlock> terminalBlocks;
     std::vector<TelomereBlock> interstitialBlocks;
     std::vector<MatchSeqInfo> canonicalMatches;
@@ -157,6 +158,7 @@ struct PathData {
     std::vector<GapInfo> gapInfos;
     uint64_t pathSize;
     std::vector<WindowData> windows;
+    uint64_t windowCounts = 0;
     std::vector<TelomereBlock> terminalBlocks;
     std::vector<TelomereBlock> interstitialBlocks;
     std::vector<MatchSeqInfo> canonicalMatches;

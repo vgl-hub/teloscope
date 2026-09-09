@@ -1010,6 +1010,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
                 );
 
                 pathData.canonicalCounts += segmentData.canonicalCounts;
+                pathData.windowCounts += segmentData.windowCounts;
 
             } else {
             }

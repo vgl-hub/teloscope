@@ -645,7 +645,8 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
         }
         segmentData.allMatches.reserve(std::min(segmentSize / 3, maxMatchReserve));
 
-        if (segmentSize > windowSize) {
+        bool keepWindows = userInput.outWinRepeats || userInput.outEntropy || userInput.outGC;
+        if (keepWindows && segmentSize > windowSize) {
             segmentData.windows.reserve((segmentSize - windowSize) / step + 2);
         }
 
@@ -675,7 +676,8 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
             // Update windowData
             windowData.windowStart = windowStart + absPos;
             windowData.currentWindowSize = currentWindowSize;
-            windows.emplace_back(windowData);
+            segmentData.windowCounts++;
+            if (keepWindows) windows.emplace_back(windowData);
 
             prevOverlapData = nextOverlapData;
             nextOverlapData = WindowData();
@@ -875,13 +877,13 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
             std::cout << "\t"
                     << pathData.interstitialBlocks.size() << "\t"
                     << pathData.canonicalCounts << "\t"
-                    << windows.size();
+                    << pathData.windowCounts;
             reportFile << "\t"
                     << pathData.interstitialBlocks.size() << "\t"
                     << pathData.canonicalCounts << "\t"
-                    << windows.size();
+                    << pathData.windowCounts;
 
-            totalNWindows += windows.size();
+            totalNWindows += pathData.windowCounts;
             totalITS += pathData.interstitialBlocks.size();
             totalCanMatches += pathData.canonicalCounts;
         }
