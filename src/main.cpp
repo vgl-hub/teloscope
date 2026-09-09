@@ -427,13 +427,13 @@ int main(int argc, char **argv) {
             case 'y': { // min block density
                 try {
                     float v = std::stof(optarg);
-                    if (v < 0.0f || v > 1.0f) {
-                        fprintf(stderr, "Error: Min block density (-y/--min-block-density) must be in the range [0,1].\n");
+                    if (v <= 0.0f || v >= 1.0f) {
+                        fprintf(stderr, "Error: Min block density (-y/--min-block-density) must be between 0 and 1, exclusive.\n");
                         exit(EXIT_FAILURE);
                     }
                     userInput.minBlockDensity = v;
                 } catch (...) {
-                    fprintf(stderr, "Error: Invalid min block density '%s'. Must be a number [0,1].\n", optarg);
+                    fprintf(stderr, "Error: Invalid min block density '%s'. Must be a number between 0 and 1.\n", optarg);
                     exit(EXIT_FAILURE);
                 }
                 break;
@@ -642,6 +642,11 @@ int main(int argc, char **argv) {
     userInput.patterns.reserve(userInput.patternInfo.size());
     for (const auto& [pattern, isForward] : userInput.patternInfo) {
         userInput.patterns.push_back(pattern);
+        if (pattern.size() > userInput.windowSize) { // otherwise the scan skips whole windows
+            fprintf(stderr, "Error: Window size (%u) is smaller than pattern '%s'.\n",
+                    userInput.windowSize, pattern.c_str());
+            exit(EXIT_FAILURE);
+        }
     }
 
     fprintf(stderr, "Scanning %zu telomeric variants (includes reverse complements).\n",

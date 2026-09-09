@@ -338,10 +338,11 @@ void Teloscope::labelTerminalBlocks(
             });
 
     // scaffold-terminal blocks
+    uint64_t terminalEnd = (pathSize > terminalLimit) ? (pathSize - terminalLimit) : 0;
     std::vector<TelomereBlock*> scaffoldBlocks;
     for (auto& block : blocks) {
         uint64_t blockEnd = block.start + block.blockLen;
-        if (block.start < terminalLimit || blockEnd > pathSize - terminalLimit) {
+        if (block.start < terminalLimit || blockEnd > terminalEnd) {
             scaffoldBlocks.push_back(&block);
         }
     }
@@ -465,9 +466,9 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
     bool hasOverlap = (overlapSize != 0);
 
     // trie scan start index
-    uint32_t startIndex = alwaysMainWindow
+    uint32_t startIndex = (alwaysMainWindow || std::min(step, overlapSize) <= longestPatternSize)
                             ? 0
-                            : std::min(step - longestPatternSize, overlapSize - longestPatternSize);
+                            : std::min(step, overlapSize) - longestPatternSize;
 
     for (uint32_t i = startIndex; i < window.size(); ++i) {
         if (computeGC || computeEntropy) {
@@ -768,12 +769,14 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
         std::string longestLabels;
 
         // Terminal blocks
+        uint64_t terminalEnd = (pathSize > userInput.terminalLimit)
+                                ? (pathSize - userInput.terminalLimit) : 0;
         std::string labels;
         for (const auto& block : pathData.terminalBlocks) {
             uint64_t blockEnd = block.start + block.blockLen;
 
             bool isScaffoldTerminal = block.start < userInput.terminalLimit ||
-                                      blockEnd > pathSize - userInput.terminalLimit;
+                                      blockEnd > terminalEnd;
             const char* blockType = isScaffoldTerminal ? "scaffold" : "contig";
 
             // scaffold-terminal only, unless --manual-curation
