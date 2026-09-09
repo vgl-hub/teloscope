@@ -92,10 +92,12 @@ int main(int argc, char **argv) {
     auto setInputFile = [&](const char* path) {
         ifFileExists(path);
         userInput.inSequence = path;
-        const std::filesystem::path real = std::filesystem::canonical(userInput.inSequence);
-        userInput.inSequence       = real.string();
-        userInput.inSequencePrefix = real.parent_path().string();
-        userInput.inSequenceName   = real.filename().string();
+        std::error_code pathError; // pipes and fd paths have no canonical form
+        const std::filesystem::path real = std::filesystem::canonical(userInput.inSequence, pathError);
+        const std::filesystem::path resolved = pathError ? std::filesystem::path(path) : real;
+        userInput.inSequence       = resolved.string();
+        userInput.inSequencePrefix = resolved.parent_path().string();
+        userInput.inSequenceName   = resolved.filename().string();
         if (!userInput.outRouteSet) // an explicit -o is not overridden by the input directory
             userInput.outRoute = userInput.inSequencePrefix;
     };
