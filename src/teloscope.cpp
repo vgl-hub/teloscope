@@ -71,241 +71,281 @@ void writeBlockRow(std::ofstream& file, std::string_view pathName,
          << block.revCanCount << '\t'
          << block.fwdNonCanCount << '\t'
          << block.revNonCanCount << '\t'
-         << pathSize;
-    if (!blockType.empty()) file << '\t' << blockType;
-    file << '\n';
+         << pathSize << '\t'
+         << blockType << '\t'
+         << block.strandLabel << '\n';
 }
 
-void incrementMatchCounts(const MatchInfo& match,
-                          uint32_t& fwdCanCount, uint32_t& revCanCount,
-                          uint32_t& fwdNonCanCount, uint32_t& revNonCanCount) {
-    if (match.isCanonical) {
-        if (match.isForward) ++fwdCanCount;
-        else ++revCanCount;
-    } else {
-        if (match.isForward) ++fwdNonCanCount;
-        else ++revNonCanCount;
+constexpr uint32_t minCanonicalCount = 4;
+
+struct CoverRun {
+    uint64_t start;
+    uint32_t len;
+};
+
+struct Seed {
+    uint64_t start;
+    uint64_t end;
+    uint64_t counts;
+};
+
+// per-base coverage, overlapping matches OR-ed instead of summed
+void getCoverRuns(const std::vector<MatchInfo>& matches, bool canonicalOnly,
+                  std::vector<CoverRun>& runs) {
+    for (const MatchInfo& match : matches) {
+        if (canonicalOnly && !match.isCanonical) continue;
+        uint64_t end = match.position + match.matchSize;
+        if (!runs.empty() && match.position <= runs.back().start + runs.back().len) {
+            if (end > runs.back().start + runs.back().len) {
+                runs.back().len = static_cast<uint32_t>(end - runs.back().start);
+            }
+        } else {
+            runs.push_back({match.position, static_cast<uint32_t>(match.matchSize)});
+        }
     }
+}
+
+// chain matches end to start, so a mixed pattern length does not shorten the gap
+void getSeeds(const std::vector<MatchInfo>& matches, uint32_t matchDist,
+              std::vector<Seed>& seeds) {
+    for (const MatchInfo& match : matches) {
+        uint64_t end = match.position + match.matchSize;
+        if (!seeds.empty() && match.position <= seeds.back().end + matchDist) {
+            if (end > seeds.back().end) seeds.back().end = end;
+            seeds.back().counts++;
+        } else {
+            seeds.push_back({match.position, end, 1});
+        }
+    }
+}
+
+uint64_t getCoveredBases(const std::vector<CoverRun>& runs, uint64_t from, uint64_t to) {
+    uint64_t covered = 0;
+    for (const CoverRun& run : runs) {
+        if (run.start >= to) break;
+        uint64_t start = std::max(from, run.start), end = std::min(to, run.start + run.len);
+        if (end > start) covered += end - start;
+    }
+    return covered;
+}
+
+uint64_t getGapBases(const std::vector<GapInfo>& gaps, uint64_t from, uint64_t to) {
+    uint64_t total = 0;
+    for (const GapInfo& gap : gaps) {
+        uint64_t start = std::max(from, gap.start), end = std::min(to, gap.start + gap.length);
+        if (end > start) total += end - start;
+    }
+    return total;
+}
+
+void tallyBlock(const std::vector<MatchInfo>& matches, TelomereBlock& block) {
+    uint64_t end = block.start + block.blockLen;
+    for (const MatchInfo& match : matches) {
+        if (match.position >= end) break;
+        if (match.position < block.start) continue;
+        if (match.isCanonical) {
+            if (match.isForward) block.fwdCanCount++; else block.revCanCount++;
+        } else {
+            if (match.isForward) block.fwdNonCanCount++; else block.revNonCanCount++;
+        }
+    }
+}
+
+// walk inward from the anchor and cut where the cumulative score peaks
+uint64_t trimInward(const std::vector<CoverRun>& runs, const std::vector<GapInfo>& gaps,
+                    uint64_t anchor, uint64_t limit, uint32_t maxGapBridge,
+                    float weight, bool toRight) {
+    double cumulative = 0.0, best = 0.0;
+    uint64_t bestPos = anchor, prev = anchor;
+
+    if (toRight) {
+        for (const CoverRun& run : runs) {
+            if (run.start < anchor) continue;
+            if (run.start >= limit) break;
+            uint64_t gapBases = getGapBases(gaps, prev, run.start);
+            if (gapBases > maxGapBridge) break;
+            cumulative -= weight * static_cast<double>((run.start - prev) - gapBases);
+            cumulative += run.len;
+            if (cumulative > best) { best = cumulative; bestPos = run.start + run.len; }
+            prev = run.start + run.len;
+        }
+    } else {
+        for (auto run = runs.rbegin(); run != runs.rend(); ++run) {
+            uint64_t end = run->start + run->len;
+            if (end > anchor) continue;
+            if (end <= limit) break;
+            uint64_t gapBases = getGapBases(gaps, end, prev);
+            if (gapBases > maxGapBridge) break;
+            cumulative -= weight * static_cast<double>((prev - end) - gapBases);
+            cumulative += run->len;
+            if (cumulative > best) { best = cumulative; bestPos = run->start; }
+            prev = run->start;
+        }
+    }
+    return bestPos;
+}
+
+// every locally maximal qualifying segment, so neighbouring arrays stay separate
+void getMaximalSegments(const std::vector<CoverRun>& runs, const std::vector<GapInfo>& gaps,
+                        uint64_t from, uint64_t to, uint32_t maxGapBridge, float weight,
+                        std::vector<std::pair<uint64_t, uint64_t>>& segments) {
+    double cumulative = 0.0, best = 0.0;
+    uint64_t segStart = 0, segEnd = 0, prev = 0;
+    bool open = false;
+
+    auto closeSegment = [&]() {
+        if (open && segEnd > segStart) segments.push_back({segStart, segEnd});
+        open = false;
+    };
+
+    for (const CoverRun& run : runs) {
+        uint64_t start = std::max(from, run.start);
+        uint64_t end = std::min(to, run.start + run.len);
+        if (run.start >= to) break;
+        if (end <= start) continue;
+
+        if (open) {
+            uint64_t gapBases = getGapBases(gaps, prev, start);
+            if (gapBases > maxGapBridge) {
+                closeSegment();
+            } else {
+                cumulative -= weight * static_cast<double>((start - prev) - gapBases);
+                if (cumulative < 0.0) closeSegment();
+            }
+        }
+        if (!open) {
+            open = true;
+            segStart = start;
+            segEnd = start;
+            cumulative = 0.0;
+            best = 0.0;
+        }
+        cumulative += static_cast<double>(end - start);
+        if (cumulative > best) { best = cumulative; segEnd = end; }
+        prev = end;
+    }
+    closeSegment();
 }
 
 } // namespace
 
 
-uint64_t Teloscope::getTerminalBlocks(
-    const std::vector<MatchInfo>& matches,
-    std::vector<TelomereBlock>& outBlocks,
-    uint64_t segmentSize, uint64_t absPos, bool fromStart, bool isForward) {
+void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
+                              const std::vector<GapInfo>& gapInfos, uint64_t spanSize,
+                              std::vector<TelomereBlock>& terminalBlocks,
+                              std::vector<TelomereBlock>& interstitialBlocks,
+                              bool tipsOnly) {
+    if (matches.size() < userInput.minBlockCounts) return;
 
-    uint64_t boundary = fromStart ? absPos : (absPos + segmentSize);
-    int64_t n = static_cast<int64_t>(matches.size());
+    const uint32_t terminalLimit = userInput.terminalLimit;
+    const uint32_t tolerance = userInput.terminalTolerance;
+    const uint32_t maxGapBridge = userInput.maxBlockDist;
+    const float density = userInput.minBlockDensity;
+    const float weight = density / (1.0f - density);
 
-    uint32_t terminalLimit = userInput.terminalLimit;
-    uint16_t matchDist = userInput.maxMatchDist;
-    uint16_t blockDist = userInput.maxBlockDist;
-    uint16_t minBlockCounts = userInput.minBlockCounts;
-    uint16_t minBlockLen = userInput.minBlockLen;
-    float minBlockDensity = userInput.minBlockDensity;
-
-    int64_t startIdx = fromStart ? 0 : n - 1;
-    int64_t endIdx   = fromStart ? n : -1;
-    int64_t step     = fromStart ? 1 : -1;
-
-    auto inZone = [&](uint64_t pos) -> bool {
-        uint64_t rel = pos - absPos;
-        if (segmentSize <= terminalLimit) return true;
-        return fromStart ? (rel < terminalLimit) : (rel >= segmentSize - terminalLimit);
-    };
-
-    // Phase 1: directional scan for sub-blocks
-    std::vector<TelomereBlock> subBlocks;
-
-    bool inBlock = false;
-    uint64_t blockStart = 0, blockEnd = 0, prevPosition = 0;
-    uint32_t fwdCanCount = 0, revCanCount = 0;
-    uint32_t fwdNonCanCount = 0, revNonCanCount = 0;
-
-    auto startNewBlock = [&](const MatchInfo& m) {
-        blockStart = m.position;
-        blockEnd = m.position + m.matchSize;
-        prevPosition = m.position;
-        fwdCanCount = revCanCount = 0;
-        fwdNonCanCount = revNonCanCount = 0;
-        incrementMatchCounts(m, fwdCanCount, revCanCount,
-                             fwdNonCanCount, revNonCanCount);
-        inBlock = true;
-    };
-
-    auto finalizeSubBlock = [&]() {
-        const uint64_t canonicalCount =
-            static_cast<uint64_t>(fwdCanCount) + revCanCount;
-        const uint64_t blockCounts = canonicalCount + fwdNonCanCount + revNonCanCount;
-        const uint64_t canonicalCovered = canonicalCount * userInput.canonicalSize;
-        if (blockCounts >= minBlockCounts && canonicalCount > 0 &&
-            canonicalCovered >= minBlockDensity * (blockEnd - blockStart)) {
-            TelomereBlock block;
-            block.start = blockStart;
-            block.blockLen = static_cast<uint32_t>(blockEnd - blockStart);
-            block.fwdCanCount = fwdCanCount;
-            block.revCanCount = revCanCount;
-            block.fwdNonCanCount = fwdNonCanCount;
-            block.revNonCanCount = revNonCanCount;
-            subBlocks.push_back(block);
-        }
-        inBlock = false;
-    };
-
-    for (int64_t idx = startIdx; idx != endIdx; idx += step) {
-        const MatchInfo& m = matches[idx];
-        if (static_cast<bool>(m.isForward) != isForward) continue;
-
-        if (!inBlock) {
-            if (inZone(m.position)) {
-                startNewBlock(m);
-            } else {
-                break;
-            }
-        } else {
-            uint64_t gap = fromStart ? (m.position - prevPosition) : (prevPosition - m.position);
-            if (gap <= matchDist) {
-                if (fromStart) blockEnd = m.position + m.matchSize;
-                else blockStart = m.position;
-                incrementMatchCounts(m, fwdCanCount, revCanCount,
-                                     fwdNonCanCount, revNonCanCount);
-                prevPosition = m.position;
-            } else {
-                finalizeSubBlock();
-                if (inZone(m.position)) {
-                    startNewBlock(m);
-                } else {
-                    break;
-                }
-            }
-        }
+    // first and last called base, so a leading gap cannot unanchor a real telomere
+    uint64_t firstBase = 0, lastBase = spanSize;
+    for (const GapInfo& gap : gapInfos) {
+        if (gap.start == 0) firstBase = gap.length;
+        if (gap.start + gap.length >= spanSize) lastBase = gap.start;
     }
 
-    if (inBlock) finalizeSubBlock();
-    if (subBlocks.empty()) return boundary;
+    std::vector<CoverRun> canRuns, allRuns;
+    getCoverRuns(matches, true, canRuns);
+    getCoverRuns(matches, false, allRuns);
 
-    // Phase 2: merge sub-blocks within blockDist
-    TelomereBlock current = subBlocks[0];
+    std::vector<Seed> seeds;
+    getSeeds(matches, userInput.maxMatchDist, seeds);
 
-    auto finalizeExtended = [&]() {
-        if (current.blockLen >= minBlockLen) {
-            current.blockLabel = fromStart ? 'p' : 'q';
-
-            uint64_t relStart = current.start - absPos;
-            uint64_t relEnd = relStart + current.blockLen;
-            uint64_t leftDist = relStart;
-            uint64_t rightDist = (relEnd <= segmentSize) ? (segmentSize - relEnd) : 0;
-            current.hasValidOr = fromStart ? (leftDist <= rightDist) : (leftDist >= rightDist);
-
-            outBlocks.push_back(current);
-            boundary = fromStart ? (current.start + current.blockLen) : current.start;
-        }
+    auto isSeedTelomeric = [&](const Seed& seed) {
+        uint64_t covered = getCoveredBases(canRuns, seed.start, seed.end);
+        return seed.counts >= userInput.minBlockCounts && covered > 0 &&
+               covered >= density * (seed.end - seed.start);
     };
 
-    for (size_t i = 1; i < subBlocks.size(); ++i) {
-        TelomereBlock& next = subBlocks[i];
-        uint64_t gap = fromStart
-            ? (next.start - (current.start + current.blockLen))
-            : (current.start - (next.start + next.blockLen));
-
-        if (gap <= blockDist) {
-            if (fromStart) {
-                current.blockLen = (next.start + next.blockLen) - current.start;
-            } else {
-                current.blockLen = (current.start + current.blockLen) - next.start;
-                current.start = next.start;
-            }
-            current.fwdCanCount += next.fwdCanCount;
-            current.revCanCount += next.revCanCount;
-            current.fwdNonCanCount += next.fwdNonCanCount;
-            current.revNonCanCount += next.revNonCanCount;
-        } else {
-            finalizeExtended();
-            current = next;
-        }
-    }
-
-    finalizeExtended();
-    return boundary;
-}
-
-
-void Teloscope::getInterstitialBlocks(
-    const std::vector<MatchInfo>& allMatches,
-    std::vector<TelomereBlock>& outBlocks,
-    uint64_t fwdBoundary, uint64_t revBoundary) {
-
-    uint16_t mergeDist = userInput.maxMatchDist;
-    uint16_t minLength = 2 * userInput.patterns.front().size();
-    constexpr uint16_t minCanonicalCount = 4;
-
-    auto it = std::lower_bound(allMatches.begin(), allMatches.end(), fwdBoundary,
-        [](const MatchInfo& m, uint64_t val) { return m.position < val; });
-
-    if (it == allMatches.end() || it->position >= revBoundary) return;
-
-    bool inBlock = false;
-    uint64_t blockStart = 0, blockEnd = 0, prevPosition = 0;
-    uint32_t fwdCanCount = 0, revCanCount = 0;
-    uint32_t fwdNonCanCount = 0, revNonCanCount = 0;
-
-    auto startNewBlock = [&](const MatchInfo& m) {
-        blockStart = m.position;
-        blockEnd = m.position + m.matchSize;
-        prevPosition = m.position;
-        fwdCanCount = revCanCount = 0;
-        fwdNonCanCount = revNonCanCount = 0;
-        incrementMatchCounts(m, fwdCanCount, revCanCount,
-                             fwdNonCanCount, revNonCanCount);
-        inBlock = true;
-    };
-
-    auto finalizeBlock = [&]() {
-        uint32_t blockLen = static_cast<uint32_t>(blockEnd - blockStart);
+    auto addBlock = [&](uint64_t start, uint64_t end, char arm,
+                        std::vector<TelomereBlock>& out) {
+        TelomereBlock block;
+        block.start = start;
+        block.blockLen = static_cast<uint32_t>(end - start);
+        block.blockLabel = arm;
+        tallyBlock(matches, block);
         const uint64_t forwardCount =
-            static_cast<uint64_t>(fwdCanCount) + fwdNonCanCount;
-        const uint64_t reverseCount =
-            static_cast<uint64_t>(revCanCount) + revNonCanCount;
-        const uint64_t blockCounts = forwardCount + reverseCount;
-        const uint64_t canonicalCount =
-            static_cast<uint64_t>(fwdCanCount) + revCanCount;
-        char label = computeBlockLabel(forwardCount, blockCounts);
-
-        if (blockLen >= minLength && canonicalCount >= minCanonicalCount &&
-            !(label == 'b' && forwardCount < 2 && reverseCount < 2)) {
-
-            TelomereBlock block;
-            block.start = blockStart;
-            block.blockLen = blockLen;
-            block.fwdCanCount = fwdCanCount;
-            block.revCanCount = revCanCount;
-            block.fwdNonCanCount = fwdNonCanCount;
-            block.revNonCanCount = revNonCanCount;
-            block.blockLabel = label;
-            outBlocks.push_back(block);
-        }
-        inBlock = false;
+            static_cast<uint64_t>(block.fwdCanCount) + block.fwdNonCanCount;
+        const uint64_t blockCounts = forwardCount +
+            block.revCanCount + block.revNonCanCount;
+        block.strandLabel = computeBlockLabel(forwardCount, blockCounts);
+        block.hasValidOr = (block.strandLabel == arm);
+        out.push_back(block);
     };
 
-    for (; it != allMatches.end() && it->position < revBoundary; ++it) {
-        const MatchInfo& m = *it;
+    // p arm: anchored at the first called base, trimmed inward on canonical density
+    uint64_t pEnd = 0, qStart = spanSize;
 
-        if (!inBlock) {
-            startNewBlock(m);
-        } else if (m.position - prevPosition <= mergeDist) {
-            blockEnd = m.position + m.matchSize;
-            incrementMatchCounts(m, fwdCanCount, revCanCount,
-                                 fwdNonCanCount, revNonCanCount);
-            prevPosition = m.position;
-        } else {
-            finalizeBlock();
-            startNewBlock(m);
+    for (const Seed& seed : seeds) {
+        if (seed.start > firstBase + tolerance) break;
+        if (!isSeedTelomeric(seed)) continue;
+
+        uint64_t limit = std::min<uint64_t>(spanSize, terminalLimit);
+        uint64_t end = trimInward(canRuns, gapInfos, seed.start, limit,
+                                  maxGapBridge, weight, true);
+        uint64_t blockLen = end - seed.start;
+        if (blockLen < userInput.minBlockLen) continue;
+        if (getCoveredBases(canRuns, seed.start, end) < density * blockLen) continue;
+
+        addBlock(seed.start, end, 'p', terminalBlocks);
+        pEnd = end;
+        break;
+    }
+
+    // q arm: the same, mirrored, and never the same physical array as the p arm
+    if (spanSize > 2 * static_cast<uint64_t>(tolerance)) {
+        for (auto seed = seeds.rbegin(); seed != seeds.rend(); ++seed) {
+            if (seed->end + tolerance < lastBase) break;
+            if (seed->start < pEnd || !isSeedTelomeric(*seed)) continue;
+
+            uint64_t limit = (spanSize > terminalLimit) ? (spanSize - terminalLimit) : 0;
+            limit = std::max(limit, pEnd);
+            uint64_t start = trimInward(canRuns, gapInfos, seed->end, limit,
+                                        maxGapBridge, weight, false);
+            uint64_t blockLen = seed->end - start;
+            if (blockLen < userInput.minBlockLen) continue;
+            if (getCoveredBases(canRuns, start, seed->end) < density * blockLen) continue;
+
+            addBlock(start, seed->end, 'q', terminalBlocks);
+            qStart = start;
+            break;
         }
     }
 
-    if (inBlock) finalizeBlock();
+    if (tipsOnly) return;
+
+    // interstitial blocks: variant-inclusive scoring, both edges free
+    std::vector<std::pair<uint64_t, uint64_t>> segments;
+    getMaximalSegments(allRuns, gapInfos, pEnd, qStart, maxGapBridge, weight, segments);
+
+    for (const auto& segment : segments) {
+        uint64_t blockLen = segment.second - segment.first;
+        if (blockLen < userInput.minITSLen) continue;
+        if (getCoveredBases(allRuns, segment.first, segment.second) < density * blockLen) continue;
+
+        TelomereBlock block;
+        block.start = segment.first;
+        block.blockLen = static_cast<uint32_t>(blockLen);
+        tallyBlock(matches, block);
+        const uint64_t canonicalCount =
+            static_cast<uint64_t>(block.fwdCanCount) + block.revCanCount;
+        if (canonicalCount < minCanonicalCount) continue;
+
+        const uint64_t forwardCount =
+            static_cast<uint64_t>(block.fwdCanCount) + block.fwdNonCanCount;
+        const uint64_t blockCounts = forwardCount + block.revCanCount + block.revNonCanCount;
+        block.strandLabel = computeBlockLabel(forwardCount, blockCounts);
+        // nearer end, so the column keeps one meaning across both files
+        block.blockLabel = (segment.first + blockLen / 2 < spanSize / 2) ? 'p' : 'q';
+        block.hasValidOr = (block.strandLabel == block.blockLabel);
+        interstitialBlocks.push_back(block);
+    }
 }
 
 
@@ -313,12 +353,13 @@ void Teloscope::labelTerminalBlocks(
     std::vector<TelomereBlock>& blocks, uint16_t gaps,
     std::string& terminalLabel, ScaffoldType& scaffoldType,
     uint64_t pathSize, uint32_t terminalLimit) {
-    // Reset isLongest for all blocks
+    (void)pathSize;
+    (void)terminalLimit;
+
     for (auto& block : blocks) {
         block.isLongest = false;
     }
 
-    // Initialize return values
     terminalLabel = "";
     bool hasGaps = (gaps > 0);
 
@@ -331,23 +372,33 @@ void Teloscope::labelTerminalBlocks(
         return;
     }
 
-    // sort by coordinates
     std::sort(blocks.begin(), blocks.end(),
             [](const TelomereBlock &a, const TelomereBlock &b) {
                 return a.start < b.start;
             });
 
-    // scaffold-terminal blocks
-    uint64_t terminalEnd = (pathSize > terminalLimit) ? (pathSize - terminalLimit) : 0;
-    std::vector<TelomereBlock*> scaffoldBlocks;
+    // longest p and q, by canonical content
+    TelomereBlock* longest_p = nullptr;
+    TelomereBlock* longest_q = nullptr;
+    uint64_t max_p_canonical_count = 0;
+    uint64_t max_q_canonical_count = 0;
+
     for (auto& block : blocks) {
-        uint64_t blockEnd = block.start + block.blockLen;
-        if (block.start < terminalLimit || blockEnd > terminalEnd) {
-            scaffoldBlocks.push_back(&block);
+        const uint64_t canonicalCount =
+            static_cast<uint64_t>(block.fwdCanCount) + block.revCanCount;
+        if (block.blockLabel == 'p' && canonicalCount > max_p_canonical_count) {
+            longest_p = &block;
+            max_p_canonical_count = canonicalCount;
+        }
+        else if (block.blockLabel == 'q' && canonicalCount > max_q_canonical_count) {
+            longest_q = &block;
+            max_q_canonical_count = canonicalCount;
         }
     }
 
-    // granular label from all blocks
+    if (longest_p) longest_p->isLongest = true;
+    if (longest_q) longest_q->isLongest = true;
+
     for (auto& block : blocks) {
         terminalLabel += block.blockLabel;
         if (!block.hasValidOr) {
@@ -355,30 +406,6 @@ void Teloscope::labelTerminalBlocks(
         }
     }
 
-    // longest p and q among scaffold-terminal blocks
-    TelomereBlock* longest_p = nullptr;
-    TelomereBlock* longest_q = nullptr;
-    uint64_t max_p_canonical_count = 0;
-    uint64_t max_q_canonical_count = 0;
-
-    for (auto* block : scaffoldBlocks) {
-        const uint64_t canonicalCount =
-            static_cast<uint64_t>(block->fwdCanCount) + block->revCanCount;
-        if (block->blockLabel == 'p' && canonicalCount > max_p_canonical_count) {
-            longest_p = block;
-            max_p_canonical_count = canonicalCount;
-        }
-        else if (block->blockLabel == 'q' && canonicalCount > max_q_canonical_count) {
-            longest_q = block;
-            max_q_canonical_count = canonicalCount;
-        }
-    }
-
-    // Mark longest blocks
-    if (longest_p) longest_p->isLongest = true;
-    if (longest_q) longest_q->isLongest = true;
-
-    // uppercase for longest blocks
     for (size_t i = 0, j = 0; i < blocks.size(); i++) {
         if (blocks[i].isLongest) {
             terminalLabel[j] = std::toupper(terminalLabel[j]);
@@ -389,55 +416,42 @@ void Teloscope::labelTerminalBlocks(
         }
     }
 
-    // scaffold type
     bool has_P = (longest_p != nullptr);
     bool has_Q = (longest_q != nullptr);
 
-    // discordant
+    // strand balanced at an arm: real biology in some lineages, flagged not asserted
+    if ((has_P && longest_p->strandLabel == 'b') || (has_Q && longest_q->strandLabel == 'b')) {
+        scaffoldType = pickType(ScaffoldType::BALANCED, ScaffoldType::GAPPED_BALANCED);
+        return;
+    }
+
+    // arm and strand disagree: an inverted terminal repeat
     if ((has_P && !longest_p->hasValidOr) || (has_Q && !longest_q->hasValidOr)) {
         scaffoldType = pickType(ScaffoldType::DISCORDANT, ScaffoldType::GAPPED_DISCORDANT);
         return;
     }
 
-    // Complete chromosome
-    if (has_P && has_Q) {
-        if (longest_p->start < longest_q->start) {
-            scaffoldType = pickType(ScaffoldType::T2T, ScaffoldType::GAPPED_T2T);
-        } else {
+    // duplicated arm alongside a normal opposite arm
+    for (const auto& block : blocks) {
+        if (&block == longest_p || &block == longest_q) continue;
+        if (block.hasValidOr) {
             scaffoldType = pickType(ScaffoldType::MISASSEMBLY, ScaffoldType::GAPPED_MISASSEMBLY);
+            return;
         }
+    }
+
+    if (has_P && has_Q) {
+        scaffoldType = pickType(ScaffoldType::T2T, ScaffoldType::GAPPED_T2T);
         return;
     }
 
-    // Pp/Qq misassemblies
-    if (has_P) {
-        for (const auto* block : scaffoldBlocks) {
-            if (block->blockLabel == 'p' && block != longest_p && block->hasValidOr) {
-                scaffoldType = pickType(ScaffoldType::MISASSEMBLY, ScaffoldType::GAPPED_MISASSEMBLY);
-                return;
-            }
-        }
-    }
-
-    if (has_Q) {
-        for (const auto* block : scaffoldBlocks) {
-            if (block->blockLabel == 'q' && block != longest_q && block->hasValidOr) {
-                scaffoldType = pickType(ScaffoldType::MISASSEMBLY, ScaffoldType::GAPPED_MISASSEMBLY);
-                return;
-            }
-        }
-    }
-
-    // No scaffold-terminal telomeres found
     if (!has_P && !has_Q) {
         scaffoldType = pickType(ScaffoldType::NONE, ScaffoldType::GAPPED_NONE);
         return;
     }
 
-    // single telomere = incomplete
     scaffoldType = pickType(ScaffoldType::INCOMPLETE, ScaffoldType::GAPPED_INCOMPLETE);
 }
-
 
 
 void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowStart,
@@ -693,21 +707,6 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos, bool 
         segmentData.windows = std::move(windows);
     }
 
-    // ========== Block creation ==========
-    uint64_t fwdBoundary = absPos;
-    uint64_t revBoundary = absPos + segmentSize;
-
-    if (segmentData.fwdCounts >= 2)
-        fwdBoundary = getTerminalBlocks(segmentData.allMatches, segmentData.terminalBlocks,
-                                         segmentSize, absPos, true, true);
-    if (segmentData.revCounts >= 2)
-        revBoundary = getTerminalBlocks(segmentData.allMatches, segmentData.terminalBlocks,
-                                         segmentSize, absPos, false, false);
-
-    if (!tipsOnly && fwdBoundary < revBoundary && segmentData.allMatches.size() >= 2)
-        getInterstitialBlocks(segmentData.allMatches, segmentData.interstitialBlocks,
-                              fwdBoundary, revBoundary);
-
     return segmentData;
 }
 
@@ -770,21 +769,20 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
         int longestCount = 0;
         std::string longestLabels;
 
+        // a block reaching across an assembly gap is no longer one contig's
+        auto spansGap = [&](const TelomereBlock& block) {
+            for (const auto& gap : pathData.gapInfos) {
+                if (gap.start < block.start + block.blockLen &&
+                    gap.start + gap.length > block.start) return true;
+            }
+            return false;
+        };
+
         // Terminal blocks
-        uint64_t terminalEnd = (pathSize > userInput.terminalLimit)
-                                ? (pathSize - userInput.terminalLimit) : 0;
         std::string labels;
         for (const auto& block : pathData.terminalBlocks) {
-            uint64_t blockEnd = block.start + block.blockLen;
-
-            bool isScaffoldTerminal = block.start < userInput.terminalLimit ||
-                                      blockEnd > terminalEnd;
-            const char* blockType = isScaffoldTerminal ? "scaffold" : "contig";
-
-            // scaffold-terminal only, unless --manual-curation
-            if (isScaffoldTerminal || userInput.manualCuration) {
-                writeBlockRow(terminalBlocksFile, header, block, pathSize, blockType);
-            }
+            writeBlockRow(terminalBlocksFile, header, block, pathSize,
+                          spansGap(block) ? "gapped" : "scaffold");
 
             // longest block only
             if (block.isLongest) {
@@ -797,7 +795,8 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
         // Interstitial blocks
         if (userInput.outITS) {
             for (const auto& block : pathData.interstitialBlocks) {
-                writeBlockRow(interstitialBlocksFile, header, block, pathSize);
+                writeBlockRow(interstitialBlocksFile, header, block, pathSize,
+                              spansGap(block) ? "gapped" : "contig");
             }
         }
 
@@ -1017,6 +1016,8 @@ void Teloscope::computeSummaryCounts() {
             case ScaffoldType::GAPPED_NONE:           totalGappedNone++; break;
             case ScaffoldType::DISCORDANT:            totalDiscordant++; break;
             case ScaffoldType::GAPPED_DISCORDANT:     totalGappedDiscordant++; break;
+            case ScaffoldType::BALANCED:              totalBalanced++; break;
+            case ScaffoldType::GAPPED_BALANCED:       totalGappedBalanced++; break;
         }
 
         // contig lengths = runs between gaps
@@ -1096,4 +1097,7 @@ void Teloscope::printSummary(std::ofstream& reportFile) {
 
     out("Discordant:\t", totalDiscordant, "\n");
     out("Gapped discordant:\t", totalGappedDiscordant, "\n");
+
+    out("Balanced:\t", totalBalanced, "\n");
+    out("Gapped balanced:\t", totalGappedBalanced, "\n");
 }

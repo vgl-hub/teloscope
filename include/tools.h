@@ -14,7 +14,8 @@ enum class ScaffoldType : uint8_t {
     MISASSEMBLY, GAPPED_MISASSEMBLY,
     INCOMPLETE, GAPPED_INCOMPLETE,
     NONE, GAPPED_NONE,
-    DISCORDANT, GAPPED_DISCORDANT
+    DISCORDANT, GAPPED_DISCORDANT,
+    BALANCED, GAPPED_BALANCED
 };
 
 const char* scaffoldTypeToString(ScaffoldType type);

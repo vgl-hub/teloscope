@@ -41,5 +41,7 @@ bool ReadTelomereFilter::matches(std::string sequence) {
     unmaskSequence(sequence);
 
     SegmentData segmentData = teloscope->scanSegment(sequence, 0, true);
+    teloscope->getTeloBlocks(segmentData.allMatches, std::vector<GapInfo>{}, sequence.size(),
+                             segmentData.terminalBlocks, segmentData.interstitialBlocks, true);
     return !segmentData.terminalBlocks.empty();
 }

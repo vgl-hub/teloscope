@@ -15,6 +15,8 @@ const char* scaffoldTypeToString(ScaffoldType type) {
         case ScaffoldType::GAPPED_INCOMPLETE:     return "gapped_incomplete";
         case ScaffoldType::NONE:                  return "none";
         case ScaffoldType::GAPPED_NONE:           return "gapped_none";
+        case ScaffoldType::BALANCED:              return "balanced";
+        case ScaffoldType::GAPPED_BALANCED:       return "gapped_balanced";
         case ScaffoldType::DISCORDANT:            return "discordant";
         case ScaffoldType::GAPPED_DISCORDANT:     return "gapped_discordant";
         default:                                  return "unknown";

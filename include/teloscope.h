@@ -115,7 +115,8 @@ struct TelomereBlock {
     uint32_t revNonCanCount = 0;
     bool hasValidOr = true;
     bool isLongest = false;
-    char blockLabel = '\0'; // 'p', 'q', 'b' (balanced)
+    char blockLabel = '\0'; // arm: 'p' start side, 'q' end side
+    char strandLabel = '\0'; // strand: 'p' forward, 'q' reverse, 'b' balanced
 };
 
 struct WindowData {
@@ -163,6 +164,7 @@ struct PathData {
     std::vector<TelomereBlock> interstitialBlocks;
     std::vector<MatchSeqInfo> canonicalMatches;
     std::vector<MatchSeqInfo> nonCanonicalMatches;
+    std::vector<MatchInfo> allMatches;
     uint64_t canonicalCounts = 0;
     std::string terminalLabel;
     ScaffoldType scaffoldType = ScaffoldType::NONE;
@@ -201,6 +203,8 @@ class Teloscope {
     uint32_t totalGappedNone = 0;
     uint32_t totalDiscordant = 0;
     uint32_t totalGappedDiscordant = 0;
+    uint32_t totalBalanced = 0;
+    uint32_t totalGappedBalanced = 0;
 
     inline float getShannonEntropy(const uint32_t nucleotideCounts[4], uint32_t windowSize) {
         float entropy = 0.0;
@@ -280,21 +284,16 @@ public:
         });
     }
 
-    uint64_t getTerminalBlocks(
+    void getTeloBlocks(
         const std::vector<MatchInfo>& matches,
-        std::vector<TelomereBlock>& outBlocks,
-        uint64_t segmentSize, uint64_t absPos, bool fromStart, bool isForward);
-
-    void getInterstitialBlocks(
-        const std::vector<MatchInfo>& allMatches,
-        std::vector<TelomereBlock>& outBlocks,
-        uint64_t fwdBoundary, uint64_t revBoundary);
+        const std::vector<GapInfo>& gapInfos, uint64_t spanSize,
+        std::vector<TelomereBlock>& terminalBlocks,
+        std::vector<TelomereBlock>& interstitialBlocks,
+        bool tipsOnly);
 
     void labelTerminalBlocks(std::vector<TelomereBlock>& blocks, uint16_t gaps,
                         std::string& terminalLabel, ScaffoldType& scaffoldType,
                         uint64_t pathSize, uint32_t terminalLimit);
-    
-    std::string getChrType(const std::string& labels, uint16_t gaps);
     
     void writeBEDFile(std::ofstream& windowDensityFile,
                     std::ofstream& windowCanonicalRatioFile,
