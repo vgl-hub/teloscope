@@ -2,8 +2,8 @@ testFiles/discordant.fa -f testFiles/discordant.fa -t 3000
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	granular
-1	chr_discordant	1	p	0	discordant	P*
+pos	header	telomeres	labels	gaps	type	anomaly	granular
+1	chr_discordant	1	q	0	incomplete	discordant_q	Q*
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -20,17 +20,20 @@ Max length:	600
 
 +++ Chromosome Telomere Counts+++
 Two telomeres:	0
-One telomere:	0
+One telomere:	1
 Zero telomeres:	0
 
 +++ Chromosome Telomere/Gap Completeness+++
 T2T:	0
 Gapped T2T:	0
-Misassembled:	0
-Gapped misassembled:	0
-Incomplete:	0
+Incomplete:	1
 Gapped incomplete:	0
 No telomeres:	0
 Gapped no telomeres:	0
-Discordant:	1
-Gapped discordant:	0
+
++++ Scaffold Anomalies +++
+Scaffolds flagged:	1
+Scaffolds clean:	0
+Discordant arms:	1
+Balanced arms:	0
+Extra terminal blocks:	0

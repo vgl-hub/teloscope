@@ -40,11 +40,13 @@ struct UserInputTeloscope : UserInput {
     uint8_t editDistance = 1;
     uint8_t kmerLen = 21;
 
-    unsigned short int maxMatchDist = 50;
-    unsigned short int minBlockLen = 300;
+    uint32_t maxMatchDist = 50;
+    uint32_t minBlockLen = 300;
     bool minBlockLenSet = false;
-    unsigned short int maxBlockDist = 500;
-    unsigned short int minBlockCounts = 2;
+    uint32_t maxBlockDist = 500;
+    uint32_t minBlockCounts = 2;
+    uint32_t minITSLen = 100;
+    uint32_t terminalTolerance = 2000;
     float minBlockDensity = 0.5f;
 
     bool outFasta = false;

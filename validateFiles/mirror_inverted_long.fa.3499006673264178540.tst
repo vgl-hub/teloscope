@@ -2,35 +2,41 @@ testFiles/mirror_inverted_long.fa -f testFiles/mirror_inverted_long.fa -t 1000 -
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	granular	its	canonical	windows
-1	chr_mirror_inv_long	0	none	0	none		2	199	6
+pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
+1	chr_mirror_inv_long	2	pq	0	t2t	discordant_p,discordant_q	P*Q*	0	200	6
 
 +++ Assembly Summary Report +++
 Total paths:	1
 Total gaps:	0
 Scaffold N50:	5200
 Contig N50:	5200
-Total telomeres:	0
-Total ITS blocks:	2
-Total canonical matches:	199
+Total telomeres:	2
+Total ITS blocks:	0
+Total canonical matches:	200
 Total windows analyzed:	6
 
 +++ Telomere Statistics +++
-No telomeres found for statistics.
+Mean length:	600
+Median length:	600
+Min length:	600
+Max length:	600
 
 +++ Chromosome Telomere Counts+++
-Two telomeres:	0
+Two telomeres:	1
 One telomere:	0
-Zero telomeres:	1
+Zero telomeres:	0
 
 +++ Chromosome Telomere/Gap Completeness+++
-T2T:	0
+T2T:	1
 Gapped T2T:	0
-Misassembled:	0
-Gapped misassembled:	0
 Incomplete:	0
 Gapped incomplete:	0
-No telomeres:	1
+No telomeres:	0
 Gapped no telomeres:	0
-Discordant:	0
-Gapped discordant:	0
+
++++ Scaffold Anomalies +++
+Scaffolds flagged:	1
+Scaffolds clean:	0
+Discordant arms:	2
+Balanced arms:	0
+Extra terminal blocks:	0

@@ -51,6 +51,8 @@ COLORS = {
     "Gapped Misassembly":  "#F2D580",
     "Discordant":          "#D7191C",
     "Gapped Discordant":   "#EB8C8D",
+    "Balanced":            "#1B9E77",
+    "Gapped Balanced":     "#8DD3C7",
     "No telomeres":        "#762A83",
     "Gapped No telomeres": "#BB95C1",
     # Arm / track colors
@@ -82,6 +84,8 @@ FLAGGED_SCAFFOLD_CATEGORIES = (
     "Gapped Misassembly",
     "Discordant",
     "Gapped Discordant",
+    "Balanced",
+    "Gapped Balanced",
 )
 
 FIGURE_TITLE_SIZE = 9.3
@@ -178,8 +182,9 @@ def find_files(directory):
 def parse_terminal_bed(path):
     """
     Parse *_terminal_telomeres.bed -> dict[chrom -> list of block dicts].
-    v0.1.6 BED4+ columns: chrom start end label fwdCan revCan fwdNonCan
-    revNonCan chromSize [blockType]. Legacy length/marginal-count rows are accepted.
+    v0.1.6 columns: chrom start end length strand fwd rev canonical nonCanonical
+    chromSize blockType arm gapStatus fwdCan revCan fwdNonCan revNonCan. Columns 1
+    to 11 are the v0.1.5 layout; the 10-column interim schema is also accepted.
     """
     blocks = defaultdict(list)
     malformed = 0
@@ -216,6 +221,7 @@ def parse_terminal_bed(path):
                     noncan = fwd_noncan + rev_noncan
                     path_size = int(parts[8]) if parts[8] else 0
                     terminality = parts[9] if len(parts) > 9 else ""
+                    arm = gap_status = ""
                 else:
                     length = int(parts[3])
                     label = parts[4]
@@ -225,7 +231,16 @@ def parse_terminal_bed(path):
                     noncan = int(parts[8])
                     path_size = int(parts[9]) if parts[9] else 0
                     terminality = parts[10] if len(parts) > 10 else ""
-                    fwd_can = rev_can = fwd_noncan = rev_noncan = None
+                    if len(parts) > 16:
+                        arm = parts[11]
+                        gap_status = parts[12]
+                        fwd_can = int(parts[13])
+                        rev_can = int(parts[14])
+                        fwd_noncan = int(parts[15])
+                        rev_noncan = int(parts[16])
+                    else:
+                        arm = gap_status = ""
+                        fwd_can = rev_can = fwd_noncan = rev_noncan = None
             except ValueError as exc:
                 malformed += 1
                 if malformed <= 3:
@@ -254,6 +269,8 @@ def parse_terminal_bed(path):
                 "revNonCan": rev_noncan,
                 "pathSize": path_size,
                 "term":     terminality,
+                "arm":      arm,
+                "gap":      gap_status,
             })
     if malformed:
         suffix = " (first 3 shown above)" if malformed > 3 else ""
@@ -388,6 +405,23 @@ def parse_bedgraph(path):
     return data
 
 
+_ANOMALY_OF = {
+    "discordant_p": "Discordant",
+    "discordant_q": "Discordant",
+    "balanced_p":   "Balanced",
+    "balanced_q":   "Balanced",
+    "misassembly":  "Misassembly",
+}
+
+_GAPPED_OF = {
+    "T2T": "Gapped T2T",
+    "Incomplete": "Gapped Incomplete",
+    "Misassembly": "Gapped Misassembly",
+    "Discordant": "Gapped Discordant",
+    "Balanced": "Gapped Balanced",
+    "No telomeres": "Gapped No telomeres",
+}
+
 _TYPE_MAP = OrderedDict([
     ("t2t",                "T2T"),
     ("gapped_t2t",         "Gapped T2T"),
@@ -398,6 +432,8 @@ _TYPE_MAP = OrderedDict([
     ("gapped_missassembly","Gapped Misassembly"),
     ("discordant",         "Discordant"),
     ("gapped_discordant",  "Gapped Discordant"),
+    ("balanced",           "Balanced"),
+    ("gapped_balanced",    "Gapped Balanced"),
     ("none",               "No telomeres"),
     ("gapped_none",        "Gapped No telomeres"),
 ])
@@ -418,12 +454,16 @@ def parse_report(path):
         ("Gapped Misassembly",  []),
         ("Discordant",          []),
         ("Gapped Discordant",   []),
+        ("Balanced",            []),
+        ("Gapped Balanced",     []),
         ("No telomeres",        []),
         ("Gapped No telomeres", []),
     ])
     header_idx = None
     type_col = None
     header_col = None
+    gaps_col = None
+    anomaly_col = None
     parsed_rows = 0
     with open(path) as fh:
         for lineno, line in enumerate(fh, start=1):
@@ -438,17 +478,38 @@ def parse_report(path):
                     try:
                         header_col = parts.index("header")
                         type_col = parts.index("type")
+                        gaps_col = parts.index("gaps") if "gaps" in parts else None
+                        anomaly_col = parts.index("anomaly") if "anomaly" in parts else None
                     except ValueError:
                         _warn(f"{path}:{lineno}: report header is missing required 'header'/'type' columns; skipping section.")
                         header_col = None
                         type_col = None
+                        gaps_col = None
+                        anomaly_col = None
                         continue
                     header_idx = 0
                 continue
             if type_col is None or header_col is None or len(parts) <= max(header_col, type_col):
                 continue
             chrom = parts[header_col]
-            cat = _TYPE_MAP.get(parts[type_col].lower())
+            raw_type = parts[type_col].lower()
+            cat = _TYPE_MAP.get(raw_type)
+            # v0.1.6 splits gappedness out of the type, so re-attach it from the
+            # gaps column; older reports already carry it in the type string.
+            if cat and gaps_col is not None and not raw_type.startswith("gapped_"):
+                if len(parts) > gaps_col and parts[gaps_col].isdigit() and int(parts[gaps_col]) > 0:
+                    cat = _GAPPED_OF.get(cat, cat)
+            gapped = (gaps_col is not None and len(parts) > gaps_col
+                      and parts[gaps_col].isdigit() and int(parts[gaps_col]) > 0)
+            if anomaly_col is not None and len(parts) > anomaly_col:
+                for token in parts[anomaly_col].split(","):
+                    flag = _ANOMALY_OF.get(token.strip())
+                    if not flag:
+                        continue
+                    if gapped:
+                        flag = _GAPPED_OF.get(flag, flag)
+                    if flag in cats and chrom not in cats[flag]:
+                        cats[flag].append(chrom)
             if cat and cat in cats:
                 cats[cat].append(chrom)
                 parsed_rows += 1
@@ -1246,6 +1307,7 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
         Patch(facecolor=COLORS["Incomplete"],   label="Incomplete"),
         Patch(facecolor=COLORS["Misassembly"],  label="Misassembly"),
         Patch(facecolor=COLORS["Discordant"],   label="Discordant"),
+        Patch(facecolor=COLORS["Balanced"],     label="Balanced"),
         Patch(facecolor=COLORS["No telomeres"], label="No telomeres"),
     ]
 
@@ -1950,7 +2012,8 @@ def main():
     chrom_sizes = get_chrom_sizes(blocks, density_data, canonical_data, strand_data)
 
     classifications = parse_report(files["report"]) if "report" in files else OrderedDict()
-    total_chroms = sum(len(v) for v in classifications.values())
+    # a flagged scaffold appears under its completeness class and its anomaly, so count it once
+    total_chroms = len({chrom for v in classifications.values() for chrom in v})
     total_telo = sum(len(blist) for blist in blocks.values())
     cat_summary = ", ".join(f"{k}={len(v)}" for k, v in classifications.items()) or "none"
     print(f"Chromosomes: {total_chroms}  |  Telomere blocks: {total_telo}  |  "

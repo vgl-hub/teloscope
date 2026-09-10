@@ -109,9 +109,9 @@ T2T_DEFAULT=$(build/bin/teloscope -f testFiles/t2t.fa 2>/dev/null)
 T2T_R=$(build/bin/teloscope -f testFiles/t2t.fa -r -o "$TMPDIR" 2>/dev/null)
 T2T_M=$(build/bin/teloscope -f testFiles/t2t.fa -m -o "$TMPDIR" 2>/dev/null)
 
-check_output_contains "t2t default: type=t2t" "t2t	PQ" "$T2T_DEFAULT"
-check_output_contains "t2t -r: type=t2t" "t2t	PQ" "$T2T_R"
-check_output_contains "t2t -m: type=t2t" "t2t	PQ" "$T2T_M"
+check_output_contains "t2t default: type=t2t" "t2t	.	PQ" "$T2T_DEFAULT"
+check_output_contains "t2t -r: type=t2t" "t2t	.	PQ" "$T2T_R"
+check_output_contains "t2t -m: type=t2t" "t2t	.	PQ" "$T2T_M"
 
 # =====================================================
 # Classification tests on synthetic data
@@ -119,50 +119,51 @@ check_output_contains "t2t -m: type=t2t" "t2t	PQ" "$T2T_M"
 
 # All 10 scaffold types
 OUT=$(build/bin/teloscope -f testFiles/t2t.fa 2>/dev/null)
-check_output_contains "t2t classification" "t2t	PQ" "$OUT"
+check_output_contains "t2t classification" "t2t	.	PQ" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/incomplete_p.fa 2>/dev/null)
-check_output_contains "incomplete_p classification" "incomplete	P" "$OUT"
+check_output_contains "incomplete_p classification" "incomplete	.	P" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/incomplete_q.fa 2>/dev/null)
-check_output_contains "incomplete_q classification" "incomplete	Q" "$OUT"
+check_output_contains "incomplete_q classification" "incomplete	.	Q" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/no_telo.fa 2>/dev/null)
 check_output_contains "no_telo classification" "none" "$OUT"
 
 # misassembly detection: pin -d 200 so the two same-end blocks stay separate (default -d 500 merges them)
 OUT=$(build/bin/teloscope -f testFiles/misassembly.fa -d 200 2>/dev/null)
-check_output_contains "misassembly Pp classification" "misassembly	Pp" "$OUT"
+check_output_contains "misassembly Pp classification" "incomplete	misassembly	Pp" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/misassembly_qq.fa -d 200 2>/dev/null)
-check_output_contains "misassembly Qq classification" "misassembly	Qq" "$OUT"
+check_output_contains "misassembly Qq classification" "incomplete	misassembly	qQ" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/discordant.fa 2>/dev/null)
-check_output_contains "discordant classification" "discordant	P*" "$OUT"
+check_output_contains "discordant classification" "incomplete	discordant_q	Q*" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/gapped_t2t.fa 2>/dev/null)
-check_output_contains "gapped_t2t classification" "gapped_t2t	PQ" "$OUT"
+check_output_contains "gapped_t2t classification" "t2t	.	PQ" "$OUT"
 
 # misassembly detection: pin -d 200 so the two same-end blocks stay separate (default -d 500 merges them)
 OUT=$(build/bin/teloscope -f testFiles/gapped_misassembly.fa -d 200 2>/dev/null)
-check_output_contains "gapped_misassembly classification" "gapped_misassembly	Pp" "$OUT"
+check_output_contains "gapped_misassembly classification" "incomplete	misassembly	Pp" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/gapped_incomplete.fa 2>/dev/null)
-check_output_contains "gapped_incomplete classification" "gapped_incomplete	P" "$OUT"
+check_output_contains "gapped_incomplete classification" "incomplete	.	P" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/gapped_none.fa 2>/dev/null)
 check_output_contains "gapped_none classification" "gapped_none" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/gapped_discordant.fa 2>/dev/null)
-check_output_contains "gapped_discordant classification" "gapped_discordant	P*" "$OUT"
+check_output_contains "gapped_discordant classification" "incomplete	discordant_q	Q*" "$OUT"
 
 # =====================================================
 # Spelling consistency
 # =====================================================
 
 OUT=$(build/bin/teloscope -f testFiles/t2t.fa 2>/dev/null)
-check_output_contains "summary has Misassembled" "Misassembled:" "$OUT"
-check_output_contains "summary has Gapped misassembled" "Gapped misassembled:" "$OUT"
+check_output_contains "summary has anomaly section" "+++ Scaffold Anomalies +++" "$OUT"
+check_output_contains "summary counts flagged scaffolds" "Scaffolds flagged:" "$OUT"
+check_output_contains "summary counts extra blocks" "Extra terminal blocks:" "$OUT"
 check_output_not_contains "no Missassembled typo" "Missassembled:" "$OUT"
 
 # =====================================================
@@ -179,14 +180,14 @@ check_output_contains "-t 100 misses telomeres" "none" "$OUT"
 
 # -y flag: density threshold controls block survival
 OUT=$(build/bin/teloscope -f testFiles/density_edge.fa -y 0.8 2>/dev/null)
-check_output_contains "-y 0.8 kills 50% density block" "incomplete	Q" "$OUT"
+check_output_contains "-y 0.8 kills 50% density block" "incomplete	.	Q" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/density_edge.fa -y 0.3 2>/dev/null)
-check_output_contains "-y 0.3 keeps 50% density block" "t2t	PQ" "$OUT"
+check_output_contains "-y 0.3 keeps 50% density block" "t2t	.	PQ" "$OUT"
 
 # -k flag: small merge distance prevents block formation
-OUT=$(build/bin/teloscope -f testFiles/t2t.fa -k 1 2>/dev/null)
-check_output_contains "-k 1 prevents block formation" "none" "$OUT"
+OUT=$(build/bin/teloscope -f testFiles/density_edge.fa -k 1 2>/dev/null)
+check_output_contains "-k 1 stops chaining across spaced matches" "incomplete" "$OUT"
 
 # Multi-contig counts
 OUT=$(build/bin/teloscope -f testFiles/multi.fa 2>/dev/null)

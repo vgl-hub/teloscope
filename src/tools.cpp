@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
+#include <utility>
 
 #include "tools.h"
 #include "functions.h"
@@ -7,18 +8,31 @@
 
 const char* scaffoldTypeToString(ScaffoldType type) {
     switch (type) {
-        case ScaffoldType::T2T:                   return "t2t";
-        case ScaffoldType::GAPPED_T2T:            return "gapped_t2t";
-        case ScaffoldType::MISASSEMBLY:          return "misassembly";
-        case ScaffoldType::GAPPED_MISASSEMBLY:   return "gapped_misassembly";
-        case ScaffoldType::INCOMPLETE:            return "incomplete";
-        case ScaffoldType::GAPPED_INCOMPLETE:     return "gapped_incomplete";
-        case ScaffoldType::NONE:                  return "none";
-        case ScaffoldType::GAPPED_NONE:           return "gapped_none";
-        case ScaffoldType::DISCORDANT:            return "discordant";
-        case ScaffoldType::GAPPED_DISCORDANT:     return "gapped_discordant";
-        default:                                  return "unknown";
+        case ScaffoldType::T2T:        return "t2t";
+        case ScaffoldType::INCOMPLETE: return "incomplete";
+        case ScaffoldType::NONE:       return "none";
+        default:                       return "unknown";
     }
+}
+
+
+// fixed order, so the column is deterministic for goldens and for sorting
+std::string anomalyFlagsToString(uint8_t flags) {
+    if (flags == 0) return ".";
+    static const std::pair<uint8_t, const char*> names[] = {
+        {ANOMALY_DISCORDANT_P, "discordant_p"},
+        {ANOMALY_DISCORDANT_Q, "discordant_q"},
+        {ANOMALY_BALANCED_P,  "balanced_p"},
+        {ANOMALY_BALANCED_Q,  "balanced_q"},
+        {ANOMALY_MISASSEMBLY,  "misassembly"}
+    };
+    std::string out;
+    for (const auto& entry : names) {
+        if (!(flags & entry.first)) continue;
+        if (!out.empty()) out += ',';
+        out += entry.second;
+    }
+    return out;
 }
 
 

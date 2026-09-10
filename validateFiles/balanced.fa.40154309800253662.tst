@@ -2,35 +2,38 @@ testFiles/balanced.fa
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	granular
-1	chr_balanced	2	pq	0	t2t	PQ
+pos	header	telomeres	labels	gaps	type	anomaly	granular
+1	chr_balanced	1	p	0	incomplete	balanced_p	P~
 
 +++ Assembly Summary Report +++
 Total paths:	1
 Total gaps:	0
 Scaffold N50:	3600
 Contig N50:	3600
-Total telomeres:	2
+Total telomeres:	1
 
 +++ Telomere Statistics +++
-Mean length:	1194
-Median length:	1194
-Min length:	1194
-Max length:	1194
+Mean length:	1200
+Median length:	1200
+Min length:	1200
+Max length:	1200
 
 +++ Chromosome Telomere Counts+++
-Two telomeres:	1
-One telomere:	0
+Two telomeres:	0
+One telomere:	1
 Zero telomeres:	0
 
 +++ Chromosome Telomere/Gap Completeness+++
-T2T:	1
+T2T:	0
 Gapped T2T:	0
-Misassembled:	0
-Gapped misassembled:	0
-Incomplete:	0
+Incomplete:	1
 Gapped incomplete:	0
 No telomeres:	0
 Gapped no telomeres:	0
-Discordant:	0
-Gapped discordant:	0
+
++++ Scaffold Anomalies +++
+Scaffolds flagged:	1
+Scaffolds clean:	0
+Discordant arms:	0
+Balanced arms:	1
+Extra terminal blocks:	0

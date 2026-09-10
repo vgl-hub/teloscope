@@ -2,8 +2,8 @@ testFiles/t2t.fa -f testFiles/t2t.fa -l 1000
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	granular
-1	chr_t2t	0	none	0	none	
+pos	header	telomeres	labels	gaps	type	anomaly	granular
+1	chr_t2t	0	none	0	none	.	
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -23,11 +23,14 @@ Zero telomeres:	1
 +++ Chromosome Telomere/Gap Completeness+++
 T2T:	0
 Gapped T2T:	0
-Misassembled:	0
-Gapped misassembled:	0
 Incomplete:	0
 Gapped incomplete:	0
 No telomeres:	1
 Gapped no telomeres:	0
-Discordant:	0
-Gapped discordant:	0
+
++++ Scaffold Anomalies +++
+Scaffolds flagged:	0
+Scaffolds clean:	1
+Discordant arms:	0
+Balanced arms:	0
+Extra terminal blocks:	0

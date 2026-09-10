@@ -15,11 +15,11 @@ Teloscope has two input modes:
 2. Expand the requested repeat patterns, including IUPAC codes and allowed edit-distance variants.
 3. Add reverse complements of every pattern.
 4. Build a multi-pattern search structure and scan each sequence.
-5. Merge nearby matches into repeat groups, then merge nearby groups into telomere blocks.
-6. Filter blocks by minimum length and minimum repeat density.
-7. Label each surviving terminal block `p` or `q` from scan direction; label interstitial blocks `p`, `q`, or `b` from strand composition.
-8. Mark blocks as scaffold-terminal or contig-terminal from `-t/--terminal-limit`.
-9. Classify the sequence as `t2t`, `incomplete`, `misassembly`, `discordant`, or `none`.
+5. Chain nearby matches into seeds, and build per-base repeat coverage from them.
+6. Treat a seed as terminal only when it starts within `--terminal-tolerance` called bases of a sequence end, then trim it inward to where the coverage score peaks, bounded by `-t/--terminal-limit`. Score everything else as interstitial, with variant matches counted.
+7. Filter blocks by minimum length and minimum repeat density.
+8. Label every block with its strand composition and with the arm it sits on.
+9. Classify the sequence as `t2t`, `incomplete`, or `none`, and separately record any orientation anomalies.
 10. Write BED, TSV, and optional BEDgraph outputs.
 
 ## FASTA scanning modes

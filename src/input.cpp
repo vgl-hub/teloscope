@@ -841,6 +841,8 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
     unmaskSequence(sequence);
 
     SegmentData segmentData = scanSegment(sequence, 0, true); // tipsOnly = true for GFA segments
+    getTeloBlocks(segmentData.allMatches, std::vector<GapInfo>{}, sequence.size(),
+                  segmentData.terminalBlocks, segmentData.interstitialBlocks, true);
 
     std::vector<PendingTelomereAnnotation> annotations;
 
@@ -891,6 +893,8 @@ bool Teloscope::walkSegmentForPath(InSegment* segment, InSequences& inSequences,
     unmaskSequence(sequence);
 
     SegmentData segmentData = scanSegment(sequence, 0, true);
+    getTeloBlocks(segmentData.allMatches, std::vector<GapInfo>{}, sequence.size(),
+                  segmentData.terminalBlocks, segmentData.interstitialBlocks, true);
 
     // Physical end holding the path-terminal tip (start when isFirst == (orient=='+')).
     bool scanStart = (isFirst == (pathOrient == '+'));
@@ -984,17 +988,11 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
                     std::make_move_iterator(segmentData.windows.end())
                 );
 
-                // Collect blocks
-                pathData.terminalBlocks.insert(
-                    pathData.terminalBlocks.end(),
-                    std::make_move_iterator(segmentData.terminalBlocks.begin()),
-                    std::make_move_iterator(segmentData.terminalBlocks.end())
-                );
-
-                pathData.interstitialBlocks.insert(
-                    pathData.interstitialBlocks.end(),
-                    std::make_move_iterator(segmentData.interstitialBlocks.begin()),
-                    std::make_move_iterator(segmentData.interstitialBlocks.end())
+                // Collect matches, blocks are built once per path
+                pathData.allMatches.insert(
+                    pathData.allMatches.end(),
+                    segmentData.allMatches.begin(),
+                    segmentData.allMatches.end()
                 );
 
                 // Collect matches
@@ -1031,9 +1029,14 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
         
     }
 
+    getTeloBlocks(pathData.allMatches, pathData.gapInfos, pathData.pathSize,
+                  pathData.terminalBlocks, pathData.interstitialBlocks,
+                  userInput.ultraFastMode);
+    std::vector<MatchInfo>().swap(pathData.allMatches);
+
     // Filter blocks
     labelTerminalBlocks(pathData.terminalBlocks, static_cast<uint16_t>(pathData.gapInfos.size()),
-                        pathData.terminalLabel, pathData.scaffoldType,
+                        pathData.terminalLabel, pathData.scaffoldType, pathData.anomalyFlags,
                         pathData.pathSize, userInput.terminalLimit);
     threadLog.add("\tCompleted walking path:\t" + path->getHeader());
 

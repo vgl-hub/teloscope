@@ -8,49 +8,65 @@ Teloscope classifies each sequence from scaffold-terminal telomere blocks only. 
 
 ## Output classes
 
-| Type | Gapped variant | Meaning |
-| --- | --- | --- |
-| `t2t` | `gapped_t2t` | one `p` block at the left end and one `q` block at the right end |
-| `incomplete` | `gapped_incomplete` | only one terminal arm is present |
-| `misassembly` | `gapped_misassembly` | terminal arms exist but the arrangement is wrong, or the same arm appears twice |
-| `discordant` | `gapped_discordant` | a terminal block is present but it sits closer to the opposite end of the sequence than the end it was scanned from |
-| `none` | `gapped_none` | no scaffold-terminal telomere block was detected |
+How many telomeres a sequence has, and whether they are plausible, are two separate
+questions, so they live in two separate columns. An anomaly never overwrites the count.
 
-The `gapped_` prefix is added when the sequence contains assembly gaps.
+The `type` column answers completeness only:
+
+| Type | Meaning |
+| --- | --- |
+| `t2t` | one arm at each end |
+| `incomplete` | one terminal arm |
+| `none` | no scaffold-terminal telomere block was detected |
+
+The `anomaly` column answers plausibility. It reads `.` when there is nothing to report,
+or one or more of the following, comma separated:
+
+| Anomaly | Meaning |
+| --- | --- |
+| `discordant_p`, `discordant_q` | that arm points the wrong way for the end it sits at, which is an inverted terminal repeat or a fusion, not an ordinary chromosome end |
+| `balanced_p`, `balanced_q` | that arm carries both orientations in similar proportion, which is what a fusion or a collapsed repeat looks like |
+| `misassembly` | a further terminal block sits beside the two longest arms, so one end carries more than one array |
+
+Neither anomaly is expected at an ordinary chromosome end. Both do occur in real biology,
+`discordant` at genuine head-to-head fusions and in inverted terminal repeats, `balanced`
+in ALT telomeres, hairpin telomeres and subtelomeric variant zones, so they are flagged
+for a curator to judge rather than asserted as errors.
+
+Gappedness is not part of either column. The `gaps` column already carries it, and the
+assembly summary splits each completeness class on it.
 
 ## Decision order
 
-Teloscope applies the rules in this order:
-
-1. No scaffold-terminal blocks: `none`
-2. Any longest terminal arm with the wrong positional orientation: `discordant`
-3. One `p` block left of one `q` block: `t2t`
-4. Both arms present but reversed: `misassembly`
-5. One arm present, plus a second scaffold-terminal block of the same arm: `misassembly`
-6. One terminal arm only: `incomplete`
-
-Rule 5 only fires when the opposite arm is absent. When both arms are present, rule 3 or 4 already returns a result first, so a duplicated arm next to a normal opposite arm is not flagged as `misassembly`.
+The two columns are computed independently. Completeness is three cases: both longest
+arms present is `t2t`, exactly one is `incomplete`, neither is `none`. The anomaly set is
+then accumulated over the same blocks: for each longest arm, both orientations mixed sets
+`balanced_`, otherwise a strand disagreeing with the arm sets `discordant_`; and any
+terminal block that is not one of the two longest arms sets `misassembly`.
 
 ## Block labels
 
-Terminal blocks are labeled from the end they were scanned from, not from strand balance:
+Every block carries two labels, in two separate columns of both BED files.
 
-- `p`: found scanning from the start of the sequence
-- `q`: found scanning from the end of the sequence
+Column 5, `label`, is the strand composition, and it means the same thing in both files:
 
-Interstitial blocks are labeled from strand balance instead:
-
-- `p`: forward-strand dominant
-- `q`: reverse-strand dominant
+- `p`: forward-strand dominant, more than 66.6% of matches
+- `q`: reverse-strand dominant, less than 33.3%
 - `b`: balanced or mixed
 
-The `granular` column in `*_report.tsv` shows the block pattern for each sequence. It includes every terminal block along the sequence, not just the two at the scaffold ends, so a gapped scaffold with contig-internal terminal blocks can produce a longer string than the examples below.
+Column 12, `arm`, is the position:
+
+- `p`: the block sits nearer the start of the called sequence
+- `q`: the block sits nearer the end
+
+For an ordinary telomere the two agree, since a p arm carries the forward motif and a q arm the reverse. They disagree on an inverted terminal repeat, which is what the scaffold type `discordant` reports.
+
+The `granular` column in `*_report.tsv` shows the arm pattern for each sequence. An arm may report more than one block, which is how a duplicated arm is detected, so the column holds one letter per scaffold-terminal block. A block whose orientation is mixed is marked `~`, and one whose strand disagrees with its arm is marked `*`. The two are different findings and are kept apart.
 
 Examples:
 
-- `PQ`: one dominant `p` block and one dominant `q` block
-- `P`: one dominant `p` block only
-- `Pq`: one large `p` block and one smaller `q` block
-- `P*`: a `p` block in a discordant position
+- `PQ`: a p arm and a q arm
+- `P`: a p arm only
+- `P*`: a p arm whose strand composition disagrees with its position
 
-Uppercase marks the longest block for that arm. `*` marks positional discordance.
+Uppercase marks the longest block for that arm. `*` marks arm and strand disagreement.
