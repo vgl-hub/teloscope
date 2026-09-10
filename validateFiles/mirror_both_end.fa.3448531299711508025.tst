@@ -3,7 +3,7 @@ embedded
 
 +++ Path Summary Report +++
 pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	chr_mirror_both_end	1	q	0	incomplete	discordant_q,misassembly	Q*q
+1	chr_mirror_both_end	1	q	0	incomplete	misassembly	q*Q
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -34,6 +34,6 @@ Gapped no telomeres:	0
 +++ Scaffold Anomalies +++
 Scaffolds flagged:	1
 Scaffolds clean:	0
-Discordant arms:	1
+Discordant arms:	0
 Balanced arms:	0
 Extra terminal blocks:	1

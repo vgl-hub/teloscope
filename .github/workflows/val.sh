@@ -135,7 +135,7 @@ OUT=$(build/bin/teloscope -f testFiles/misassembly.fa -d 200 2>/dev/null)
 check_output_contains "misassembly Pp classification" "incomplete	misassembly	Pp" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/misassembly_qq.fa -d 200 2>/dev/null)
-check_output_contains "misassembly Qq classification" "incomplete	misassembly	Qq" "$OUT"
+check_output_contains "misassembly Qq classification" "incomplete	misassembly	qQ" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/discordant.fa 2>/dev/null)
 check_output_contains "discordant classification" "incomplete	discordant_q	Q*" "$OUT"

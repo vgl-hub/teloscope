@@ -519,7 +519,9 @@ void Teloscope::labelTerminalBlocks(
             longest_p = &block;
             max_p_canonical_count = canonicalCount;
         }
-        else if (block.blockLabel == 'q' && canonicalCount > max_q_canonical_count) {
+        // blocks ascend by start, so first-wins takes the outermost block on the p
+        // arm. The q arm has to take the last, or a tie hands it the innermost.
+        else if (block.blockLabel == 'q' && canonicalCount >= max_q_canonical_count) {
             longest_q = &block;
             max_q_canonical_count = canonicalCount;
         }
