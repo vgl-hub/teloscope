@@ -11,13 +11,17 @@ FIELDS = ["fixture", "scaffold", "scaffold_type", "telomere_count",
 
 
 def granular_tokens(label):
-    """Split a granular label into one token per block: a letter plus an optional star."""
+    """Split a granular label into one token per block: a letter plus an optional marker.
+
+    A block is marked `*` when its strand disagrees with its arm and `~` when its
+    orientation is mixed. Both must be consumed here, or every later block shifts.
+    """
     out, i = [], 0
     while i < len(label):
         tok = label[i]
         i += 1
-        if i < len(label) and label[i] == "*":
-            tok += "*"
+        if i < len(label) and label[i] in "*~":
+            tok += label[i]
             i += 1
         out.append(tok)
     return out

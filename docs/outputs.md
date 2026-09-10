@@ -135,6 +135,7 @@ Path Summary columns in ultra-fast mode:
 - `labels`
 - `gaps`
 - `type`
+- `anomaly`
 - `granular`
 
 Full-scan mode adds:
@@ -151,6 +152,7 @@ Assembly Summary reports totals and counts for:
 - telomere length statistics
 - chromosomes with two, one, or zero telomeres
 - each scaffold class
+- flagged and clean scaffolds, and the discordant arms, balanced arms and extra terminal blocks behind them
 
 When an assembly record filter is active, the summary also reports the number of input and selected paths. `Total paths` and every other statistic describe the selected paths only.
 

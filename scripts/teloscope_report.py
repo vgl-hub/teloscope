@@ -405,6 +405,14 @@ def parse_bedgraph(path):
     return data
 
 
+_ANOMALY_OF = {
+    "discordant_p": "Discordant",
+    "discordant_q": "Discordant",
+    "balanced_p":   "Balanced",
+    "balanced_q":   "Balanced",
+    "misassembly":  "Misassembly",
+}
+
 _GAPPED_OF = {
     "T2T": "Gapped T2T",
     "Incomplete": "Gapped Incomplete",
@@ -455,6 +463,7 @@ def parse_report(path):
     type_col = None
     header_col = None
     gaps_col = None
+    anomaly_col = None
     parsed_rows = 0
     with open(path) as fh:
         for lineno, line in enumerate(fh, start=1):
@@ -470,11 +479,13 @@ def parse_report(path):
                         header_col = parts.index("header")
                         type_col = parts.index("type")
                         gaps_col = parts.index("gaps") if "gaps" in parts else None
+                        anomaly_col = parts.index("anomaly") if "anomaly" in parts else None
                     except ValueError:
                         _warn(f"{path}:{lineno}: report header is missing required 'header'/'type' columns; skipping section.")
                         header_col = None
                         type_col = None
                         gaps_col = None
+                        anomaly_col = None
                         continue
                     header_idx = 0
                 continue
@@ -488,6 +499,17 @@ def parse_report(path):
             if cat and gaps_col is not None and not raw_type.startswith("gapped_"):
                 if len(parts) > gaps_col and parts[gaps_col].isdigit() and int(parts[gaps_col]) > 0:
                     cat = _GAPPED_OF.get(cat, cat)
+            gapped = (gaps_col is not None and len(parts) > gaps_col
+                      and parts[gaps_col].isdigit() and int(parts[gaps_col]) > 0)
+            if anomaly_col is not None and len(parts) > anomaly_col:
+                for token in parts[anomaly_col].split(","):
+                    flag = _ANOMALY_OF.get(token.strip())
+                    if not flag:
+                        continue
+                    if gapped:
+                        flag = _GAPPED_OF.get(flag, flag)
+                    if flag in cats and chrom not in cats[flag]:
+                        cats[flag].append(chrom)
             if cat and cat in cats:
                 cats[cat].append(chrom)
                 parsed_rows += 1
@@ -1990,7 +2012,8 @@ def main():
     chrom_sizes = get_chrom_sizes(blocks, density_data, canonical_data, strand_data)
 
     classifications = parse_report(files["report"]) if "report" in files else OrderedDict()
-    total_chroms = sum(len(v) for v in classifications.values())
+    # a flagged scaffold appears under its completeness class and its anomaly, so count it once
+    total_chroms = len({chrom for v in classifications.values() for chrom in v})
     total_telo = sum(len(blist) for blist in blocks.values())
     cat_summary = ", ".join(f"{k}={len(v)}" for k, v in classifications.items()) or "none"
     print(f"Chromosomes: {total_chroms}  |  Telomere blocks: {total_telo}  |  "
