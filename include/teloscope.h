@@ -182,9 +182,9 @@ class Teloscope {
     uint32_t totalNWindows = 0;
     uint32_t totalTelomeres = 0;
     // bucketed on the count actually reported, so every path lands in exactly one
-    uint32_t pathsTwoTelomeres = 0;
-    uint32_t pathsOneTelomere = 0;
-    uint32_t pathsNoTelomeres = 0;
+    uint32_t totalTwoTelomeres = 0;
+    uint32_t totalOneTelomere = 0;
+    uint32_t totalZeroTelomeres = 0;
     uint32_t totalITS = 0;
     uint32_t totalCanMatches = 0;
     uint32_t totalGaps = 0;
@@ -206,10 +206,10 @@ class Teloscope {
     uint32_t totalGappedNone = 0;
 
     // plausibility, counted beside completeness rather than instead of it
-    uint32_t flaggedScaffolds = 0;
-    uint32_t armsDiscordant = 0;
-    uint32_t armsBalanced = 0;
-    uint32_t blocksExtra = 0;
+    uint32_t totalFlagged = 0;
+    uint32_t totalDiscordantArms = 0;
+    uint32_t totalBalancedArms = 0;
+    uint32_t totalMisassembly = 0;
 
     inline float getShannonEntropy(const uint32_t nucleotideCounts[4], uint32_t windowSize) {
         float entropy = 0.0;
@@ -233,7 +233,7 @@ class Teloscope {
     static constexpr uint64_t forwardLabelThreshold = 666;
     static constexpr uint64_t reverseLabelThreshold = 333;
 
-    static inline char computeBlockLabel(uint64_t forwardCount, uint64_t blockCounts) {
+    static inline char computeStrandLabel(uint64_t forwardCount, uint64_t blockCounts) {
         if (blockCounts == 0) return 'b';
         const uint64_t scaledForward = forwardCount * labelThresholdScale;
         if (scaledForward > blockCounts * forwardLabelThreshold) return 'p';

@@ -20,11 +20,11 @@ const char* scaffoldTypeToString(ScaffoldType type) {
 std::string anomalyFlagsToString(uint8_t flags) {
     if (flags == 0) return ".";
     static const std::pair<uint8_t, const char*> names[] = {
-        {ANOM_DISC_P, "discordant_p"},
-        {ANOM_DISC_Q, "discordant_q"},
-        {ANOM_BAL_P,  "balanced_p"},
-        {ANOM_BAL_Q,  "balanced_q"},
-        {ANOM_EXTRA,  "misassembly"}
+        {ANOMALY_DISCORDANT_P, "discordant_p"},
+        {ANOMALY_DISCORDANT_Q, "discordant_q"},
+        {ANOMALY_BALANCED_P,  "balanced_p"},
+        {ANOMALY_BALANCED_Q,  "balanced_q"},
+        {ANOMALY_MISASSEMBLY,  "misassembly"}
     };
     std::string out;
     for (const auto& entry : names) {

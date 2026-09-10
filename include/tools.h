@@ -17,11 +17,11 @@ enum class ScaffoldType : uint8_t {
 
 // plausibility, accumulated as a set so a scaffold can carry more than one
 enum AnomalyFlag : uint8_t {
-    ANOM_DISC_P = 1,
-    ANOM_DISC_Q = 2,
-    ANOM_BAL_P  = 4,
-    ANOM_BAL_Q  = 8,
-    ANOM_EXTRA  = 16
+    ANOMALY_DISCORDANT_P = 1,
+    ANOMALY_DISCORDANT_Q = 2,
+    ANOMALY_BALANCED_P  = 4,
+    ANOMALY_BALANCED_Q  = 8,
+    ANOMALY_MISASSEMBLY  = 16
 };
 
 const char* scaffoldTypeToString(ScaffoldType type);

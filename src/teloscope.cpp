@@ -98,7 +98,7 @@ struct Seed {
     uint64_t start;
     uint64_t end;
     uint64_t counts;
-    bool fwd;
+    bool isForward;
 };
 
 // per-base coverage, overlapping matches OR-ed instead of summed
@@ -371,7 +371,7 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
             static_cast<uint64_t>(block.fwdCanCount) + block.fwdNonCanCount;
         const uint64_t blockCounts = forwardCount +
             block.revCanCount + block.revNonCanCount;
-        block.strandLabel = computeBlockLabel(forwardCount, blockCounts);
+        block.strandLabel = computeStrandLabel(forwardCount, blockCounts);
         block.hasValidOr = (block.strandLabel == arm);
         out.push_back(block);
     };
@@ -391,7 +391,7 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
         uint64_t limit = std::min<uint64_t>(spanSize, firstBase + terminalLimit);
         // an arm stops at the junction, it does not trim on into the other array
         for (const Seed& other : seeds)
-            if (other.start >= seed.end && other.fwd != seed.fwd) {
+            if (other.start >= seed.end && other.isForward != seed.isForward) {
                 limit = std::min(limit, other.start);
                 break;
             }
@@ -428,7 +428,7 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
         uint64_t limit = (lastBase > terminalLimit) ? (lastBase - terminalLimit) : 0;
         limit = std::max(limit, pTo);
         for (auto other = seeds.rbegin(); other != seeds.rend(); ++other)
-            if (other->end <= seed->start && other->fwd != seed->fwd) {
+            if (other->end <= seed->start && other->isForward != seed->isForward) {
                 limit = std::max(limit, other->end);
                 break;
             }
@@ -477,7 +477,7 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
         const uint64_t forwardCount =
             static_cast<uint64_t>(block.fwdCanCount) + block.fwdNonCanCount;
         const uint64_t blockCounts = forwardCount + block.revCanCount + block.revNonCanCount;
-        block.strandLabel = computeBlockLabel(forwardCount, blockCounts);
+        block.strandLabel = computeStrandLabel(forwardCount, blockCounts);
         // nearer end, the same rule the terminal arms use
         block.blockLabel = (segment.first + segment.second <= firstBase + lastBase) ? 'p' : 'q';
         block.hasValidOr = (block.strandLabel == block.blockLabel);
@@ -557,18 +557,18 @@ void Teloscope::labelTerminalBlocks(
     // whether the arms are plausible, accumulated beside the count, never instead of it.
     // balanced is checked first because a mixed arm always also fails the strand test.
     if (has_P) {
-        if (longest_p->strandLabel == 'b') anomalyFlags |= ANOM_BAL_P;
-        else if (!longest_p->hasValidOr) anomalyFlags |= ANOM_DISC_P;
+        if (longest_p->strandLabel == 'b') anomalyFlags |= ANOMALY_BALANCED_P;
+        else if (!longest_p->hasValidOr) anomalyFlags |= ANOMALY_DISCORDANT_P;
     }
     if (has_Q) {
-        if (longest_q->strandLabel == 'b') anomalyFlags |= ANOM_BAL_Q;
-        else if (!longest_q->hasValidOr) anomalyFlags |= ANOM_DISC_Q;
+        if (longest_q->strandLabel == 'b') anomalyFlags |= ANOMALY_BALANCED_Q;
+        else if (!longest_q->hasValidOr) anomalyFlags |= ANOMALY_DISCORDANT_Q;
     }
 
     // a second array at an end, whichever way it faces
     for (const auto& block : blocks) {
         if (&block == longest_p || &block == longest_q) continue;
-        anomalyFlags |= ANOM_EXTRA;
+        anomalyFlags |= ANOMALY_MISASSEMBLY;
         break;
     }
 }
@@ -996,9 +996,9 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
                 << pathData.terminalLabel;
 
         totalTelomeres += longestCount;
-        if (longestCount == 0) pathsNoTelomeres++;
-        else if (longestCount == 1) pathsOneTelomere++;
-        else pathsTwoTelomeres++;
+        if (longestCount == 0) totalZeroTelomeres++;
+        else if (longestCount == 1) totalOneTelomere++;
+        else totalTwoTelomeres++;
         totalGaps += gaps;
 
         // Expand path summary
@@ -1143,12 +1143,12 @@ void Teloscope::computeSummaryCounts() {
         }
 
         const uint8_t flags = pathData.anomalyFlags;
-        if (flags) flaggedScaffolds++;
-        if (flags & ANOM_DISC_P) armsDiscordant++;
-        if (flags & ANOM_DISC_Q) armsDiscordant++;
-        if (flags & ANOM_BAL_P) armsBalanced++;
-        if (flags & ANOM_BAL_Q) armsBalanced++;
-        if (flags & ANOM_EXTRA) blocksExtra++;
+        if (flags) totalFlagged++;
+        if (flags & ANOMALY_DISCORDANT_P) totalDiscordantArms++;
+        if (flags & ANOMALY_DISCORDANT_Q) totalDiscordantArms++;
+        if (flags & ANOMALY_BALANCED_P) totalBalancedArms++;
+        if (flags & ANOMALY_BALANCED_Q) totalBalancedArms++;
+        if (flags & ANOMALY_MISASSEMBLY) totalMisassembly++;
 
         // contig lengths = runs between gaps
         scaffoldLens.push_back(pathData.pathSize);
@@ -1208,9 +1208,9 @@ void Teloscope::printSummary(std::ofstream& reportFile) {
     }
 
     out("\n+++ Chromosome Telomere Counts+++\n");
-    out("Two telomeres:\t", pathsTwoTelomeres, "\n");
-    out("One telomere:\t", pathsOneTelomere, "\n");
-    out("Zero telomeres:\t", pathsNoTelomeres, "\n");
+    out("Two telomeres:\t", totalTwoTelomeres, "\n");
+    out("One telomere:\t", totalOneTelomere, "\n");
+    out("Zero telomeres:\t", totalZeroTelomeres, "\n");
 
     // these six partition the scaffolds, which is the property worth protecting
     out("\n+++ Chromosome Telomere/Gap Completeness+++\n");
@@ -1226,9 +1226,9 @@ void Teloscope::printSummary(std::ofstream& reportFile) {
     // plausibility, reported beside completeness. The detail lines may sum above
     // the flagged count, because one scaffold can carry more than one anomaly.
     out("\n+++ Scaffold Anomalies +++\n");
-    out("Scaffolds flagged:\t", flaggedScaffolds, "\n");
-    out("Scaffolds clean:\t", totalPaths - flaggedScaffolds, "\n");
-    out("Discordant arms:\t", armsDiscordant, "\n");
-    out("Balanced arms:\t", armsBalanced, "\n");
-    out("Extra terminal blocks:\t", blocksExtra, "\n");
+    out("Scaffolds flagged:\t", totalFlagged, "\n");
+    out("Scaffolds clean:\t", totalPaths - totalFlagged, "\n");
+    out("Discordant arms:\t", totalDiscordantArms, "\n");
+    out("Balanced arms:\t", totalBalancedArms, "\n");
+    out("Extra terminal blocks:\t", totalMisassembly, "\n");
 }
