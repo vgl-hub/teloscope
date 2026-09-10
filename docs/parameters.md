@@ -80,7 +80,7 @@ When `-s` equals `-w`, window outputs are non-overlapping BEDgraph bins.
 | Flag | Long form | Meaning | Default |
 | --- | --- | --- | --- |
 | `-k` | `--max-match-distance` | max gap between matches before splitting them | `50` |
-| `-d` | `--max-block-distance` | longest run of `N` a block may bridge | `500` |
+| `-d` | `--max-block-distance` | longest run of absent (`N`) or non-telomeric sequence a block may bridge | `500` |
 | `-l` | `--min-block-length` | minimum block length to keep | `300` for assembly, `42` for read subsets |
 | `-y` | `--min-block-density` | minimum repeat-covered fraction for a block, in `(0,1]` | `0.5` |
 | `-t` | `--terminal-limit` | how far in from a sequence end to look, and the hard bound on terminal block extent | `50000` |

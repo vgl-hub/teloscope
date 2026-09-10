@@ -132,10 +132,10 @@ check_output_contains "no_telo classification" "none" "$OUT"
 
 # misassembly detection: pin -d 200 so the two same-end blocks stay separate (default -d 500 merges them)
 OUT=$(build/bin/teloscope -f testFiles/misassembly.fa -d 200 2>/dev/null)
-check_output_contains "misassembly Pp classification" "misassembly	Pp" "$OUT"
+check_output_contains "misassembly Pp classification" "incomplete	misassembly	Pp" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/misassembly_qq.fa -d 200 2>/dev/null)
-check_output_contains "misassembly Qq classification" "misassembly	Qq" "$OUT"
+check_output_contains "misassembly Qq classification" "incomplete	misassembly	Qq" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/discordant.fa 2>/dev/null)
 check_output_contains "discordant classification" "incomplete	discordant_q	Q*" "$OUT"
@@ -145,7 +145,7 @@ check_output_contains "gapped_t2t classification" "t2t	.	PQ" "$OUT"
 
 # misassembly detection: pin -d 200 so the two same-end blocks stay separate (default -d 500 merges them)
 OUT=$(build/bin/teloscope -f testFiles/gapped_misassembly.fa -d 200 2>/dev/null)
-check_output_contains "gapped_misassembly classification" "gapped_misassembly	Pp" "$OUT"
+check_output_contains "gapped_misassembly classification" "incomplete	misassembly	Pp" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/gapped_incomplete.fa 2>/dev/null)
 check_output_contains "gapped_incomplete classification" "incomplete	.	P" "$OUT"

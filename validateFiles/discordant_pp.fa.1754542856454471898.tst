@@ -3,7 +3,7 @@ embedded
 
 +++ Path Summary Report +++
 pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	chr_discordant_pp	1	q	0	incomplete	discordant_q	Q*	0	184	5
+1	chr_discordant_pp	1	q	0	incomplete	discordant_q,misassembly	q*Q*	0	184	5
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -16,10 +16,10 @@ Total canonical matches:	184
 Total windows analyzed:	5
 
 +++ Telomere Statistics +++
-Mean length:	2004
-Median length:	2004
-Min length:	2004
-Max length:	2004
+Mean length:	600
+Median length:	600
+Min length:	600
+Max length:	600
 
 +++ Chromosome Telomere Counts+++
 Two telomeres:	0
@@ -39,4 +39,4 @@ Scaffolds flagged:	1
 Scaffolds clean:	0
 Discordant arms:	1
 Balanced arms:	0
-Extra terminal blocks:	0
+Extra terminal blocks:	1

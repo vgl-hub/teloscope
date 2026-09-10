@@ -218,13 +218,14 @@ void tallyBlock(const std::vector<MatchInfo>& matches, TelomereBlock& block) {
 
 // walk inward from the anchor and cut where the cumulative score peaks
 uint64_t trimInward(const std::vector<CoverRun>& runs, const std::vector<GapInfo>& gaps,
-                    uint64_t anchor, uint64_t limit, uint32_t maxGapBridge,
+                    uint64_t anchor, uint64_t limit, uint32_t maxBlockDist,
                     float weight, bool toRight) {
     // the score stays non-negative exactly while the span still averages -y, so
     // the furthest such position is the longest extent meeting the documented density
     double cumulative = 0.0;
     uint64_t bestPos = anchor, prev = anchor;
     size_t gapCursor = 0;
+    bool bridging = false; // only true once a covered run is behind us
 
     if (toRight) {
         for (const CoverRun& run : runs) {
@@ -233,12 +234,17 @@ uint64_t trimInward(const std::vector<CoverRun>& runs, const std::vector<GapInfo
             // a run straddling the anchor is clipped to it, never discarded whole
             uint64_t from = std::max(run.start, anchor);
             uint64_t gapBases = getGapBases(gaps, prev, from, gapCursor);
-            if (gapBases > maxGapBridge) break;
+            if (gapBases > maxBlockDist) break;
+            // an array may be interrupted by called sequence, but not past -d, or two
+            // arrays at one end merge. Before the first run there is nothing to bridge:
+            // that stretch is leading trim, which the density score already charges for.
+            if (bridging && (from - prev) - gapBases > maxBlockDist) break;
             uint64_t end = std::min<uint64_t>(run.start + run.len, limit);
             cumulative -= weight * static_cast<double>((from - prev) - gapBases);
             if (end > from) cumulative += end - from;
             // -t is a hard bound on reported extent, not just on where to look
             if (cumulative >= 0.0) bestPos = end;
+            bridging = true;
             prev = run.start + run.len;
         }
     } else {
@@ -248,11 +254,13 @@ uint64_t trimInward(const std::vector<CoverRun>& runs, const std::vector<GapInfo
             if (end <= limit) break;
             uint64_t to = std::min(end, anchor);
             uint64_t gapBases = getGapBases(gaps, to, prev);
-            if (gapBases > maxGapBridge) break;
+            if (gapBases > maxBlockDist) break;
+            if (bridging && (prev - to) - gapBases > maxBlockDist) break;
             uint64_t start = std::max(run->start, limit);
             cumulative -= weight * static_cast<double>((prev - to) - gapBases);
             if (to > start) cumulative += to - start;
             if (cumulative >= 0.0) bestPos = start;
+            bridging = true;
             prev = run->start;
         }
     }
@@ -261,7 +269,7 @@ uint64_t trimInward(const std::vector<CoverRun>& runs, const std::vector<GapInfo
 
 // every locally maximal qualifying segment, so neighbouring arrays stay separate
 void getMaximalSegments(const std::vector<CoverRun>& runs, const std::vector<GapInfo>& gaps,
-                        uint64_t from, uint64_t to, uint32_t maxGapBridge, float weight,
+                        uint64_t from, uint64_t to, uint32_t maxBlockDist, float weight,
                         std::vector<std::pair<uint64_t, uint64_t>>& segments) {
     // same rule as the terminal trim: the furthest position still averaging -y
     double cumulative = 0.0;
@@ -282,7 +290,8 @@ void getMaximalSegments(const std::vector<CoverRun>& runs, const std::vector<Gap
 
         if (open) {
             uint64_t gapBases = getGapBases(gaps, prev, start, gapCursor);
-            if (gapBases > maxGapBridge) {
+            if (gapBases > maxBlockDist ||
+                (start - prev) - gapBases > maxBlockDist) {
                 closeSegment();
             } else {
                 cumulative -= weight * static_cast<double>((start - prev) - gapBases);
@@ -314,7 +323,7 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
 
     const uint32_t terminalLimit = userInput.terminalLimit;
     const uint32_t tolerance = userInput.terminalTolerance;
-    const uint32_t maxGapBridge = userInput.maxBlockDist;
+    const uint32_t maxBlockDist = userInput.maxBlockDist;
     const float density = userInput.minBlockDensity;
     // at full density no uncovered base may be bridged, so the weight saturates
     const float weight = (density >= 1.0f) ? 1e9f : density / (1.0f - density);
@@ -387,7 +396,7 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
                 break;
             }
         uint64_t end = trimInward(canRuns, gapInfos, seed.start, limit,
-                                  maxGapBridge, weight, true);
+                                  maxBlockDist, weight, true);
         uint64_t blockLen = end - seed.start;
         if (blockLen < userInput.minBlockLen) continue;
         // the trim bridges gaps for free, so they cannot count against density either
@@ -424,7 +433,7 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
                 break;
             }
         uint64_t start = trimInward(canRuns, gapInfos, seed->end, limit,
-                                    maxGapBridge, weight, false);
+                                    maxBlockDist, weight, false);
         uint64_t blockLen = seed->end - start;
         if (blockLen < userInput.minBlockLen) continue;
         if (getCoveredBases(canRuns, start, seed->end) <
@@ -440,9 +449,9 @@ void Teloscope::getTeloBlocks(const std::vector<MatchInfo>& matches,
     // interstitial blocks: variant-inclusive scoring, both edges free, and every
     // stretch outside the accepted arms examined, including the two tips
     std::vector<std::pair<uint64_t, uint64_t>> segments;
-    if (pFrom > 0) getMaximalSegments(allRuns, gapInfos, 0, pFrom, maxGapBridge, weight, segments);
-    if (qFrom > pTo) getMaximalSegments(allRuns, gapInfos, pTo, qFrom, maxGapBridge, weight, segments);
-    if (spanSize > qTo) getMaximalSegments(allRuns, gapInfos, qTo, spanSize, maxGapBridge, weight, segments);
+    if (pFrom > 0) getMaximalSegments(allRuns, gapInfos, 0, pFrom, maxBlockDist, weight, segments);
+    if (qFrom > pTo) getMaximalSegments(allRuns, gapInfos, pTo, qFrom, maxBlockDist, weight, segments);
+    if (spanSize > qTo) getMaximalSegments(allRuns, gapInfos, qTo, spanSize, maxBlockDist, weight, segments);
 
     size_t allCursor = 0, canCursor = 0, matchCursor = 0;
     for (const auto& segment : segments) {

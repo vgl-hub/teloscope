@@ -557,7 +557,7 @@ int main(int argc, char **argv) {
                 printf("\t'-j'\t--threads\tSet maximum number of threads. [Default: max. available]\n");
                 printf("\t'-t'\t--terminal-limit\tSet terminal limit for exploring telomere variant regions (TVRs). Overridden in read subset modes. [Default: 50000]\n");
                 printf("\t'-k'\t--max-match-distance\tSet maximum distance for merging matches. [Default: 50]\n");
-                printf("\t'-d'\t--max-block-distance\tSet maximum N run bridged inside a block. [Default: 500]\n");
+                printf("\t'-d'\t--max-block-distance\tSet maximum run of absent or non-telomeric sequence bridged inside a block. [Default: 500]\n");
                 printf("\t'-l'\t--min-block-length\tSet minimum block length. [Default: 300 assembly, 42 read subset]\n");
                 printf("\t'-y'\t--min-block-density\tSet minimum block density. [Default: 0.5]\n");
                 printf("\t'-x'\t--edit-distance\tSet edit distance for pattern matching (0-2). [Default: 1]\n");

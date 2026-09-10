@@ -111,7 +111,7 @@ Columns:
 2. `start`
 3. `end`
 
-Each row marks one contiguous run of `N`, `n`, `X`, or `x`. Blocks are built once per FASTA record, so a block may bridge a run of `N` no longer than `-d/--max-block-distance`. Column 13 of both block files, `gapStatus`, marks the rows where that happened. A longer run still ends the block.
+Each row marks one contiguous run of `N`, `n`, `X`, or `x`. Blocks are built once per FASTA record, so a block may bridge a run of `N` no longer than `-d/--max-block-distance`. Column 13 of both block files, `gapStatus`, marks the rows where that happened. A longer run still ends the block, and so does a run of called non-telomeric sequence longer than the same limit, which is what keeps two arrays at one end from merging into a single telomere.
 
 To attach the nearest gap to each terminal and interstitial block with BEDTools, first select their common BED3 prefix:
 
