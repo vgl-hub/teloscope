@@ -64,6 +64,7 @@ nav:
   - Report generation: report.md
   - Simulation: simulation.md
   - Testing: testing.md
+  - Conflict register: conflicts.md
   - Troubleshooting: troubleshooting.md
   - Release checklist: release.md
   - Validation format: https://github.com/vgl-hub/teloscope/blob/main/validateFiles/README.md

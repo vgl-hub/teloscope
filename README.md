@@ -131,7 +131,8 @@ results/
 | [Algorithm](docs/algorithm.md) | how FASTA mode and GFA mode are processed |
 | [Report generation](docs/report.md) | `--plot-report`, ITS plotting, standalone plotting, and report inputs |
 | [Simulation](docs/simulation.md) | the synthetic benchmark generator and evaluator |
-| [Testing](docs/testing.md) | validator runs, report regression checks, and test regeneration |
+| [Testing](docs/testing.md) | invariant and intent checks, validator runs, and test regeneration |
+| [Conflict register](docs/conflicts.md) | places the documentation and the code disagree, and what was decided |
 | [Troubleshooting](docs/troubleshooting.md) | common build, input, and runtime failures |
 | [Release checklist](docs/release.md) | GitHub, Bioconda, and Zenodo release steps |
 | [Validation format](https://github.com/vgl-hub/teloscope/blob/main/validateFiles/README.md) | the `.tst` harness, including directive-mode GFA cases |
@@ -147,7 +148,13 @@ results/
 
 ## Validation
 
-Build the validator and run the checked-in suite:
+Run the fixture, intent and invariant checks:
+
+```sh
+make test-synthetic
+```
+
+Build the validator and run the checked-in `.tst` suite:
 
 ```sh
 make validate
