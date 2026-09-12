@@ -128,7 +128,7 @@ OUT=$(build/bin/teloscope -f testFiles/incomplete_q.fa 2>/dev/null)
 check_output_contains "incomplete_q classification" "incomplete	.	Q" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/no_telo.fa 2>/dev/null)
-check_output_contains "no_telo classification" "none" "$OUT"
+check_output_contains "no_telo classification" "none	.	" "$OUT"  # tab-anchored: a bare "none" also matches the header chr_none
 
 # misassembly detection: pin -d 200 so the two same-end blocks stay separate (default -d 500 merges them)
 OUT=$(build/bin/teloscope -f testFiles/misassembly.fa -d 200 2>/dev/null)
@@ -151,7 +151,7 @@ OUT=$(build/bin/teloscope -f testFiles/gapped_incomplete.fa 2>/dev/null)
 check_output_contains "gapped_incomplete classification" "incomplete	.	P" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/gapped_none.fa 2>/dev/null)
-check_output_contains "gapped_none classification" "gapped_none" "$OUT"
+check_output_contains "gapped_none classification" "	1	none	.	" "$OUT"  # tab-anchored: "gapped_none" alone matches the header
 
 OUT=$(build/bin/teloscope -f testFiles/gapped_discordant.fa 2>/dev/null)
 check_output_contains "gapped_discordant classification" "incomplete	discordant_q	Q*" "$OUT"

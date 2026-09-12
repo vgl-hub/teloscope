@@ -38,6 +38,19 @@ jobs:
     - name: Validate assembly record filters
       run: python3 scripts/test_sequence_filters.py
 
+    - name: Validate synthetic fixtures, declared intent and output invariants
+      if: runner.os != 'Windows'
+      shell: bash
+      run: make test-synthetic
+
+    - name: Validate synthetic fixtures, declared intent and output invariants (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        bash testFiles/generate_synthetic.sh --check
+        python3 scripts/test_synthetic_intent.py
+        python3 scripts/check_invariants.py
+
   bam-coverage:
     name: BAM 100% executable-line coverage
     runs-on: ubuntu-latest
