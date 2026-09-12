@@ -74,10 +74,6 @@ $(BUILD):
 $(BINDIR):
 	-mkdir -p $@
 
-.PHONY: test-block-regression
-test-block-regression:
-	bash scripts/test_block_regression.sh
-
 test-gaps: head
 	bash scripts/test_gaps_bed.sh
 
