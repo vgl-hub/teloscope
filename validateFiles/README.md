@@ -117,3 +117,11 @@ Preservation modes:
 `build/bin/teloscope-generate-tests` can regenerate legacy stdout-based expected outputs. Use it only when the current behavior is accepted.
 
 Directive-mode GFA tests are checked in directly and should be edited by hand.
+
+## Waivers and blocked expectations
+
+`intent_waivers.tsv` and `invariant_waivers.tsv` keep a documented expectation asserted
+while the binary does not meet it, each pinned to a `docs/conflicts.md` id. `intent_blocked.tsv`
+names the register entry every `?` in `testFiles/synthetic/manifest.tsv` waits on. A waiver
+that stops failing fails the run. See `docs/testing.md`.
+

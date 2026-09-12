@@ -1,0 +1,24 @@
+# Expectations that are correct per the docs but that the current binary does not meet.
+#
+# A waiver keeps the assertion live instead of rewriting it to match the code. It must
+# cite an open row in docs/conflicts.md, and when the underlying defect is fixed the
+# waiver has to go: scripts/test_synthetic_intent.py fails on a waived check that has
+# started passing, so a fix cannot silently leave stale waivers behind.
+#
+# Remove a row only together with the fix that makes it unnecessary.
+#
+# id	scaffold	column	register	reason
+edit_test	chr_edit_p	type	REG-013	terminal density counts canonical coverage only, so an all-variant arm is uncallable
+edit_test	chr_edit_p	granular	REG-013	same block is never called, so the p token is absent
+edit_test	chr_edit_p	telomeres	REG-013	same
+edit_test	chr_edit_p	labels	REG-013	same
+mo_elect_longer_loses	chr_mo_elect_longer_loses	granular	REG-005	docs say the longest block is the arm; the election compares canonical counts
+jn_short_q_then_p	chr_jn_short_q_then_p	type	REG-017	the second array is rejected as the same physical array as the first, then dropped by the terminal-zone guard
+jn_short_q_then_p	chr_jn_short_q_then_p	anomaly	REG-017	same
+jn_short_q_then_p	chr_jn_short_q_then_p	granular	REG-017	same
+jn_short_q_then_p	chr_jn_short_q_then_p	telomeres	REG-017	same
+jn_short_q_then_p	chr_jn_short_q_then_p	labels	REG-017	same
+jn_short_p_then_q	chr_jn_short_p_then_q	type	REG-017	the second array is rejected as the same physical array as the first, then dropped by the terminal-zone guard
+jn_short_p_then_q	chr_jn_short_p_then_q	granular	REG-017	same
+jn_short_p_then_q	chr_jn_short_p_then_q	telomeres	REG-017	same
+jn_short_p_then_q	chr_jn_short_p_then_q	labels	REG-017	same

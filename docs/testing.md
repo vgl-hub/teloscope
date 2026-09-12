@@ -2,11 +2,56 @@
 
 # Testing
 
-Teloscope has three main test layers:
+Teloscope has four test layers:
 
+- invariant and declared-intent checks over generated fixtures (`make test-synthetic`)
 - `.tst` manifests in `validateFiles/` for the main binary
 - focused shell checks in `scripts/`
 - Python regression checks for the plotting code
+
+## Invariants and declared intent
+
+```sh
+make test-synthetic     # fixture check, declared intent, and invariants
+make test-intent        # declared intent alone
+make test-invariants    # invariants alone
+```
+
+`TELOSCOPE=/path/to/binary` overrides the binary for either script.
+
+`scripts/test_synthetic_intent.py` asserts `testFiles/synthetic/manifest.tsv` against what
+the binary reports. `scripts/check_invariants.py`, with `scripts/teloscope_model.py`, needs
+no recorded expected values: `DER-*` re-derives a report field from the BED files, `ORA-*`
+measures the output against the input FASTA (`ORA-06`/`ORA-07` require a block wherever
+the FASTA shows a dense canonical array within tolerance of a record end, and `ORA-08` an
+interstitial block over every tandem array of four or more canonical repeats under a full
+scan, so a missed telomere fails), and `MET-*` compares two runs against each other (determinism, thread
+count, ultra-fast against full scan, `-x` monotonicity at match level).
+
+A known deviation is waived in `validateFiles/intent_waivers.tsv` or
+`validateFiles/invariant_waivers.tsv` against a [conflict register](conflicts.md) id, never
+by editing the manifest to match the binary; a waiver that stops failing fails the run.
+
+### Fixtures
+
+```sh
+bash testFiles/generate_synthetic.sh          # write fixtures and the manifest
+bash testFiles/generate_synthetic.sh --check  # regeneration must be a no-op
+bash testFiles/generate_synthetic.sh --list   # fixture ids
+```
+
+`make fixtures` and `make fixtures-check` wrap the same script. It reads its thresholds
+from `include/input.h`, `include/teloscope.h`, and `src/teloscope.cpp`, and refuses to run
+when one has moved.
+
+Declaration format, as used by `fx` in `testFiles/synthetic_fixtures.sh`:
+
+- `fx <id> <path> <record_spec> <flags> <expect> <intent>` declares one fixture; `xfx` declares a checked-in file the script does not write.
+- `<expect>` is `key=value` pairs joined by `;`; for a multi-record file, one `<expect>` per record joined by `|`, or a single one for all.
+- `type` t2t, incomplete or none; `anom` `.` or comma-joined anomaly flags; `telo` elected block count; `labels` lowercase arm letters or none; `gaps` gap rows.
+- `gran` one token per terminal block by start (uppercase the elected block, `~` balanced, `*` strand disagrees with the arm); empty with no block.
+- `its` interstitial block count under `-i`, `-` otherwise.
+- A key missing from `<expect>` reads `?`: blocked on a `docs/conflicts.md` entry named in `validateFiles/intent_blocked.tsv`.
 
 ## Build the helper binaries
 

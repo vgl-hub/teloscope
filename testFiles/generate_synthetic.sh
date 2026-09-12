@@ -1,571 +1,303 @@
 #!/bin/bash
-# Generate synthetic FASTA test files with known telomere placements.
-# Each file is small and deterministic for CI.
+# Generate synthetic FASTA/GFA fixtures and testFiles/synthetic/manifest.tsv from declared intent.
+# Byte-identical regeneration of existing fixtures is a hard constraint, enforced by --check.
+#
+# Usage:
+#   generate_synthetic.sh [-o|--output OUTDIR]   write fixtures and the manifest
+#   generate_synthetic.sh --check   regenerate into a temp dir and diff; nonzero on drift
+#   generate_synthetic.sh --list   print fixture ids
+#   generate_synthetic.sh --owned   print every path this script owns
 
-DIR="$(dirname "$0")"
+set -euo pipefail
+# Pathname expansion off: an S:<literal> escape hatch could otherwise glob on '*'.
+set -f
 
-# Helper: repeat a motif N times
-repeat_motif() { printf "%0.s$1" $(seq 1 "$2"); }
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Filler that contains no telomeric 6-mers (TTAGGG, CCCTAA, or common variants)
-FILLER="ACGATCGATCGACTGACTGACGATCGATCGACTGACTGACGATCGATCGACTGACTGACGATCGATCGACTGACTGACGATCGATCGACTGACTG"
+readonly CANON_FWD="CCCTAA"
+readonly CANON_REV="TTAGGG"
+readonly PLANT_FWD="CCCTAAA"
+readonly PLANT_REV="TTTAGGG"
 
-# Repeat filler to desired length (approximate)
-make_filler() {
-    local len=$1
-    local out=""
-    while [ ${#out} -lt "$len" ]; do
-        out="${out}${FILLER}"
-    done
-    echo "${out:0:$len}"
+readonly FILLER="ACGATCGATCGACTGACTGACGATCGATCGACTGACTGACGATCGATCGACTGACTGACGATCGATCGACTGACTGACGATCGATCGACTGACTG"
+
+die() { printf 'generate_synthetic.sh: %s\n' "$*" >&2; exit 1; }
+
+# Fixture expectations are stated against these defaults; fail loudly if one drifts.
+assert_default() {
+    local name=$1 expected=$2 file=$3 pattern=$4 actual
+    [ -f "$REPO_ROOT/$file" ] || die "drift guard: $file not found"
+    actual=$(sed -n "s/.*${pattern}.*/\1/p" "$REPO_ROOT/$file" | head -1)
+    [ -n "$actual" ] || die "drift guard: could not read $name from $file"
+    [ "$actual" = "$expected" ] || die \
+        "drift guard: $name is $actual in $file but fixtures are written for $expected.
+    Revisit the fixture expectations before changing this constant."
 }
 
-# ============================================================
-# 1. t2t.fa — Both arms, correct orientation → t2t
-# ============================================================
-{
-    echo ">chr_t2t"
-    parm=$(repeat_motif "CCCTAA" 100)   # 600bp p-arm
-    qarm=$(repeat_motif "TTAGGG" 100)   # 600bp q-arm
-    mid=$(make_filler 2000)
-    echo "${parm}${mid}${qarm}"
-} > "$DIR/t2t.fa"
+check_defaults() {
+    assert_default maxMatchDist   50    include/input.h     'maxMatchDist *= *\([0-9]*\)'
+    assert_default maxBlockDist   500   include/input.h     'maxBlockDist *= *\([0-9]*\)'
+    assert_default minBlockLen    300   include/input.h     'minBlockLen *= *\([0-9]*\)'
+    assert_default minBlockCounts 2     include/input.h     'minBlockCounts *= *\([0-9]*\)'
+    assert_default minITSLen      100   include/input.h     'minITSLen *= *\([0-9]*\)'
+    assert_default terminalLimit  50000 include/input.h     'terminalLimit *= *\([0-9]*\)'
+    assert_default termTolerance  2000  include/input.h     'terminalTolerance *= *\([0-9]*\)'
+    assert_default editDistance   1     include/input.h     'editDistance *= *\([0-9]*\)'
+    # hardcoded, not reachable from the CLI -- see docs/conflicts.md REG-003
+    assert_default minCanonicalCount 4  src/teloscope.cpp   'minCanonicalCount *= *\([0-9]*\)'
+    assert_default fwdLabelThreshold 666 include/teloscope.h 'forwardLabelThreshold *= *\([0-9]*\)'
+    assert_default revLabelThreshold 333 include/teloscope.h 'reverseLabelThreshold *= *\([0-9]*\)'
+}
 
-# ============================================================
-# 2. incomplete_p.fa — Only p-arm telomere → incomplete
-# ============================================================
-{
-    echo ">chr_incomplete_p"
-    parm=$(repeat_motif "CCCTAA" 100)
-    tail=$(make_filler 2400)
-    echo "${parm}${tail}"
-} > "$DIR/incomplete_p.fa"
-
-# ============================================================
-# 3. incomplete_q.fa — Only q-arm telomere → incomplete
-# ============================================================
-{
-    echo ">chr_incomplete_q"
-    head=$(make_filler 2400)
-    qarm=$(repeat_motif "TTAGGG" 100)
-    echo "${head}${qarm}"
-} > "$DIR/incomplete_q.fa"
-
-# ============================================================
-# 4. no_telo.fa — No telomeres → none
-# ============================================================
-{
-    echo ">chr_none"
-    make_filler 3000
-} > "$DIR/no_telo.fa"
-
-# ============================================================
-# 5. misassembly.fa — Two p-arms (Pp) → misassembly
-# Two CCCTAA blocks both in valid positions (left half).
-# The Pp check detects a second p-block → misassembly.
-# ============================================================
-{
-    echo ">chr_misassembly"
-    parm1=$(repeat_motif "CCCTAA" 100)  # 600bp p-arm at start
-    mid1=$(make_filler 500)
-    parm2=$(repeat_motif "CCCTAA" 100)  # 600bp second p-arm
-    tail=$(make_filler 5000)
-    echo "${parm1}${mid1}${parm2}${tail}"
-} > "$DIR/misassembly.fa"
-
-# ============================================================
-# 6. discordant.fa — p-arm at q-side position → discordant
-# ============================================================
-{
-    echo ">chr_discordant"
-    head=$(make_filler 2800)
-    parm=$(repeat_motif "CCCTAA" 100)
-    echo "${head}${parm}"
-} > "$DIR/discordant.fa"
-
-# ============================================================
-# 7. gapped_t2t.fa — T2T with internal N-gap → gapped_t2t
-# ============================================================
-{
-    echo ">chr_gapped_t2t"
-    parm=$(repeat_motif "CCCTAA" 100)
-    mid1=$(make_filler 900)
-    gap=$(printf 'N%.0s' $(seq 1 100))
-    mid2=$(make_filler 900)
-    qarm=$(repeat_motif "TTAGGG" 100)
-    echo "${parm}${mid1}${gap}${mid2}${qarm}"
-} > "$DIR/gapped_t2t.fa"
-
-# ============================================================
-# 8. multi.fa — Multiple contigs: t2t + none + incomplete
-# ============================================================
-{
-    echo ">contig_t2t"
-    parm=$(repeat_motif "CCCTAA" 100)
-    qarm=$(repeat_motif "TTAGGG" 100)
-    mid=$(make_filler 2000)
-    echo "${parm}${mid}${qarm}"
-
-    echo ">contig_none"
-    make_filler 2000
-
-    echo ">contig_incomplete"
-    qarm=$(repeat_motif "TTAGGG" 100)
-    head=$(make_filler 2400)
-    echo "${head}${qarm}"
-} > "$DIR/multi.fa"
-
-# ============================================================
-# 9. plant.fa — 7-mer canonical (CCCTAAA/TTTAGGG)
-# ============================================================
-{
-    echo ">chr_plant"
-    parm=$(repeat_motif "CCCTAAA" 86)  # 602bp
-    qarm=$(repeat_motif "TTTAGGG" 86)  # 602bp
-    mid=$(make_filler 2000)
-    echo "${parm}${mid}${qarm}"
-} > "$DIR/plant.fa"
-
-# ============================================================
-# 10. edit_test.fa — Mutated repeats (1 sub per repeat)
-# Each repeat has exactly 1 substitution: TTAGAG instead of TTAGGG
-# Detectable at -x 1 but not -x 0
-# ============================================================
-{
-    echo ">chr_edit_p"
-    parm=$(repeat_motif "CTCTAA" 100)   # 1-sub variant of CCCTAA
-    mid=$(make_filler 2000)
-    qarm=$(repeat_motif "TTAGGG" 100)   # exact canonical
-    echo "${parm}${mid}${qarm}"
-} > "$DIR/edit_test.fa"
-
-# ============================================================
-# 11. short_contig.fa — Very short contig (shorter than one window)
-# ============================================================
-{
-    echo ">chr_tiny"
-    make_filler 100
-} > "$DIR/short_contig.fa"
-
-# ============================================================
-# 12. balanced.fa — Interleaved fwd/rev in one region → 'b' label
-# Alternating CCCTAA and TTAGGG repeats create a balanced block
-# ============================================================
-{
-    echo ">chr_balanced"
-    head=$(make_filler 1200)
-    # 100 interleaved pairs = 1200bp
-    bal=""
-    for i in $(seq 1 100); do
-        bal="${bal}CCCTAATTAGGG"
+repeat_motif() {
+    local unit=$1 n=$2 out="" cur=$1
+    [ "$n" -ge 0 ] || die "repeat_motif: negative count"
+    while [ "$n" -gt 0 ]; do
+        if [ $((n & 1)) -eq 1 ]; then out="${out}${cur}"; fi
+        cur="${cur}${cur}"
+        n=$((n >> 1))
     done
-    tail=$(make_filler 1200)
-    echo "${head}${bal}${tail}"
-} > "$DIR/balanced.fa"
+    printf '%s' "$out"
+}
 
-# ============================================================
-# 13. its.fa — Interstitial telomere blocks (middle of sequence)
-# Telomere at both ends + telomeric block in the middle
-# The middle block must be far enough from ends to not be terminal
-# ============================================================
-{
-    echo ">chr_its"
-    parm=$(repeat_motif "CCCTAA" 100)    # 600bp p-arm
-    mid1=$(make_filler 3000)
-    its=$(repeat_motif "TTAGGG" 100)     # 600bp interstitial
-    mid2=$(make_filler 3000)
-    qarm=$(repeat_motif "TTAGGG" 100)    # 600bp q-arm
-    echo "${parm}${mid1}${its}${mid2}${qarm}"
-} > "$DIR/its.fa"
+make_filler() {
+    local len=$1 out=""
+    [ "$len" -ge 0 ] || die "make_filler: negative length"
+    while [ ${#out} -lt "$len" ]; do out="${out}${FILLER}"; done
+    printf '%s' "${out:0:$len}"
+}
 
-# ============================================================
-# 14. density_edge.fa — Block right at density threshold
-# Mix canonical repeats with filler to get ~50% density
-# ============================================================
-{
-    echo ">chr_density"
-    # Alternating: 6bp match + 6bp filler = 50% density
-    parm=""
-    for i in $(seq 1 100); do
-        parm="${parm}CCCTAAACGATC"
+make_gap() {
+    local len=$1 ch=${2:-N}
+    repeat_motif "$ch" "$len"
+}
+
+hamming() {
+    local a=$1 b=$2 i d=0
+    [ ${#a} -eq ${#b} ] || { printf '99'; return; }
+    for ((i = 0; i < ${#a}; i++)); do
+        [ "${a:i:1}" = "${b:i:1}" ] || d=$((d + 1))
     done
-    mid=$(make_filler 2000)
-    qarm=$(repeat_motif "TTAGGG" 100)
-    echo "${parm}${mid}${qarm}"
-} > "$DIR/density_edge.fa"
+    printf '%s' "$d"
+}
 
-# ============================================================
-# 15. misassembly_qq.fa — Two q-arms (Qq) → misassembly
-# Two TTAGGG blocks both in valid positions (right half).
-# ============================================================
-{
-    echo ">chr_misassembly_qq"
-    head=$(make_filler 5000)
-    qarm1=$(repeat_motif "TTAGGG" 100)  # 600bp first q-arm
-    mid=$(make_filler 500)
-    qarm2=$(repeat_motif "TTAGGG" 100)  # 600bp second q-arm at end
-    echo "${head}${mid}${qarm1}${mid}${qarm2}"
-} > "$DIR/misassembly_qq.fa"
+# Assert a variant motif is 1-2 substitutions from some canonical motif.
+assert_variant() {
+    local motif=$1 best=99 d
+    for canon in "$CANON_FWD" "$CANON_REV" "$PLANT_FWD" "$PLANT_REV"; do
+        d=$(hamming "$motif" "$canon")
+        [ "$d" -lt "$best" ] && best=$d
+    done
+    [ "$best" -ge 1 ] && [ "$best" -le 2 ] || die \
+        "V:$motif is Hamming $best from every canonical motif; expected 1 or 2"
+}
 
-# ============================================================
-# 16. gapped_misassembly.fa — Pp with internal N-gap → gapped_misassembly
-# Gap placed far from both p-blocks to avoid segment boundary issues
-# ============================================================
-{
-    echo ">chr_gapped_misassembly"
-    parm1=$(repeat_motif "CCCTAA" 100)  # 600bp p-arm at start
-    mid1=$(make_filler 500)
-    parm2=$(repeat_motif "CCCTAA" 100)  # 600bp second p-arm
-    mid2=$(make_filler 2000)
-    gap=$(printf 'N%.0s' $(seq 1 100))  # 100bp N-gap in tail region
-    tail=$(make_filler 3000)
-    echo "${parm1}${mid1}${parm2}${mid2}${gap}${tail}"
-} > "$DIR/gapped_misassembly.fa"
+# DSL: F/R/V/M (repeats), L/l (filler), N/X (gaps), S (literal); '+' joins tokens.
+build_tokens() {
+    local spec=$1 out="" tok kind body unit count
+    local IFS='+'
+    for tok in $spec; do
+        kind=${tok%%:*}
+        body=${tok#*:}
+        case "$kind" in
+            F|R|V|M)
+                unit=${body%x*}
+                count=${body##*x}
+                [ "$unit" != "$body" ] || die "token $tok: expected <unit>x<count>"
+                case "$kind" in
+                    F) [ "$unit" = "$CANON_FWD" ] || [ "$unit" = "$PLANT_FWD" ] || die \
+                           "F:$unit is not a forward canonical motif" ;;
+                    R) [ "$unit" = "$CANON_REV" ] || [ "$unit" = "$PLANT_REV" ] || die \
+                           "R:$unit is not a reverse canonical motif" ;;
+                    V) assert_variant "$unit" ;;
+                esac
+                out="${out}$(repeat_motif "$unit" "$count")"
+                ;;
+            L) out="${out}$(make_filler "$body")" ;;
+            l) out="${out}$(make_filler "$body" | tr 'ACGT' 'acgt')" ;;
+            N) out="${out}$(make_gap "$body" N)" ;;
+            X) out="${out}$(make_gap "$body" X)" ;;
+            S) out="${out}${body}" ;;
+            *) die "unknown token kind '$kind' in '$tok'" ;;
+        esac
+    done
+    printf '%s' "$out"
+}
 
-# ============================================================
-# 17. gapped_incomplete.fa — Single p-arm with N-gap
-# ============================================================
-{
-    echo ">chr_gapped_incomplete"
-    parm=$(repeat_motif "CCCTAA" 100)
-    mid=$(make_filler 1000)
-    gap=$(printf 'N%.0s' $(seq 1 100))
-    tail=$(make_filler 2000)
-    echo "${parm}${mid}${gap}${tail}"
-} > "$DIR/gapped_incomplete.fa"
+FX_ID=(); FX_PATH=(); FX_SPEC=(); FX_FLAGS=(); FX_EXPECT=(); FX_INTENT=()
 
-# ============================================================
-# 18. gapped_none.fa — No telomeres but has N-gap
-# ============================================================
-{
-    echo ">chr_gapped_none"
-    head=$(make_filler 1000)
-    gap=$(printf 'N%.0s' $(seq 1 100))
-    tail=$(make_filler 2000)
-    echo "${head}${gap}${tail}"
-} > "$DIR/gapped_none.fa"
+fx() { # id path record_spec flags expect intent
+    FX_ID+=("$1"); FX_PATH+=("$2"); FX_SPEC+=("$3")
+    FX_FLAGS+=("$4"); FX_EXPECT+=("$5"); FX_INTENT+=("$6")
+}
 
-# ============================================================
-# 19. gapped_discordant.fa — Discordant p at q-side with N-gap
-# ============================================================
-{
-    echo ">chr_gapped_discordant"
-    head=$(make_filler 2000)
-    gap=$(printf 'N%.0s' $(seq 1 100))
-    mid=$(make_filler 500)
-    parm=$(repeat_motif "CCCTAA" 100)
-    echo "${head}${gap}${mid}${parm}"
-} > "$DIR/gapped_discordant.fa"
+GFX_ID=(); GFX_PATH=(); GFX_BODY=(); GFX_INTENT=()
 
-# ============================================================
-# 20. gfa_telo.gfa — GFA with segments having telomeric tips
-# Four segments: t2t, p-only, q-only, no-telo
-# Plus edges between them (simulating a linear assembly graph)
-# ============================================================
-{
-    parm=$(repeat_motif "CCCTAA" 100)   # 600bp p-arm
-    qarm=$(repeat_motif "TTAGGG" 100)   # 600bp q-arm
-    filler=$(make_filler 2000)
+gfx() { # id path body intent
+    GFX_ID+=("$1"); GFX_PATH+=("$2"); GFX_BODY+=("$3"); GFX_INTENT+=("$4")
+}
 
-    echo "H	VN:Z:1.2"
-    echo "S	seg_t2t	${parm}${filler}${qarm}"
-    echo "S	seg_ponly	${parm}${filler}"
-    echo "S	seg_qonly	${filler}${qarm}"
-    echo "S	seg_none	${filler}"
-    echo "L	seg_t2t	+	seg_ponly	+	0M"
-    echo "L	seg_ponly	+	seg_qonly	+	0M"
-    echo "L	seg_qonly	+	seg_none	+	0M"
-} > "$DIR/gfa_telo.gfa"
+# A file this script does not own: not written, not checked, only carried in the manifest.
+XFX_ID=(); XFX_PATH=(); XFX_SCAFFOLD=(); XFX_FLAGS=(); XFX_EXPECT=(); XFX_INTENT=()
 
-# ============================================================
-# 21. mirror_inverted_short.fa — Swapped arms on short contig
-# TTAGGG (rev/q-pattern) at start + CCCTAA (fwd/p-pattern) at end.
-# Short contig: entire sequence within terminalLimit → both found.
-# Both at wrong end → both hasValidOr=false → discordant.
-# ============================================================
-{
-    echo ">chr_mirror_inv_short"
-    rev_at_start=$(repeat_motif "TTAGGG" 100)   # 600bp q-pattern at p-side
-    mid=$(make_filler 2000)
-    fwd_at_end=$(repeat_motif "CCCTAA" 100)     # 600bp p-pattern at q-side
-    echo "${rev_at_start}${mid}${fwd_at_end}"
-} > "$DIR/mirror_inverted_short.fa"
+xfx() { # id path scaffold flags expect intent
+    XFX_ID+=("$1"); XFX_PATH+=("$2"); XFX_SCAFFOLD+=("$3")
+    XFX_FLAGS+=("$4"); XFX_EXPECT+=("$5"); XFX_INTENT+=("$6")
+}
 
-# ============================================================
-# 22. mirror_rev_start.fa — q-pattern at p-side (mirror of discordant.fa)
-# discordant.fa places CCCTAA (p) at q-side; this places
-# TTAGGG (q) at p-side. Verifies symmetric discordant detection.
-# ============================================================
-{
-    echo ">chr_mirror_rev_start"
-    qarm=$(repeat_motif "TTAGGG" 100)   # 600bp q-pattern at start
-    tail=$(make_filler 2400)
-    echo "${qarm}${tail}"
-} > "$DIR/mirror_rev_start.fa"
+write_fasta() {
+    local dest=$1 spec=$2 rec header body
+    local IFS=';'
+    : > "$dest"
+    for rec in $spec; do
+        header=${rec%%=*}
+        body=${rec#*=}
+        [ "$header" != "$rec" ] || die "record '$rec' is missing '<header>='"
+        {
+            printf '>%s\n' "$header"
+            build_tokens "$body"
+            printf '\n'
+        } >> "$dest"
+    done
+}
 
-# ============================================================
-# 23. mirror_inverted_long.fa — Swapped arms on long contig
-# Same as mirror_inverted_short but contig exceeds 2*terminalLimit.
-# Directional scan: fwd scans from start (finds nothing),
-# rev scans from end (finds nothing) → none.
-# Uses -t 1000 to keep file small.
-# ============================================================
-{
-    echo ">chr_mirror_inv_long"
-    rev_at_start=$(repeat_motif "TTAGGG" 100)   # 600bp q-pattern at p-side
-    mid=$(make_filler 4000)
-    fwd_at_end=$(repeat_motif "CCCTAA" 100)     # 600bp p-pattern at q-side
-    echo "${rev_at_start}${mid}${fwd_at_end}"
-} > "$DIR/mirror_inverted_long.fa"
+source "$SCRIPT_DIR/synthetic_fixtures.sh"
 
-# ============================================================
-# 24. mirror_fwd_end_long.fa — p-pattern only at q-side, long contig
-# CCCTAA at far end, nothing at start. Directional scan from start
-# finds no fwd matches in zone → no blocks → none.
-# Uses -t 1000.
-# ============================================================
-{
-    echo ">chr_mirror_fwd_end_long"
-    head=$(make_filler 4600)
-    fwd_at_end=$(repeat_motif "CCCTAA" 100)     # 600bp at end
-    echo "${head}${fwd_at_end}"
-} > "$DIR/mirror_fwd_end_long.fa"
+MANIFEST_COLUMNS="id	path	scaffold	flags	expect_type	expect_anomaly	expect_granular	expect_telomeres	expect_labels	expect_gaps	expect_its	intent"
 
-# ============================================================
-# 25. mirror_rev_start_long.fa — q-pattern only at p-side, long contig
-# TTAGGG at start, nothing at end. Directional scan from end
-# finds no rev matches in zone → no blocks → none.
-# Uses -t 1000.
-# ============================================================
-{
-    echo ">chr_mirror_rev_start_long"
-    rev_at_start=$(repeat_motif "TTAGGG" 100)   # 600bp at start
-    tail=$(make_filler 4600)
-    echo "${rev_at_start}${tail}"
-} > "$DIR/mirror_rev_start_long.fa"
+# Absent key = default; key present but empty means the field really is empty.
+field() { # expect_string key default
+    case ";$1;" in
+        *";$2="*) printf '%s' "$(printf '%s' "$1" | tr ';' '\n' | sed -n "s/^$2=//p" | head -1)" ;;
+        *)        printf '%s' "$3" ;;
+    esac
+}
 
-# ============================================================
-# 26. mirror_both_start.fa — Both strands at p-side
-# CCCTAA (p) + TTAGGG (q) both at start. p-block valid at start,
-# q-block invalid at start (hasValidOr=false) → discordant.
-# ============================================================
-{
-    echo ">chr_mirror_both_start"
-    parm=$(repeat_motif "CCCTAA" 100)    # 600bp fwd at start
-    qarm=$(repeat_motif "TTAGGG" 100)    # 600bp rev right after
-    tail=$(make_filler 2000)
-    echo "${parm}${qarm}${tail}"
-} > "$DIR/mirror_both_start.fa"
+write_manifest() {
+    local dir=$1 i rec header spec out="$1/synthetic/manifest.tsv"
+    mkdir -p "$dir/synthetic"
+    {
+        printf '# Expected classification per fixture, derived from docs/classification.md and the\n'
+        printf '# fixture construction -- never read back from the binary. Regenerate with\n'
+        printf '# testFiles/generate_synthetic.sh; CI checks that regeneration is a no-op.\n'
+        printf '# A "?" in any expect_ column means the outcome is blocked on a docs/conflicts.md\n'
+        printf '# decision; scripts/test_synthetic_intent.py fails on it rather than passing silently.\n'
+        printf '%s\n' "$MANIFEST_COLUMNS"
+        local -a records expects
+        for i in "${!FX_ID[@]}"; do
+            IFS=';' read -r -a records <<< "${FX_SPEC[$i]}"
+            IFS='|'  read -r -a expects <<< "${FX_EXPECT[$i]}"
+            [ "${#expects[@]}" -eq 1 ] || [ "${#expects[@]}" -eq "${#records[@]}" ] || die \
+                "${FX_ID[$i]}: ${#records[@]} records but ${#expects[@]} expectations"
+            local n=0 e
+            for rec in "${records[@]}"; do
+                header=${rec%%=*}
+                if [ "${#expects[@]}" -eq 1 ]; then e=${expects[0]}; else e=${expects[$n]}; fi
+                printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                    "${FX_ID[$i]}" "${FX_PATH[$i]}" "$header" "${FX_FLAGS[$i]}" \
+                    "$(field "$e" type '?')" \
+                    "$(field "$e" anom '?')" \
+                    "$(field "$e" gran '?')" \
+                    "$(field "$e" telo '?')" \
+                    "$(field "$e" labels '?')" \
+                    "$(field "$e" gaps '?')" \
+                    "$(field "$e" its '-')" \
+                    "${FX_INTENT[$i]}"
+                n=$((n + 1))
+            done
+        done
+        local j e
+        for j in "${!XFX_ID[@]}"; do
+            e=${XFX_EXPECT[$j]}
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                "${XFX_ID[$j]}" "${XFX_PATH[$j]}" "${XFX_SCAFFOLD[$j]}" "${XFX_FLAGS[$j]}" \
+                "$(field "$e" type '?')" \
+                "$(field "$e" anom '?')" \
+                "$(field "$e" gran '?')" \
+                "$(field "$e" telo '?')" \
+                "$(field "$e" labels '?')" \
+                "$(field "$e" gaps '?')" \
+                "$(field "$e" its '-')" \
+                "${XFX_INTENT[$j]}"
+        done
+    } > "$out"
+}
 
-# ============================================================
-# 27. mirror_both_end.fa — Both strands at q-side
-# filler + CCCTAA (p) + TTAGGG (q) at end. q-block valid at end,
-# p-block invalid at end (hasValidOr=false) → discordant.
-# ============================================================
-{
-    echo ">chr_mirror_both_end"
-    head=$(make_filler 2000)
-    parm=$(repeat_motif "CCCTAA" 100)    # 600bp fwd near end
-    qarm=$(repeat_motif "TTAGGG" 100)    # 600bp rev at end
-    echo "${head}${parm}${qarm}"
-} > "$DIR/mirror_both_end.fa"
+emit_all() {
+    local dir=$1 i
+    for i in "${!FX_ID[@]}"; do
+        mkdir -p "$(dirname "$dir/${FX_PATH[$i]}")"
+        write_fasta "$dir/${FX_PATH[$i]}" "${FX_SPEC[$i]}"
+    done
+    for i in "${!GFX_ID[@]}"; do
+        mkdir -p "$(dirname "$dir/${GFX_PATH[$i]}")"
+        printf '%s' "${GFX_BODY[$i]}" > "$dir/${GFX_PATH[$i]}"
+    done
+    write_manifest "$dir"
+}
 
-# ============================================================
-# 28. mirror_extend.fa — Terminal block extending past zone
-# Dense CCCTAA from start, length > terminalLimit.
-# Block starts in zone and extends past it.
-# Uses -t 300.
-# ============================================================
-{
-    echo ">chr_mirror_extend"
-    parm=$(repeat_motif "CCCTAA" 100)    # 600bp p-arm (exceeds -t 300 zone)
-    tail=$(make_filler 2400)
-    echo "${parm}${tail}"
-} > "$DIR/mirror_extend.fa"
+owned_paths() {
+    local i
+    {
+        for i in "${!FX_ID[@]}"; do printf '%s\n' "${FX_PATH[$i]}"; done
+        for i in "${!GFX_ID[@]}"; do printf '%s\n' "${GFX_PATH[$i]}"; done
+        printf 'synthetic/manifest.tsv\n'
+    } | sort -u
+}
 
-# ============================================================
-# 29. mirror_merge.fa — Sub-block merging via blockDist
-# Two CCCTAA clusters separated by 100bp filler (> matchDist=50,
-# < blockDist=200). Phase 1 creates 2 sub-blocks, Phase 2 merges.
-# ============================================================
-{
-    echo ">chr_mirror_merge"
-    clust1=$(repeat_motif "CCCTAA" 50)   # 300bp cluster
-    gap=$(make_filler 100)               # 100bp gap (50 < 100 < 200)
-    clust2=$(repeat_motif "CCCTAA" 50)   # 300bp cluster
-    tail=$(make_filler 2000)
-    echo "${clust1}${gap}${clust2}${tail}"
-} > "$DIR/mirror_merge.fa"
+self_test() {
+    local motif
+    for motif in "$CANON_FWD" "$CANON_REV" "$PLANT_FWD" "$PLANT_REV"; do
+        case "$FILLER" in
+            *"$motif"*) die "FILLER contains the telomeric motif $motif" ;;
+        esac
+    done
+    [ "${#FILLER}" -eq 95 ] || die "FILLER length changed; every filler offset depends on it"
+}
 
-# ============================================================
-# 30. mirror_no_merge.fa — Sub-blocks too far apart to merge
-# Two CCCTAA clusters separated by 300bp filler (> blockDist=200).
-# Each sub-block has blockLen=240 < minBlockLen=500 → both fail.
-# ============================================================
-{
-    echo ">chr_mirror_no_merge"
-    clust1=$(repeat_motif "CCCTAA" 40)   # 240bp cluster
-    gap=$(make_filler 300)               # 300bp gap (> 200)
-    clust2=$(repeat_motif "CCCTAA" 40)   # 240bp cluster
-    tail=$(make_filler 2000)
-    echo "${clust1}${gap}${clust2}${tail}"
-} > "$DIR/mirror_no_merge.fa"
+OUTDIR="$SCRIPT_DIR"
+MODE=write
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -o|--output) OUTDIR=$2; shift 2 ;;
+        --check)     MODE=check; shift ;;
+        --list)      MODE=list; shift ;;
+        --owned)     MODE=owned; shift ;;
+        -h|--help)   sed -n '2,9p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *)           die "unknown argument '$1'" ;;
+    esac
+done
 
-# ============================================================
-# 31. boundary_no_terminal.fa — Matches outside terminal zones
-# With -t 500: no matches in [0,500) or [6700,7200)
-# → no terminal blocks → fwdBoundary=0 revBoundary=7200
-# → ITS covers everything → 2 ITS blocks
-# ============================================================
-{
-    echo ">chr_boundary_no_term"
-    head=$(make_filler 2000)
-    fwd_mid=$(repeat_motif "CCCTAA" 100)    # 600bp at pos 2000
-    gap=$(make_filler 2000)
-    rev_mid=$(repeat_motif "TTAGGG" 100)    # 600bp at pos 4600
-    tail=$(make_filler 2000)
-    echo "${head}${fwd_mid}${gap}${rev_mid}${tail}"
-} > "$DIR/boundary_no_terminal.fa"
-
-# ============================================================
-# 32. boundary_fail_filter.fa — Terminal block too short
-# 20 CCCTAA at start = 120bp block. Passes Phase 1 (counts≥2,
-# canonical>0) but fails Phase 2 (blockLen=120 < minBlockLen=500).
-# Boundary stays at 0 → matches available for ITS.
-# ============================================================
-{
-    echo ">chr_boundary_fail"
-    short_telo=$(repeat_motif "CCCTAA" 20)  # 120bp at start
-    tail=$(make_filler 3000)
-    echo "${short_telo}${tail}"
-} > "$DIR/boundary_fail_filter.fa"
-
-# ============================================================
-# 33. boundary_cross.fa — Boundaries meet, no ITS
-# Dense adjacent p/q blocks: fwdBoundary=1200, revBoundary=1200.
-# 1200 < 1200 is false → ITS condition fails → 0 ITS blocks.
-# ============================================================
-{
-    echo ">chr_boundary_cross"
-    parm=$(repeat_motif "CCCTAA" 200)       # 1200bp p-arm
-    qarm=$(repeat_motif "TTAGGG" 200)       # 1200bp q-arm
-    echo "${parm}${qarm}"
-} > "$DIR/boundary_cross.fa"
-
-# ============================================================
-# 34. boundary_zone_shift.fa — Zone size controls terminal vs ITS
-# Telomere blocks at offset 500 and offset 3100.
-# -t 1200: both in zone → terminal (t2t)
-# -t 400: both outside zone → ITS only (none)
-# ============================================================
-{
-    echo ">chr_boundary_zone"
-    head=$(make_filler 500)
-    parm=$(repeat_motif "CCCTAA" 100)       # 600bp at pos 500
-    mid=$(make_filler 2000)
-    qarm=$(repeat_motif "TTAGGG" 100)       # 600bp at pos 3100
-    tail=$(make_filler 500)
-    echo "${head}${parm}${mid}${qarm}${tail}"
-} > "$DIR/boundary_zone_shift.fa"
-
-# ============================================================
-# 35. boundary_its_at_edge.fa — ITS starts exactly at fwdBoundary
-# p-block at 0-600 → fwdBoundary=600.
-# Small TTAGGG cluster at 600-660 right at boundary → ITS picks it up.
-# Large TTAGGG at end → q-block, revBoundary well before mid.
-# ============================================================
-{
-    echo ">chr_boundary_edge"
-    parm=$(repeat_motif "CCCTAA" 100)       # 600bp p-arm
-    its_cluster=$(repeat_motif "TTAGGG" 10) # 60bp at pos 600
-    mid=$(make_filler 2200)
-    qarm=$(repeat_motif "TTAGGG" 100)       # 600bp q-arm
-    echo "${parm}${its_cluster}${mid}${qarm}"
-} > "$DIR/boundary_its_at_edge.fa"
-
-# ============================================================
-# 36. boundary_multiple_p.fa — Two separate p-blocks
-# Gap=300 > blockDist=200 → no Phase 2 merge → 2 terminal blocks.
-# fwdBoundary moves to end of outermost block (1500).
-# ITS starts at 1500, nothing there → 0 ITS.
-# ============================================================
-{
-    echo ">chr_boundary_multi_p"
-    clust1=$(repeat_motif "CCCTAA" 100)     # 600bp at pos 0
-    gap=$(make_filler 300)                  # 300bp gap > blockDist
-    clust2=$(repeat_motif "CCCTAA" 100)     # 600bp at pos 900
-    tail=$(make_filler 2000)
-    echo "${clust1}${gap}${clust2}${tail}"
-} > "$DIR/boundary_multiple_p.fa"
-
-# ============================================================
-# 37. boundary_extend_its.fa — Terminal extends past zone + ITS
-# With -t 300: p-block starts in [0,300) zone, extends to 600.
-# q-block starts in [4200,4500) zone, extends left to 3900.
-# ITS region [600,3900) contains TTAGGG cluster at 2600.
-# ============================================================
-{
-    echo ">chr_boundary_ext_its"
-    parm=$(repeat_motif "CCCTAA" 100)       # 600bp p-arm
-    mid1=$(make_filler 2000)
-    its_telo=$(repeat_motif "TTAGGG" 50)    # 300bp ITS at pos 2600
-    mid2=$(make_filler 1000)
-    qarm=$(repeat_motif "TTAGGG" 100)       # 600bp q-arm
-    echo "${parm}${mid1}${its_telo}${mid2}${qarm}"
-} > "$DIR/boundary_extend_its.fa"
-
-# ============================================================
-# 38. its_gap_split.fa — One array split into two ITS blocks by a gap
-# Forward repeats before the gap and reverse repeats after it are on the
-# wrong contig ends for terminal scanning with -t 50. Both halves remain ITS.
-# ============================================================
-{
-    echo ">chr_its_gap_split"
-    flank=$(make_filler 100)
-    left=$(repeat_motif "CCCTAA" 100)
-    gap=$(printf 'N%.0s' $(seq 1 100))
-    right=$(repeat_motif "TTAGGG" 100)
-    echo "${flank}${left}${gap}${right}${flank}"
-} > "$DIR/its_gap_split.fa"
-
-# ============================================================
-# 39. its_gap_headtohead.fa — Gap-adjacent q/p contig terminals
-# Reverse repeats before the gap and forward repeats after it are valid
-# contig terminals. With -n they are emitted separately, never as one ITS.
-# ============================================================
-{
-    echo ">chr_its_gap_headtohead"
-    flank=$(make_filler 100)
-    left=$(repeat_motif "TTAGGG" 100)
-    gap=$(printf 'N%.0s' $(seq 1 100))
-    right=$(repeat_motif "CCCTAA" 100)
-    echo "${flank}${left}${gap}${right}${flank}"
-} > "$DIR/its_gap_headtohead.fa"
-
-# ============================================================
-# 40. its_strand_pure.fa — Canonical-forward core with reverse halo
-# Seven reverse non-canonical variants followed by 13 canonical-forward
-# repeats give a pooled balanced label while the canonical subset is pure.
-# ============================================================
-{
-    echo ">chr_its_strand_pure"
-    flank=$(make_filler 100)
-    rev_halo=$(repeat_motif "TTAGGA" 7)
-    canonical_core=$(repeat_motif "CCCTAA" 13)
-    echo "${flank}${rev_halo}${canonical_core}${flank}"
-} > "$DIR/its_strand_pure.fa"
-
-# ============================================================
-# 41. its_headtohead.fa — All four canonicality/orientation count cells
-# ============================================================
-{
-    echo ">chr_its_headtohead"
-    flank=$(make_filler 100)
-    fwd_can=$(repeat_motif "CCCTAA" 20)
-    fwd_noncan=$(repeat_motif "CTCTAA" 7)
-    rev_noncan=$(repeat_motif "TTAGGA" 7)
-    rev_can=$(repeat_motif "TTAGGG" 20)
-    echo "${flank}${fwd_can}${fwd_noncan}${rev_noncan}${rev_can}${flank}"
-} > "$DIR/its_headtohead.fa"
-
-echo "Generated $(ls -1 "$DIR"/*.fa "$DIR"/*.gfa 2>/dev/null | wc -l) synthetic test files in $DIR/"
+case "$MODE" in
+    list)  for i in "${!FX_ID[@]}"; do printf '%s\n' "${FX_ID[$i]}"; done
+           for i in "${!GFX_ID[@]}"; do printf '%s\n' "${GFX_ID[$i]}"; done
+           for i in "${!XFX_ID[@]}"; do printf '%s\n' "${XFX_ID[$i]}"; done ;;
+    owned) owned_paths ;;
+    check)
+        self_test; check_defaults
+        tmp=$(mktemp -d)
+        trap 'rm -rf "$tmp"' EXIT
+        emit_all "$tmp"
+        drift=0
+        while read -r rel; do
+            if ! cmp -s "$tmp/$rel" "$OUTDIR/$rel" 2>/dev/null; then
+                printf 'DRIFT %s\n' "$rel"; drift=$((drift + 1))
+            fi
+        done < <(owned_paths)
+        total=$(owned_paths | wc -l)
+        if [ "$drift" -eq 0 ]; then
+            printf 'checked %s owned files against %s: 0 differ\n' "$total" "$OUTDIR"
+            printf 'defaults verified against source: OK\n'
+        else
+            printf '%s of %s owned files differ from %s\n' "$drift" "$total" "$OUTDIR" >&2
+            exit 1
+        fi
+        ;;
+    write)
+        self_test; check_defaults
+        emit_all "$OUTDIR"
+        printf 'Generated %s fixtures and 1 manifest in %s/\n' \
+            "$(( ${#FX_ID[@]} + ${#GFX_ID[@]} ))" "$OUTDIR"
+        ;;
+esac

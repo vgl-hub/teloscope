@@ -18,8 +18,10 @@ LIBS = -lz
 LDFLAGS = -pthread
 
 # Static linking on Windows to avoid DLL dependencies
+EXE :=
 ifeq ($(OS),Windows_NT)
     LDFLAGS += -static
+    EXE := .exe
 endif
 
 GFALIBS_DIR := $(CURDIR)/gfalibs
@@ -74,9 +76,21 @@ $(BUILD):
 $(BINDIR):
 	-mkdir -p $@
 
-.PHONY: test-block-regression
-test-block-regression:
-	bash scripts/test_block_regression.sh
+.PHONY: fixtures fixtures-check test-intent test-invariants test-synthetic
+fixtures:
+	bash testFiles/generate_synthetic.sh
+
+# regeneration must be a no-op: the .tst snapshots and val.sh consume these bytes
+fixtures-check:
+	bash testFiles/generate_synthetic.sh --check
+
+test-intent: head
+	TELOSCOPE="$(BUILD)/$(TARGET)$(EXE)" python3 scripts/test_synthetic_intent.py
+
+test-invariants: head
+	TELOSCOPE="$(BUILD)/$(TARGET)$(EXE)" python3 scripts/check_invariants.py
+
+test-synthetic: fixtures-check test-intent test-invariants
 
 test-gaps: head
 	bash scripts/test_gaps_bed.sh
