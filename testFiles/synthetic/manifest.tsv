@@ -1,0 +1,167 @@
+# Expected classification per fixture, derived from docs/classification.md and the
+# fixture construction -- never read back from the binary. Regenerate with
+# testFiles/generate_synthetic.sh; CI checks that regeneration is a no-op.
+# A "?" in any expect_ column means the outcome is blocked on a docs/conflicts.md
+# decision; scripts/test_synthetic_intent.py fails on it rather than passing silently.
+id	path	scaffold	flags	expect_type	expect_anomaly	expect_granular	expect_telomeres	expect_labels	expect_gaps	expect_its	intent
+t2t	t2t.fa	chr_t2t	-	t2t	.	PQ	2	pq	0	-	Both arms, correct orientation
+incomplete_p	incomplete_p.fa	chr_incomplete_p	-	incomplete	.	P	1	p	0	-	Only p-arm telomere
+incomplete_q	incomplete_q.fa	chr_incomplete_q	-	incomplete	.	Q	1	q	0	-	Only q-arm telomere
+no_telo	no_telo.fa	chr_none	-	none	.		0	none	0	-	No telomeres
+misassembly	misassembly.fa	chr_misassembly	-d 200	incomplete	misassembly	Pp	1	p	0	-	Two p-arms at the same end: one extra terminal block
+discordant	discordant.fa	chr_discordant	-	incomplete	discordant_q	Q*	1	q	0	-	Forward motif sitting at the q end: arm and strand disagree
+gapped_t2t	gapped_t2t.fa	chr_gapped_t2t	-	t2t	.	PQ	2	pq	1	-	T2T with an internal N-gap; gappedness is a separate column, not a type
+multi	multi.fa	contig_t2t	-	t2t	.	PQ	2	pq	0	-	Three records: t2t, none, incomplete
+multi	multi.fa	contig_none	-	none	.		0	none	0	-	Three records: t2t, none, incomplete
+multi	multi.fa	contig_incomplete	-	incomplete	.	Q	1	q	0	-	Three records: t2t, none, incomplete
+plant	plant.fa	chr_plant	-c CCCTAAA	t2t	.	PQ	2	pq	0	-	Plant 7-mer canonical repeat
+edit_test	edit_test.fa	chr_edit_p	-x 1	t2t	.	PQ	2	pq	0	-	One substitution per p-arm repeat: found at -x 1, not at -x 0
+short_contig	short_contig.fa	chr_tiny	-	none	.		0	none	0	-	Contig shorter than one window
+balanced	balanced.fa	chr_balanced	-	incomplete	balanced_p	P~	1	p	0	-	Interleaved forward and reverse repeats give one array a balanced strand label
+its	its.fa	chr_its	-i -t 1000	t2t	.	PQ	2	pq	0	1	Telomeres at both ends plus one interstitial array in the middle
+density_edge	density_edge.fa	chr_density	-	t2t	.	PQ	2	pq	0	-	p-arm alternating 6 bp match and 6 bp filler: density exactly at -y, kept on the tie
+misassembly_qq	misassembly_qq.fa	chr_misassembly_qq	-d 200	incomplete	misassembly	qQ	1	q	0	-	Two q-arms at the same end: one extra terminal block
+gapped_misassembly	gapped_misassembly.fa	chr_gapped_misassembly	-d 200	incomplete	misassembly	Pp	1	p	1	-	Two p-arms plus an unrelated N-gap in the tail
+gapped_incomplete	gapped_incomplete.fa	chr_gapped_incomplete	-	incomplete	.	P	1	p	1	-	Single p-arm with an N-gap
+gapped_none	gapped_none.fa	chr_gapped_none	-	none	.		0	none	1	-	No telomeres but one N-gap
+gapped_discordant	gapped_discordant.fa	chr_gapped_discordant	-	incomplete	discordant_q	Q*	1	q	1	-	Forward motif at the q end, with an N-gap
+mirror_inverted_short	mirror_inverted_short.fa	chr_mirror_inv_short	-	t2t	discordant_p,discordant_q	P*Q*	2	pq	0	-	Both arms present but each carries the other end motif: an inverted terminal repeat
+mirror_rev_start	mirror_rev_start.fa	chr_mirror_rev_start	-	incomplete	discordant_p	P*	1	p	0	-	Reverse motif at the p end: the mirror of discordant.fa
+mirror_inverted_long	mirror_inverted_long.fa	chr_mirror_inv_long	-t 1000	t2t	discordant_p,discordant_q	P*Q*	2	pq	0	-	Inverted arms on a contig longer than twice the terminal zone
+mirror_fwd_end_long	mirror_fwd_end_long.fa	chr_mirror_fwd_end_long	-t 1000	incomplete	discordant_q	Q*	1	q	0	-	Forward motif only, at the far end
+mirror_rev_start_long	mirror_rev_start_long.fa	chr_mirror_rev_start_long	-t 1000	incomplete	discordant_p	P*	1	p	0	-	Reverse motif only, at the start
+mirror_both_start	mirror_both_start.fa	chr_mirror_both_start	-	incomplete	misassembly	Pp*	1	p	0	-	Abutting opposite orientations are cut apart by inversionRun, giving two p blocks
+mirror_both_end	mirror_both_end.fa	chr_mirror_both_end	-	incomplete	misassembly	q*Q	1	q	0	-	Same at the q end; the >= tie-break elects the outermost block as the q arm
+mirror_extend	mirror_extend.fa	chr_mirror_extend	-t 300	incomplete	.	P	1	p	0	-	Terminal block starts inside the zone and extends past it
+mirror_merge	mirror_merge.fa	chr_mirror_merge	-d 200	incomplete	.	P	1	p	0	-	Two clusters closer than -d merge into one block
+mirror_no_merge	mirror_no_merge.fa	chr_mirror_no_merge	-d 200	none	.		0	none	0	-	Two clusters further apart than -d, each below -l: neither survives
+boundary_no_terminal	boundary_no_terminal.fa	chr_boundary_no_term	-i -t 500	none	.		0	none	0	2	Both arrays outside the terminal zone: no terminal blocks, two interstitial ones
+boundary_fail_filter	boundary_fail_filter.fa	chr_boundary_fail	-	none	.		0	none	0	-	Terminal array of 120 bp is below -l and is dropped
+boundary_cross	boundary_cross.fa	chr_boundary_cross	-i	t2t	.	PQ	2	pq	0	0	Dense abutting p and q arrays leave no room between them for an interstitial block
+boundary_zone_shift	boundary_zone_shift.fa	chr_boundary_zone	-t 1200	t2t	.	PQ	2	pq	0	-	Zone size decides terminal versus interstitial: at -t 1200 both arrays are terminal
+boundary_zone_shift_narrow	boundary_zone_shift.fa	chr_boundary_zone	-t 400	none	.		0	none	0	-	The same file at -t 400: both arrays fall outside the zone
+boundary_its_at_edge	boundary_its_at_edge.fa	chr_boundary_edge	-i -t 1000	t2t	.	PQ	2	pq	0	0	A 60 bp array abutting the p arm is below --min-its-length and is not reported
+boundary_multiple_p	boundary_multiple_p.fa	chr_boundary_multi_p	-d 200	incomplete	misassembly	Pp	1	p	0	-	Two p arrays further apart than -d stay separate: the inner one is an extra block
+boundary_extend_its	boundary_extend_its.fa	chr_boundary_ext_its	-i -t 300	t2t	.	PQ	2	pq	0	1	Terminal blocks extend past the zone; the middle array stays interstitial
+its_gap_split	its_gap_split.fa	chr_its_gap_split	-i -n -t 50 -k 200 -x 1	none	.		0	none	1	?	One array split by a gap; both halves are too far from an end to be terminal
+its_gap_headtohead	its_gap_headtohead.fa	chr_its_gap_headtohead	-i -n -t 50 -k 200 -x 1	none	.		0	none	1	?	Head-to-head arrays across a gap: see docs/conflicts.md REG-004
+its_strand_pure	its_strand_pure.fa	chr_its_strand_pure	-i -x 1	none	.		0	none	0	?	Reverse variant halo around a pure canonical forward core: pooled label is balanced
+its_headtohead	its_headtohead.fa	chr_its_headtohead	-i -x 1	none	.		0	none	0	?	All four canonicality and orientation count cells are non-zero
+discordant_pp	discordant_pp.fa	chr_discordant_pp	-d 200	incomplete	discordant_q,misassembly	q*Q*	1	q	0	-	Two forward arrays both at the q end: discordant and one extra block
+extra_invalid_p	extra_invalid_p.fa	chr_extra_invalid_p	-d 200	t2t	discordant_q	PQ*	2	pq	0	-	A p arm plus a forward array at the q end, which reads as a discordant q arm
+gapped_discordant_q	gapped_discordant_q.fa	chr_gapped_discordant_q	-	incomplete	discordant_p	P*	1	p	1	-	Reverse motif at the p end, with an N-gap
+gapped_incomplete_q	gapped_incomplete_q.fa	chr_gapped_incomplete_q	-	incomplete	.	Q	1	q	1	-	Single q-arm with an N-gap
+gapped_misassembly_qq	gapped_misassembly_qq.fa	chr_gapped_misassembly_qq	-d 200	incomplete	misassembly	Qq	1	q	1	-	Two q arrays plus an unrelated N-gap
+multi_gap_t2t	multi_gap_t2t.fa	chr_multi_gap_t2t	-	t2t	.	PQ	2	pq	2	-	T2T with two internal N-gaps
+ax_t2t_clean	synthetic/ax_t2t_clean.fa	chr_ax_t2t_clean	-	t2t	.	PQ	2	pq	0	-	Both arms concordant: the control for this axis
+ax_t2t_disc_p	synthetic/ax_t2t_disc_p.fa	chr_ax_t2t_disc_p	-	t2t	discordant_p	P*Q	2	pq	0	-	Reverse motif at the p end: the p arm points the wrong way
+ax_t2t_disc_q	synthetic/ax_t2t_disc_q.fa	chr_ax_t2t_disc_q	-	t2t	discordant_q	PQ*	2	pq	0	-	Forward motif at the q end: the q arm points the wrong way
+ax_t2t_disc_pq	synthetic/ax_t2t_disc_pq.fa	chr_ax_t2t_disc_pq	-	t2t	discordant_p,discordant_q	P*Q*	2	pq	0	-	Both arms inverted: an inverted terminal repeat at each end
+ax_t2t_bal_p	synthetic/ax_t2t_bal_p.fa	chr_ax_t2t_bal_p	-	t2t	balanced_p	P~Q	2	pq	0	-	Interleaved orientations at the p end give a balanced strand label
+ax_t2t_bal_q	synthetic/ax_t2t_bal_q.fa	chr_ax_t2t_bal_q	-	t2t	balanced_q	PQ~	2	pq	0	-	Interleaved orientations at the q end
+ax_t2t_bal_pq	synthetic/ax_t2t_bal_pq.fa	chr_ax_t2t_bal_pq	-	t2t	balanced_p,balanced_q	P~Q~	2	pq	0	-	Both arms balanced, as an ALT or hairpin telomere would read
+ax_t2t_disc_p_bal_q	synthetic/ax_t2t_disc_p_bal_q.fa	chr_ax_t2t_disc_p_bal_q	-	t2t	discordant_p,balanced_q	P*Q~	2	pq	0	-	One inverted arm and one balanced arm: both flags, in emission order
+ax_t2t_bal_p_disc_q	synthetic/ax_t2t_bal_p_disc_q.fa	chr_ax_t2t_bal_p_disc_q	-	t2t	discordant_q,balanced_p	P~Q*	2	pq	0	-	The mirror: discordant_q sorts before balanced_p in the emitted order
+ax_t2t_extra_p	synthetic/ax_t2t_extra_p.fa	chr_ax_t2t_extra_p	-	t2t	misassembly	PpQ	2	pq	0	-	Two arrays at the p end: the inner one is an extra terminal block
+ax_t2t_extra_q	synthetic/ax_t2t_extra_q.fa	chr_ax_t2t_extra_q	-	t2t	misassembly	PqQ	2	pq	0	-	Two arrays at the q end: the >= tie-break elects the outermost
+ax_t2t_extra_p_disc_q	synthetic/ax_t2t_extra_p_disc_q.fa	chr_ax_t2t_extra_p_disc_q	-	t2t	discordant_q,misassembly	PpQ*	2	pq	0	-	An extra p block and an inverted q arm together
+ax_incomplete_disc_p	synthetic/ax_incomplete_disc_p.fa	chr_ax_incomplete_disc_p	-	incomplete	discordant_p	P*	1	p	0	-	One inverted arm and nothing at the other end
+ax_incomplete_bal_q	synthetic/ax_incomplete_bal_q.fa	chr_ax_incomplete_bal_q	-	incomplete	balanced_q	Q~	1	q	0	-	One balanced q arm and nothing at the other end
+ax_t2t_disc_p_gapped	synthetic/ax_t2t_disc_p_gapped.fa	chr_ax_t2t_disc_p_gapped	-	t2t	discordant_p	P*Q	2	pq	1	-	An inverted p arm on a gapped scaffold: gappedness changes neither column
+ax_t2t_bal_pq_gapped	synthetic/ax_t2t_bal_pq_gapped.fa	chr_ax_t2t_bal_pq_gapped	-	t2t	balanced_p,balanced_q	P~Q~	2	pq	1	-	Both arms balanced on a gapped scaffold
+th_len_below	synthetic/th_len_below.fa	chr_th_len_below	-	none	.		0	none	0	-	294 bp array is below -l 300 and is dropped
+th_len_exact	synthetic/th_len_exact.fa	chr_th_len_exact	-	incomplete	.	P	1	p	0	-	300 bp array is exactly -l and is kept: the comparison rejects on strict <
+th_len_above	synthetic/th_len_above.fa	chr_th_len_above	-	incomplete	.	P	1	p	0	-	306 bp array is above -l and is kept
+th_tol_exact	synthetic/th_tol_exact.fa	chr_th_tol_exact	-	incomplete	.	P	1	p	0	-	Array starting exactly at --terminal-tolerance is still terminal
+th_tol_beyond	synthetic/th_tol_beyond.fa	chr_th_tol_beyond	-	none	.		0	none	0	-	Array starting 2400 bases in is past --terminal-tolerance at either end
+th_tol_called_bases	synthetic/th_tol_called_bases.fa	chr_th_tol_called_bases	-	incomplete	.	P	1	p	1	-	A leading 1000 bp gap does not push a telomere out of the terminal zone
+th_bridge_plain_exact	synthetic/th_bridge_plain_exact.fa	chr_th_bridge_plain_exact	-	incomplete	.	P	1	p	0	-	A 500 bp plain-sequence run is exactly -d, so the two arrays merge into one block
+th_bridge_plain_beyond	synthetic/th_bridge_plain_beyond.fa	chr_th_bridge_plain_beyond	-	incomplete	misassembly	Pp	1	p	0	-	A 506 bp run exceeds -d, so the arrays stay separate and the inner one is extra
+th_bridge_gap_exact	synthetic/th_bridge_gap_exact.fa	chr_th_bridge_gap_exact	-	incomplete	.	P	1	p	1	-	A 500 bp N run is bridged for free, giving one gapped block
+th_bridge_gap_beyond	synthetic/th_bridge_gap_beyond.fa	chr_th_bridge_gap_beyond	-	incomplete	misassembly	Pp	1	p	1	-	A 506 bp N run exceeds -d and ends the block
+th_its_below	synthetic/th_its_below.fa	chr_th_its_below	-i -t 1000	t2t	.	PQ	2	pq	0	0	A 96 bp interstitial array is below --min-its-length and is not reported
+th_its_exact	synthetic/th_its_exact.fa	chr_th_its_exact	-i -t 1000	t2t	.	PQ	2	pq	0	1	A 102 bp interstitial array clears --min-its-length
+th_its_canon_below	synthetic/th_its_canon_below.fa	chr_th_its_canon_below	-i -t 1000 --min-its-length 18	t2t	.	PQ	2	pq	0	0	Three canonical matches are below the hardcoded minCanonicalCount of 4
+th_its_canon_exact	synthetic/th_its_canon_exact.fa	chr_th_its_canon_exact	-i -t 1000 --min-its-length 18	t2t	.	PQ	2	pq	0	1	Four canonical matches are exactly minCanonicalCount and are reported
+th_its_canon_above	synthetic/th_its_canon_above.fa	chr_th_its_canon_above	-i -t 1000	t2t	.	PQ	2	pq	0	1	Five non-adjacent canonical repeats among variants, 102 bp: clears --min-its-length 100 and minCanonicalCount 4
+th_strand_2fwd_1rev	synthetic/th_strand_2fwd_1rev.fa	chr_th_strand_2fwd_1rev	-	incomplete	.	P	1	p	0	-	Two forward per one reverse is 66.67%, above the 666 threshold: strand p
+th_strand_1fwd_2rev	synthetic/th_strand_1fwd_2rev.fa	chr_th_strand_1fwd_2rev	-	incomplete	balanced_p	P~	1	p	0	-	One forward per two reverse is 33.33%, not below the 333 threshold: strand b, not q
+th_strand_0	synthetic/th_strand_0.fa	chr_th_strand_0	-	incomplete	discordant_p	P*	1	p	0	-	100 reverse matches, 0 forward: forward share is 0 per mille exactly
+th_strand_333	synthetic/th_strand_333.fa	chr_th_strand_333	-	incomplete	balanced_p	P~	1	p	0	-	333 forward matches of 1000 total (333x "R R F" plus one appended R): exactly 333 per mille
+th_strand_666	synthetic/th_strand_666.fa	chr_th_strand_666	-	incomplete	balanced_p	P~	1	p	0	-	333 forward matches of 500 total (166x "F F R" plus one appended "F R"): exactly 666 per mille
+th_strand_1000	synthetic/th_strand_1000.fa	chr_th_strand_1000	-	incomplete	.	P	1	p	0	-	100 forward matches, 0 reverse: forward share is 1000 per mille exactly
+th_density_exact	synthetic/th_density_exact.fa	chr_th_density_exact	-	incomplete	.	P	1	p	0	-	6 bp match against 6 bp filler is exactly -y 0.5 and is kept on the tie
+th_density_below	synthetic/th_density_below.fa	chr_th_density_below	-	none	.		0	none	0	-	6 bp match against 10 bp filler is 37.5%, below -y 0.5
+th_counts_below	synthetic/th_counts_below.fa	chr_th_counts_below	-l 6	none	.		0	none	0	-	A single match is below --min-block-counts 2
+th_counts_exact	synthetic/th_counts_exact.fa	chr_th_counts_exact	-l 6	incomplete	.	P	1	p	0	-	Two matches are exactly --min-block-counts and are kept
+st_single_base	synthetic/st_single_base.fa	chr_st_single_base	-	none	.		0	none	0	-	A one-base record must classify, not crash
+st_sub_window	synthetic/st_sub_window.fa	chr_st_sub_window	-	none	.		0	none	0	-	A 60 bp record is shorter than one window and below -l
+st_all_gap	synthetic/st_all_gap.fa	chr_st_all_gap	-	none	.		0	none	1	-	A record that is entirely assembly gap
+st_all_telomere	synthetic/st_all_telomere.fa	chr_st_all_telomere	-	incomplete	.	P	1	p	0	-	A record that is nothing but forward repeat is one array, not two arms
+st_gap_flanked	synthetic/st_gap_flanked.fa	chr_st_gap_flanked	-	t2t	.	PQ	2	pq	2	-	Telomeres behind leading and trailing gaps are still terminal
+st_x_mask	synthetic/st_x_mask.fa	chr_st_x_mask	-	t2t	.	PQ	2	pq	1	-	X is an assembly gap character too, and counts in the gaps BED
+st_soft_masked	synthetic/st_soft_masked.fa	chr_st_soft_masked	-	t2t	.	PQ	2	pq	0	-	A lowercase soft-masked p arm is still a telomere
+st_six_buckets	synthetic/st_six_buckets.fa	rec_t2t	-	t2t	.	PQ	2	pq	0	-	One record in each of the six completeness buckets
+st_six_buckets	synthetic/st_six_buckets.fa	rec_t2t_gapped	-	t2t	.	PQ	2	pq	1	-	One record in each of the six completeness buckets
+st_six_buckets	synthetic/st_six_buckets.fa	rec_incomplete	-	incomplete	.	P	1	p	0	-	One record in each of the six completeness buckets
+st_six_buckets	synthetic/st_six_buckets.fa	rec_incomplete_gapped	-	incomplete	.	P	1	p	1	-	One record in each of the six completeness buckets
+st_six_buckets	synthetic/st_six_buckets.fa	rec_none	-	none	.		0	none	0	-	One record in each of the six completeness buckets
+st_six_buckets	synthetic/st_six_buckets.fa	rec_none_gapped	-	none	.		0	none	1	-	One record in each of the six completeness buckets
+st_plant_pair	synthetic/st_plant_pair.fa	chr_st_plant_pair	-c CCCTAAA	t2t	.	PQ	2	pq	0	-	Plant 7-mer canonical on the standard geometry
+st_edit_zero	synthetic/st_edit_zero.fa	chr_st_edit_zero	-x 0	t2t	.	PQ	2	pq	0	-	Exact canonical arrays are found with no edit distance allowed
+st_edit_two	synthetic/st_edit_two.fa	chr_st_edit_two	-x 2	t2t	.	PQ	2	pq	0	-	Raising the edit distance must not lose an exact canonical arm
+st_explicit_patterns	synthetic/st_explicit_patterns.fa	chr_st_explicit_patterns	-c TTAGGG -p TTAGGG,CCCTAA	t2t	.	PQ	2	pq	0	-	An explicit -p set covering the canonical pair behaves like the derived one
+st_variant_halo	synthetic/st_variant_halo.fa	chr_st_variant_halo	-x 1	t2t	.	PQ	2	pq	0	-	A degenerate outer edge on an otherwise canonical arm, as subtelomeres really look
+st_inner_array_its	synthetic/st_inner_array.fa	chr_st_inner_array	-i -t 1000	t2t	.	PQ	2	pq	0	1	At -t 1000 the array at offset 1200 is outside the terminal zone and is an ITS
+st_inner_array_terminal	synthetic/st_inner_array.fa	chr_st_inner_array	-i	t2t	misassembly	PpQ	2	pq	0	0	The same array at the default tolerance of 2000 is an extra terminal block
+st_its_abuts_terminal	synthetic/st_its_abuts_terminal.fa	chr_st_its_abuts_terminal	-i -t 1000	t2t	.	PQ	2	pq	0	1	The inner array falls just outside the -t 1000 zone and abuts the p-arm terminal block as an ITS
+st_its_true_interior	synthetic/st_its_true_interior.fa	chr_st_its_true_interior	-i -t 1000	t2t	.	PQ	2	pq	0	1	The same array moved to the true interior is an ITS
+st_fusion_headtohead	synthetic/st_fusion_headtohead.fa	chr_st_fusion_headtohead	-i -t 1000	t2t	.	PQ	2	pq	0	?	An interior head-to-head junction, the signature of a chromosome fusion: REG-004
+mo_inc_p_clean	synthetic/mo_inc_p_clean.fa	chr_mo_inc_p_clean	-	incomplete	.	P	1	p	0	-	One concordant p arm
+mo_inc_p_clean_gapped	synthetic/mo_inc_p_clean_gapped.fa	chr_mo_inc_p_clean_gapped	-	incomplete	.	P	1	p	1	-	One concordant p arm on a gapped scaffold
+mo_inc_q_clean	synthetic/mo_inc_q_clean.fa	chr_mo_inc_q_clean	-	incomplete	.	Q	1	q	0	-	One concordant q arm
+mo_inc_q_disc	synthetic/mo_inc_q_disc.fa	chr_mo_inc_q_disc	-	incomplete	discordant_q	Q*	1	q	0	-	One inverted q arm
+mo_inc_p_bal_gapped	synthetic/mo_inc_p_bal_gapped.fa	chr_mo_inc_p_bal_gapped	-	incomplete	balanced_p	P~	1	p	1	-	One balanced p arm on a gapped scaffold
+mo_inc_q_disc_gapped	synthetic/mo_inc_q_disc_gapped.fa	chr_mo_inc_q_disc_gapped	-	incomplete	discordant_q	Q*	1	q	1	-	One inverted q arm on a gapped scaffold
+mo_inc_p_extra	synthetic/mo_inc_p_extra.fa	chr_mo_inc_p_extra	-	incomplete	misassembly	Pp	1	p	0	-	Two p arrays and no q arm
+mo_inc_q_extra	synthetic/mo_inc_q_extra.fa	chr_mo_inc_q_extra	-	incomplete	misassembly	qQ	1	q	0	-	Two q arrays and no p arm
+mo_inc_p_extra_disc	synthetic/mo_inc_p_extra_disc.fa	chr_mo_inc_p_extra_disc	-	incomplete	discordant_p,misassembly	P*p*	1	p	0	-	Two inverted p arrays: the elected one is flagged and the other is extra
+mo_inc_p_extra_bal	synthetic/mo_inc_p_extra_bal.fa	chr_mo_inc_p_extra_bal	-	incomplete	balanced_p,misassembly	P~p	1	p	0	-	A balanced array and a plain forward array both at the p end, tied on canonical count
+mo_elect_longer_loses	synthetic/mo_elect_longer_loses.fa	chr_mo_elect_longer_loses	-	incomplete	misassembly	Pp	1	p	0	-	The longer array loses the arm election to a shorter, more canonical one: REG-005
+mo_none_gapped_two	synthetic/mo_none_gapped_two.fa	chr_mo_none_gapped_two	-	none	.		0	none	2	-	No telomeres and two gaps
+mo_t2t_gapped_three	synthetic/mo_t2t_gapped_three.fa	chr_mo_t2t_gapped_three	-	t2t	.	PQ	2	pq	3	-	A t2t scaffold broken into four contigs
+mo_seed_gap_exact	synthetic/mo_seed_gap_exact.fa	chr_mo_seed_gap_exact	-d 1	incomplete	.	P	1	p	0	-	A 50 bp run between matches is exactly -k, so they chain into one seed
+mo_seed_gap_beyond	synthetic/mo_seed_gap_beyond.fa	chr_mo_seed_gap_beyond	-d 1	incomplete	misassembly	Pp	1	p	0	-	A 56 bp run exceeds -k, so the matches form two seeds that -d 1 cannot rejoin
+mo_window_overlapping	synthetic/mo_window_overlapping.fa	chr_mo_window_overlapping	-r -w 100 -s 50	t2t	.	PQ	2	pq	0	-	Overlapping windows change the tracks, never the call
+mo_window_large	synthetic/mo_window_large.fa	chr_mo_window_large	-r -w 2000 -s 2000	t2t	.	PQ	2	pq	0	-	A window wider than either arm changes the tracks, never the call
+mo_long_scaffold_default	synthetic/mo_long_scaffold.fa	chr_mo_long_scaffold	-	t2t	.	PQ	2	pq	0	-	A 21 kb scaffold is well inside the default terminal limit
+mo_long_scaffold_narrow	synthetic/mo_long_scaffold_narrow.fa	chr_mo_long_scaffold_narrow	-t 2000	none	.		0	none	0	-	Both arrays sit 3 kb in, outside a 2 kb terminal zone
+mo_order_forward	synthetic/mo_order_forward.fa	rec_a	-	t2t	.	PQ	2	pq	0	-	Three records in one order
+mo_order_forward	synthetic/mo_order_forward.fa	rec_b	-	none	.		0	none	0	-	Three records in one order
+mo_order_forward	synthetic/mo_order_forward.fa	rec_c	-	incomplete	.	Q	1	q	0	-	Three records in one order
+mo_order_reversed	synthetic/mo_order_reversed.fa	rec_c	-	incomplete	.	Q	1	q	0	-	The same three records in the opposite order get the same per-record answers
+mo_order_reversed	synthetic/mo_order_reversed.fa	rec_b	-	none	.		0	none	0	-	The same three records in the opposite order get the same per-record answers
+mo_order_reversed	synthetic/mo_order_reversed.fa	rec_a	-	t2t	.	PQ	2	pq	0	-	The same three records in the opposite order get the same per-record answers
+mo_sparse_long	synthetic/mo_sparse_long.fa	chr_mo_sparse_long	-	incomplete	.	P	1	p	0	-	A long array at exactly -y density survives on both length and density
+mo_dense_short	synthetic/mo_dense_short.fa	chr_mo_dense_short	-	none	.		0	none	0	-	A fully dense 240 bp array still fails -l: density does not buy length
+jn_p_then_q_k1	synthetic/jn_p_then_q_k1.fa	chr_jn_p_then_q_k1	-	t2t	.	PQ	2	pq	0	-	One opposite match inside the p array is absorbed: forward share 200/201
+jn_p_then_q_k2	synthetic/jn_p_then_q_k2.fa	chr_jn_p_then_q_k2	-	t2t	.	PQ	2	pq	0	-	Two opposite matches inside the p array are absorbed: forward share 200/202
+jn_p_then_q_k3	synthetic/jn_p_then_q_k3.fa	chr_jn_p_then_q_k3	-	t2t	?	?	2	pq	0	-	Three or more opposite matches cut the seed; how the split reads is decided (D14) and lands with B3b, REG-014
+jn_p_then_q_k4	synthetic/jn_p_then_q_k4.fa	chr_jn_p_then_q_k4	-	t2t	?	?	2	pq	0	-	Three or more opposite matches cut the seed; how the split reads is decided (D14) and lands with B3b, REG-014
+jn_lone_opposite	synthetic/jn_lone_opposite.fa	chr_jn_lone_opposite	-	incomplete	.	P	1	p	0	-	A single reverse match past the p array is below --min-block-counts and vanishes
+jn_short_q_then_p	synthetic/jn_short_q_then_p.fa	chr_jn_short_q_then_p	-i	t2t	discordant_p,discordant_q	P*Q*	2	pq	0	0	Two abutting opposite arrays, each within tolerance of its end: the docs make both terminal arms; the binary drops the second, REG-017
+jn_short_p_then_q	synthetic/jn_short_p_then_q.fa	chr_jn_short_p_then_q	-i	t2t	.	PQ	2	pq	0	0	Same geometry, forward first: p arm then a concordant q arm per the docs; the binary drops the second, REG-017
+jn_short_p_then_p_gap	synthetic/jn_short_p_then_p_gap.fa	chr_jn_short_p_then_p_gap	-i	incomplete	.	P	1	p	1	0	A 100 bp N run bridges (<= -d) into one 820 bp gapped p arm; no ITS is left over
+jn_short_p_then_p_far	synthetic/jn_short_p_then_p_far.fa	chr_jn_short_p_then_p_far	-i	t2t	discordant_q	PQ*	2	pq	0	0	A 600 bp run past -d leaves two arms, both within tolerance of their own end: p, and a discordant q
+jn_interior_q_then_p	synthetic/jn_interior_q_then_p.fa	chr_jn_interior_q_then_p	-i	none	.		0	none	0	?	Interior TTAGGG array then CCCTAA array, no gap: the fusion signature
+jn_interior_p_then_q	synthetic/jn_interior_p_then_q.fa	chr_jn_interior_p_then_q	-i	none	.		0	none	0	?	Interior CCCTAA array then TTAGGG array, no gap: tail to tail
+jn_interior_p_then_p_gap	synthetic/jn_interior_p_then_p_gap.fa	chr_jn_interior_p_then_p_gap	-i	none	.		0	none	1	1	Interior array split by a bridgeable N run stays one interstitial block
+jn_interior_p_then_p_far	synthetic/jn_interior_p_then_p_far.fa	chr_jn_interior_p_then_p_far	-i	none	.		0	none	0	2	Two interior same-orientation arrays further apart than -d are two blocks
+jn_fragmented_p	synthetic/jn_fragmented_p.fa	chr_jn_fragmented_p	-i	t2t	.	PQ	2	pq	0	1	A 598 bp run past -d separates the p arm from a second forward piece that reads as one ITS
+jn_fragmented_p_plain	synthetic/jn_fragmented_p.fa	chr_jn_fragmented_p	-	t2t	.	PQ	2	pq	0	-	Same file without -i: the fragment is simply not scanned, its is not checked
+jn_its_96bp	synthetic/jn_its_96bp.fa	chr_jn_its_96bp	-i	none	.		0	none	0	0	96 bp is below --min-its-length 100: no ITS is reported (REG-003/D16 changes this later)
+jn_gap_inside_telomere	synthetic/jn_gap_inside_telomere.fa	chr_jn_gap_inside_telomere	-	t2t	.	PQ	2	pq	1	-	A 100 bp N run inside the p array is bridged (<= -d) into one gapped block
+jn_contig_end_telomere	synthetic/jn_contig_end_telomere.fa	chr_jn_contig_end_telomere	-i	t2t	.	PQ	2	pq	2	1	An internal contig-end telomere reads as one interstitial block under current docs, REG-015
+jn_contig_end_telomere_n	synthetic/jn_contig_end_telomere.fa	chr_jn_contig_end_telomere	-n -i	t2t	.	PQ	2	pq	2	1	Same file with -n: docs/parameters.md:103 says -n changes nothing yet, REG-015
+bTaeGut7_mat	bTaeGut7_chr33_mat.fa.gz	chr33_mat	-	t2t	.	PQ	2	pq	0	-	Real zebra finch chr33, maternal haplotype
+bTaeGut7_pat	bTaeGut7_chr33_pat.fa.gz	chr33_pat	-	t2t	.	PQ	2	pq	0	-	Real zebra finch chr33, paternal haplotype
