@@ -12,6 +12,7 @@
 #include <array>
 #include <algorithm>
 #include <cstdlib>
+#include <cmath>
 
 class Trie {
     struct TrieNode {
@@ -105,18 +106,22 @@ struct GapInfo {
     uint32_t length = 0;
 };
 
+struct CoverRun; // defined in teloscope.cpp; the block builder only passes it through
+
 
 struct TelomereBlock {
     uint64_t start = 0;
-    uint32_t blockLen = 0; // End = start + blockLen
+    uint32_t blockLen = 0; // end = start + blockLen
+    uint64_t teloLen = 0; // sum of piece lengths; < blockLen when the chain is fragmented
     uint32_t fwdCanCount = 0;
     uint32_t revCanCount = 0;
     uint32_t fwdNonCanCount = 0;
     uint32_t revNonCanCount = 0;
-    bool hasValidOr = true;
-    bool isLongest = false;
-    char blockLabel = '\0'; // arm: 'p' start side, 'q' end side
-    char strandLabel = '\0'; // strand: 'p' forward, 'q' reverse, 'b' balanced
+    uint16_t pieces = 0; // terminal/contig chains only; 0 means no qualifying chain
+    bool isScaffold = false; // a record arm, rather than a contig-internal row
+    char anchorSide = '\0'; // contig end this row is anchored to: 'p' start, 'q' end
+    char strandLabel = '\0'; // teloLabel: strand found, 'p' forward, 'q' reverse, 'b' balanced
+    char junction = '\0'; // interstitial junction class; unused on terminal rows
 };
 
 struct WindowData {
@@ -164,7 +169,6 @@ struct PathData {
     std::vector<TelomereBlock> interstitialBlocks;
     std::vector<MatchSeqInfo> canonicalMatches;
     std::vector<MatchSeqInfo> nonCanonicalMatches;
-    std::vector<MatchInfo> allMatches;
     uint64_t canonicalCounts = 0;
     std::string terminalLabel;
     ScaffoldType scaffoldType = ScaffoldType::NONE;
@@ -208,8 +212,7 @@ class Teloscope {
     // plausibility, counted beside completeness rather than instead of it
     uint32_t totalFlagged = 0;
     uint32_t totalDiscordantArms = 0;
-    uint32_t totalBalancedArms = 0;
-    uint32_t totalMisassembly = 0;
+    uint32_t totalFragmented = 0;
 
     inline float getShannonEntropy(const uint32_t nucleotideCounts[4], uint32_t windowSize) {
         float entropy = 0.0;
@@ -229,15 +232,16 @@ class Teloscope {
     }
 
 
-    static constexpr uint64_t labelThresholdScale = 1000;
-    static constexpr uint64_t forwardLabelThreshold = 666;
-    static constexpr uint64_t reverseLabelThreshold = 333;
+    static constexpr uint64_t labelThresholdScale = 1000000;
 
-    static inline char computeStrandLabel(uint64_t forwardCount, uint64_t blockCounts) {
+    // symmetric thirds around the threshold: p above f, q below 1-f, b between
+    static inline char computeStrandLabel(uint64_t forwardCount, uint64_t blockCounts, float threshold) {
         if (blockCounts == 0) return 'b';
+        const uint64_t scaledThreshold = static_cast<uint64_t>(
+            std::llround(static_cast<double>(threshold) * labelThresholdScale));
         const uint64_t scaledForward = forwardCount * labelThresholdScale;
-        if (scaledForward > blockCounts * forwardLabelThreshold) return 'p';
-        if (scaledForward < blockCounts * reverseLabelThreshold) return 'q';
+        if (scaledForward > blockCounts * scaledThreshold) return 'p';
+        if (scaledForward < blockCounts * (labelThresholdScale - scaledThreshold)) return 'q';
         return 'b';
     }
 
@@ -277,7 +281,8 @@ public:
                         WindowData& windowData, WindowData& nextOverlapData,
                         SegmentData& segmentData, uint64_t segmentSize, uint64_t absPos);
 
-    SegmentData scanSegment(std::string &sequence, uint64_t absPos, bool tipsOnly);
+    SegmentData scanSegment(std::string &sequence, uint64_t absPos,
+                            bool isFirst, bool isLast, bool buildP, bool buildQ);
 
     inline void sortBySeqPos() {
         std::sort(allPathData.begin(), allPathData.end(), [](const PathData& one, const PathData& two) {
@@ -285,17 +290,20 @@ public:
         });
     }
 
-    void getTeloBlocks(
+    TelomereBlock getTerminalBlocks(
         const std::vector<MatchInfo>& matches,
-        const std::vector<GapInfo>& gapInfos, uint64_t spanSize,
-        std::vector<TelomereBlock>& terminalBlocks,
-        std::vector<TelomereBlock>& interstitialBlocks,
-        bool tipsOnly);
+        const std::vector<CoverRun>& runsFwd, const std::vector<CoverRun>& runsRev,
+        uint64_t contigStart, uint64_t contigEnd, bool fromStart,
+        std::vector<std::pair<uint64_t, uint64_t>>& outPieces, uint64_t& outProbe);
 
-    void labelTerminalBlocks(std::vector<TelomereBlock>& blocks, uint16_t gaps,
+    void getInterstitialBlocks(
+        const std::vector<MatchInfo>& matches, const std::vector<CoverRun>& allRuns,
+        uint64_t regionStart, uint64_t regionEnd,
+        std::vector<TelomereBlock>& outBlocks);
+
+    void labelTerminalBlocks(std::vector<TelomereBlock>& blocks,
                         std::string& terminalLabel, ScaffoldType& scaffoldType,
-                        uint8_t& anomalyFlags,
-                        uint64_t pathSize, uint32_t terminalLimit);
+                        uint8_t& anomalyFlags);
     
     void writeBEDFile(std::ofstream& windowDensityFile,
                     std::ofstream& windowCanonicalRatioFile,

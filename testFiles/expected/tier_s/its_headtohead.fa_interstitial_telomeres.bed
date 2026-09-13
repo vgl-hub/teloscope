@@ -1,1 +1,2 @@
-chr_its_headtohead	100	424	324	b	27	27	40	14	524	contig	p	contiguous	20	20	7	7	balanced
+chr_its_headtohead	100	262	162	p	p	20	0	7	0	524	tail_to_tail
+chr_its_headtohead	262	424	162	q	q	0	20	0	7	524	tail_to_tail

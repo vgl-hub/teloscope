@@ -3,7 +3,7 @@ embedded
 
 +++ Path Summary Report +++
 pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	chr_boundary_fail	0	none	0	none	.		0	20	4
+1	chr_boundary_fail	0	none	0	none	.		1	20	0
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -11,9 +11,9 @@ Total gaps:	0
 Scaffold N50:	3120
 Contig N50:	3120
 Total telomeres:	0
-Total ITS blocks:	0
+Total ITS blocks:	1
 Total canonical matches:	20
-Total windows analyzed:	4
+Total windows analyzed:	0
 
 +++ Telomere Statistics +++
 No telomeres found for statistics.
@@ -35,5 +35,4 @@ Gapped no telomeres:	0
 Scaffolds flagged:	0
 Scaffolds clean:	1
 Discordant arms:	0
-Balanced arms:	0
-Extra terminal blocks:	0
+Fragmented arms:	0

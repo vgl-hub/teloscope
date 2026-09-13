@@ -19,9 +19,8 @@ enum class ScaffoldType : uint8_t {
 enum AnomalyFlag : uint8_t {
     ANOMALY_DISCORDANT_P = 1,
     ANOMALY_DISCORDANT_Q = 2,
-    ANOMALY_BALANCED_P  = 4,
-    ANOMALY_BALANCED_Q  = 8,
-    ANOMALY_MISASSEMBLY  = 16
+    ANOMALY_FRAGMENTED_P = 4,
+    ANOMALY_FRAGMENTED_Q = 8
 };
 
 const char* scaffoldTypeToString(ScaffoldType type);

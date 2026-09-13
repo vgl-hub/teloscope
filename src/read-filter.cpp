@@ -15,13 +15,13 @@ UserInputTeloscope makeReadFilterInput(const UserInputTeloscope &input) {
 
     // max/2 keeps the full read terminal without overflowing scanSegment's doubled limit.
     readInput.terminalLimit = std::numeric_limits<uint32_t>::max() / 2;
+    readInput.terminalTolerance = std::numeric_limits<uint32_t>::max() / 2;
     readInput.ultraFastMode = true;
     readInput.outFasta = false;
     readInput.outWinRepeats = false;
     readInput.outGC = false;
     readInput.outEntropy = false;
     readInput.outMatches = false;
-    readInput.outITS = false;
     readInput.outPlotReport = false;
     readInput.manualCuration = false;
     return readInput;
@@ -40,8 +40,6 @@ bool ReadTelomereFilter::matches(std::string sequence) {
     }
     unmaskSequence(sequence);
 
-    SegmentData segmentData = teloscope->scanSegment(sequence, 0, true);
-    teloscope->getTeloBlocks(segmentData.allMatches, std::vector<GapInfo>{}, sequence.size(),
-                             segmentData.terminalBlocks, segmentData.interstitialBlocks, true);
+    SegmentData segmentData = teloscope->scanSegment(sequence, 0, true, true, true, true);
     return !segmentData.terminalBlocks.empty();
 }

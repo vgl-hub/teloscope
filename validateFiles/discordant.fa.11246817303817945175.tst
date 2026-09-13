@@ -2,15 +2,18 @@ testFiles/discordant.fa -f testFiles/discordant.fa -n
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	chr_discordant	1	q	0	incomplete	discordant_q	Q*
+pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
+1	chr_discordant	1	q	0	incomplete	discordant_q	Q*	0	100	0
 
 +++ Assembly Summary Report +++
 Total paths:	1
 Total gaps:	0
-Scaffold N50:	3400
-Contig N50:	3400
+Scaffold N50:	7800
+Contig N50:	7800
 Total telomeres:	1
+Total ITS blocks:	0
+Total canonical matches:	100
+Total windows analyzed:	0
 
 +++ Telomere Statistics +++
 Mean length:	600
@@ -35,5 +38,4 @@ Gapped no telomeres:	0
 Scaffolds flagged:	1
 Scaffolds clean:	0
 Discordant arms:	1
-Balanced arms:	0
-Extra terminal blocks:	0
+Fragmented arms:	0

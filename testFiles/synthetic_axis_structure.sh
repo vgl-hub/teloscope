@@ -23,6 +23,13 @@ fx st_all_telomere synthetic/st_all_telomere.fa \
    'type=incomplete;anom=.;gran=P;telo=1;labels=p;gaps=0' \
    'A record that is nothing but forward repeat is one array, not two arms'
 
+# The mirror, reverse strand: R3 sends a whole-contig array to the end its strand points
+# to, so a pure-TTAGGG record is q, not a p-end discordant arm (owner: v0.1.5 behaviour).
+fx st_all_telomere_rev synthetic/st_all_telomere_rev.fa \
+   'chr_st_all_telomere_rev=R:TTAGGGx100' '-' \
+   'type=incomplete;anom=.;gran=Q;telo=1;labels=q;gaps=0' \
+   'A record that is nothing but reverse repeat is a concordant q arm, never a p-end discordant one'
+
 fx st_gap_flanked synthetic/st_gap_flanked.fa \
    'chr_st_gap_flanked=N:200+F:CCCTAAx100+L:2400+R:TTAGGGx100+N:200' '-' \
    'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=2' \
@@ -41,7 +48,7 @@ fx st_soft_masked synthetic/st_soft_masked.fa \
 
 # Multi-record coverage across completeness buckets.
 fx st_six_buckets synthetic/st_six_buckets.fa \
-   'rec_t2t=F:CCCTAAx100+L:2800+R:TTAGGGx100;rec_t2t_gapped=F:CCCTAAx100+L:1300+N:200+L:1300+R:TTAGGGx100;rec_incomplete=F:CCCTAAx100+L:2800;rec_incomplete_gapped=F:CCCTAAx100+L:1300+N:200+L:1300;rec_none=L:3000;rec_none_gapped=L:1400+N:200+L:1400' '-' \
+   'rec_t2t=F:CCCTAAx100+L:2800+R:TTAGGGx100;rec_t2t_gapped=F:CCCTAAx100+L:1300+N:200+L:1300+R:TTAGGGx100;rec_incomplete=F:CCCTAAx100+L:6600;rec_incomplete_gapped=F:CCCTAAx100+L:1300+N:200+L:1300;rec_none=L:3000;rec_none_gapped=L:1400+N:200+L:1400' '-' \
    'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0|type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=1|type=incomplete;anom=.;gran=P;telo=1;labels=p;gaps=0|type=incomplete;anom=.;gran=P;telo=1;labels=p;gaps=1|type=none;anom=.;gran=;telo=0;labels=none;gaps=0|type=none;anom=.;gran=;telo=0;labels=none;gaps=1' \
    'One record in each of the six completeness buckets'
 
@@ -72,21 +79,21 @@ fx st_variant_halo synthetic/st_variant_halo.fa \
    'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0' \
    'A degenerate outer edge on an otherwise canonical arm, as subtelomeres really look'
 
-# Terminal zone limit (-t) toggles terminal vs interstitial.
-fx st_inner_array_its synthetic/st_inner_array.fa \
-   'chr_st_inner_array=F:CCCTAAx100+L:600+F:CCCTAAx50+L:2400+R:TTAGGGx100' '-i -t 1000' \
-   'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0;its=1' \
-   'At -t 1000 the array at offset 1200 is outside the terminal zone and is an ITS'
-
+# --link-distance decides whether a nearby array chains into the arm as a second piece.
 fx st_inner_array_terminal synthetic/st_inner_array.fa \
    'chr_st_inner_array=F:CCCTAAx100+L:600+F:CCCTAAx50+L:2400+R:TTAGGGx100' '-i' \
-   'type=t2t;anom=misassembly;gran=PpQ;telo=2;labels=pq;gaps=0;its=0' \
-   'The same array at the default tolerance of 2000 is an extra terminal block'
+   'type=t2t;anom=fragmented_p;gran=PQ;telo=2;labels=pq;gaps=0;its=0' \
+   'A second forward array 600 bp behind the p arm is within --link-distance and chains as a second piece: no ITS is left over'
 
-fx st_its_abuts_terminal synthetic/st_its_abuts_terminal.fa \
-   'chr_st_its_abuts_terminal=F:CCCTAAx100+L:600+F:CCCTAAx50+L:2400+R:TTAGGGx100' '-i -t 1000' \
+fx st_inner_array_its synthetic/st_inner_array_far.fa \
+   'chr_st_inner_array_far=F:CCCTAAx100+L:1200+F:CCCTAAx50+L:1800+R:TTAGGGx100' '-i' \
    'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0;its=1' \
-   'The inner array falls just outside the -t 1000 zone and abuts the p-arm terminal block as an ITS'
+   'The same second array moved 1200 bp behind the p arm is beyond --link-distance: it stays a plain interstitial row'
+
+fx st_its_abuts_terminal synthetic/st_inner_array_far.fa \
+   'chr_st_inner_array_far=F:CCCTAAx100+L:1200+F:CCCTAAx50+L:1800+R:TTAGGGx100' '-i -t 1000' \
+   'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0;its=1' \
+   'The same file at -t 1000: chaining is decided by --link-distance, not -t, so the outcome does not move'
 
 fx st_its_true_interior synthetic/st_its_true_interior.fa \
    'chr_st_its_true_interior=F:CCCTAAx100+L:3000+F:CCCTAAx100+L:3000+R:TTAGGGx100' '-i -t 1000' \
@@ -95,5 +102,5 @@ fx st_its_true_interior synthetic/st_its_true_interior.fa \
 
 fx st_fusion_headtohead synthetic/st_fusion_headtohead.fa \
    'chr_st_fusion_headtohead=F:CCCTAAx100+L:1200+R:TTAGGGx100+F:CCCTAAx100+L:1200+R:TTAGGGx100' '-i -t 1000' \
-   'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0;its=?' \
-   'An interior head-to-head junction, the signature of a chromosome fusion: REG-004'
+   'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0;its=2' \
+   'An interior head-to-head junction (reverse then forward, abutting), the signature of a chromosome fusion: two interstitial rows, both classed fusion'

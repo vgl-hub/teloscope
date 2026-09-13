@@ -16,10 +16,10 @@ Total canonical matches:	100
 Total windows analyzed:	3
 
 +++ Telomere Statistics +++
-Mean length:	300
-Median length:	300
-Min length:	300
-Max length:	300
+Mean length:	600
+Median length:	600
+Min length:	600
+Max length:	600
 
 +++ Chromosome Telomere Counts+++
 Two telomeres:	0
@@ -38,5 +38,4 @@ Gapped no telomeres:	0
 Scaffolds flagged:	0
 Scaffolds clean:	1
 Discordant arms:	0
-Balanced arms:	0
-Extra terminal blocks:	0
+Fragmented arms:	0

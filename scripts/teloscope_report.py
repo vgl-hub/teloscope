@@ -47,12 +47,10 @@ COLORS = {
     "Gapped T2T":          "#9ECAE1",
     "Incomplete":          "#66A61E",
     "Gapped Incomplete":   "#B3D38F",
-    "Misassembly":         "#E6AB02",
-    "Gapped Misassembly":  "#F2D580",
+    "Fragmented":          "#E6AB02",
+    "Gapped Fragmented":   "#F2D580",
     "Discordant":          "#D7191C",
     "Gapped Discordant":   "#EB8C8D",
-    "Balanced":            "#1B9E77",
-    "Gapped Balanced":     "#8DD3C7",
     "No telomeres":        "#762A83",
     "Gapped No telomeres": "#BB95C1",
     # Arm / track colors
@@ -80,12 +78,10 @@ BLOCK_GLYPHS = {
 OVERVIEW_DASH_STYLE = (0, (2.2, 2.2))
 OVERVIEW_DASH_WIDTH = 0.35
 FLAGGED_SCAFFOLD_CATEGORIES = (
-    "Misassembly",
-    "Gapped Misassembly",
+    "Fragmented",
+    "Gapped Fragmented",
     "Discordant",
     "Gapped Discordant",
-    "Balanced",
-    "Gapped Balanced",
 )
 
 FIGURE_TITLE_SIZE = 9.3
@@ -181,10 +177,9 @@ def find_files(directory):
 
 def parse_terminal_bed(path):
     """
-    Parse *_terminal_telomeres.bed -> dict[chrom -> list of block dicts].
-    v0.1.6 columns: chrom start end length strand fwd rev canonical nonCanonical
-    chromSize blockType arm gapStatus fwdCan revCan fwdNonCan revNonCan. Columns 1
-    to 11 are the v0.1.5 layout; the 10-column interim schema is also accepted.
+    Parse a terminal or interstitial telomere BED -> dict[chrom -> list of block dicts].
+    12-column schema: chr start end teloLen teloLabel closestEnd fwdCan revCan
+    fwdNonCan revNonCan chrSize teloType.
     """
     blocks = defaultdict(list)
     malformed = 0
@@ -194,87 +189,56 @@ def parse_terminal_bed(path):
             if not line or line.startswith("#") or line.startswith("track"):
                 continue
             parts = line.split("\t")
-            if len(parts) < 9:
+            if len(parts) != 12:
                 malformed += 1
                 if malformed <= 3:
-                    _warn(f"{path}:{lineno}: expected at least 9 BED columns, found {len(parts)}; skipping.")
-                continue
-            joint_schema = parts[3] in {"p", "q", "b"}
-            if not joint_schema and len(parts) < 10:
-                malformed += 1
-                if malformed <= 3:
-                    _warn(f"{path}:{lineno}: expected at least 10 legacy BED columns, found {len(parts)}; skipping.")
+                    _warn(f"{path}:{lineno}: expected 12 BED columns, found {len(parts)}; skipping.")
                 continue
             try:
                 start = int(parts[1])
                 end = int(parts[2])
-                if joint_schema:
-                    label = parts[3]
-                    length = end - start
-                    fwd_can = int(parts[4])
-                    rev_can = int(parts[5])
-                    fwd_noncan = int(parts[6])
-                    rev_noncan = int(parts[7])
-                    fwd = fwd_can + fwd_noncan
-                    rev = rev_can + rev_noncan
-                    can = fwd_can + rev_can
-                    noncan = fwd_noncan + rev_noncan
-                    path_size = int(parts[8]) if parts[8] else 0
-                    terminality = parts[9] if len(parts) > 9 else ""
-                    arm = gap_status = ""
-                else:
-                    length = int(parts[3])
-                    label = parts[4]
-                    fwd = int(parts[5])
-                    rev = int(parts[6])
-                    can = int(parts[7])
-                    noncan = int(parts[8])
-                    path_size = int(parts[9]) if parts[9] else 0
-                    terminality = parts[10] if len(parts) > 10 else ""
-                    if len(parts) > 16:
-                        arm = parts[11]
-                        gap_status = parts[12]
-                        fwd_can = int(parts[13])
-                        rev_can = int(parts[14])
-                        fwd_noncan = int(parts[15])
-                        rev_noncan = int(parts[16])
-                    else:
-                        arm = gap_status = ""
-                        fwd_can = rev_can = fwd_noncan = rev_noncan = None
+                telo_len = int(parts[3])
+                label = parts[4]
+                closest_end = parts[5]
+                fwd_can = int(parts[6])
+                rev_can = int(parts[7])
+                fwd_noncan = int(parts[8])
+                rev_noncan = int(parts[9])
+                path_size = int(parts[10]) if parts[10] else 0
+                terminality = parts[11]
             except ValueError as exc:
                 malformed += 1
                 if malformed <= 3:
                     _warn(f"{path}:{lineno}: invalid numeric field ({exc}); skipping.")
                 continue
 
-            if end <= start or length <= 0:
+            if end <= start or telo_len <= 0:
                 malformed += 1
                 if malformed <= 3:
-                    _warn(f"{path}:{lineno}: invalid interval start={start} end={end} length={length}; skipping.")
+                    _warn(f"{path}:{lineno}: invalid interval start={start} end={end} teloLen={telo_len}; skipping.")
                 continue
 
             chrom = parts[0]
             blocks[chrom].append({
-                "start":    start,
-                "end":      end,
-                "length":   length,
-                "label":    label,
-                "fwd":      fwd,
-                "rev":      rev,
-                "can":      can,
-                "noncan":   noncan,
-                "fwdCan":   fwd_can,
-                "revCan":   rev_can,
+                "start":     start,
+                "end":       end,
+                "length":    telo_len,
+                "label":     label,
+                "closestEnd": closest_end,
+                "fwd":       fwd_can + fwd_noncan,
+                "rev":       rev_can + rev_noncan,
+                "can":       fwd_can + rev_can,
+                "noncan":    fwd_noncan + rev_noncan,
+                "fwdCan":    fwd_can,
+                "revCan":    rev_can,
                 "fwdNonCan": fwd_noncan,
                 "revNonCan": rev_noncan,
-                "pathSize": path_size,
-                "term":     terminality,
-                "arm":      arm,
-                "gap":      gap_status,
+                "pathSize":  path_size,
+                "term":      terminality,
             })
     if malformed:
         suffix = " (first 3 shown above)" if malformed > 3 else ""
-        _warn(f"Skipped {malformed} malformed terminal BED line(s) from '{path}'{suffix}.")
+        _warn(f"Skipped {malformed} malformed BED line(s) from '{path}'{suffix}.")
     return dict(blocks)
 
 
@@ -408,17 +372,15 @@ def parse_bedgraph(path):
 _ANOMALY_OF = {
     "discordant_p": "Discordant",
     "discordant_q": "Discordant",
-    "balanced_p":   "Balanced",
-    "balanced_q":   "Balanced",
-    "misassembly":  "Misassembly",
+    "fragmented_p": "Fragmented",
+    "fragmented_q": "Fragmented",
 }
 
 _GAPPED_OF = {
     "T2T": "Gapped T2T",
     "Incomplete": "Gapped Incomplete",
-    "Misassembly": "Gapped Misassembly",
+    "Fragmented": "Gapped Fragmented",
     "Discordant": "Gapped Discordant",
-    "Balanced": "Gapped Balanced",
     "No telomeres": "Gapped No telomeres",
 }
 
@@ -427,13 +389,8 @@ _TYPE_MAP = OrderedDict([
     ("gapped_t2t",         "Gapped T2T"),
     ("incomplete",         "Incomplete"),
     ("gapped_incomplete",  "Gapped Incomplete"),
-    ("misassembly",        "Misassembly"),
-    ("gapped_misassembly", "Gapped Misassembly"),
-    ("gapped_missassembly","Gapped Misassembly"),
     ("discordant",         "Discordant"),
     ("gapped_discordant",  "Gapped Discordant"),
-    ("balanced",           "Balanced"),
-    ("gapped_balanced",    "Gapped Balanced"),
     ("none",               "No telomeres"),
     ("gapped_none",        "Gapped No telomeres"),
 ])
@@ -450,12 +407,10 @@ def parse_report(path):
         ("Gapped T2T",          []),
         ("Incomplete",          []),
         ("Gapped Incomplete",   []),
-        ("Misassembly",         []),
-        ("Gapped Misassembly",  []),
+        ("Fragmented",          []),
+        ("Gapped Fragmented",   []),
         ("Discordant",          []),
         ("Gapped Discordant",   []),
-        ("Balanced",            []),
-        ("Gapped Balanced",     []),
         ("No telomeres",        []),
         ("Gapped No telomeres", []),
     ])
@@ -790,9 +745,10 @@ def _iter_true_runs(mask):
 
 def _block_end_distance(block, chrom_size):
     """Return the relevant distance from a telomere block to the scaffold end in bp."""
-    if block["label"] in {"p", "q"}:
+    closest_end = block.get("closestEnd")
+    if closest_end in {"p", "q"}:
         start_dist, end_dist = _terminal_distance_interval(
-            int(block["start"]), int(block["end"]), int(chrom_size), block["label"])
+            int(block["start"]), int(block["end"]), int(chrom_size), closest_end)
         return min(start_dist, end_dist)
     left_gap = max(int(block["start"]), 0)
     right_gap = max(int(chrom_size) - int(block["end"]), 0)
@@ -1195,7 +1151,7 @@ def _draw_flagged_scaffolds_panel(ax, classifications, chrom_sizes, top_n=10, ti
     flagged_top = flagged[:top_n]
 
     if not flagged_top:
-        ax.text(0.5, 0.5, "No flagged scaffolds\n(misassembly / discordant)",
+        ax.text(0.5, 0.5, "No flagged scaffolds\n(fragmented / discordant)",
                 transform=ax.transAxes, ha="center", va="center",
                 fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999", linespacing=1.4)
         ax.set_xticks([])
@@ -1238,6 +1194,7 @@ def _compute_block_rows(blocks, chrom_sizes):
             rows.append({
                 "chrom": chrom,
                 "label": block["label"],
+                "closestEnd": block.get("closestEnd"),
                 "length": block["length"],
                 "distance": _block_end_distance(block, chrom_size),
             })
@@ -1305,9 +1262,8 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
     quality_handles = [
         Patch(facecolor=COLORS["T2T"],         label="T2T"),
         Patch(facecolor=COLORS["Incomplete"],   label="Incomplete"),
-        Patch(facecolor=COLORS["Misassembly"],  label="Misassembly"),
+        Patch(facecolor=COLORS["Fragmented"],   label="Fragmented"),
         Patch(facecolor=COLORS["Discordant"],   label="Discordant"),
-        Patch(facecolor=COLORS["Balanced"],     label="Balanced"),
         Patch(facecolor=COLORS["No telomeres"], label="No telomeres"),
     ]
 
@@ -1331,7 +1287,7 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
         },
     )
 
-    # ---- Panel b: Flagged scaffolds (discordant / misassembly by size) ----
+    # ---- Panel b: Flagged scaffolds (discordant / fragmented by size) ----
     _draw_flagged_scaffolds_panel(ax_flagged_scaffolds, classifications, chrom_sizes, title=None)
 
     # ---- Titles and panel labels ----
@@ -1378,13 +1334,13 @@ def plot_overview_page2(blocks, chrom_sizes):
         entry = flagged_by_scaffold[fr["chrom"]]
         entry["length"] += fr["length"]
         entry["count"] += 1
-        entry["arms"][fr["label"]] += 1
+        entry["arms"][fr["closestEnd"]] += 1
     flagged_ranked = sorted(flagged_by_scaffold.items(),
                             key=lambda kv: kv[1]["length"], reverse=True)
     flagged_top = flagged_ranked[:FLAGGED_TOP_N]
 
-    p_len = [row["length"] for row in block_rows if row["label"] == "p"]
-    q_len = [row["length"] for row in block_rows if row["label"] == "q"]
+    p_len = [row["length"] for row in block_rows if row["closestEnd"] == "p"]
+    q_len = [row["length"] for row in block_rows if row["closestEnd"] == "q"]
     b_len = [row["length"] for row in block_rows if row["label"] == "b"]
     all_len = p_len + q_len + b_len
 
@@ -1451,7 +1407,8 @@ def plot_overview_page2(blocks, chrom_sizes):
     if scatter_rows:
         max_log_x = 0.0
         for leg_lbl, arm_key, col in scatter_groups:
-            arm_rows = [row for row in scatter_rows if row["label"] == arm_key]
+            field = "label" if arm_key == "b" else "closestEnd"
+            arm_rows = [row for row in scatter_rows if row[field] == arm_key]
             if not arm_rows:
                 continue
             x = np.log10(np.asarray([row["distance"] for row in arm_rows], dtype=np.float64) + 1.0)
@@ -1591,8 +1548,8 @@ def compute_view_windows(blocks_list, chrom_size):
         padded = min(int(chrom_size), max(int(round(furthest * PADDING_FACTOR)), MIN_WINDOW))
         return _normalize_terminal_limit_bp(padded)
 
-    p_blocks = [b for b in blocks_list if b["label"] in ("p", "b")]
-    q_blocks = [b for b in blocks_list if b["label"] in ("q", "b")]
+    p_blocks = [b for b in blocks_list if b["closestEnd"] == "p"]
+    q_blocks = [b for b in blocks_list if b["closestEnd"] == "q"]
     p_limit = _arm_limit(p_blocks, "p")
     q_limit = _arm_limit(q_blocks, "q")
 
@@ -1796,8 +1753,8 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
     has_its = its_blocks_list is not None and len(its_blocks_list) > 0
     has_gc = gc_data is not None and len(gc_data[0]) > 0
     has_entropy = entropy_data is not None and len(entropy_data[0]) > 0
-    p_has_telomere = any(b["label"] in ("p", "b") for b in blocks_list)
-    q_has_telomere = any(b["label"] in ("q", "b") for b in blocks_list)
+    p_has_telomere = any(b["closestEnd"] == "p" for b in blocks_list)
+    q_has_telomere = any(b["closestEnd"] == "q" for b in blocks_list)
 
     p_window, q_window = compute_view_windows(blocks_list, chrom_size)
     fallback_full_chrom = p_window is None and q_window is None

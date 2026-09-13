@@ -40,14 +40,13 @@ check_defaults() {
     assert_default maxBlockDist   500   include/input.h     'maxBlockDist *= *\([0-9]*\)'
     assert_default minBlockLen    300   include/input.h     'minBlockLen *= *\([0-9]*\)'
     assert_default minBlockCounts 2     include/input.h     'minBlockCounts *= *\([0-9]*\)'
-    assert_default minITSLen      100   include/input.h     'minITSLen *= *\([0-9]*\)'
     assert_default terminalLimit  50000 include/input.h     'terminalLimit *= *\([0-9]*\)'
-    assert_default termTolerance  2000  include/input.h     'terminalTolerance *= *\([0-9]*\)'
+    assert_default termTolerance  3000  include/input.h     'terminalTolerance *= *\([0-9]*\)'
+    assert_default linkDistance   1000  include/input.h     'linkDistance *= *\([0-9]*\)'
     assert_default editDistance   1     include/input.h     'editDistance *= *\([0-9]*\)'
     # hardcoded, not reachable from the CLI -- see docs/conflicts.md REG-003
     assert_default minCanonicalCount 4  src/teloscope.cpp   'minCanonicalCount *= *\([0-9]*\)'
-    assert_default fwdLabelThreshold 666 include/teloscope.h 'forwardLabelThreshold *= *\([0-9]*\)'
-    assert_default revLabelThreshold 333 include/teloscope.h 'reverseLabelThreshold *= *\([0-9]*\)'
+    assert_default labelThreshold 0.667f include/input.h    'labelThreshold *= *\([0-9.]*f\)'
 }
 
 repeat_motif() {
@@ -164,7 +163,7 @@ write_fasta() {
 
 source "$SCRIPT_DIR/synthetic_fixtures.sh"
 
-MANIFEST_COLUMNS="id	path	scaffold	flags	expect_type	expect_anomaly	expect_granular	expect_telomeres	expect_labels	expect_gaps	expect_its	intent"
+MANIFEST_COLUMNS="id	path	scaffold	flags	expect_type	expect_anomaly	expect_granular	expect_telomeres	expect_labels	expect_gaps	expect_its	expect_telolen	intent"
 
 # Absent key = default; key present but empty means the field really is empty.
 field() { # expect_string key default
@@ -194,7 +193,7 @@ write_manifest() {
             for rec in "${records[@]}"; do
                 header=${rec%%=*}
                 if [ "${#expects[@]}" -eq 1 ]; then e=${expects[0]}; else e=${expects[$n]}; fi
-                printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
                     "${FX_ID[$i]}" "${FX_PATH[$i]}" "$header" "${FX_FLAGS[$i]}" \
                     "$(field "$e" type '?')" \
                     "$(field "$e" anom '?')" \
@@ -203,6 +202,7 @@ write_manifest() {
                     "$(field "$e" labels '?')" \
                     "$(field "$e" gaps '?')" \
                     "$(field "$e" its '-')" \
+                    "$(field "$e" telolen '-')" \
                     "${FX_INTENT[$i]}"
                 n=$((n + 1))
             done
@@ -210,7 +210,7 @@ write_manifest() {
         local j e
         for j in "${!XFX_ID[@]}"; do
             e=${XFX_EXPECT[$j]}
-            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
                 "${XFX_ID[$j]}" "${XFX_PATH[$j]}" "${XFX_SCAFFOLD[$j]}" "${XFX_FLAGS[$j]}" \
                 "$(field "$e" type '?')" \
                 "$(field "$e" anom '?')" \
@@ -219,6 +219,7 @@ write_manifest() {
                 "$(field "$e" labels '?')" \
                 "$(field "$e" gaps '?')" \
                 "$(field "$e" its '-')" \
+                "$(field "$e" telolen '-')" \
                 "${XFX_INTENT[$j]}"
         done
     } > "$out"

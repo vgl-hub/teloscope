@@ -81,6 +81,7 @@ int main(int argc, char **argv) {
     bool isPipe = !isatty(STDIN_FILENO);
 #endif
     bool hasInputPatterns = false;
+    bool fullScanRequested = false;
     
     if (argc == 1 && !isPipe) { // case: with no arguments and no pipe
 
@@ -162,6 +163,20 @@ int main(int argc, char **argv) {
         }
     };
 
+    auto parseLabelThreshold = [](const char* value) -> float {
+        try {
+            float v = std::stof(value);
+            if (v <= 0.5f || v > 1.0f) {
+                fprintf(stderr, "Error: --label-threshold must be in the range (0.5,1].\n");
+                exit(EXIT_FAILURE);
+            }
+            return v;
+        } catch (const std::exception& e) {
+            fprintf(stderr, "Error: Invalid value '%s' for --label-threshold. Must be a number.\n", value);
+            exit(EXIT_FAILURE);
+        }
+    };
+
     static struct option long_options[] = { // struct mapping long options
         {"input-sequence", required_argument, 0, 'f'},
         {"output", required_argument, 0, 'o'},
@@ -181,7 +196,8 @@ int main(int argc, char **argv) {
         {"min-block-density", required_argument, 0, 'y'},
         {"edit-distance", required_argument, 0, 'x'},
         {"terminal-tolerance", required_argument, 0, 0},
-        {"min-its-length", required_argument, 0, 0},
+        {"link-distance", required_argument, 0, 0},
+        {"label-threshold", required_argument, 0, 0},
         {"min-block-counts", required_argument, 0, 0},
 
         {"out-fasta", no_argument, 0, 'a'},
@@ -189,7 +205,7 @@ int main(int argc, char **argv) {
         {"out-gc", no_argument, 0, 'g'},
         {"out-entropy", no_argument, 0, 'e'},
         {"out-matches", no_argument, 0, 'm'},
-        {"out-its", no_argument, 0, 'i'},
+        {"full-scan", no_argument, 0, 'i'},
         {"ultra-fast", no_argument, 0, 'u'},
         {"manual-curation", no_argument, 0, 'n'},
         {"plot-report", no_argument, 0, 0},
@@ -242,8 +258,10 @@ int main(int argc, char **argv) {
                     addPrefixFilters(optarg, userInput.excludePrefixes, "--exclude-prefix");
                 else if (strcmp(long_options[option_index].name, "terminal-tolerance") == 0)
                     userInput.terminalTolerance = parsePositive(optarg, "--terminal-tolerance");
-                else if (strcmp(long_options[option_index].name, "min-its-length") == 0)
-                    userInput.minITSLen = parsePositive(optarg, "--min-its-length");
+                else if (strcmp(long_options[option_index].name, "link-distance") == 0)
+                    userInput.linkDistance = parsePositive(optarg, "--link-distance");
+                else if (strcmp(long_options[option_index].name, "label-threshold") == 0)
+                    userInput.labelThreshold = parseLabelThreshold(optarg);
                 else if (strcmp(long_options[option_index].name, "min-block-counts") == 0)
                     userInput.minBlockCounts = parsePositive(optarg, "--min-block-counts");
                 break;
@@ -510,18 +528,18 @@ int main(int argc, char **argv) {
 
 
             case 'i':
-                userInput.outITS = true;
+                fullScanRequested = true;
                 userInput.ultraFastMode = false;
                 break;
 
 
             case 'u': {
                 if (userInput.outWinRepeats || userInput.outGC ||
-                    userInput.outEntropy   || userInput.outITS ||
+                    userInput.outEntropy   || fullScanRequested ||
                     userInput.outMatches) {
                     // conflicts with genome-wide flags, ignore -u
                     userInput.ultraFastMode = false;
-                    fprintf(stderr, "Ignoring -u: -r/-g/-e/-i/-m request genome-wide scanning.\n");
+                    fprintf(stderr, "Ignoring -u: -r/-g/-e/-i/-m/-n request genome-wide scanning.\n");
                 } else {
                     // terminal-only mode
                     userInput.ultraFastMode = true;
@@ -531,8 +549,10 @@ int main(int argc, char **argv) {
             }
 
 
-            case 'n': // manual curation mode
+            case 'n': // manual curation mode: also report contig-internal telomeres; implies the full scan
                 userInput.manualCuration = true;
+                fullScanRequested = true;
+                userInput.ultraFastMode = false;
                 break;
 
 
@@ -555,14 +575,15 @@ int main(int argc, char **argv) {
                 printf("\t'-c'\t--canonical\tSet canonical pattern. [Default: TTAGGG]\n");
                 printf("\t'-p'\t--patterns\tSet patterns to explore, separate them by commas [Default: TTAGGG]\n");
                 printf("\t'-j'\t--threads\tSet maximum number of threads. [Default: max. available]\n");
-                printf("\t'-t'\t--terminal-limit\tSet terminal limit for exploring telomere variant regions (TVRs). Overridden in read subset modes. [Default: 50000]\n");
+                printf("\t'-t'\t--terminal-limit\tHow far in from each scaffold end the fast scan looks, extended while an array continues; also the upper cap on the start zone; never bounds a telomere's extent. Overridden in read subset modes. [Default: 50000]\n");
                 printf("\t'-k'\t--max-match-distance\tSet maximum distance for merging matches. [Default: 50]\n");
                 printf("\t'-d'\t--max-block-distance\tSet maximum run of absent or non-telomeric sequence bridged inside a block. [Default: 500]\n");
                 printf("\t'-l'\t--min-block-length\tSet minimum block length. [Default: 300 assembly, 42 read subset]\n");
                 printf("\t'-y'\t--min-block-density\tSet minimum block density. [Default: 0.5]\n");
                 printf("\t'-x'\t--edit-distance\tSet edit distance for pattern matching (0-2). [Default: 1]\n");
-                printf("\t\t--terminal-tolerance\tSet how far in called bases a block may start and still count as terminal. [Default: 2000]\n");
-                printf("\t\t--min-its-length\tSet minimum interstitial block length. [Default: 100]\n");
+                printf("\t\t--terminal-tolerance\tDistance to end: how far from an end a telomere may start. [Default: 3000]\n");
+                printf("\t\t--link-distance\tSet how close pieces or a neighbouring block must be to link into one telomere or to be classed as its neighbour. [Default: 1000]\n");
+                printf("\t\t--label-threshold\tSet the forward-share threshold for an interstitial block's p/q/b label; symmetric around 0.5. [Default: 0.667]\n");
                 printf("\t\t--min-block-counts\tSet minimum matches for a block. [Default: 2]\n");
 
                 printf("\nOptional Parameters:\n");
@@ -577,9 +598,9 @@ int main(int argc, char **argv) {
                 printf("\t'-g'\t--out-gc\tOutput GC content for each window. [Default: false]\n");
                 printf("\t'-e'\t--out-entropy\tOutput Shannon entropy for each window. [Default: false]\n");
                 printf("\t'-m'\t--out-matches\tOutput all canonical and terminal non-canonical matches. [Default: false]\n");
-                printf("\t'-i'\t--out-its\tOutput assembly interstitial telomere (ITSs) regions.[Default: false] \n");
+                printf("\t'-i'\t--full-scan\tScan whole sequences so the interstitial file is complete. [Default: false]\n");
                 printf("\t'-u'\t--ultra-fast\tUltra-fast mode. Only scans terminal telomeres at contig ends. [Default: true]\n");
-                printf("\t'-n'\t--manual-curation\tRetain all terminal telomeres (contig + scaffold) in BED output. [Default: scaffold only]\n");
+                printf("\t'-n'\t--manual-curation\tAlso report telomeres at internal contig ends as contig rows; implies the full scan. [Default: scaffold only]\n");
                 printf("\t\t--plot-report\tGenerate a PDF plot report after analysis (requires Python 3 + matplotlib). [Default: false]\n");
                 printf("\t\t--fastq-subset\tStream FASTQ reads with Teloscope-valid telomeric blocks to stdout, or save to a file with -o. [Default: false]\n");
                 printf("\t\t--bam-subset\tStream BAM records with Teloscope-valid telomeric blocks to stdout, or save to a file with -o. [Default: false]\n");
@@ -707,14 +728,14 @@ int main(int argc, char **argv) {
     if (userInput.outWinRepeats) appendOutput("repeat density");
     if (userInput.outEntropy) appendOutput("Shannon entropy");
     if (userInput.outMatches) appendOutput("genome-wide matches");
-    if (userInput.outITS) appendOutput("ITS blocks");
+    if (fullScanRequested) appendOutput("full scan");
     if (userInput.outPlotReport) appendOutput("plot report");
     if (!outputSummary.empty()) {
         fprintf(stderr, "Outputs: %s.\n", outputSummary.c_str());
     }
     if ((userInput.fastqSubset || userInput.bamSubset) &&
         (userInput.outFasta || userInput.outWinRepeats || userInput.outGC ||
-         userInput.outEntropy || userInput.outMatches || userInput.outITS ||
+         userInput.outEntropy || userInput.outMatches || fullScanRequested ||
          userInput.outPlotReport || userInput.manualCuration)) {
         fprintf(stderr, "Warning: assembly output flags are ignored in read subset mode.\n");
     }

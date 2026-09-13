@@ -135,6 +135,7 @@ Also keep `-s <= -w`. A larger step than window size is rejected.
 By default, FASTA mode writes:
 
 - `*_terminal_telomeres.bed`
+- `*_interstitial_telomeres.bed`
 - `*_gaps.bed`
 - `*_report.tsv`
 
@@ -144,7 +145,6 @@ Everything else depends on flags:
 - `-g`: GC BEDgraph
 - `-e`: entropy BEDgraph
 - `-m`: canonical and non-canonical match BED files
-- `-i`: interstitial telomere BED
 - `--plot-report`: PDF report
 
 ### GFA run did not write BED or TSV files
@@ -157,11 +157,11 @@ That is expected. GFA mode writes only:
 
 ### `-n` did not change classification
 
-`-n/--manual-curation` only keeps contig-terminal telomeres in the BED output. It does not change the scaffold classification logic in `*_report.tsv`.
+`-n/--manual-curation` implies the full scan and writes contig-terminal telomeres to `*_terminal_telomeres.bed` as `teloType=contig` rows, removing them from the interstitial BED. Contig rows never drive `type`, `anomaly`, or the length statistics in `*_report.tsv`; they appear lowercase in `granular`.
 
 ### Runtime increased after enabling output flags
 
-`-r`, `-g`, `-e`, `-m`, and `-i` disable ultra-fast end-only scanning and force full-sequence analysis. That slowdown is expected.
+`-r`, `-g`, `-e`, `-m`, `-i`, and `-n` all force the full scan instead of the fast end-only scan. That slowdown is expected.
 
 ## Calls look wrong
 
@@ -177,7 +177,7 @@ Most surprises come from `-c`, `-t`, `-l`, `-y`, `-k`, `-d`, or `-x`.
 Check these first:
 
 - `-c` matches the organism
-- `-t` is large enough to include the terminal block
+- `-t` and `--terminal-tolerance` reach far enough in for the telomere to start there (the start zone is the smaller of the two)
 - `-l` is not too strict
 - `-y` is not too strict
 - `-x` is not too strict for the assembly
@@ -185,33 +185,27 @@ Check these first:
 Use one permissive run first:
 
 ```sh
-teloscope asm.fa -t 100000 -l 200 -y 0.3 -x 1 --verbose
+teloscope asm.fa -t 100000 --terminal-tolerance 100000 -l 200 -y 0.3 -x 1 --verbose
 ```
 
 Then restore one threshold at a time.
 
 ### Blocks are split or merged incorrectly
 
-`-k` and `-d` control merging.
-
-- Low `-k` or `-d` splits nearby repeat runs into separate blocks.
-- High `-k` or `-d` fuses distinct repeat runs into one block.
-
-If blocks fragment, raise them gradually. If blocks fuse, lower them.
+`-d` sets how far a single piece may bridge non-telomeric sequence. `--link-distance` sets how close two pieces must be to join into one telomere. For interstitial rows, `-k` joins matches into seeds and `-d` joins seeds into one row. If a telomere is reported in pieces when you expect one block, raise `--link-distance`.
 
 ### Classification looks wrong
 
-`*_report.tsv` is based on scaffold-terminal blocks.
+`*_report.tsv` is based on the two arms: the first contig's p chain and the last contig's q chain.
 
-- `-n` affects BED retention, not classification
-- `-n` keeps contig-terminal rows in `*_terminal_telomeres.bed`
-- `-n` does not change `t2t`, `incomplete`, `misassembly`, `discordant`, or `none`
+- `-n` implies the full scan and adds contig-terminal rows to `*_terminal_telomeres.bed`; it does not affect classification
+- `-n` does not change `t2t`, `incomplete`, `discordant_p`/`discordant_q`, `fragmented_p`/`fragmented_q`, or `none`
 
 If classification looks wrong, recheck:
 
 - `-c`
-- `-t`
-- whether you are comparing scaffold-terminal calls in `*_report.tsv` to contig-terminal rows in `*_terminal_telomeres.bed`
+- `-t` and `--terminal-tolerance`
+- whether you are comparing the two arms in `*_report.tsv` to contig-terminal rows in `*_terminal_telomeres.bed`
 
 ### Pattern matching is slow or labels look wrong
 
@@ -279,6 +273,6 @@ If a run looks wrong, check these in order:
 1. Confirm whether you are running FASTA mode or GFA mode.
 2. Confirm the canonical motif in `-c`.
 3. Confirm which optional outputs you actually requested.
-4. Check whether `-r`, `-g`, `-e`, `-m`, or `-i` forced full-sequence scanning.
+4. Check whether `-r`, `-g`, `-e`, `-m`, `-i`, or `-n` forced the full scan.
 5. Revisit `-t`, `-l`, `-y`, `-k`, and `-d`.
 6. Rerun once with `--cmd --verbose`.
