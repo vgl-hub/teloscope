@@ -8,13 +8,3 @@
 # to record it, and so a future red run is never resolved by deleting the check.
 #
 # invariant	subject	register	reason
-ORA-08-its-recall	boundary_extend_its.fa [-i -t 300]:chr_boundary_ext_its:0-600	REG-018	the 300 bp beyond -t inside the accepted seed is reported nowhere
-ORA-08-its-recall	boundary_extend_its.fa [-i -t 300]:chr_boundary_ext_its:3900-4500	REG-018	same, q end
-ORA-06-terminal-recall	jn_short_q_then_p.fa [-i]:chr_jn_short_q_then_p:q:1860-2220	REG-017	the q-end array is rejected as the same physical array as the p arm, then dropped
-ORA-07-terminal-window-covered	jn_short_q_then_p.fa [-i]:chr_jn_short_q_then_p:q:1860-2220	REG-017	same
-ORA-08-its-recall	jn_short_q_then_p.fa [-i]:chr_jn_short_q_then_p:1860-2220	REG-017	same
-ORA-06-terminal-recall	jn_short_p_then_q.fa [-i]:chr_jn_short_p_then_q:q:1860-2220	REG-017	the q-end array is rejected as the same physical array as the p arm, then dropped
-ORA-07-terminal-window-covered	jn_short_p_then_q.fa [-i]:chr_jn_short_p_then_q:q:1860-2220	REG-017	same
-ORA-08-its-recall	jn_short_p_then_q.fa [-i]:chr_jn_short_p_then_q:1860-2220	REG-017	same
-ORA-07-terminal-window-covered	jn_short_q_then_p.fa [-i]:chr_jn_short_q_then_p:p:1860-2220	REG-017	same array seen from the p end
-ORA-07-terminal-window-covered	jn_short_p_then_q.fa [-i]:chr_jn_short_p_then_q:p:1860-2220	REG-017	same array seen from the p end

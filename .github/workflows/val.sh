@@ -55,40 +55,43 @@ mkdir -p "$TMPDIR"
 # File count tests (output flag combinations)
 # =====================================================
 
-# Test: default mode produces 2 files (terminal_telomeres.bed + report.tsv)
+# Test: default mode produces 4 files (terminal + interstitial + gaps + report): the
+# interstitial file is always written now (R10)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" 2>/dev/null >/dev/null
-check_file_count "default mode file count" 3 "$TMPDIR"
+check_file_count "default mode file count" 4 "$TMPDIR"
 
-# Test: -r produces 5 files (terminal + report + density + canonical_ratio + strand_ratio)
+# Test: -r produces 7 files (terminal + interstitial + gaps + report + density + canonical_ratio + strand_ratio)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" -r 2>/dev/null >/dev/null
-check_file_count "-r flag file count" 6 "$TMPDIR"
+check_file_count "-r flag file count" 7 "$TMPDIR"
 
-# Test: -g produces 3 files (terminal + report + gc)
+# Test: -g produces 5 files (terminal + interstitial + gaps + report + gc)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" -g 2>/dev/null >/dev/null
-check_file_count "-g flag file count" 4 "$TMPDIR"
+check_file_count "-g flag file count" 5 "$TMPDIR"
 
-# Test: -e produces 3 files (terminal + report + entropy)
+# Test: -e produces 5 files (terminal + interstitial + gaps + report + entropy)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" -e 2>/dev/null >/dev/null
-check_file_count "-e flag file count" 4 "$TMPDIR"
+check_file_count "-e flag file count" 5 "$TMPDIR"
 
-# Test: -m produces 4 files (terminal + report + canonical_matches + noncanonical_matches)
+# Test: -m produces 6 files (terminal + interstitial + gaps + report + canonical_matches + noncanonical_matches)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" -m 2>/dev/null >/dev/null
-check_file_count "-m flag file count" 5 "$TMPDIR"
+check_file_count "-m flag file count" 6 "$TMPDIR"
 
-# Test: -i produces 3 files (terminal + report + interstitial_telomeres)
-rm -rf "$TMPDIR"/* 2>/dev/null || true
-build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" -i 2>/dev/null >/dev/null
-check_file_count "-i flag file count" 4 "$TMPDIR"
+# Test: -i's file count now equals the default (interstitial is always written, R10); check
+# the full-scan report gains the its column instead
+DEFAULT_HEADER=$(build/bin/teloscope -f testFiles/t2t.fa 2>/dev/null | grep "^pos	header")
+I_HEADER=$(build/bin/teloscope -f testFiles/t2t.fa -i 2>/dev/null | grep "^pos	header")
+check_output_not_contains "default report has no its column" "	its	" "$DEFAULT_HEADER"
+check_output_contains "-i report has an its column" "	its	" "$I_HEADER"
 
-# Test: -r -g -e produces 7 files
+# Test: -r -g -e produces 9 files
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" -r -g -e 2>/dev/null >/dev/null
-check_file_count "-r -g -e file count" 8 "$TMPDIR"
+check_file_count "-r -g -e file count" 9 "$TMPDIR"
 
 # Test: -r -m -g -e -i produces 10 files (terminal + report + 3 repeat + 2 match + its + gc + entropy)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
@@ -98,7 +101,7 @@ check_file_count "-r -m -g -e -i file count" 11 "$TMPDIR"
 # Test: positional argument works like -f
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope testFiles/t2t.fa -o "$TMPDIR" 2>/dev/null >/dev/null
-check_file_count "positional arg file count" 3 "$TMPDIR"
+check_file_count "positional arg file count" 4 "$TMPDIR"
 
 # =====================================================
 # Classification consistency: default vs -r/-m/-i
@@ -130,12 +133,13 @@ check_output_contains "incomplete_q classification" "incomplete	.	Q" "$OUT"
 OUT=$(build/bin/teloscope -f testFiles/no_telo.fa 2>/dev/null)
 check_output_contains "no_telo classification" "none	.	" "$OUT"  # tab-anchored: a bare "none" also matches the header chr_none
 
-# misassembly detection: pin -d 200 so the two same-end blocks stay separate (default -d 500 merges them)
+# fragmented-arm detection: pin -d 200 so the two same-end pieces stay separate for density-trim
+# (default -d 500 bridges them), chaining instead within --link-distance into one fragmented arm
 OUT=$(build/bin/teloscope -f testFiles/misassembly.fa -d 200 2>/dev/null)
-check_output_contains "misassembly Pp classification" "incomplete	misassembly	Pp" "$OUT"
+check_output_contains "fragmented_p classification" "incomplete	fragmented_p	P" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/misassembly_qq.fa -d 200 2>/dev/null)
-check_output_contains "misassembly Qq classification" "incomplete	misassembly	qQ" "$OUT"
+check_output_contains "fragmented_q classification" "incomplete	fragmented_q	Q" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/discordant.fa 2>/dev/null)
 check_output_contains "discordant classification" "incomplete	discordant_q	Q*" "$OUT"
@@ -143,9 +147,9 @@ check_output_contains "discordant classification" "incomplete	discordant_q	Q*" "
 OUT=$(build/bin/teloscope -f testFiles/gapped_t2t.fa 2>/dev/null)
 check_output_contains "gapped_t2t classification" "t2t	.	PQ" "$OUT"
 
-# misassembly detection: pin -d 200 so the two same-end blocks stay separate (default -d 500 merges them)
+# fragmented-arm detection: an unrelated N-gap sits in the tail contig
 OUT=$(build/bin/teloscope -f testFiles/gapped_misassembly.fa -d 200 2>/dev/null)
-check_output_contains "gapped_misassembly classification" "incomplete	misassembly	Pp" "$OUT"
+check_output_contains "gapped_misassembly classification" "1	incomplete	fragmented_p	P" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/gapped_incomplete.fa 2>/dev/null)
 check_output_contains "gapped_incomplete classification" "incomplete	.	P" "$OUT"
@@ -163,7 +167,7 @@ check_output_contains "gapped_discordant classification" "incomplete	discordant_
 OUT=$(build/bin/teloscope -f testFiles/t2t.fa 2>/dev/null)
 check_output_contains "summary has anomaly section" "+++ Scaffold Anomalies +++" "$OUT"
 check_output_contains "summary counts flagged scaffolds" "Scaffolds flagged:" "$OUT"
-check_output_contains "summary counts extra blocks" "Extra terminal blocks:" "$OUT"
+check_output_contains "summary counts fragmented arms" "Fragmented arms:" "$OUT"
 check_output_not_contains "no Missassembled typo" "Missassembled:" "$OUT"
 
 # =====================================================
@@ -174,9 +178,12 @@ check_output_not_contains "no Missassembled typo" "Missassembled:" "$OUT"
 OUT=$(build/bin/teloscope -f testFiles/t2t.fa -l 1000 2>/dev/null)
 check_output_contains "-l 1000 kills 600bp blocks" "none" "$OUT"
 
-# -t flag: small terminal limit misses telomeres
-OUT=$(build/bin/teloscope -f testFiles/t2t.fa -t 100 2>/dev/null)
-check_output_contains "-t 100 misses telomeres" "none" "$OUT"
+# -t flag: caps the start zone (R2). t2t.fa's arms sit at position 0, so they would be
+# called even if -t were ignored; use an array 2500 bp in, which -t 100 puts out of reach.
+OUT=$(build/bin/teloscope -f testFiles/synthetic/th_tol_2500.fa 2>/dev/null)
+check_output_contains "th_tol_2500 default: within the zone" "incomplete	.	P" "$OUT"
+OUT=$(build/bin/teloscope -f testFiles/synthetic/th_tol_2500.fa -t 100 2>/dev/null)
+check_output_contains "-t 100 shrinks the zone past 2500 bp" "none" "$OUT"
 
 # -y flag: density threshold controls block survival
 OUT=$(build/bin/teloscope -f testFiles/density_edge.fa -y 0.8 2>/dev/null)

@@ -742,8 +742,9 @@ def test_output_metadata_and_bed_compatibility(tmp):
     expected_params = (
         "#params canonical=CCCTAA/TTAGGG patterns=2 window=200 step=100 "
         "terminal_limit=700 max_match_dist=40 max_block_dist=300 min_block_len=100 "
-        "min_block_density=0.4 min_block_counts=2 min_its_length=100 "
-        "terminal_tolerance=2000 edit_distance=0 ultra_fast=false manual_curation=true"
+        "min_block_density=0.4 min_block_counts=2 min_canonical_count=4 "
+        "terminal_tolerance=3000 link_distance=1000 label_threshold=0.667 "
+        "edit_distance=0 ultra_fast=false manual_curation=true"
     )
     report_lines = outputs["multi.fa_report.tsv"].read_text(encoding="utf-8").splitlines()
     require(len(report_lines) >= 3, "report lacks three provenance lines")
@@ -770,14 +771,14 @@ def test_output_metadata_and_bed_compatibility(tmp):
     require(terminal_rows, "terminal BED has no data rows")
     for row in terminal_rows:
         fields = row.split("\t")
-        require(len(fields) == 18, f"terminal BED row has {len(fields)} fields, expected 18")
+        require(len(fields) == 12, f"terminal BED row has {len(fields)} fields, expected 12")
         require(fields[4] in {"p", "q", "b"}, f"terminal BED name is not a strand label: {fields[4]!r}")
-        require(all(value.isdigit() for value in fields[5:10]), "terminal BED count/size field is not numeric")
-        require(fields[10] in {"scaffold", "contig"}, f"invalid terminal block type: {fields[10]!r}")
-        require(fields[11] in {"p", "q"}, f"invalid terminal block arm: {fields[11]!r}")
-        require(fields[12] in {"contiguous", "gapped"}, f"invalid gap status: {fields[12]!r}")
-        require(fields[17] in {"canonical", "discordant", "balanced"}, f"invalid block status: {fields[17]!r}")
+        require(fields[5] in {"p", "q"}, f"invalid closestEnd: {fields[5]!r}")
+        require(all(value.isdigit() for value in fields[6:11]), "terminal BED count/size field is not numeric")
+        require(fields[11] in {"scaffold", "contig"}, f"invalid terminal block type: {fields[11]!r}")
 
+    # The inversion cut (R5) now splits a head-to-head pair into two rows, one per orientation,
+    # rather than pooling all four canonicality/orientation cells into one row.
     joint_out = tmp / "joint_count_out"
     joint_result = run_fasta(
         ROOT / "testFiles" / "its_headtohead.fa",
@@ -786,20 +787,26 @@ def test_output_metadata_and_bed_compatibility(tmp):
     )
     require_success(joint_result, "four-cell ITS output run")
     joint_rows = output_data_lines(next(joint_out.glob("*_interstitial_telomeres.bed")))
-    require(len(joint_rows) == 1, f"expected one four-cell ITS row, found {len(joint_rows)}")
-    joint_fields = joint_rows[0].split("\t")
-    require(len(joint_fields) == 18, f"ITS row has {len(joint_fields)} fields, expected 18")
-    require(joint_fields[4] == "b", f"four-cell ITS label changed: {joint_fields[4]!r}")
-    require(joint_fields[13:17] == ["20", "20", "7", "7"],
-            f"four-cell ITS counts are wrong: {joint_fields[13:17]}")
+    require(len(joint_rows) == 2, f"expected a head-to-head pair of ITS rows, found {len(joint_rows)}")
+    joint_fields = [row.split("\t") for row in joint_rows]
+    for fields in joint_fields:
+        require(len(fields) == 12, f"ITS row has {len(fields)} fields, expected 12")
+        require(fields[11] == "tail_to_tail", f"head-to-head pair should be classed tail_to_tail: {fields[11]!r}")
+    require({fields[4] for fields in joint_fields} == {"p", "q"},
+            f"head-to-head pair should be one p row and one q row: {[f[4] for f in joint_fields]}")
+    require(sorted(fields[6:10] for fields in joint_fields) == sorted([["20", "0", "7", "0"], ["0", "20", "0", "7"]]),
+            f"head-to-head pair counts are wrong: {[f[6:10] for f in joint_fields]}")
 
 
 def test_balanced_label_threshold_is_strict(tmp):
     fasta = tmp / "threshold.fa"
     flank = "ACGT" * 25
+    # Two adjacent PURE runs are split into two rows by the inversion cut (R5); a fine-grained
+    # interleave keeps this one pooled group, same 333/167 counts, 66.6% forward.
+    unit = "CCCTAA" * 2 + "TTAGGG"
     write_fasta(
         fasta,
-        [("threshold", flank + ("CCCTAA" * 333) + ("TTAGGG" * 167) + flank)],
+        [("threshold", flank + unit * 166 + "CCCTAA" + "TTAGGG" + flank)],
     )
     out_dir = tmp / "threshold_out"
     result = run_fasta(
@@ -812,8 +819,8 @@ def test_balanced_label_threshold_is_strict(tmp):
     rows = output_data_lines(next(out_dir.glob("*_interstitial_telomeres.bed")))
     require(len(rows) == 1, f"expected one threshold ITS row, found {len(rows)}")
     fields = rows[0].split("\t")
-    require(fields[13:17] == ["333", "167", "0", "0"],
-            f"threshold four-cell counts are wrong: {fields[13:17]}")
+    require(fields[6:10] == ["333", "167", "0", "0"],
+            f"threshold four-cell counts are wrong: {fields[6:10]}")
     require(fields[4] == "b", f"exactly 66.6% forward matches must be balanced, found {fields[4]!r}")
 
 

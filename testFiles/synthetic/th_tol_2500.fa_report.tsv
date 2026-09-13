@@ -1,0 +1,34 @@
+#teloscope version=0.1.6 commit=c1d978c
+#params canonical=CCCTAA/TTAGGG patterns=38 window=1000 step=1000 terminal_limit=100 max_match_dist=50 max_block_dist=500 min_block_len=300 min_block_density=0.5 min_block_counts=2 min_canonical_count=4 terminal_tolerance=3000 link_distance=1000 label_threshold=0.667 edit_distance=1 ultra_fast=true manual_curation=false
+#columns	pos	header	telomeres	labels	gaps	type	anomaly	granular
+pos	header	telomeres	labels	gaps	type	anomaly	granular
+1	chr_th_tol_2500	0	none	0	none	.	
+
++++ Assembly Summary Report +++
+Total paths:	1
+Total gaps:	0
+Scaffold N50:	5500
+Contig N50:	5500
+Total telomeres:	0
+
++++ Telomere Statistics +++
+No telomeres found for statistics.
+
++++ Chromosome Telomere Counts+++
+Two telomeres:	0
+One telomere:	0
+Zero telomeres:	1
+
++++ Chromosome Telomere/Gap Completeness+++
+T2T:	0
+Gapped T2T:	0
+Incomplete:	0
+Gapped incomplete:	0
+No telomeres:	1
+Gapped no telomeres:	0
+
++++ Scaffold Anomalies +++
+Scaffolds flagged:	0
+Scaffolds clean:	1
+Discordant arms:	0
+Fragmented arms:	0

@@ -60,9 +60,76 @@ def outputs(outdir, stem):
     }
 
 
+def block_spans(path):
+    """(chrom, start, end) of every row in a block BED, read fresh from disk."""
+    return {(b["chrom"], b["start"], b["end"]) for b in M.read_block_bed(path)}
+
+
 # ---------------------------------------------------------------- families
 
-def check_derivations(rec, subject, terminal, interstitial, gaps, rows, summary, fasta):
+def contig_bounds(gaps_sorted, pos, seq_len):
+    """[start, end) of the contig containing pos, from a sorted list of gap runs."""
+    cs = max((ge for gs, ge in gaps_sorted if ge <= pos), default=0)
+    ce = min((gs for gs, ge in gaps_sorted if gs >= pos), default=seq_len)
+    return cs, ce
+
+
+def check_one_arm_per_end(rec, subject, terminal, gaps_by_chrom, lengths, manual_curation):
+    """At most one scaffold arm per end; with -n, at most one terminal row per end per contig."""
+    by_chrom = {}
+    for b in terminal:
+        by_chrom.setdefault(b["chrom"], []).append(b)
+    for chrom, blocks in by_chrom.items():
+        scaffold = [b for b in blocks if b["teloType"] == "scaffold"]
+        for end in ("p", "q"):
+            n = sum(1 for b in scaffold if b["closestEnd"] == end)
+            rec.check("DER-19-one-arm-per-end", f"{subject}:{chrom}:{end}", n <= 1,
+                      f"{n} scaffold rows with closestEnd {end}")
+        if not manual_curation:
+            continue
+        gaps_sorted = sorted(gaps_by_chrom.get(chrom, []))
+        by_contig = {}
+        for b in blocks:
+            bounds = contig_bounds(gaps_sorted, b["start"], lengths[chrom])
+            by_contig.setdefault(bounds, []).append(b)
+        for bounds, cblocks in by_contig.items():
+            for end in ("p", "q"):
+                n = sum(1 for b in cblocks if b["closestEnd"] == end)
+                rec.check("DER-19-one-arm-per-end", f"{subject}:{chrom}:{bounds}:{end}", n <= 1,
+                          f"{n} terminal rows with closestEnd {end} on contig {bounds}")
+
+
+def check_junction_class(rec, subject, terminal, interstitial, gaps_by_chrom, link_distance):
+    """Recompute each interstitial row's junction class from its nearest same-contig neighbour."""
+    by_chrom = {}
+    for b in terminal + interstitial:
+        by_chrom.setdefault(b["chrom"], []).append(b)
+    its_ids = {id(b) for b in interstitial}
+    for chrom, blocks in by_chrom.items():
+        ordered = sorted(blocks, key=lambda b: b["start"])
+        gap_index = M.GapIndex(sorted(gaps_by_chrom.get(chrom, [])))
+        for i, b in enumerate(ordered):
+            if id(b) not in its_ids:
+                continue
+            candidates = []
+            if i > 0 and not gap_index.has_gap_between(ordered[i - 1]["end"], b["start"]):
+                candidates.append((b["start"] - ordered[i - 1]["end"], ordered[i - 1], b))
+            if i + 1 < len(ordered) and not gap_index.has_gap_between(b["end"], ordered[i + 1]["start"]):
+                candidates.append((ordered[i + 1]["start"] - b["end"], b, ordered[i + 1]))
+            candidates = [c for c in candidates if c[0] <= link_distance]
+            if not candidates:
+                expect = "single"
+            else:
+                _, left_b, right_b = min(candidates, key=lambda c: c[0])
+                l, r = left_b["teloLabel"], right_b["teloLabel"]
+                expect = ("single" if "b" in (l, r) else
+                          "fusion" if (l, r) == ("q", "p") else
+                          "tail_to_tail" if (l, r) == ("p", "q") else
+                          "fragmentation" if l == r else "single")
+            rec.eq("DER-20-junction-class", f"{subject}:{chrom}:{b['start']}", b["teloType"], expect)
+
+
+def check_derivations(rec, subject, terminal, interstitial, gaps, rows, summary, fasta, params):
     lengths = {h: len(s) for h, s in fasta}
     by_chrom = {}
     for b in terminal:
@@ -74,16 +141,18 @@ def check_derivations(rec, subject, terminal, interstitial, gaps, rows, summary,
     for c, s, e in gaps:
         gaps_by_chrom.setdefault(c, []).append((s, e))
 
+    threshold = float(params.get("label_threshold", 0.667))
     for b in terminal + interstitial:
         where = f"{subject}:{b['chrom']}:{b['start']}"
-        total = b["forwardCount"] + b["reverseCount"]
-        rec.eq("DER-01-strand-label-from-counts", where, b["label"],
-               M.strand_label(b["forwardCount"], total),
-               f"(fwd {b['forwardCount']} of {total})")
-        overlaps = any(not (e <= b["start"] or s >= b["end"])
-                       for s, e in gaps_by_chrom.get(b["chrom"], []))
-        rec.eq("DER-02-gapstatus-from-gaps-bed", where, b["gapStatus"],
-               "gapped" if overlaps else "contiguous")
+        forward = b["fwdCan"] + b["fwdNonCan"]
+        total = forward + b["revCan"] + b["revNonCan"]
+        rec.eq("DER-01-strand-label-from-counts", where, b["teloLabel"],
+               M.strand_label(forward, total, threshold),
+               f"(fwd {forward} of {total})")
+    for b in terminal:
+        where = f"{subject}:{b['chrom']}:{b['start']}"
+        rec.check("DER-01-terminal-label-is-strand-pure", where, b["teloLabel"] != "b",
+                  "a terminal row's teloLabel must be p or q, never b (R1)")
 
     for chrom, row in rows.items():
         blocks = sorted(by_chrom.get(chrom, []), key=lambda b: b["start"])
@@ -102,6 +171,11 @@ def check_derivations(rec, subject, terminal, interstitial, gaps, rows, summary,
         if "its" in row:
             rec.eq("DER-09-its-count", where, int(row["its"]),
                    len(its_by_chrom.get(chrom, [])))
+
+    manual_curation = params.get("manual_curation") == "true"
+    check_one_arm_per_end(rec, subject, terminal, gaps_by_chrom, lengths, manual_curation)
+    link_distance = int(params.get("link_distance", 1000))
+    check_junction_class(rec, subject, terminal, interstitial, gaps_by_chrom, link_distance)
 
     if summary:
         total_paths = int(summary.get("Total paths", -1))
@@ -134,10 +208,11 @@ FLAG_PARAMS = {"-t": "terminal_limit", "--terminal-limit": "terminal_limit",
                "-x": "edit_distance", "--edit-distance": "edit_distance",
                "-c": "canonical", "--canonical": "canonical",
                "--terminal-tolerance": "terminal_tolerance",
-               "--min-its-length": "min_its_length",
+               "--link-distance": "link_distance",
+               "--label-threshold": "label_threshold",
                "--min-block-counts": "min_block_counts"}
-FULL_SCAN_FLAGS = {"-r", "-g", "-e", "-m", "-i", "--out-win-repeats", "--out-gc",
-                   "--out-entropy", "--out-matches", "--out-its"}
+FULL_SCAN_FLAGS = {"-r", "-g", "-e", "-m", "-i", "-n", "--out-win-repeats", "--out-gc",
+                   "--out-entropy", "--out-matches", "--manual-curation"}
 
 
 def params_from_flags(header_params, flags):
@@ -164,9 +239,8 @@ def check_oracle(rec, subject, terminal, interstitial, gaps, fasta, params):
     canonical = params.get("canonical", "CCCTAA/TTAGGG").split("/")[-1]
     edit = int(params.get("edit_distance", 1))
     min_len = int(params.get("min_block_len", 300))
-    min_its = int(params.get("min_its_length", 100))
-    # headLimit = min(tolerance, firstBase + terminalLimit) (src/teloscope.cpp:345-346)
-    tolerance = min(int(params.get("terminal_tolerance", 2000)),
+    # zone = min(tolerance, -t) (R8): -t caps the start zone, never the extent
+    tolerance = min(int(params.get("terminal_tolerance", 3000)),
                     int(params.get("terminal_limit", 50000)))
 
     seqs = dict(fasta)
@@ -180,9 +254,6 @@ def check_oracle(rec, subject, terminal, interstitial, gaps, fasta, params):
                sorted(observed.get(header, [])), M.gap_runs(seq))
 
     density = float(params.get("min_block_density", 0.5))
-    gaps_by_chrom = {}
-    for c, gs, ge in gaps:
-        gaps_by_chrom.setdefault(c, []).append((gs, ge))
 
     # terminal blocks: canonical coverage (src/teloscope.cpp:403); interstitial: all matches (:461)
     for b, canonical_only in [(x, True) for x in terminal] + [(x, False) for x in interstitial]:
@@ -194,37 +265,37 @@ def check_oracle(rec, subject, terminal, interstitial, gaps, fasta, params):
         canon_iv, all_iv = M.locate_matches(sub, canonical, edit)
         merged = M.merge_intervals(canon_iv if canonical_only else all_iv)
         covered = M.covered_bases(merged, 0, len(sub))
-        gap_bases = sum(max(0, min(ge, b["end"]) - max(gs, b["start"]))
-                        for gs, ge in gaps_by_chrom.get(b["chrom"], []))
-        called = b["blockLen"] - gap_bases
-        # the gate is union coverage over called bases (src/teloscope.cpp:403, :461), not a count
+        # a fragmented row's span includes an unheld --link-distance gap; gate on teloLen instead
+        called = b["teloLen"] if canonical_only and b["teloLen"] < b["end"] - b["start"] \
+            else b["end"] - b["start"]
         rec.check("ORA-02-block-meets-canonical-density", where,
                   called <= 0 or covered >= density * called,
                   f"independently measured {covered} "
                   f"{'canonical' if canonical_only else 'matched'} bases over {called} "
-                  f"called bases = {covered / called if called else 0:.3f}, -y is {density}")
+                  f"bases = {covered / called if called else 0:.3f}, -y is {density}")
 
+    manual_curation = params.get("manual_curation") == "true"
     for b in terminal:
         seq = seqs.get(b["chrom"])
         if seq is None:
             continue
         where = f"{subject}:{b['chrom']}:{b['start']}"
-        rec.check("DER-17-terminal-length-floor", where, b["blockLen"] >= min_len,
-                  f"blockLen {b['blockLen']} against -l {min_len}")
-        # tolerance counts called bases, so a leading N run hides nothing (docs/parameters.md:91)
-        from_start = M.called_offset_from_start(seq, b["start"])
-        from_end = M.called_offset_from_end(seq, b["end"])
-        rec.check("ORA-03-terminal-block-is-terminal", where,
-                  min(from_start, from_end) <= tolerance,
-                  f"{from_start} called bases from start, {from_end} from end, "
+        rec.check("DER-17-terminal-length-floor", where, b["teloLen"] >= min_len,
+                  f"teloLen {b['teloLen']} against -l {min_len}")
+        rec.check("DER-18-contig-row-needs-manual-curation", where,
+                  b["teloType"] != "contig" or manual_curation,
+                  "a contig row appeared without -n/--manual-curation")
+        # tolerance counts called bases from its OWN contig's end named by closestEnd (R4.3)
+        cs, ce = contig_bounds(M.gap_runs(seq), b["start"], len(seq)) \
+            if b["teloType"] == "contig" else (0, len(seq))
+        from_start = M.called_offset_from_start(seq, b["start"]) - M.called_offset_from_start(seq, cs)
+        from_end = M.called_offset_from_end(seq, b["end"]) - M.called_offset_from_end(seq, ce)
+        dist = from_start if b["closestEnd"] == "p" else from_end
+        rec.check("ORA-03-terminal-block-is-terminal", where, dist <= tolerance,
+                  f"{dist} called bases from the {b['closestEnd']} end of its contig, "
                   f"--terminal-tolerance is {tolerance}")
 
     check_recall(rec, subject, terminal, interstitial, fasta, params)
-
-    for b in interstitial:
-        where = f"{subject}:{b['chrom']}:{b['start']}"
-        rec.check("DER-18-its-length-floor", where, b["blockLen"] >= min_its,
-                  f"blockLen {b['blockLen']} against --min-its-length {min_its}")
 
     # Coordinates must be disjoint between terminal and interstitial calls (DER-15/16).
     for chrom in {b["chrom"] for b in terminal}:
@@ -242,19 +313,21 @@ def check_oracle(rec, subject, terminal, interstitial, gaps, fasta, params):
 
 
 def check_recall(rec, subject, terminal, interstitial, fasta, params):
-    """Verify reported blocks cover dense canonical FASTA windows within -d + -k + motif slack."""
+    """Verify reported blocks cover dense canonical FASTA windows within link+d+k+motif slack."""
     canonical = params.get("canonical", "CCCTAA/TTAGGG").split("/")[-1]
     motif = len(canonical)
     min_counts = int(params.get("min_block_counts", 2))
     min_len = int(params.get("min_block_len", 300))
-    min_its = int(params.get("min_its_length", 100))
     density = float(params.get("min_block_density", 0.5))
     max_dist = int(params.get("max_block_dist", 500))
     match_dist = int(params.get("max_match_dist", 50))
+    link_distance = int(params.get("link_distance", 1000))
     terminal_limit = int(params.get("terminal_limit", 50000))
-    tolerance = min(int(params.get("terminal_tolerance", 2000)), terminal_limit)
+    tolerance = min(int(params.get("terminal_tolerance", 3000)), terminal_limit)
     full_scan = params.get("ultra_fast", "true") == "false"
-    slack = max_dist + match_dist + motif
+    manual_curation = params.get("manual_curation") == "true"
+    # pieces up to link_distance apart chain into one row (R6's D), so recall needs that slack too
+    slack = link_distance + max_dist + match_dist + motif
 
     t_by = {}
     for b in terminal:
@@ -288,12 +361,12 @@ def check_recall(rec, subject, terminal, interstitial, fasta, params):
         matches = M.canonical_positions(seq, canonical)
         windows = M.dense_windows(matches, gaps, min_len, density, max_dist, min_counts)
 
-        # Clipped to the -t extent the tool may report (src/teloscope.cpp:391, :428).
+        # No extent cap any more (R2): re-validate each window as found, unclipped.
         starts = [s for s, _, _ in matches]
 
-        def clip(w, lo, hi):
-            a, b = bisect.bisect_left(starts, max(w[0], lo)), bisect.bisect_left(starts, min(w[1], hi))
-            inside = [(s, e, o) for s, e, o in matches[a:b] if e <= min(w[1], hi) and o == w[2]]
+        def validate(w):
+            a, b = bisect.bisect_left(starts, w[0]), bisect.bisect_left(starts, w[1])
+            inside = [(s, e, o) for s, e, o in matches[a:b] if e <= w[1] and o == w[2]]
             if len(inside) < min_counts:
                 return None
             s, e = inside[0][0], inside[-1][1]
@@ -303,18 +376,22 @@ def check_recall(rec, subject, terminal, interstitial, fasta, params):
 
         ends, both_ends = {}, set()
         for w in windows:
-            near_p = gaps.called_before(w[0]) - head_called <= tolerance
-            near_q = tail_called - gaps.called_before(w[1]) <= tolerance
+            # a chain never crosses a contig boundary (R1/R4), however close in called bases
+            near_p = (gaps.called_before(w[0]) - head_called <= tolerance
+                      and not gaps.has_gap_between(first_base, w[0]))
+            near_q = (tail_called - gaps.called_before(w[1]) <= tolerance
+                      and not gaps.has_gap_between(w[1], last_base))
+            if not (near_p or near_q):
+                continue
             if near_p and near_q:
                 both_ends.add(w)
+            c = validate(w)
+            if c is None:
+                continue
             if near_p:
-                c = clip(w, 0, min(n, first_base + terminal_limit))
-                if c:
-                    ends.setdefault("p", []).append((c, w))
+                ends.setdefault("p", []).append((c, w))
             if near_q:
-                c = clip(w, max(0, last_base - terminal_limit), n)
-                if c:
-                    ends.setdefault("q", []).append((c, w))
+                ends.setdefault("q", []).append((c, w))
 
         for end, cands in ends.items():
             cands.sort(key=lambda cw: cw[0][0] if end == "p" else -cw[0][1])
@@ -326,13 +403,16 @@ def check_recall(rec, subject, terminal, interstitial, fasta, params):
                       f"start within {tolerance} called bases of the {end} end, no terminal "
                       f"block reported over it")
             if hit is not None:
-                label = hit.get("label")
+                label = hit.get("teloLabel")
                 rec.check("ORA-06-terminal-recall", where + ":label", label in (outer[2], "b"),
                           f"window is {outer[2]}-oriented, overlapping block is labelled {label}")
-                arm = hit.get("arm")
-                if raw not in both_ends:
-                    rec.check("ORA-06-terminal-recall", where + ":arm", arm == end,
-                              f"window sits at the {end} end, overlapping block says arm {arm}")
+                closest_end = hit.get("closestEnd")
+                # R3 can send a same-strand chain to its concordant end, not the nearer one
+                r3_redirected = closest_end != end and label == closest_end
+                if raw not in both_ends and not r3_redirected:
+                    rec.check("ORA-06-terminal-recall", where + ":arm", closest_end == end,
+                              f"window sits at the {end} end, overlapping block says "
+                              f"closestEnd {closest_end}")
             targets = cands if full_scan else cands[:1]
             for i, (c, _) in enumerate(targets):
                 cov = M.covered_bases(merged_t if i == 0 else all_iv, c[0], c[1])
@@ -344,22 +424,38 @@ def check_recall(rec, subject, terminal, interstitial, fasta, params):
                           f"reported blocks cover {cov} of {length} bp, need {need} "
                           f"(slack -d+-k+motif = {slack})")
 
+        # -n: every contig's own two ends count as ends too (R4.3), covered by any terminal row
+        if manual_curation:
+            bounds, prev = [], 0
+            for gs, ge in runs:
+                if gs > prev:
+                    bounds.append((prev, gs))
+                prev = ge
+            if n > prev:
+                bounds.append((prev, n))
+            for cs, ce in bounds:
+                c_head, c_tail = gaps.called_before(cs), gaps.called_before(ce)
+                for edge, near, key in (
+                    ("p", lambda w: gaps.called_before(w[0]) - c_head <= tolerance
+                     and not gaps.has_gap_between(cs, w[0]), lambda w: w[0]),
+                    ("q", lambda w: c_tail - gaps.called_before(w[1]) <= tolerance
+                     and not gaps.has_gap_between(w[1], ce), lambda w: -w[1]),
+                ):
+                    cand = sorted((w for w in windows if cs <= w[0] and w[1] <= ce and near(w)), key=key)
+                    c = validate(cand[0]) if cand else None
+                    if c is None:
+                        continue
+                    rec.check("ORA-06-contig-recall", f"{subject}:{header}:{cs}-{ce}:{edge}",
+                              hit_of(c) is not None,
+                              f"contig [{cs},{ce}) {edge} end has an uncovered dense window {c}")
+
         if not full_scan:
             continue
 
-        # Reported blocks must cover pure tandem clusters >= --min-its-length (REG-003).
+        # Reported blocks must cover every pure tandem cluster (REG-003): no length floor (R5).
         clusters = M.merge_runs(M.pure_tandem_runs(seq, canonical, 4), gaps, max_dist, density)
-        arms = {b["arm"] for b in t_blocks}
-        has_p, has_q = "p" in arms, "q" in arms
         for s, e, o in clusters:
-            if e - s < min_its:
-                continue
             if M.covered_bases(merged_t, s, e) == e - s:
-                continue
-            near_p = gaps.called_before(s) - head_called <= tolerance
-            near_q = tail_called - gaps.called_before(e) <= tolerance
-            if e - s < min_len and ((near_p and not has_p) or (near_q and not has_q)):
-                # src/teloscope.cpp:465-467 drops end-adjacent arrays shorter than -l (REG-017)
                 continue
             cov = M.covered_bases(all_iv, s, e)
             need = (e - s) - motif - match_dist
@@ -414,8 +510,12 @@ def check_metamorphic(rec, subject, fasta_path, base_flags, stem):
             rec.check("MET-02-thread-invariant", subject, shared_report(c[0]) == shared_report(e[0]),
                       "-j 1 and -j 8 disagree")
 
-        # terminal calls must not depend on scan mode: strip the full-scan flags for the ultra run
-        if any(x in FULL_SCAN_FLAGS for x in base_flags):
+        # terminal calls must not depend on scan mode; -n forces full scan by itself (R8), so
+        # there is no ultra-fast run to compare it against.
+        manual_curation = any(f in ("-n", "--manual-curation") for f in base_flags)
+        if manual_curation:
+            ultra_run = full_run = None
+        elif any(x in FULL_SCAN_FLAGS for x in base_flags):
             ultra_flags = [x for x in base_flags if x not in FULL_SCAN_FLAGS]
             d5, u = once_with(ultra_flags, [])
             dirs.append(d5)
@@ -432,10 +532,8 @@ def check_metamorphic(rec, subject, fasta_path, base_flags, stem):
             rec.check("MET-03-scan-mode-invariant", subject, not bad,
                       f"differs on {bad[:4]}: ultra {[ultra[h] for h in bad[:2]]} "
                       f"vs full {[full.get(h) for h in bad[:2]]}")
-            ub = {(b["chrom"], b["start"], b["end"])
-                  for b in M.read_block_bed(outputs(ultra_dir, stem)["terminal"])}
-            fb = {(b["chrom"], b["start"], b["end"])
-                  for b in M.read_block_bed(outputs(full_dir, stem)["terminal"])}
+            ub = block_spans(outputs(ultra_dir, stem)["terminal"])
+            fb = block_spans(outputs(full_dir, stem)["terminal"])
             rec.check("MET-04-scan-mode-blocks", subject, ub == fb,
                       f"terminal blocks differ: only ultra {sorted(ub - fb)[:3]}, "
                       f"only full {sorted(fb - ub)[:3]}")
@@ -460,6 +558,43 @@ def check_metamorphic(rec, subject, fasta_path, base_flags, stem):
                               and sets["0"][1] <= sets["1"][1] <= sets["2"][1],
                               f"canonical {[len(sets[x][0]) for x in '012']}, "
                               f"non-canonical {[len(sets[x][1]) for x in '012']}")
+
+        if not any(f in ("-t", "--terminal-limit") for f in base_flags):
+            d6, tip = once(["-t", "5000"])
+            dirs.append(d6)
+            if tip:
+                default_terminal = block_spans(outputs(d1, stem)["terminal"])
+                tip_terminal = block_spans(outputs(d6, stem)["terminal"])
+                rec.check("MET-06-tip-window-invariant", subject,
+                          default_terminal == tip_terminal,
+                          f"-t 5000 terminal BED differs from the default: only default "
+                          f"{sorted(default_terminal - tip_terminal)[:3]}, only -t 5000 "
+                          f"{sorted(tip_terminal - default_terminal)[:3]}")
+
+        no_n_flags = [f for f in base_flags if f not in ("-n", "--manual-curation")]
+        no_n_full_flags = no_n_flags if any(f in FULL_SCAN_FLAGS for f in no_n_flags) \
+            else no_n_flags + ["-i"]
+        n_flags = no_n_flags + ["-n"]
+        d7, no_n_res = once_with(no_n_full_flags, [])
+        dirs.append(d7)
+        d8, n_res = once_with(n_flags, [])
+        dirs.append(d8)
+        if no_n_res and n_res:
+            n_terminal = M.read_block_bed(outputs(d8, stem)["terminal"])
+            n_set = {(b["chrom"], b["start"], b["end"]) for b in n_terminal}
+            no_n_set = block_spans(outputs(d7, stem)["terminal"])
+            contig_rows = {(b["chrom"], b["start"], b["end"])
+                           for b in n_terminal if b["teloType"] == "contig"}
+            rec.check("MET-07-manual-curation", subject,
+                      n_set == no_n_set | contig_rows,
+                      f"-n terminal BED should equal the -n-less full-scan terminal BED plus "
+                      f"contig rows: missing {sorted((no_n_set | contig_rows) - n_set)[:3]}, "
+                      f"extra {sorted(n_set - (no_n_set | contig_rows))[:3]}")
+            its_set = block_spans(outputs(d8, stem)["interstitial"])
+            overlap = contig_rows & its_set
+            rec.check("MET-07-manual-curation", subject + ":its", not overlap,
+                      f"contig rows {sorted(overlap)[:3]} also appear in the -n run's "
+                      f"own interstitial BED")
     finally:
         for d in dirs:
             shutil.rmtree(d, ignore_errors=True)
@@ -526,7 +661,8 @@ def main():
             f"no subjects: {MANIFEST} is missing or empty. Run testFiles/"
             "generate_synthetic.sh. A harness with nothing to check must not report PASS.")
     if not args.quick:
-        for g in ["bTaeGut7_chr33_mat.fa.gz", "bTaeGut7_chr33_pat.fa.gz"]:
+        for g in ["bTaeGut7_chr33_mat.fa.gz", "bTaeGut7_chr33_pat.fa.gz",
+                   "vgp_probe.fa.gz", "vgp_turtle.fa.gz"]:
             if (TESTFILES / g).exists():
                 subjects.append((g, "-i"))
 
@@ -557,10 +693,11 @@ def main():
                 proc.stdout.decode("utf-8", "replace"), is_text=True)
             if o["report"].exists():
                 _, _, params = M.read_report(o["report"])
+            params = params_from_flags(params, base_flags)
 
-            check_derivations(rec, subject, terminal, interstitial, gaps, rows, summary, fasta)
-            check_oracle(rec, subject, terminal, interstitial, gaps, fasta,
-                         params_from_flags(params, base_flags))
+            check_derivations(rec, subject, terminal, interstitial, gaps, rows, summary,
+                               fasta, params)
+            check_oracle(rec, subject, terminal, interstitial, gaps, fasta, params)
         finally:
             shutil.rmtree(outdir, ignore_errors=True)
 
