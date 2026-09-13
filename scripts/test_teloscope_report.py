@@ -25,12 +25,16 @@ REPORT = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(REPORT)
 
 
-def _block(start, end, label, chrom_size):
+def _block(start, end, label, chrom_size, closest_end=None):
+    start, end = int(start), int(end)
     return {
-        "start": int(start),
-        "end": int(end),
-        "length": int(end - start),
+        "start": start,
+        "end": end,
+        "span": end - start,
+        "length": end - start,
+        "teloLen": end - start,
         "label": label,
+        "closestEnd": closest_end if closest_end is not None else label,
         "pathSize": int(chrom_size),
     }
 
@@ -52,37 +56,37 @@ def _synthetic_terminal_dataset(chrom_size=20_000):
 
 
 class TeloscopeReportTests(unittest.TestCase):
-    def test_parse_terminal_bed_accepts_joint_and_legacy_count_schemas(self):
+    def test_parse_terminal_bed_reads_the_twelve_column_schema(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             bed_path = Path(tmpdir) / "blocks.bed"
             bed_path.write_text(
-                "chrNew\t10\t70\tp\t3\t2\t5\t7\t100\tscaffold\n"
-                "chrLegacy\t20\t80\t60\tq\t4\t6\t7\t3\t100\tcontig\n",
+                "chrTerm\t10\t70\t60\tp\tp\t3\t2\t5\t7\t100\tscaffold\n"
+                "chrIts\t200\t260\t60\tb\tq\t4\t6\t1\t2\t500\tfusion\n",
                 encoding="utf-8",
             )
 
             parsed = REPORT.parse_terminal_bed(str(bed_path))
 
-        new = parsed["chrNew"][0]
-        self.assertEqual((new["length"], new["fwd"], new["rev"]), (60, 8, 9))
-        self.assertEqual((new["can"], new["noncan"]), (5, 12))
+        term = parsed["chrTerm"][0]
+        self.assertEqual(term["length"], 60)
+        self.assertEqual((term["label"], term["closestEnd"]), ("p", "p"))
+        self.assertEqual((term["fwd"], term["rev"]), (8, 9))
+        self.assertEqual((term["can"], term["noncan"]), (5, 12))
         self.assertEqual(
-            (new["fwdCan"], new["revCan"], new["fwdNonCan"], new["revNonCan"]),
+            (term["fwdCan"], term["revCan"], term["fwdNonCan"], term["revNonCan"]),
             (3, 2, 5, 7),
         )
-        self.assertEqual(new["term"], "scaffold")
+        self.assertEqual((term["pathSize"], term["term"]), (100, "scaffold"))
 
-        legacy = parsed["chrLegacy"][0]
-        self.assertEqual((legacy["length"], legacy["fwd"], legacy["rev"]), (60, 4, 6))
-        self.assertEqual((legacy["can"], legacy["noncan"]), (7, 3))
-        self.assertIsNone(legacy["fwdCan"])
-        self.assertEqual(legacy["term"], "contig")
+        its = parsed["chrIts"][0]
+        self.assertEqual((its["label"], its["closestEnd"]), ("b", "q"))
+        self.assertEqual((its["pathSize"], its["term"]), (500, "fusion"))
 
-    def test_parse_terminal_bed_skips_truncated_legacy_row(self):
+    def test_parse_terminal_bed_skips_rows_with_the_wrong_column_count(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             bed_path = Path(tmpdir) / "blocks.bed"
             bed_path.write_text(
-                "chrBroken\t20\t80\t60\tq\t4\t6\t7\t3\n",
+                "chrBroken\t20\t80\t60\tq\tq\t4\t6\t7\t3\t100\n",
                 encoding="utf-8",
             )
 
@@ -90,25 +94,68 @@ class TeloscopeReportTests(unittest.TestCase):
                 parsed = REPORT.parse_terminal_bed(str(bed_path))
 
         self.assertEqual(dict(parsed), {})
-        self.assertIn("expected at least 10 legacy BED columns", stderr.getvalue())
+        self.assertIn("expected 12 BED columns", stderr.getvalue())
+
+    def test_discordant_row_is_placed_at_its_closest_end_not_its_label(self):
+        chrom_size = 20_000
+        discordant_block = _block(0, 600, "q", chrom_size, closest_end="p")
+
+        self.assertEqual(REPORT._block_end_distance(discordant_block, chrom_size), 0)
+
+        # A p-window tight around the block, not spanning the whole chromosome (the old label="q" bug).
+        p_window, q_window = REPORT.compute_view_windows([discordant_block], chrom_size)
+        self.assertEqual(p_window, (0, 2_000))
+        self.assertEqual(q_window, (18_000, 20_000))
+
+    def test_fragmented_row_reports_length_as_teloLen_not_the_span(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bed_path = Path(tmpdir) / "blocks.bed"
+            bed_path.write_text(
+                "chrFrag\t0\t1000\t600\tp\tp\t3\t2\t5\t7\t100000\tscaffold\n",
+                encoding="utf-8",
+            )
+
+            parsed = REPORT.parse_terminal_bed(str(bed_path))
+
+        self.assertEqual(parsed["chrFrag"][0]["length"], 600)
+
+    def test_discordant_row_uses_the_reverse_glyph_and_sits_at_the_p_end(self):
+        chrom_size = 20_000
+        discordant_block = _block(0, 600, "q", chrom_size, closest_end="p")
+
+        fig = REPORT.plot_terminal_zoom("chrDiscordant", chrom_size, [discordant_block])
+        self.addCleanup(REPORT.plt.close, fig)
+
+        self.assertEqual(fig.axes[0].get_title(), "p-arm")
+        glyphs = {t.get_text() for t in fig.findobj(mtext.Text)} & {"<", ">"}
+        self.assertEqual(glyphs, {">"})
+
+    def test_balanced_row_is_not_dropped_from_the_p_arm_window(self):
+        chrom_size = 20_000
+        balanced_block = _block(0, 600, "b", chrom_size, closest_end="p")
+
+        p_window, q_window = REPORT.compute_view_windows([balanced_block], chrom_size)
+        self.assertEqual(p_window, (0, 2_000))
 
     def test_parse_report_maps_expected_categories(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             report_path = Path(tmpdir) / "synthetic_report.tsv"
             report_path.write_text(
                 "+++\n"
-                "pos\theader\ttype\n"
-                "1\tchr_dis\tdiscordant\n"
-                "2\tchr_mis\tgapped_missassembly\n"
-                "3\tchr_none\tnone\n",
+                "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular\n"
+                "1\tchr_dis\t1\tq\t0\tincomplete\tdiscordant_q\tQ*\n"
+                "2\tchr_frag\t1\tp\t0\tincomplete\tfragmented_p\tPp\n"
+                "3\tchr_none\t0\tnone\t0\tnone\t.\t\n",
                 encoding="utf-8",
             )
 
             parsed = REPORT.parse_report(str(report_path))
 
         self.assertEqual(parsed["Discordant"], ["chr_dis"])
-        self.assertEqual(parsed["Gapped Misassembly"], ["chr_mis"])
+        self.assertEqual(parsed["Fragmented"], ["chr_frag"])
         self.assertEqual(parsed["No telomeres"], ["chr_none"])
+        self.assertNotIn("Misassembly", parsed)
+        self.assertNotIn("Balanced", parsed)
 
     def test_compute_view_windows_rounds_to_displayed_kbp(self):
         chrom_size = 20_000
@@ -202,7 +249,7 @@ class TeloscopeReportTests(unittest.TestCase):
             [
                 ("T2T", ["chrA"]),
                 ("Incomplete", ["chrB"]),
-                ("Misassembly", ["chrC"]),
+                ("Fragmented", ["chrC"]),
                 ("Discordant", ["chrD"]),
                 ("No telomeres", ["chrE"]),
             ]
@@ -243,7 +290,7 @@ class TeloscopeReportTests(unittest.TestCase):
         }
         classifications = OrderedDict(
             [
-                ("Misassembly", ["chrNear", "chrMissing"]),
+                ("Fragmented", ["chrNear", "chrMissing"]),
                 ("Discordant", ["chrFar"]),
                 ("No telomeres", ["chrOther"]),
             ]
@@ -281,7 +328,7 @@ class TeloscopeReportTests(unittest.TestCase):
         self.assertIn("<", text_strings)
         self.assertIn(">", text_strings)
         self.assertGreaterEqual(min(font_sizes), REPORT.MIN_TEXT_SIZE)
-        self.assertEqual(REPORT.COLORS["Misassembly"], "#E6AB02")
+        self.assertEqual(REPORT.COLORS["Fragmented"], "#E6AB02")
         self.assertEqual(REPORT.BLOCK_GLYPHS["b"], "<>")
 
     def test_flagged_scaffold_labels_are_right_aligned_without_category_suffix(self):
@@ -295,7 +342,7 @@ class TeloscopeReportTests(unittest.TestCase):
         }
         classifications = OrderedDict(
             [
-                ("Misassembly", ["Scaffold_1386.H1"]),
+                ("Fragmented", ["Scaffold_1386.H1"]),
                 ("Discordant", ["Longish_scaffold_alpha"]),
             ]
         )
@@ -312,7 +359,7 @@ class TeloscopeReportTests(unittest.TestCase):
         right_edges = [text.get_window_extent(renderer).x1 for text in labels]
         for text in labels:
             self.assertEqual(text.get_ha(), "right")
-            self.assertNotIn("Misassembly", text.get_text())
+            self.assertNotIn("Fragmented", text.get_text())
             self.assertNotIn("Discordant", text.get_text())
         self.assertLess(max(right_edges) - min(right_edges), 1.0)
 
@@ -321,7 +368,7 @@ class TeloscopeReportTests(unittest.TestCase):
         page1_sizes = {"chrFlagged": 5_000, "chrOther": 6_400}
         classifications = OrderedDict(
             [
-                ("Misassembly", ["chrFlagged"]),
+                ("Fragmented", ["chrFlagged"]),
                 ("Discordant", ["chrOther"]),
             ]
         )
