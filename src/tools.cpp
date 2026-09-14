@@ -22,9 +22,8 @@ std::string anomalyFlagsToString(uint8_t flags) {
     static const std::pair<uint8_t, const char*> names[] = {
         {ANOMALY_DISCORDANT_P, "discordant_p"},
         {ANOMALY_DISCORDANT_Q, "discordant_q"},
-        {ANOMALY_BALANCED_P,  "balanced_p"},
-        {ANOMALY_BALANCED_Q,  "balanced_q"},
-        {ANOMALY_MISASSEMBLY,  "misassembly"}
+        {ANOMALY_FRAGMENTED_P, "fragmented_p"},
+        {ANOMALY_FRAGMENTED_Q, "fragmented_q"}
     };
     std::string out;
     for (const auto& entry : names) {

@@ -840,9 +840,7 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
     std::string sequence = segment->getInSequence(0, 0);
     unmaskSequence(sequence);
 
-    SegmentData segmentData = scanSegment(sequence, 0, true); // tipsOnly = true for GFA segments
-    getTeloBlocks(segmentData.allMatches, std::vector<GapInfo>{}, sequence.size(),
-                  segmentData.terminalBlocks, segmentData.interstitialBlocks, true);
+    SegmentData segmentData = scanSegment(sequence, 0, true, true, true, true); // single segment = first and last, both chains
 
     std::vector<PendingTelomereAnnotation> annotations;
 
@@ -858,7 +856,7 @@ bool Teloscope::walkSegment(InSegment* segment, InSequences& inSequences) {
                         + segment->getSeqHeader()
                         + "+"
                         + (atStart ? "_start" : "_end");
-        queueAnnotation(annotations, header, header, atStart, block.blockLen, segOrient);
+        queueAnnotation(annotations, header, header, atStart, static_cast<uint32_t>(block.teloLen), segOrient);
     }
 
     for (auto& ann : annotations) {
@@ -892,9 +890,7 @@ bool Teloscope::walkSegmentForPath(InSegment* segment, InSequences& inSequences,
     std::string sequence = segment->getInSequence(0, 0);
     unmaskSequence(sequence);
 
-    SegmentData segmentData = scanSegment(sequence, 0, true);
-    getTeloBlocks(segmentData.allMatches, std::vector<GapInfo>{}, sequence.size(),
-                  segmentData.terminalBlocks, segmentData.interstitialBlocks, true);
+    SegmentData segmentData = scanSegment(sequence, 0, true, true, true, true); // single segment = first and last, both chains
 
     // Physical end holding the path-terminal tip (start when isFirst == (orient=='+')).
     bool scanStart = (isFirst == (pathOrient == '+'));
@@ -917,7 +913,7 @@ bool Teloscope::walkSegmentForPath(InSegment* segment, InSequences& inSequences,
 
         // Edge orientation rule: START = pathOrient, END = flip(pathOrient)
         char edgeOrient = isFirst ? pathOrient : (pathOrient == '+' ? '-' : '+');
-        queueAnnotation(annotations, header, header, blockAtStart, block.blockLen, edgeOrient);
+        queueAnnotation(annotations, header, header, blockAtStart, static_cast<uint32_t>(block.teloLen), edgeOrient);
     }
 
     for (auto& ann : annotations) {
@@ -970,74 +966,96 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     gapIndex.reserve(inGaps.size());
     for (auto& gap : inGaps) gapIndex[gap.getuId()] = &gap;
 
+    // the first and last SEGMENT components are the scaffold ends (R4), counted like segIdx below (gaps excluded)
+    int firstSegIdx = -1, lastSegIdx = -1, segCount = -1;
+    for (size_t i = 0; i < pathComponents.size(); ++i) {
+        if (pathComponents[i].componentType == SEGMENT) {
+            ++segCount;
+            if (firstSegIdx < 0) firstSegIdx = segCount;
+            lastSegIdx = segCount;
+        }
+    }
+
+    bool fullScan = !userInput.ultraFastMode; // -i, -n, -r/-g/-e/-m already imply this
+    int segIdx = -1;
+
     for (std::vector<PathComponent>::iterator component = pathComponents.begin(); component != pathComponents.end(); component++) {
         cUId = component->id;
 
         if (component->componentType == SEGMENT) {
+            ++segIdx;
+            bool isFirst = (segIdx == firstSegIdx);
+            bool isLast  = (segIdx == lastSegIdx);
             auto inSegment = segmentIndex.find(cUId)->second;
+
+            // fast mode scans only the first contig's head and the last contig's tail
+            bool scanNeeded = (component->orientation == '+') && (fullScan || isFirst || isLast);
+            if (!scanNeeded) {
+                absPos += inSegment->getSegmentLen(component->start, component->end);
+                continue;
+            }
+
+            bool buildP = userInput.manualCuration || isFirst;
+            bool buildQ = userInput.manualCuration || isLast;
+
             std::string sequence = inSegment->getInSequence(component->start, component->end);
             unmaskSequence(sequence);
-            
-            if (component->orientation == '+') {
-                SegmentData segmentData = scanSegment(sequence, absPos, userInput.ultraFastMode);
 
-                // Collect window data
-                pathData.windows.insert(
-                    pathData.windows.end(),
-                    std::make_move_iterator(segmentData.windows.begin()),
-                    std::make_move_iterator(segmentData.windows.end())
-                );
+            SegmentData segmentData = scanSegment(sequence, absPos, isFirst, isLast, buildP, buildQ);
 
-                // Collect matches, blocks are built once per path
-                pathData.allMatches.insert(
-                    pathData.allMatches.end(),
-                    segmentData.allMatches.begin(),
-                    segmentData.allMatches.end()
-                );
+            // Collect window data
+            pathData.windows.insert(
+                pathData.windows.end(),
+                std::make_move_iterator(segmentData.windows.begin()),
+                std::make_move_iterator(segmentData.windows.end())
+            );
 
-                // Collect matches
-                pathData.canonicalMatches.insert(
-                    pathData.canonicalMatches.end(),
-                    std::make_move_iterator(segmentData.canonicalMatches.begin()),
-                    std::make_move_iterator(segmentData.canonicalMatches.end())
-                );
+            // Collect blocks, built per contig inside scanSegment
+            pathData.terminalBlocks.insert(
+                pathData.terminalBlocks.end(),
+                std::make_move_iterator(segmentData.terminalBlocks.begin()),
+                std::make_move_iterator(segmentData.terminalBlocks.end())
+            );
 
-                pathData.nonCanonicalMatches.insert(
-                    pathData.nonCanonicalMatches.end(),
-                    std::make_move_iterator(segmentData.nonCanonicalMatches.begin()),
-                    std::make_move_iterator(segmentData.nonCanonicalMatches.end())
-                );
+            pathData.interstitialBlocks.insert(
+                pathData.interstitialBlocks.end(),
+                std::make_move_iterator(segmentData.interstitialBlocks.begin()),
+                std::make_move_iterator(segmentData.interstitialBlocks.end())
+            );
 
-                pathData.canonicalCounts += segmentData.canonicalCounts;
-                pathData.windowCounts += segmentData.windowCounts;
+            // Collect matches
+            pathData.canonicalMatches.insert(
+                pathData.canonicalMatches.end(),
+                std::make_move_iterator(segmentData.canonicalMatches.begin()),
+                std::make_move_iterator(segmentData.canonicalMatches.end())
+            );
 
-            } else {
-            }
-            
+            pathData.nonCanonicalMatches.insert(
+                pathData.nonCanonicalMatches.end(),
+                std::make_move_iterator(segmentData.nonCanonicalMatches.begin()),
+                std::make_move_iterator(segmentData.nonCanonicalMatches.end())
+            );
+
+            pathData.canonicalCounts += segmentData.canonicalCounts;
+            pathData.windowCounts += segmentData.windowCounts;
+
             absPos += sequence.size();
-            
+
         }else if (component->componentType == GAP){
-            
+
             auto inGap = gapIndex.find(cUId)->second;
             gapLen = inGap->getDist(component->start - component->end);
 
             pathData.gapInfos.push_back({absPos, static_cast<uint32_t>(gapLen)});
             absPos += gapLen;
-            
+
         } else {
         } // need to handle edges, cigars etc
-        
+
     }
 
-    getTeloBlocks(pathData.allMatches, pathData.gapInfos, pathData.pathSize,
-                  pathData.terminalBlocks, pathData.interstitialBlocks,
-                  userInput.ultraFastMode);
-    std::vector<MatchInfo>().swap(pathData.allMatches);
-
-    // Filter blocks
-    labelTerminalBlocks(pathData.terminalBlocks, static_cast<uint16_t>(pathData.gapInfos.size()),
-                        pathData.terminalLabel, pathData.scaffoldType, pathData.anomalyFlags,
-                        pathData.pathSize, userInput.terminalLimit);
+    labelTerminalBlocks(pathData.terminalBlocks,
+                        pathData.terminalLabel, pathData.scaffoldType, pathData.anomalyFlags);
     threadLog.add("\tCompleted walking path:\t" + path->getHeader());
 
     std::lock_guard<std::mutex> lck(mtx);
