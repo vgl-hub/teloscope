@@ -43,18 +43,17 @@ struct UserInputTeloscope : UserInput {
     uint32_t maxMatchDist = 50;
     uint32_t minBlockLen = 300;
     bool minBlockLenSet = false;
-    uint32_t maxBlockDist = 500;
+    uint32_t maxBlockDist = 1000;
     uint32_t minBlockCounts = 2;
-    uint32_t minITSLen = 100;
-    uint32_t terminalTolerance = 2000;
+    uint32_t terminalTolerance = 3000;
     float minBlockDensity = 0.5f;
+    float labelThreshold = 0.667f;
 
     bool outFasta = false;
     bool outWinRepeats = false;
     bool outGC = false;
     bool outEntropy = false;
     bool outMatches = false;
-    bool outITS = false;
     bool ultraFastMode = true;
     bool manualCuration = false;
     bool outPlotReport = false;

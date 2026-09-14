@@ -79,16 +79,18 @@ When `-s` equals `-w`, window outputs are non-overlapping BEDgraph bins.
 
 | Flag | Long form | Meaning | Default |
 | --- | --- | --- | --- |
-| `-k` | `--max-match-distance` | max gap between matches before splitting them | `50` |
-| `-d` | `--max-block-distance` | longest run of absent (`N`) or non-telomeric sequence a block may bridge | `500` |
-| `-l` | `--min-block-length` | minimum block length to keep | `300` for assembly, `42` for read subsets |
-| `-y` | `--min-block-density` | minimum repeat-covered fraction for a block, in `(0,1]` | `0.5` |
-| `-t` | `--terminal-limit` | how far in from a sequence end to look, and the hard bound on terminal block extent | `50000` |
-|  | `--terminal-tolerance` | how far in, in called bases, a block may start and still count as terminal | `2000` |
-|  | `--min-its-length` | minimum interstitial block length | `100` |
-|  | `--min-block-counts` | minimum matches for a block | `2` |
+| `-k` | `--max-match-distance` | matches this close chain into one interstitial seed | `50` |
+| `-d` | `--max-block-distance` | maximum non-telomeric stretch inside a telomere | `1000` |
+| `-l` | `--min-block-length` | minimum piece length to keep | `300` for assembly, `42` for read subsets |
+| `-y` | `--min-block-density` | minimum repeat-covered fraction for a piece, in `(0,1]` | `0.5` |
+| `-t` | `--terminal-limit` | how far in from each end to look | `50000` |
+|  | `--terminal-tolerance` | how far from an end a telomere may start | `3000` |
+|  | `--label-threshold` | forward-strand fraction for the p/q label; `b` between | `0.667` |
+|  | `--min-block-counts` | minimum canonical matches per block | `2` |
 
-`--terminal-tolerance` counts called bases, so a leading or trailing run of `N` does not push a real telomere out of the terminal zone. It is capped at `-t/--terminal-limit`.
+The start zone is the smaller of `--terminal-tolerance` and `-t`, counted in called bases.
+
+A piece or row exactly at a threshold — `-l`, `-y`, or `--min-block-counts` — is kept, not rejected.
 
 ## Output flags
 
@@ -98,12 +100,12 @@ When `-s` equals `-w`, window outputs are non-overlapping BEDgraph bins.
 | `-g` | `--out-gc` | write GC BEDgraph | `false` |
 | `-e` | `--out-entropy` | write entropy BEDgraph | `false` |
 | `-m` | `--out-matches` | write canonical and terminal non-canonical match BED files | `false` |
-| `-i` | `--out-its` | write interstitial telomere BED | `false` |
+| `-i` | `--out-its` | scan whole sequences for interstitial telomeres (the interstitial BED is always written) | `false` |
 | `-u` | `--ultra-fast` | scan sequence ends only | `true` |
-| `-n` | `--manual-curation` | accepted for compatibility; every terminal block is written either way | `false` |
+| `-n` | `--manual-curation` | also report telomeres at contig ends; implies `-i` | `false` |
 |  | `--plot-report` | write a PDF report after the run | `false` |
 
-Any of `-r`, `-g`, `-e`, `-m`, or `-i` disables ultra-fast mode automatically.
+Any of `-r`, `-g`, `-e`, `-m`, or `-i` forces the full scan; `-n` forces it too, and additionally moves contig-terminal telomeres into the terminal BED.
 
 ## Informational flags
 
@@ -167,7 +169,7 @@ teloscope --bam-subset reads.bam -j 32 > telomeric.bam
 
 In read subset modes, the default `-l` is `42` bp. This is intended to retain reads with at least about seven telomeric repeat units after Teloscope's block and density filters. Assembly annotation keeps the stricter `300` bp default.
 
-Read subset modes also ignore `-t/--terminal-limit`: it is internally overridden so the whole read counts as terminal, regardless of the value passed on the command line.
+Read subset modes also ignore `-t/--terminal-limit` and `--terminal-tolerance`: both are internally overridden so the whole read counts as terminal, regardless of the values passed on the command line.
 
 ## Stdin
 

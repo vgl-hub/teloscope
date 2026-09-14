@@ -2,21 +2,24 @@ testFiles/gapped_misassembly_qq.fa -f testFiles/gapped_misassembly_qq.fa -n
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	chr_gapped_misassembly_qq	1	q	1	incomplete	.	Q
+pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
+1	chr_gapped_misassembly_qq	1	q	1	incomplete	fragmented_q	Q	0	150	0
 
 +++ Assembly Summary Report +++
 Total paths:	1
 Total gaps:	1
-Scaffold N50:	5000
-Contig N50:	4400
+Scaffold N50:	5050
+Contig N50:	4450
 Total telomeres:	1
+Total ITS blocks:	0
+Total canonical matches:	150
+Total windows analyzed:	0
 
 +++ Telomere Statistics +++
-Mean length:	1600
-Median length:	1600
-Min length:	1600
-Max length:	1600
+Mean length:	900
+Median length:	900
+Min length:	900
+Max length:	900
 
 +++ Chromosome Telomere Counts+++
 Two telomeres:	0
@@ -32,8 +35,7 @@ No telomeres:	0
 Gapped no telomeres:	0
 
 +++ Scaffold Anomalies +++
-Scaffolds flagged:	0
-Scaffolds clean:	1
+Scaffolds flagged:	1
+Scaffolds clean:	0
 Discordant arms:	0
-Balanced arms:	0
-Extra terminal blocks:	0
+Fragmented arms:	1

@@ -5,14 +5,3 @@
 # so every "?" must appear here with the conflict it waits on or the run fails.
 #
 # id	scaffold	column	register	reason
-its_gap_split	chr_its_gap_split	its	REG-004	whether gap-split arrays are one ITS or two is undecided
-its_gap_headtohead	chr_its_gap_headtohead	its	REG-004	head-to-head across a gap needs a curator decision
-its_headtohead	chr_its_headtohead	its	REG-004	interior head-to-head junction, same decision
-its_strand_pure	chr_its_strand_pure	its	REG-004	pooled-balanced core, same decision
-st_fusion_headtohead	chr_st_fusion_headtohead	its	REG-004	interior fusion signature, same decision
-jn_p_then_q_k3	chr_jn_p_then_q_k3	anomaly	REG-014	strand inversion inside an array, same decision
-jn_p_then_q_k3	chr_jn_p_then_q_k3	granular	REG-014	strand inversion inside an array, same decision
-jn_p_then_q_k4	chr_jn_p_then_q_k4	anomaly	REG-014	strand inversion inside an array, same decision
-jn_p_then_q_k4	chr_jn_p_then_q_k4	granular	REG-014	strand inversion inside an array, same decision
-jn_interior_q_then_p	chr_jn_interior_q_then_p	its	REG-004	abutting opposite arrays: one block or two is undecided in the docs
-jn_interior_p_then_q	chr_jn_interior_p_then_q	its	REG-004	same, tail to tail

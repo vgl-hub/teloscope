@@ -1,2 +1,2 @@
-chr_its	0	600	600	p	100	0	100	0	7800	scaffold	p	contiguous	100	0	0	0	canonical
-chr_its	7200	7800	600	q	0	100	100	0	7800	scaffold	q	contiguous	0	100	0	0	canonical
+chr_its	0	600	600	p	p	100	0	0	0	7800	scaffold
+chr_its	7200	7800	600	q	q	0	100	0	0	7800	scaffold

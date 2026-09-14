@@ -2,8 +2,8 @@ testFiles/gapped_t2t.fa -f testFiles/gapped_t2t.fa -n
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	chr_gapped_t2t	2	pq	1	t2t	.	PQ
+pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
+1	chr_gapped_t2t	2	pq	1	t2t	.	PQ	0	200	0
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -11,6 +11,9 @@ Total gaps:	1
 Scaffold N50:	3100
 Contig N50:	1500
 Total telomeres:	2
+Total ITS blocks:	0
+Total canonical matches:	200
+Total windows analyzed:	0
 
 +++ Telomere Statistics +++
 Mean length:	600
@@ -35,5 +38,4 @@ Gapped no telomeres:	0
 Scaffolds flagged:	0
 Scaffolds clean:	1
 Discordant arms:	0
-Balanced arms:	0
-Extra terminal blocks:	0
+Fragmented arms:	0
