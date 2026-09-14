@@ -12,12 +12,10 @@ import re
 # ---------------------------------------------------------------- block BED
 
 BED_FIELDS = [
-    "chrom", "start", "end", "blockLen", "label", "forwardCount", "reverseCount",
-    "canonicalCount", "nonCanonicalCount", "chromSize", "blockType", "arm",
-    "gapStatus", "fwdCan", "revCan", "fwdNonCan", "revNonCan", "status",
+    "chrom", "start", "end", "teloLen", "teloLabel", "closestEnd", "fwdCan", "revCan",
+    "fwdNonCan", "revNonCan", "chrSize", "teloType",
 ]
-INT_FIELDS = {"start", "end", "blockLen", "forwardCount", "reverseCount", "canonicalCount",
-              "nonCanonicalCount", "chromSize", "fwdCan", "revCan", "fwdNonCan", "revNonCan"}
+INT_FIELDS = {"start", "end", "teloLen", "fwdCan", "revCan", "fwdNonCan", "revNonCan", "chrSize"}
 
 
 def read_block_bed(path):
@@ -201,90 +199,76 @@ def covered_bases(merged, start, end):
 
 # ---------------------------------------------------------------- documented rules
 
-FORWARD_LABEL_THRESHOLD = 666
-REVERSE_LABEL_THRESHOLD = 333
+# closestEnd is the end a telomere belongs to (its arm side), which under R3 can differ
+# from the end it sits nearer to; the derivations below key arms/anomalies/granular on it.
+
 LABEL_SCALE = 1000
+DEFAULT_LABEL_THRESHOLD = 0.667
 
 
-def strand_label(forward_count, total_count):
-    """Strand label from counts, integer arithmetic as in include/teloscope.h:236-242."""
+def strand_label(forward_count, total_count, threshold=DEFAULT_LABEL_THRESHOLD):
+    """Strand label from counts, symmetric thirds as in computeStrandLabel(threshold)."""
     if total_count == 0:
         return "b"
     scaled = forward_count * LABEL_SCALE
-    if scaled > total_count * FORWARD_LABEL_THRESHOLD:
+    hi = round(threshold * LABEL_SCALE)
+    if scaled > total_count * hi:
         return "p"
-    if scaled < total_count * REVERSE_LABEL_THRESHOLD:
+    if scaled < total_count * (LABEL_SCALE - hi):
         return "q"
     return "b"
 
 
-def elect_longest(blocks):
-    """Arm election by canonical count (src/teloscope.cpp:515-528; REG-005)."""
-    # counters start at 0, not -1 (src/teloscope.cpp:512-513), matching the binary
-    longest_p = longest_q = None
-    max_p = max_q = 0
-    for i, b in enumerate(blocks):
-        canonical = b["fwdCan"] + b["revCan"]
-        if b["arm"] == "p" and canonical > max_p:
-            longest_p, max_p = i, canonical
-        elif b["arm"] == "q" and canonical >= max_q:
-            longest_q, max_q = i, canonical
-    return longest_p, longest_q
+def arms(blocks):
+    """The scaffold-terminal rows: at most one with closestEnd p, one with closestEnd q."""
+    scaffold = [b for b in blocks if b["teloType"] == "scaffold"]
+    p = next((b for b in scaffold if b["closestEnd"] == "p"), None)
+    q = next((b for b in scaffold if b["closestEnd"] == "q"), None)
+    return p, q
+
+
+def scaffold_type(blocks):
+    """Both arms present t2t, one incomplete, neither none."""
+    p, q = arms(blocks)
+    n = (p is not None) + (q is not None)
+    return {2: "t2t", 1: "incomplete", 0: "none"}[n]
+
+
+ANOMALY_ORDER = ["discordant_p", "discordant_q", "fragmented_p", "fragmented_q"]
+
+
+def anomalies(blocks):
+    """discordant: arm strand != its end; fragmented: an arm has more than one piece."""
+    p, q = arms(blocks)
+    flags = set()
+    for b, suffix in ((p, "p"), (q, "q")):
+        if b is None:
+            continue
+        if b["teloLabel"] != b["closestEnd"]:
+            flags.add(f"discordant_{suffix}")
+        if b["teloLen"] < b["end"] - b["start"]:
+            flags.add(f"fragmented_{suffix}")
+    ordered = [f for f in ANOMALY_ORDER if f in flags]
+    return ",".join(ordered) if ordered else "."
 
 
 def granular(blocks):
-    """docs/classification.md:64-72. One token per terminal block, ascending by start."""
+    """One token per terminal row, ascending by start: upper scaffold, lower contig, * discordant."""
     blocks = sorted(blocks, key=lambda b: b["start"])
-    lp, lq = elect_longest(blocks)
     out = []
-    for i, b in enumerate(blocks):
-        ch = b["arm"]
-        if i in (lp, lq):
-            ch = ch.upper()
-        if b["label"] == "b":
-            ch += "~"
-        elif b["label"] != b["arm"]:
+    for b in blocks:
+        ch = b["closestEnd"].upper() if b["teloType"] == "scaffold" else b["closestEnd"].lower()
+        if b["teloLabel"] != b["closestEnd"]:
             ch += "*"
         out.append(ch)
     return "".join(out)
 
 
-def scaffold_type(blocks):
-    """docs/classification.md:41-43: both arms t2t, one incomplete, neither none."""
-    lp, lq = elect_longest(sorted(blocks, key=lambda b: b["start"]))
-    n = (lp is not None) + (lq is not None)
-    return {2: "t2t", 1: "incomplete", 0: "none"}[n]
-
-
-ANOMALY_ORDER = ["discordant_p", "discordant_q", "balanced_p", "balanced_q", "misassembly"]
-
-
-def anomalies(blocks):
-    """Anomaly flags per docs/classification.md:43-45; balanced is tested before discordant."""
-    blocks = sorted(blocks, key=lambda b: b["start"])
-    lp, lq = elect_longest(blocks)
-    flags = set()
-    for idx, suffix in ((lp, "p"), (lq, "q")):
-        if idx is None:
-            continue
-        b = blocks[idx]
-        if b["label"] == "b":
-            flags.add(f"balanced_{suffix}")
-        elif b["label"] != b["arm"]:
-            flags.add(f"discordant_{suffix}")
-    for i, _ in enumerate(blocks):
-        if i not in (lp, lq):
-            flags.add("misassembly")
-            break
-    ordered = [f for f in ANOMALY_ORDER if f in flags]
-    return ",".join(ordered) if ordered else "."
-
-
 def labels_column(blocks):
-    """docs/outputs.md: lowercase arm chars of the elected blocks, or literal 'none'."""
-    blocks = sorted(blocks, key=lambda b: b["start"])
-    lp, lq = elect_longest(blocks)
-    out = "".join(blocks[i]["arm"] for i in (lp, lq) if i is not None)
+    """closestEnd (side) of each scaffold arm, ascending by start -- the uppercase letters
+    of granular, lowercased, in order -- or 'none'."""
+    scaffold = sorted((b for b in blocks if b["teloType"] == "scaffold"), key=lambda b: b["start"])
+    out = "".join(b["closestEnd"] for b in scaffold)
     return out or "none"
 
 

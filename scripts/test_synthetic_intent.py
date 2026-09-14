@@ -18,6 +18,9 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import teloscope_model as M  # noqa: E402
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_TELOSCOPE = ROOT / "build/bin" / ("teloscope.exe" if os.name == "nt" else "teloscope")
 TELOSCOPE = pathlib.Path(os.environ.get("TELOSCOPE", DEFAULT_TELOSCOPE))
@@ -141,6 +144,10 @@ def main():
                     f"    {proc.stderr.decode('utf-8', 'replace').strip()[:400]}")
                 continue
             report = parse_report(proc.stdout.decode("utf-8", "replace"))
+            terminal_bed = {}
+            bed_path = pathlib.Path(outdir) / f"{pathlib.Path(path).name}_terminal_telomeres.bed"
+            for b in M.read_block_bed(bed_path):
+                terminal_bed.setdefault(b["chrom"], []).append(b)
 
             for row in group:
                 scaffold = row["scaffold"]
@@ -186,6 +193,43 @@ def main():
                         failures.append(
                             f"{fid} [{flags}] {scaffold}: {column} expected {want!r}, "
                             f"got {got!r}\n    intent: {row['intent']}")
+
+                want_telolen = row.get("expect_telolen", "-")
+                if want_telolen == "-":
+                    continue
+                if want_telolen == "?":
+                    rkey = (fid, scaffold, "teloLen")
+                    reg = blocked_reg.get(rkey)
+                    if reg is None:
+                        failures.append(
+                            f"{fid} [{flags}] {scaffold}: expect_telolen is '?' but no row in "
+                            f"{BLOCKED.name} says which conflict it waits on.")
+                    else:
+                        blocked.append(f"{fid}/{scaffold}.teloLen [{reg}]")
+                    continue
+                arm_rows = [b for b in terminal_bed.get(scaffold, [])
+                            if b["teloType"] == "scaffold"]
+                checks += 1
+                if not arm_rows:
+                    failures.append(
+                        f"{fid} [{flags}] {scaffold}: expect_telolen needs a scaffold arm "
+                        f"in the terminal BED, found none")
+                    continue
+                want_int = int(want_telolen)
+                got_telolens = [b["teloLen"] for b in arm_rows]
+                # A record can carry two arms; the intent names one teloLen, not a slot.
+                got_telolen = want_int if want_int in got_telolens else got_telolens[0]
+                ok = want_int in got_telolens
+                reg = waivers.get((fid, scaffold, "teloLen"))
+                if ok and reg:
+                    stale.append(f"{fid}/{scaffold}.teloLen (waived under {reg})")
+                elif not ok and reg:
+                    waived.append(f"{fid}/{scaffold}.teloLen: teloLen should be "
+                                  f"{want_int!r}, is {got_telolen!r} [{reg}]")
+                elif not ok:
+                    failures.append(
+                        f"{fid} [{flags}] {scaffold}: teloLen expected {want_int!r}, "
+                        f"got {got_telolen!r}\n    intent: {row['intent']}")
         finally:
             shutil.rmtree(outdir, ignore_errors=True)
 

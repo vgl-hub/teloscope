@@ -2,15 +2,18 @@ testFiles/mirror_both_end.fa -f testFiles/mirror_both_end.fa -n
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	chr_mirror_both_end	1	q	0	incomplete	misassembly	q*Q
+pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
+1	chr_mirror_both_end	1	q	0	incomplete	.	Q	1	200	0
 
 +++ Assembly Summary Report +++
 Total paths:	1
 Total gaps:	0
-Scaffold N50:	3200
-Contig N50:	3200
+Scaffold N50:	8200
+Contig N50:	8200
 Total telomeres:	1
+Total ITS blocks:	1
+Total canonical matches:	200
+Total windows analyzed:	0
 
 +++ Telomere Statistics +++
 Mean length:	600
@@ -32,8 +35,7 @@ No telomeres:	0
 Gapped no telomeres:	0
 
 +++ Scaffold Anomalies +++
-Scaffolds flagged:	1
-Scaffolds clean:	0
+Scaffolds flagged:	0
+Scaffolds clean:	1
 Discordant arms:	0
-Balanced arms:	0
-Extra terminal blocks:	1
+Fragmented arms:	0

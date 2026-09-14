@@ -35,5 +35,4 @@ Gapped no telomeres:	0
 Scaffolds flagged:	1
 Scaffolds clean:	0
 Discordant arms:	2
-Balanced arms:	0
-Extra terminal blocks:	0
+Fragmented arms:	0
