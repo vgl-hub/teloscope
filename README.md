@@ -13,7 +13,7 @@ In FASTA mode, Teloscope writes terminal telomere annotations, gap coordinates, 
 
 ## What Teloscope writes
 
-- FASTA mode: `*_terminal_telomeres.bed`, `*_gaps.bed`, `*_report.tsv`, plus optional window tracks, match BED files, ITS BED files, and a PDF report.
+- FASTA mode: `*_terminal_telomeres.bed`, `*_interstitial_telomeres.bed`, `*_gaps.bed`, `*_report.tsv`, plus optional window tracks, match BED files, and a PDF report.
 - GFA mode: `<input>.telo.annotated.gfa` with telomere placeholder segments linked to the original graph, plus `<input>.telo.annotated.colors.csv` that paints the caps green for BandageNG.
 - FASTQ subset mode: unchanged passing FASTQ records on stdout.
 - BAM subset mode: a valid BAM stream containing the original header and unchanged passing alignment records.
@@ -73,7 +73,7 @@ Notes:
 
 - Teloscope always searches both each input pattern and its reverse complement.
 - If `-p` is omitted, Teloscope derives the search set from `-c`.
-- Any genome-wide output flag (`-r`, `-g`, `-e`, `-m`, `-i`) disables ultra-fast mode automatically.
+- Any of `-r`, `-g`, `-e`, `-m`, `-i`, or `-n` forces the full scan instead of the fast end-only scan; `-n` also adds contig-terminal rows to the terminal BED.
 - GFA mode attaches telomere caps with `L` links at `0M` overlap; `J` records stay reserved for real assembly gaps.
 - Gzipped stdin is not supported. Decompress before piping.
 - `--fastq-subset` writes FASTQ to stdout and diagnostics to stderr. Pass `-o` to save the reads to a file instead of streaming them.
@@ -105,6 +105,7 @@ FASTA run:
 ```text
 results/
   asm.fa_terminal_telomeres.bed
+  asm.fa_interstitial_telomeres.bed
   asm.fa_gaps.bed
   asm.fa_report.tsv
   asm.fa_window_repeat_density.bedgraph
