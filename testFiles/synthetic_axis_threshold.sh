@@ -52,13 +52,13 @@ fx th_bridge_plain_beyond synthetic/th_bridge_plain_beyond.fa \
    'type=incomplete;anom=.;gran=P;telo=1;labels=p;gaps=0;telolen=300' \
    'A 1001 bp run exceeds -d: the second array stays an interstitial row'
 
-# N runs are hard contig boundaries: pieces never chain across one, at any length (R1/R2).
+# N runs are hard contig boundaries: pieces never chain across one, at any length.
 fx th_bridge_gap synthetic/th_bridge_gap.fa \
    'chr_th_bridge_gap=F:CCCTAAx50+N:500+F:CCCTAAx50+L:3600' '-i' \
    'type=incomplete;anom=.;gran=P;telo=1;labels=p;gaps=1;its=1' \
    'A 500 bp N run splits the record into two contigs; the p arm is only the first piece and the second array is an interstitial row'
 
-# ---- --min-its-length is retired: interstitial rows have no length floor (R5) ----
+# ---- --min-its-length is retired: interstitial rows have no length floor ----
 fx th_its_below synthetic/th_its_below.fa \
    'chr_th_its_below=F:CCCTAAx100+L:2400+R:TTAGGGx16+L:2400+R:TTAGGGx100' '-i -t 1000' \
    'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0;its=1' \
@@ -69,7 +69,7 @@ fx th_its_exact synthetic/th_its_exact.fa \
    'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0;its=1' \
    'A 102 bp interstitial array is reported too'
 
-# minCanonicalCount threshold (REG-003); --min-its-length no longer exists.
+# minCanonicalCount threshold is hardcoded; --min-its-length no longer exists.
 fx th_its_canon_below synthetic/th_its_canon_below.fa \
    'chr_th_its_canon_below=F:CCCTAAx100+L:2400+R:TTAGGGx3+L:2400+R:TTAGGGx100' \
    '-i -t 1000' \
@@ -88,7 +88,7 @@ fx th_its_canon_above synthetic/th_its_canon_above.fa \
    'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0;its=1' \
    'Five non-adjacent canonical repeats among variants, 102 bp: clears minCanonicalCount 4'
 
-# ---- --label-threshold (0.667 default): terminal pieces are strand-pure (R1); fixtures assert its=1, note the label. ----
+# ---- --label-threshold (0.667 default): terminal pieces are strand-pure; fixtures assert its=1, note the label. ----
 fx th_strand_2fwd_1rev synthetic/th_strand_2fwd_1rev.fa \
    'chr_th_strand_2fwd_1rev=L:3500+M:CCCTAACCCTAATTAGGGx40+L:3500' '-i' \
    'type=none;anom=.;gran=;telo=0;labels=none;gaps=0;its=1' \

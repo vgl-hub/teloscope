@@ -2,7 +2,7 @@
 
 # Axis F -- junction geometry. Sourced by generate_synthetic.sh.
 
-# Axis F: a lone opposite match inside a p array is never "real" (R1) unless it reaches -l, so it's absorbed as gap.
+# Axis F: a lone opposite match inside a p array is never "real" unless it reaches -l, so it's absorbed as gap.
 fx jn_p_then_q_k1 synthetic/jn_p_then_q_k1.fa \
    'chr_jn_p_then_q_k1=F:CCCTAAx100+R:TTAGGGx1+F:CCCTAAx100+L:2000+R:TTAGGGx100' '-' \
    'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0' \
@@ -16,7 +16,7 @@ fx jn_p_then_q_k2 synthetic/jn_p_then_q_k2.fa \
 fx jn_p_then_q_k3 synthetic/jn_p_then_q_k3.fa \
    'chr_jn_p_then_q_k3=F:CCCTAAx100+R:TTAGGGx3+F:CCCTAAx100+L:2000+R:TTAGGGx100' '-' \
    'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0' \
-   'Three opposite matches (18 bp) are still far short of a real reverse array (< -l) and are absorbed the same way (D14, REG-014 retired)'
+   'Three opposite matches (18 bp) are still far short of a real reverse array (< -l) and are absorbed the same way'
 
 fx jn_p_then_q_k4 synthetic/jn_p_then_q_k4.fa \
    'chr_jn_p_then_q_k4=F:CCCTAAx100+R:TTAGGGx4+F:CCCTAAx100+L:2000+R:TTAGGGx100' '-' \
@@ -28,7 +28,7 @@ fx jn_lone_opposite synthetic/jn_lone_opposite.fa \
    'type=incomplete;anom=.;gran=P;telo=1;labels=p;gaps=0' \
    'A single reverse match past the p array is below --min-block-counts, is not real, and vanishes'
 
-# R1: abutting opposite arrays clamp each other's piece at the junction, becoming real terminal rows (REG-017 retired).
+# R1: abutting opposite arrays clamp each other's piece at the junction, becoming real terminal rows.
 fx jn_short_q_then_p synthetic/jn_short_q_then_p.fa \
    'chr_jn_short_q_then_p=L:1500+R:TTAGGGx60+F:CCCTAAx60+L:1500' '-i' \
    'type=t2t;anom=discordant_p,discordant_q;gran=P*Q*;telo=2;labels=pq;gaps=0;its=0' \
@@ -39,7 +39,7 @@ fx jn_short_p_then_q synthetic/jn_short_p_then_q.fa \
    'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0;its=0' \
    'Same geometry, forward first: a concordant p arm then a concordant q arm, both real terminal rows'
 
-# N runs are hard contig boundaries (R1/R2); re-spaced so the second contig's array falls beyond --terminal-tolerance.
+# N runs are hard contig boundaries; re-spaced so the second contig's array falls beyond --terminal-tolerance.
 fx jn_short_p_then_p_gap synthetic/jn_short_p_then_p_gap.fa \
    'chr_jn_short_p_then_p_gap=L:1500+F:CCCTAAx60+N:100+F:CCCTAAx60+L:3200' '-i' \
    'type=incomplete;anom=.;gran=P;telo=1;labels=p;gaps=1;its=1' \
@@ -49,7 +49,7 @@ fx jn_short_p_then_p_gap synthetic/jn_short_p_then_p_gap.fa \
 fx jn_short_p_then_p_far synthetic/jn_short_p_then_p_far.fa \
    'chr_jn_short_p_then_p_far=L:1500+F:CCCTAAx60+L:600+F:CCCTAAx60+L:1500' '-i' \
    'type=incomplete;anom=.;gran=P;telo=1;labels=p;gaps=0;its=0;telolen=1320' \
-   'Two forward arrays 600 bp apart bridge into one block reachable from either end: strand decides (R3), one p arm'
+   'Two forward arrays 600 bp apart bridge into one block reachable from either end: strand decides, one p arm'
 
 # Interior junctions sit 4000+ bp from both record ends so neither array is reachable by a terminal chain.
 fx jn_interior_q_then_p synthetic/jn_interior_q_then_p.fa \

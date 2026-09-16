@@ -2,8 +2,8 @@ testFiles/boundary_its_at_edge.fa -f testFiles/boundary_its_at_edge.fa -n
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	chr_boundary_edge	2	pq	0	t2t	.	PQ	1	210	0
+pos	header	telomeres	labels	gaps	type	anomaly	granular
+1	chr_boundary_edge	2	pq	0	t2t	.	PQ
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -11,9 +11,6 @@ Total gaps:	0
 Scaffold N50:	3460
 Contig N50:	3460
 Total telomeres:	2
-Total ITS blocks:	1
-Total canonical matches:	210
-Total windows analyzed:	0
 
 +++ Telomere Statistics +++
 Mean length:	600

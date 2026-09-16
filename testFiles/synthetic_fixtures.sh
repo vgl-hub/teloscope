@@ -33,7 +33,7 @@ fx misassembly misassembly.fa \
    'type=incomplete;anom=fragmented_p;gran=P;telo=1;labels=p;gaps=0;telolen=900' \
    'A 300 bp array 950 bp behind a 600 bp tip drags coverage below -y, so it chains as a second block: one fragmented p arm'
 
-# Filler > tolerance 3000, so the p end never reaches this array too and reclaims it (R3).
+# Filler > tolerance 3000, so the p end never reaches this array too and reclaims it.
 fx discordant discordant.fa \
    'chr_discordant=L:7200+F:CCCTAAx100' '-' \
    'type=incomplete;anom=discordant_q;gran=Q*;telo=1;labels=q;gaps=0' \
@@ -54,7 +54,7 @@ fx plant plant.fa \
    'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0' \
    'Plant 7-mer canonical repeat'
 
-# Terminal density is canonical-only (D10): a variant array never anchors a piece, at any -x.
+# Terminal density is canonical-only: a variant array never anchors a piece, at any -x.
 fx edit_test edit_test.fa \
    'chr_edit_p=V:CTCTAAx100+L:2400' '-x 1' \
    'type=none;anom=.;gran=;telo=0;labels=none;gaps=0' \
@@ -65,7 +65,7 @@ fx short_contig short_contig.fa \
    'type=none;anom=.;gran=;telo=0;labels=none;gaps=0' \
    'Contig shorter than one window'
 
-# Interleaved orientations never qualify as a chain piece (R1/R3): moved to the interior.
+# Interleaved orientations never qualify as a chain piece: moved to the interior.
 fx balanced balanced.fa \
    'chr_balanced=L:3500+M:CCCTAATTAGGGx100+L:3500' '-i' \
    'type=none;anom=.;gran=;telo=0;labels=none;gaps=0;its=1' \
@@ -111,7 +111,7 @@ fx mirror_inverted_short mirror_inverted_short.fa \
    'type=t2t;anom=discordant_p,discordant_q;gran=P*Q*;telo=2;labels=pq;gaps=0' \
    'Both arms present but each carries the other end motif: an inverted terminal repeat'
 
-# Filler > tolerance 3000, so the q end never reaches this array too and reclaims it (R3).
+# Filler > tolerance 3000, so the q end never reaches this array too and reclaims it.
 fx mirror_rev_start mirror_rev_start.fa \
    'chr_mirror_rev_start=R:TTAGGGx100+L:7200' '-' \
    'type=incomplete;anom=discordant_p;gran=P*;telo=1;labels=p;gaps=0' \
@@ -132,7 +132,7 @@ fx mirror_rev_start_long mirror_rev_start_long.fa \
    'type=incomplete;anom=discordant_p;gran=P*;telo=1;labels=p;gaps=0' \
    'Reverse motif only, at the start'
 
-# Filler > tolerance keeps this out of reach from the q end, so it lands as a tail_to_tail interstitial row (R1, D11).
+# Filler > tolerance keeps this out of reach from the q end, so it lands as a tail_to_tail interstitial row.
 fx mirror_both_start mirror_both_start.fa \
    'chr_mirror_both_start=F:CCCTAAx100+R:TTAGGGx100+L:7000' '-i' \
    'type=incomplete;anom=.;gran=P;telo=1;labels=p;gaps=0;its=1' \
@@ -188,7 +188,7 @@ fx boundary_zone_shift_narrow boundary_zone_shift.fa \
 fx boundary_its_at_edge boundary_its_at_edge.fa \
    'chr_boundary_edge=F:CCCTAAx100+R:TTAGGGx10+L:2200+R:TTAGGGx100' '-i -t 1000' \
    'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0;its=1' \
-   'A 60 bp array abutting the p arm is too short to be a real array (R1) and does not clamp the chain, but it clears the interstitial gate: no length floor there any more'
+   'A 60 bp array abutting the p arm is too short to be a real array and does not clamp the chain, but it clears the interstitial gate: no length floor there any more'
 
 fx boundary_multiple_p boundary_multiple_p.fa \
    'chr_boundary_multi_p=F:CCCTAAx100+L:300+F:CCCTAAx100+L:5700' '-d 200' \
@@ -221,7 +221,7 @@ fx its_gap_split its_gap_split.fa \
 fx its_gap_headtohead its_gap_headtohead.fa \
    'chr_its_gap_headtohead=L:100+R:TTAGGGx100+N:100+F:CCCTAAx100+L:100' '-i -t 50 -k 200 -x 1' \
    'type=none;anom=.;gran=;telo=0;labels=none;gaps=1;its=2' \
-   'Head-to-head arrays split by a gap: two independent contigs, each an interstitial row classed single (a gap breaks any junction link, D11)'
+   'Head-to-head arrays split by a gap: two independent contigs, each an interstitial row classed single (a gap breaks any junction link)'
 
 fx its_strand_pure its_strand_pure.fa \
    'chr_its_strand_pure=L:100+V:TTAGGAx7+F:CCCTAAx13+L:100' '-i -x 1' \
@@ -231,14 +231,14 @@ fx its_strand_pure its_strand_pure.fa \
 fx its_headtohead its_headtohead.fa \
    'chr_its_headtohead=L:100+F:CCCTAAx20+V:CTCTAAx7+V:TTAGGAx7+R:TTAGGGx20+L:100' '-i -x 1' \
    'type=none;anom=.;gran=;telo=0;labels=none;gaps=0;its=2' \
-   'F and R canonical runs joined by a variant halo flip orientation partway; the inversion cut still splits them into two rows, a head-to-head pair (D11)'
+   'F and R canonical runs joined by a variant halo flip orientation partway; the inversion cut still splits them into two rows, a head-to-head pair'
 
 # Shipped before this generator (used by generate-tests.cpp, test_gaps_bed.sh); bytes are fixed.
 
 fx discordant_pp discordant_pp.fa \
    'chr_discordant_pp=L:2996+F:CCCTAAx84+L:900+F:CCCTAAx100' '-' \
    'type=incomplete;anom=.;gran=P;telo=1;labels=p;gaps=0;telolen=2004' \
-   'Both forward arrays bridge into one block reachable from either end; strand decides (R3): one p arm, no q telomere'
+   'Both forward arrays bridge into one block reachable from either end; strand decides: one p arm, no q telomere'
 
 fx extra_invalid_p extra_invalid_p.fa \
    'chr_extra_invalid_p=F:CCCTAAx100+L:3396+F:CCCTAAx84+L:500' '-d 200' \
@@ -296,11 +296,11 @@ xfx bTaeGut7_pat bTaeGut7_chr33_pat.fa.gz chr33_pat '-' \
 # VGP excerpts from the 26.09.12 edge-case panel (notebook section in brackets).
 xfx vgp_probe_mega vgp_probe.fa.gz mega_OZ124247.1_p_0-600000 '-i' \
    'type=incomplete;anom=.;gran=P;telo=1;labels=p;gaps=0;its=0;telolen=538251' \
-   'Pochard OZ124247.1 first 600 kb: a single uncapped p arm, 4-538255 [S4.1, S6.2 C01, REG-018]'
+   'Pochard OZ124247.1 first 600 kb: a single uncapped p arm, 4-538255'
 
 xfx vgp_probe_frag32 vgp_probe.fa.gz frag32_OZ221982.1_q_302227075-302307075 '-i' \
    'type=incomplete;anom=fragmented_q;gran=Q;telo=1;labels=q;gaps=0;its=0;telolen=73964' \
-   'Frog OZ221982.1 last 80 kb: ten blocks chain into one fragmented q arm, 0-79994 [S4.2, S7.1]'
+   'Frog OZ221982.1 last 80 kb: ten blocks chain into one fragmented q arm, 0-79994'
 
 xfx vgp_probe_mito vgp_probe.fa.gz mito_CM010492.2_whole '-i' \
    'type=none;anom=.;gran=;telo=0;labels=none;gaps=0;its=0' \
@@ -308,7 +308,7 @@ xfx vgp_probe_mito vgp_probe.fa.gz mito_CM010492.2_whole '-i' \
 
 xfx vgp_turtle vgp_turtle.fa.gz giant_CM098529.1_84917045-85927174 '-i' \
    'type=none;anom=.;gran=;telo=0;labels=none;gaps=1;its=3' \
-   'Turtle CM098529.1: a near-1 Mb reverse array on the first contig, too far from either scaffold end to be an arm, reported as three interstitial rows; never bridged across the 200 bp gap [S4.3]'
+   'Turtle CM098529.1: a near-1 Mb reverse array on the first contig, too far from either scaffold end to be an arm, reported as three interstitial rows; never bridged across the 200 bp gap'
 
 xfx vgp_turtle_n vgp_turtle.fa.gz giant_CM098529.1_84917045-85927174 '-i -n' \
    'type=none;anom=.;gran=q;telo=0;labels=none;gaps=1;its=0' \

@@ -55,8 +55,7 @@ mkdir -p "$TMPDIR"
 # File count tests (output flag combinations)
 # =====================================================
 
-# Test: default mode produces 4 files (terminal + interstitial + gaps + report): the
-# interstitial file is always written now (R10)
+# Test: default mode produces 4 files (terminal + interstitial + gaps + report)
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" 2>/dev/null >/dev/null
 check_file_count "default mode file count" 4 "$TMPDIR"
@@ -81,8 +80,12 @@ rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" -m 2>/dev/null >/dev/null
 check_file_count "-m flag file count" 6 "$TMPDIR"
 
-# Test: -i's file count now equals the default (interstitial is always written, R10); check
-# the full-scan report gains the its column instead
+# Test: -a produces 5 files (terminal + interstitial + gaps + report + terminal telomere FASTA)
+rm -rf "$TMPDIR"/* 2>/dev/null || true
+build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR" -a 2>/dev/null >/dev/null
+check_file_count "-a flag file count" 5 "$TMPDIR"
+
+# Test: -i's file count equals the default; check the full-scan report gains the its column instead
 DEFAULT_HEADER=$(build/bin/teloscope -f testFiles/t2t.fa 2>/dev/null | grep "^pos	header")
 I_HEADER=$(build/bin/teloscope -f testFiles/t2t.fa -i 2>/dev/null | grep "^pos	header")
 check_output_not_contains "default report has no its column" "	its	" "$DEFAULT_HEADER"
@@ -102,6 +105,11 @@ check_file_count "-r -m -g -e -i file count" 11 "$TMPDIR"
 rm -rf "$TMPDIR"/* 2>/dev/null || true
 build/bin/teloscope testFiles/t2t.fa -o "$TMPDIR" 2>/dev/null >/dev/null
 check_file_count "positional arg file count" 4 "$TMPDIR"
+
+# Test: -o creates missing nested output directories
+rm -rf "$TMPDIR/new" 2>/dev/null || true
+build/bin/teloscope -f testFiles/t2t.fa -o "$TMPDIR/new/deep" 2>/dev/null >/dev/null
+check_file_count "-o creates missing nested directories" 4 "$TMPDIR/new/deep"
 
 # =====================================================
 # Classification consistency: default vs -r/-m/-i
@@ -177,8 +185,7 @@ check_output_not_contains "no Missassembled typo" "Missassembled:" "$OUT"
 OUT=$(build/bin/teloscope -f testFiles/t2t.fa -l 1000 2>/dev/null)
 check_output_contains "-l 1000 kills 600bp blocks" "none" "$OUT"
 
-# -t flag: caps the start zone (R2). t2t.fa's arms sit at position 0, so they would be
-# called even if -t were ignored; use an array 2500 bp in, which -t 100 puts out of reach.
+# -t flag: caps the start zone; t2t.fa's arms sit at 0, so use an array 2500 bp in instead, which -t 100 puts out of reach.
 OUT=$(build/bin/teloscope -f testFiles/synthetic/th_tol_2500.fa 2>/dev/null)
 check_output_contains "th_tol_2500 default: within the zone" "incomplete	.	P" "$OUT"
 OUT=$(build/bin/teloscope -f testFiles/synthetic/th_tol_2500.fa -t 100 2>/dev/null)

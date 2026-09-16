@@ -1,8 +1,6 @@
 # Expected classification per fixture, derived from docs/classification.md and the
 # fixture construction -- never read back from the binary. Regenerate with
 # testFiles/generate_synthetic.sh; CI checks that regeneration is a no-op.
-# A "?" in any expect_ column means the outcome is blocked on a docs/conflicts.md
-# decision; scripts/test_synthetic_intent.py fails on it rather than passing silently.
 id	path	scaffold	flags	expect_type	expect_anomaly	expect_granular	expect_telomeres	expect_labels	expect_gaps	expect_its	expect_telolen	intent
 t2t	t2t.fa	chr_t2t	-	t2t	.	PQ	2	pq	0	-	-	Both arms, correct orientation
 incomplete_p	incomplete_p.fa	chr_incomplete_p	-	incomplete	.	P	1	p	0	-	-	Only p-arm telomere
@@ -40,16 +38,16 @@ boundary_fail_filter	boundary_fail_filter.fa	chr_boundary_fail	-	none	.		0	none	
 boundary_cross	boundary_cross.fa	chr_boundary_cross	-i	t2t	.	PQ	2	pq	0	0	-	Dense abutting p and q arrays leave no room between them for an interstitial block
 boundary_zone_shift	boundary_zone_shift.fa	chr_boundary_zone	-t 1200	t2t	.	PQ	2	pq	0	-	-	Zone size decides terminal versus interstitial: at -t 1200 both arrays are terminal
 boundary_zone_shift_narrow	boundary_zone_shift.fa	chr_boundary_zone	-t 400	none	.		0	none	0	-	-	The same file at -t 400: both arrays fall outside the zone
-boundary_its_at_edge	boundary_its_at_edge.fa	chr_boundary_edge	-i -t 1000	t2t	.	PQ	2	pq	0	1	-	A 60 bp array abutting the p arm is too short to be a real array (R1) and does not clamp the chain, but it clears the interstitial gate: no length floor there any more
+boundary_its_at_edge	boundary_its_at_edge.fa	chr_boundary_edge	-i -t 1000	t2t	.	PQ	2	pq	0	1	-	A 60 bp array abutting the p arm is too short to be a real array and does not clamp the chain, but it clears the interstitial gate: no length floor there any more
 boundary_multiple_p	boundary_multiple_p.fa	chr_boundary_multi_p	-d 200	incomplete	.	P	1	p	0	-	600	Two p arrays 300 bp apart exceed -d 200: the outer one is the arm, the inner one an interstitial row
 boundary_extend_its	boundary_extend_its.fa	chr_boundary_ext_its	-i -t 300	t2t	fragmented_q	PQ	2	pq	0	0	900	Terminal blocks extend past the -t zone: the middle array chains into the q arm, not interstitial
 uncapped_extent_fast	uncapped_extent.fa	chr_uncapped_extent	-t 300	incomplete	.	P	1	p	0	-	1200	A 1200 bp array is not clipped at the -t 300 window: fast mode extends past it
 uncapped_extent_full	uncapped_extent.fa	chr_uncapped_extent	-i -t 300	incomplete	.	P	1	p	0	0	1200	The same file under a full scan: identical to the fast-mode result
 its_gap_split	its_gap_split.fa	chr_its_gap_split	-i -t 50 -k 200 -x 1	none	.		0	none	1	2	-	One array split by a gap into two contigs; each half is its own interstitial row, classed single
-its_gap_headtohead	its_gap_headtohead.fa	chr_its_gap_headtohead	-i -t 50 -k 200 -x 1	none	.		0	none	1	2	-	Head-to-head arrays split by a gap: two independent contigs, each an interstitial row classed single (a gap breaks any junction link, D11)
+its_gap_headtohead	its_gap_headtohead.fa	chr_its_gap_headtohead	-i -t 50 -k 200 -x 1	none	.		0	none	1	2	-	Head-to-head arrays split by a gap: two independent contigs, each an interstitial row classed single (a gap breaks any junction link)
 its_strand_pure	its_strand_pure.fa	chr_its_strand_pure	-i -x 1	none	.		0	none	0	1	-	Reverse variant halo fails the exact-canonical-count gate on its own (inversion cut splits it from the core); only the pure forward core is reported
-its_headtohead	its_headtohead.fa	chr_its_headtohead	-i -x 1	none	.		0	none	0	2	-	F and R canonical runs joined by a variant halo flip orientation partway; the inversion cut still splits them into two rows, a head-to-head pair (D11)
-discordant_pp	discordant_pp.fa	chr_discordant_pp	-	incomplete	.	P	1	p	0	-	2004	Both forward arrays bridge into one block reachable from either end; strand decides (R3): one p arm, no q telomere
+its_headtohead	its_headtohead.fa	chr_its_headtohead	-i -x 1	none	.		0	none	0	2	-	F and R canonical runs joined by a variant halo flip orientation partway; the inversion cut still splits them into two rows, a head-to-head pair
+discordant_pp	discordant_pp.fa	chr_discordant_pp	-	incomplete	.	P	1	p	0	-	2004	Both forward arrays bridge into one block reachable from either end; strand decides: one p arm, no q telomere
 extra_invalid_p	extra_invalid_p.fa	chr_extra_invalid_p	-d 200	t2t	discordant_q	PQ*	2	pq	0	-	-	A p arm plus a forward array at the q end, which reads as a discordant q arm
 gapped_discordant_q	gapped_discordant_q.fa	chr_gapped_discordant_q	-	incomplete	discordant_p	P*	1	p	1	-	-	Reverse motif at the p end, with an N-gap
 gapped_incomplete_q	gapped_incomplete_q.fa	chr_gapped_incomplete_q	-	incomplete	.	Q	1	q	1	-	-	Single q-arm with an N-gap
@@ -150,13 +148,13 @@ mo_sparse_long	synthetic/mo_sparse_long.fa	chr_mo_sparse_long	-	incomplete	.	P	1
 mo_dense_short	synthetic/mo_dense_short.fa	chr_mo_dense_short	-	none	.		0	none	0	-	-	A fully dense 240 bp array still fails -l: density does not buy length
 jn_p_then_q_k1	synthetic/jn_p_then_q_k1.fa	chr_jn_p_then_q_k1	-	t2t	.	PQ	2	pq	0	-	-	One opposite match inside the p array is absorbed: forward share 200/201
 jn_p_then_q_k2	synthetic/jn_p_then_q_k2.fa	chr_jn_p_then_q_k2	-	t2t	.	PQ	2	pq	0	-	-	Two opposite matches inside the p array are absorbed: forward share 200/202
-jn_p_then_q_k3	synthetic/jn_p_then_q_k3.fa	chr_jn_p_then_q_k3	-	t2t	.	PQ	2	pq	0	-	-	Three opposite matches (18 bp) are still far short of a real reverse array (< -l) and are absorbed the same way (D14, REG-014 retired)
+jn_p_then_q_k3	synthetic/jn_p_then_q_k3.fa	chr_jn_p_then_q_k3	-	t2t	.	PQ	2	pq	0	-	-	Three opposite matches (18 bp) are still far short of a real reverse array (< -l) and are absorbed the same way
 jn_p_then_q_k4	synthetic/jn_p_then_q_k4.fa	chr_jn_p_then_q_k4	-	t2t	.	PQ	2	pq	0	-	-	Four opposite matches (24 bp) are still far short of a real reverse array and are absorbed the same way
 jn_lone_opposite	synthetic/jn_lone_opposite.fa	chr_jn_lone_opposite	-	incomplete	.	P	1	p	0	-	-	A single reverse match past the p array is below --min-block-counts, is not real, and vanishes
 jn_short_q_then_p	synthetic/jn_short_q_then_p.fa	chr_jn_short_q_then_p	-i	t2t	discordant_p,discordant_q	P*Q*	2	pq	0	0	-	Two abutting opposite arrays, each clamped at the junction and each within tolerance of its own end: both are real terminal rows
 jn_short_p_then_q	synthetic/jn_short_p_then_q.fa	chr_jn_short_p_then_q	-i	t2t	.	PQ	2	pq	0	0	-	Same geometry, forward first: a concordant p arm then a concordant q arm, both real terminal rows
 jn_short_p_then_p_gap	synthetic/jn_short_p_then_p_gap.fa	chr_jn_short_p_then_p_gap	-i	incomplete	.	P	1	p	1	1	-	A 100 bp N run splits the array into two contigs; pieces never chain across it, so the p arm is only the first piece and the second contig's array is an interstitial row
-jn_short_p_then_p_far	synthetic/jn_short_p_then_p_far.fa	chr_jn_short_p_then_p_far	-i	incomplete	.	P	1	p	0	0	1320	Two forward arrays 600 bp apart bridge into one block reachable from either end: strand decides (R3), one p arm
+jn_short_p_then_p_far	synthetic/jn_short_p_then_p_far.fa	chr_jn_short_p_then_p_far	-i	incomplete	.	P	1	p	0	0	1320	Two forward arrays 600 bp apart bridge into one block reachable from either end: strand decides, one p arm
 jn_interior_q_then_p	synthetic/jn_interior_q_then_p.fa	chr_jn_interior_q_then_p	-i	none	.		0	none	0	2	-	Interior TTAGGG array then CCCTAA array, abutting: the fusion signature, two plain interstitial rows classed fusion
 jn_interior_p_then_q	synthetic/jn_interior_p_then_q.fa	chr_jn_interior_p_then_q	-i	none	.		0	none	0	2	-	Interior CCCTAA array then TTAGGG array, abutting: tail to tail, two plain interstitial rows
 jn_interior_p_then_p_gap	synthetic/jn_interior_p_then_p_gap.fa	chr_jn_interior_p_then_p_gap	-i	none	.		0	none	1	2	-	Interior array split by an N run: two separate single-contig interstitial rows, since spans never bridge a gap
@@ -174,8 +172,8 @@ jn_flanked_both_n	synthetic/jn_flanked_both.fa	chr_jn_flanked_both	-n -i	none	.	
 jn_tip_beats_giant	synthetic/jn_tip_beats_giant.fa	chr_jn_tip_beats_giant	-i	incomplete	discordant_p	P*	1	p	0	1	300	A 300 bp reverse tip is the outermost qualifying piece and becomes the (discordant) p arm; the 3 kb forward telomere behind it is too far to end the chain and is reported as an interstitial row
 bTaeGut7_mat	bTaeGut7_chr33_mat.fa.gz	chr33_mat	-	t2t	.	PQ	2	pq	0	-	-	Real zebra finch chr33, maternal haplotype
 bTaeGut7_pat	bTaeGut7_chr33_pat.fa.gz	chr33_pat	-	t2t	.	PQ	2	pq	0	-	-	Real zebra finch chr33, paternal haplotype
-vgp_probe_mega	vgp_probe.fa.gz	mega_OZ124247.1_p_0-600000	-i	incomplete	.	P	1	p	0	0	538251	Pochard OZ124247.1 first 600 kb: a single uncapped p arm, 4-538255 [S4.1, S6.2 C01, REG-018]
-vgp_probe_frag32	vgp_probe.fa.gz	frag32_OZ221982.1_q_302227075-302307075	-i	incomplete	fragmented_q	Q	1	q	0	0	73964	Frog OZ221982.1 last 80 kb: ten blocks chain into one fragmented q arm, 0-79994 [S4.2, S7.1]
+vgp_probe_mega	vgp_probe.fa.gz	mega_OZ124247.1_p_0-600000	-i	incomplete	.	P	1	p	0	0	538251	Pochard OZ124247.1 first 600 kb: a single uncapped p arm, 4-538255
+vgp_probe_frag32	vgp_probe.fa.gz	frag32_OZ221982.1_q_302227075-302307075	-i	incomplete	fragmented_q	Q	1	q	0	0	73964	Frog OZ221982.1 last 80 kb: ten blocks chain into one fragmented q arm, 0-79994
 vgp_probe_mito	vgp_probe.fa.gz	mito_CM010492.2_whole	-i	none	.		0	none	0	0	-	A 16 kb mitochondrial genome: no telomere
-vgp_turtle	vgp_turtle.fa.gz	giant_CM098529.1_84917045-85927174	-i	none	.		0	none	1	3	-	Turtle CM098529.1: a near-1 Mb reverse array on the first contig, too far from either scaffold end to be an arm, reported as three interstitial rows; never bridged across the 200 bp gap [S4.3]
+vgp_turtle	vgp_turtle.fa.gz	giant_CM098529.1_84917045-85927174	-i	none	.		0	none	1	3	-	Turtle CM098529.1: a near-1 Mb reverse array on the first contig, too far from either scaffold end to be an arm, reported as three interstitial rows; never bridged across the 200 bp gap
 vgp_turtle_n	vgp_turtle.fa.gz	giant_CM098529.1_84917045-85927174	-i -n	none	.	q	0	none	1	0	-	Same file with -n: the array anchors its own contig's internal end and becomes a lowercase contig row, leaving the interstitial BED

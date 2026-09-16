@@ -1,7 +1,0 @@
-# Expectations deliberately left unstated, each waiting on a named decision.
-#
-# "?" in the manifest means the answer is not yet decided. Because an absent key also
-# defaults to "?", a forgotten field would otherwise look exactly like a deliberate one,
-# so every "?" must appear here with the conflict it waits on or the run fails.
-#
-# id	scaffold	column	register	reason

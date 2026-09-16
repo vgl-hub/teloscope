@@ -48,9 +48,7 @@ $(BINDIR)%: $(SOURCE)/%.cpp $(INCLUDE)/%.h | $(BINDIR)
 .PHONY: FORCE
 FORCE:
 
-# CXXFLAGS are not make prerequisites. Keep a content-sensitive stamp so the
-# object that embeds the commit is rebuilt after HEAD changes, but not on every
-# incremental build.
+# stamp the commit so the object that embeds it rebuilds only when HEAD changes
 $(COMMIT_STATE): FORCE | $(BINDIR)
 	@current="$$(test -f "$@" && sed -n '1p' "$@")"; \
 	if test "$$current" != "$(TELOSCOPE_COMMIT)"; then \
@@ -116,9 +114,6 @@ test-bam-coverage:
 
 test-bam-sanitize:
 	CXX="$(CXX)" bash scripts/test_bam_sanitized.sh
-
-gfa-oracle: head
-	bash scripts/compare_to_reference.sh
 
 clean:
 	$(RM) -r build

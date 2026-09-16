@@ -2,8 +2,8 @@ testFiles/mirror_both_start.fa -f testFiles/mirror_both_start.fa -n
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	chr_mirror_both_start	1	p	0	incomplete	.	P	1	200	0
+pos	header	telomeres	labels	gaps	type	anomaly	granular
+1	chr_mirror_both_start	1	p	0	incomplete	.	P
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -11,9 +11,6 @@ Total gaps:	0
 Scaffold N50:	8200
 Contig N50:	8200
 Total telomeres:	1
-Total ITS blocks:	1
-Total canonical matches:	200
-Total windows analyzed:	0
 
 +++ Telomere Statistics +++
 Mean length:	600

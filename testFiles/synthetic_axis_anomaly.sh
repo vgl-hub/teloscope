@@ -50,7 +50,7 @@ fx ax_t2t_bal_p_disc_q synthetic/ax_t2t_bal_p_disc_q.fa \
    'type=incomplete;anom=discordant_q;gran=Q*;telo=1;labels=q;gaps=0;its=1' \
    'The mirror: an interior interleaved array and an inverted q arm'
 
-# Same-strand pieces bridge into one continuous block (R2), not two chained pieces.
+# Same-strand pieces bridge into one continuous block, not two chained pieces.
 fx ax_t2t_extra_p synthetic/ax_t2t_extra_p.fa \
    'chr_ax_t2t_extra_p=F:CCCTAAx100+L:600+F:CCCTAAx100+L:2200+R:TTAGGGx100' '-' \
    'type=t2t;anom=.;gran=PQ;telo=2;labels=pq;gaps=0;telolen=1800' \
@@ -66,7 +66,7 @@ fx ax_t2t_extra_p_disc_q synthetic/ax_t2t_extra_p_disc_q.fa \
    'type=t2t;anom=discordant_q;gran=PQ*;telo=2;labels=pq;gaps=0' \
    'A p arm of two bridged arrays and an unrelated forward array at the q end'
 
-# Filler > tolerance 3000, so the q end never reaches this array too and reclaims it (R3).
+# Filler > tolerance 3000, so the q end never reaches this array too and reclaims it.
 fx ax_incomplete_disc_p synthetic/ax_incomplete_disc_p.fa \
    'chr_ax_incomplete_disc_p=R:TTAGGGx100+L:7200' '-' \
    'type=incomplete;anom=discordant_p;gran=P*;telo=1;labels=p;gaps=0' \

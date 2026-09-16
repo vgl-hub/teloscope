@@ -43,7 +43,7 @@ check_defaults() {
     assert_default terminalLimit  50000 include/input.h     'terminalLimit *= *\([0-9]*\)'
     assert_default termTolerance  3000  include/input.h     'terminalTolerance *= *\([0-9]*\)'
     assert_default editDistance   1     include/input.h     'editDistance *= *\([0-9]*\)'
-    # hardcoded, not reachable from the CLI -- see docs/conflicts.md REG-003
+    # hardcoded, not reachable from the CLI
     assert_default minCanonicalCount 4  src/teloscope.cpp   'minCanonicalCount *= *\([0-9]*\)'
     assert_default labelThreshold 0.667f include/input.h    'labelThreshold *= *\([0-9.]*f\)'
 }
@@ -179,8 +179,6 @@ write_manifest() {
         printf '# Expected classification per fixture, derived from docs/classification.md and the\n'
         printf '# fixture construction -- never read back from the binary. Regenerate with\n'
         printf '# testFiles/generate_synthetic.sh; CI checks that regeneration is a no-op.\n'
-        printf '# A "?" in any expect_ column means the outcome is blocked on a docs/conflicts.md\n'
-        printf '# decision; scripts/test_synthetic_intent.py fails on it rather than passing silently.\n'
         printf '%s\n' "$MANIFEST_COLUMNS"
         local -a records expects
         for i in "${!FX_ID[@]}"; do

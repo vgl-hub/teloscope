@@ -2,8 +2,8 @@ testFiles/boundary_zone_shift.fa -f testFiles/boundary_zone_shift.fa -t 400 -n
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	chr_boundary_zone	0	none	0	none	.		2	200	0
+pos	header	telomeres	labels	gaps	type	anomaly	granular
+1	chr_boundary_zone	0	none	0	none	.	
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -11,9 +11,6 @@ Total gaps:	0
 Scaffold N50:	4200
 Contig N50:	4200
 Total telomeres:	0
-Total ITS blocks:	2
-Total canonical matches:	200
-Total windows analyzed:	0
 
 +++ Telomere Statistics +++
 No telomeres found for statistics.
