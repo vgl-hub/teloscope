@@ -148,6 +148,7 @@ struct SegmentData {
     std::vector<WindowData> windows;
     uint64_t windowCounts = 0;
     std::vector<TelomereBlock> terminalBlocks;
+    std::vector<std::string> terminalSeqs; // -a: one sequence per terminalBlocks entry
     std::vector<TelomereBlock> interstitialBlocks;
     std::vector<MatchSeqInfo> canonicalMatches;
     std::vector<MatchSeqInfo> nonCanonicalMatches;
@@ -166,6 +167,7 @@ struct PathData {
     std::vector<WindowData> windows;
     uint64_t windowCounts = 0;
     std::vector<TelomereBlock> terminalBlocks;
+    std::vector<std::string> terminalSeqs; // -a: one sequence per terminalBlocks entry
     std::vector<TelomereBlock> interstitialBlocks;
     std::vector<MatchSeqInfo> canonicalMatches;
     std::vector<MatchSeqInfo> nonCanonicalMatches;
@@ -314,7 +316,8 @@ public:
                     std::ofstream& terminalBlocksFile,
                     std::ofstream& interstitialBlocksFile,
                     std::ofstream& gapFile,
-                    std::ofstream& reportFile);
+                    std::ofstream& reportFile,
+                    std::ofstream& telomereFastaFile);
 
 
     void handleBEDFile();

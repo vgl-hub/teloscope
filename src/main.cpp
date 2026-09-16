@@ -157,7 +157,7 @@ int main(int argc, char **argv) {
                 exit(EXIT_FAILURE);
             }
             return static_cast<uint32_t>(v);
-        } catch (const std::exception& e) {
+        } catch (const std::exception&) {
             fprintf(stderr, "Error: Invalid value '%s' for %s. Must be a number.\n", value, optionName);
             exit(EXIT_FAILURE);
         }
@@ -171,7 +171,7 @@ int main(int argc, char **argv) {
                 exit(EXIT_FAILURE);
             }
             return v;
-        } catch (const std::exception& e) {
+        } catch (const std::exception&) {
             fprintf(stderr, "Error: Invalid value '%s' for --label-threshold. Must be a number.\n", value);
             exit(EXIT_FAILURE);
         }
@@ -184,6 +184,7 @@ int main(int argc, char **argv) {
         {"exclude-bed", required_argument, 0, 0},
         {"include-prefix", required_argument, 0, 0},
         {"exclude-prefix", required_argument, 0, 0},
+        {"chr-only", no_argument, 0, 0},
         {"patterns", required_argument, 0, 'p'},
         {"window", required_argument, 0, 'w'},
         {"step", required_argument, 0, 's'},
@@ -255,6 +256,10 @@ int main(int argc, char **argv) {
                     addPrefixFilters(optarg, userInput.includePrefixes, "--include-prefix");
                 else if (strcmp(long_options[option_index].name, "exclude-prefix") == 0)
                     addPrefixFilters(optarg, userInput.excludePrefixes, "--exclude-prefix");
+                else if (strcmp(long_options[option_index].name, "chr-only") == 0) {
+                    userInput.chrOnly = true;
+                    userInput.sequenceFilterActive = true;
+                }
                 else if (strcmp(long_options[option_index].name, "terminal-tolerance") == 0)
                     userInput.terminalTolerance = parsePositive(optarg, "--terminal-tolerance");
                 else if (strcmp(long_options[option_index].name, "label-threshold") == 0)
@@ -496,7 +501,6 @@ int main(int argc, char **argv) {
 
             case 'a':
                 userInput.outFasta = true;
-                userInput.ultraFastMode = false;
                 break;
 
 
@@ -536,7 +540,7 @@ int main(int argc, char **argv) {
                     userInput.outMatches) {
                     // conflicts with genome-wide flags, ignore -u
                     userInput.ultraFastMode = false;
-                    fprintf(stderr, "Ignoring -u: -r/-g/-e/-i/-m/-n request genome-wide scanning.\n");
+                    fprintf(stderr, "Ignoring -u: -r/-g/-e/-i/-m request genome-wide scanning.\n");
                 } else {
                     // terminal-only mode
                     userInput.ultraFastMode = true;
@@ -546,10 +550,8 @@ int main(int argc, char **argv) {
             }
 
 
-            case 'n': // manual curation mode: also report contig-internal telomeres; implies the full scan
+            case 'n': // manual curation mode: also report contig-internal telomeres
                 userInput.manualCuration = true;
-                fullScanRequested = true;
-                userInput.ultraFastMode = false;
                 break;
 
 
@@ -589,14 +591,16 @@ int main(int argc, char **argv) {
                 printf("\t\t--exclude-bed FILE\tExclude whole records whose IDs occur in BED/list column 1. Repeatable. [Default: unset]\n");
                 printf("\t\t--include-prefix LIST\tAnalyze IDs with a literal, comma-separated prefix. Repeatable. [Default: unset]\n");
                 printf("\t\t--exclude-prefix LIST\tExclude IDs with a literal, comma-separated prefix. Repeatable. [Default: unset]\n");
+                printf("\t\t--chr-only\tKeep only records named like the longest one (chromosome convention). [Default: false]\n");
                 printf("\t\tRecord filters are off by default. Matching is case-sensitive; includes form a union and exclusions apply last. FASTA uses the first ID token; BED never crops records.\n");
                 printf("\t'-r'\t--out-win-repeats\tOutput per-window repeat density, canonical ratio, and strand ratio. [Default: false]\n");
                 printf("\t'-g'\t--out-gc\tOutput GC content for each window. [Default: false]\n");
                 printf("\t'-e'\t--out-entropy\tOutput Shannon entropy for each window. [Default: false]\n");
                 printf("\t'-m'\t--out-matches\tOutput all canonical and terminal non-canonical matches. [Default: false]\n");
+                printf("\t'-a'\t--out-fasta\tOutput terminal telomere sequences as FASTA. [Default: false]\n");
                 printf("\t'-i'\t--out-its\tScan whole sequences for interstitial telomeres. [Default: false]\n");
                 printf("\t'-u'\t--ultra-fast\tUltra-fast mode. Only scans terminal telomeres at scaffold ends. [Default: true]\n");
-                printf("\t'-n'\t--manual-curation\tAlso report telomeres at contig ends; implies -i. [Default: scaffold only]\n");
+                printf("\t'-n'\t--manual-curation\tAlso report telomeres at contig ends. [Default: scaffold only]\n");
                 printf("\t\t--plot-report\tGenerate a PDF plot report after analysis (requires Python 3 + matplotlib). [Default: false]\n");
                 printf("\t\t--fastq-subset\tStream FASTQ reads with Teloscope-valid telomeric blocks to stdout, or save to a file with -o. [Default: false]\n");
                 printf("\t\t--bam-subset\tStream BAM records with Teloscope-valid telomeric blocks to stdout, or save to a file with -o. [Default: false]\n");
@@ -724,6 +728,7 @@ int main(int argc, char **argv) {
     if (userInput.outWinRepeats) appendOutput("repeat density");
     if (userInput.outEntropy) appendOutput("Shannon entropy");
     if (userInput.outMatches) appendOutput("genome-wide matches");
+    if (userInput.outFasta) appendOutput("telomere FASTA");
     if (fullScanRequested) appendOutput("full scan");
     if (userInput.outPlotReport) appendOutput("plot report");
     if (!outputSummary.empty()) {

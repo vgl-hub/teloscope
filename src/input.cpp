@@ -381,10 +381,29 @@ class SequenceSelector {
     std::vector<std::string> includePrefixes;
     std::vector<std::string> excludePrefixes;
     bool active = false;
+    bool chrOnly = false;
 
     static bool startsWith(const std::string &value, const std::string &prefix) {
         return value.size() >= prefix.size() &&
                value.compare(0, prefix.size(), prefix) == 0;
+    }
+
+    static bool isAsciiAlpha(unsigned char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
+
+    static bool isAsciiAlnum(unsigned char c) { return isAsciiAlpha(c) || (c >= '0' && c <= '9'); }
+
+    // leading run of ASCII letters, may be empty
+    static std::string chrPrefix(const std::string &name) {
+        size_t i = 0;
+        while (i < name.size() && isAsciiAlpha(static_cast<unsigned char>(name[i]))) ++i;
+        return name.substr(0, i);
+    }
+
+    // count of characters that are neither ASCII letters nor digits
+    static uint64_t chrSeps(const std::string &name) {
+        uint64_t count = 0;
+        for (unsigned char c : name) if (!isAsciiAlnum(c)) ++count;
+        return count;
     }
 
     static void deduplicatePrefixes(std::vector<std::string> &prefixes) {
@@ -506,7 +525,7 @@ class SequenceSelector {
 public:
     explicit SequenceSelector(const UserInputTeloscope &input)
         : includePrefixes(input.includePrefixes), excludePrefixes(input.excludePrefixes),
-          active(input.sequenceFilterActive) {
+          active(input.sequenceFilterActive), chrOnly(input.chrOnly) {
         loadSelectorFiles(input.includeBedFiles, includeIds, "--include-bed");
         loadSelectorFiles(input.excludeBedFiles, excludeIds, "--exclude-bed");
         deduplicatePrefixes(includePrefixes);
@@ -514,6 +533,7 @@ public:
     }
 
     SequenceSelection select(const std::vector<std::string> &candidateNames,
+                             const std::vector<uint64_t> &candidateLengths,
                              const std::string &domainLabel) const {
         SequenceSelection selection;
         selection.names.reserve(candidateNames.size());
@@ -537,10 +557,27 @@ public:
             validateSelectors(candidateNames, domainLabel);
         }
 
-        const bool hasIncludes = !includeIds.empty() || !includePrefixes.empty();
+        // chr-only: names that start with the longest record's letter run and share its separator count
+        std::unordered_set<std::string> chrOnlyIds;
+        if (chrOnly && !candidateNames.empty()) {
+            size_t longestIdx = 0;
+            for (size_t i = 1; i < candidateNames.size(); ++i) {
+                if (candidateLengths[i] > candidateLengths[longestIdx]) longestIdx = i;
+            }
+            const std::string longestPrefix = chrPrefix(candidateNames[longestIdx]);
+            const uint64_t longestSeps = chrSeps(candidateNames[longestIdx]);
+            for (const std::string &name : candidateNames) {
+                if (startsWith(name, longestPrefix) && chrSeps(name) == longestSeps) chrOnlyIds.insert(name);
+            }
+            fprintf(stderr, "Chromosome filter: longest record %s (%" PRIu64 " bp), prefix '%s', %" PRIu64 " separator(s).\n",
+                    candidateNames[longestIdx].c_str(), candidateLengths[longestIdx], longestPrefix.c_str(), longestSeps);
+        }
+
+        const bool hasIncludes = !includeIds.empty() || !includePrefixes.empty() || !chrOnlyIds.empty();
         for (const std::string &name : candidateNames) {
             const bool included = !hasIncludes || includeIds.count(name) != 0 ||
-                                  matchesAnyPrefix(name, includePrefixes);
+                                  matchesAnyPrefix(name, includePrefixes) ||
+                                  chrOnlyIds.count(name) != 0;
             const bool excluded = excludeIds.count(name) != 0 ||
                                   matchesAnyPrefix(name, excludePrefixes);
             if (included && !excluded) {
@@ -595,18 +632,25 @@ void Input::read(InSequences &inSequences) {
 
     const bool filterSegments = isGfa && inPaths.empty();
     std::vector<std::string> candidateNames;
+    std::vector<uint64_t> candidateLengths;
     if (filterSegments) {
         candidateNames.reserve(inSegments->size());
-        for (InSegment *segment : *inSegments)
+        candidateLengths.reserve(inSegments->size());
+        for (InSegment *segment : *inSegments) {
             candidateNames.push_back(sequenceFilterId(segment->getSeqHeader()));
+            candidateLengths.push_back(segment->getSegmentLen());
+        }
     } else {
         candidateNames.reserve(inPaths.size());
-        for (InPath &path : inPaths)
+        candidateLengths.reserve(inPaths.size());
+        for (InPath &path : inPaths) {
             candidateNames.push_back(sequenceFilterId(path.getHeader()));
+            candidateLengths.push_back(path.getLen());
+        }
     }
 
     const std::string domainLabel = filterSegments ? "segments" : "paths";
-    const SequenceSelection selection = selector.select(candidateNames, domainLabel);
+    const SequenceSelection selection = selector.select(candidateNames, candidateLengths, domainLabel);
     if (userInput.sequenceFilterActive) {
         userInput.filterInputCount = candidateNames.size();
         userInput.filterSelectedCount = selection.selectedCount;
@@ -966,7 +1010,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
     gapIndex.reserve(inGaps.size());
     for (auto& gap : inGaps) gapIndex[gap.getuId()] = &gap;
 
-    // the first and last SEGMENT components are the scaffold ends (R4), counted like segIdx below (gaps excluded)
+    // the first and last SEGMENT components are the scaffold ends, counted like segIdx below (gaps excluded)
     int firstSegIdx = -1, lastSegIdx = -1, segCount = -1;
     for (size_t i = 0; i < pathComponents.size(); ++i) {
         if (pathComponents[i].componentType == SEGMENT) {
@@ -988,8 +1032,8 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
             bool isLast  = (segIdx == lastSegIdx);
             auto inSegment = segmentIndex.find(cUId)->second;
 
-            // fast mode scans only the first contig's head and the last contig's tail
-            bool scanNeeded = (component->orientation == '+') && (fullScan || isFirst || isLast);
+            // fast mode scans the first contig's head and the last contig's tail; -n scans every contig's both
+            bool scanNeeded = fullScan || isFirst || isLast || userInput.manualCuration;
             if (!scanNeeded) {
                 absPos += inSegment->getSegmentLen(component->start, component->end);
                 continue;
@@ -1000,6 +1044,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
 
             std::string sequence = inSegment->getInSequence(component->start, component->end);
             unmaskSequence(sequence);
+            if (component->orientation == '-') sequence = revCom(sequence);
 
             SegmentData segmentData = scanSegment(sequence, absPos, isFirst, isLast, buildP, buildQ);
 
@@ -1015,6 +1060,12 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
                 pathData.terminalBlocks.end(),
                 std::make_move_iterator(segmentData.terminalBlocks.begin()),
                 std::make_move_iterator(segmentData.terminalBlocks.end())
+            );
+
+            pathData.terminalSeqs.insert(
+                pathData.terminalSeqs.end(),
+                std::make_move_iterator(segmentData.terminalSeqs.begin()),
+                std::make_move_iterator(segmentData.terminalSeqs.end())
             );
 
             pathData.interstitialBlocks.insert(
