@@ -30,9 +30,9 @@ By default Teloscope runs in fast mode. It reads only the first contig's head wi
 
 Any of `-r`, `-g`, `-e`, `-m`, or `-i` forces the full scan: every contig is read whole, and every array outside the arms is an ordinary interstitial row.
 
-`-n/--manual-curation` also forces the full scan, and additionally builds both chains on every contig. A telomere at an internal contig end becomes a `contig` row in the terminal BED instead of an interstitial row.
+`-n/--manual-curation` keeps fast mode but reads both end windows of every contig and builds both chains on each. A telomere at an internal contig end becomes a contig row in the terminal BED instead of an interstitial row.
 
-The interstitial file is always written. In fast mode it holds only what the head and tail windows found; nothing beyond them is scanned until you add `-i` or `-n`.
+The interstitial file is always written. In fast mode it holds what the end windows found: by default the first contig's head and the last contig's tail, with `-n` both end windows of every contig. Nothing beyond them is scanned until you add `-i`.
 
 ## GFA mode
 

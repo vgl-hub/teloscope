@@ -37,8 +37,11 @@ teloscope --bam-subset input.bam [options] > telomeric.bam
 | `--exclude-bed` | `FILE` | remove IDs listed in column 1 | unset |
 | `--include-prefix` | `LIST` | keep IDs with any comma-separated prefix | unset |
 | `--exclude-prefix` | `LIST` | remove IDs with any comma-separated prefix | unset |
+| `--chr-only` | — | keep records named like the longest one | `false` |
 
-Filtering is off when all four flags are unset. Flags can be repeated. Includes form a union and exclusions run last; without includes, all records start selected. Matching is case-sensitive, and prefixes are literal strings rather than globs or regular expressions.
+Filtering is off when all flags are unset. The include/exclude flags can be repeated. `--chr-only` is a single on/off switch. Includes form a union and exclusions run last; without includes, all records start selected. Matching is case-sensitive, and prefixes are literal strings rather than globs or regular expressions.
+
+`--chr-only` takes the longest record as a chromosome and reads its name as the assembly's naming convention. A record is kept when its name starts with the longest record's leading run of letters and has the same number of separator characters (characters that are neither letters nor digits). GenBank `CM093074.1` keeps `CM…` and drops `JAXXXX010000001.1`. RefSeq `NC_…` drops `NW_…`. ENA `OZ124247.1` drops `CAUPLK010000001.1`. `SUPER_1` keeps `SUPER_Z` and `SUPER_1A` and drops `SUPER_1_unloc_3` and `SCAFFOLD_12`. `chr1` keeps `chrX` and `chrM` and drops `chrUn_KI270302v1` and `chr1_KI270706v1_random`. `Chr01` drops `scaffold123`. The mitochondrion is kept when it follows the convention (for example `CM010492.2`). In a bare-number scheme (`1`…`22`, `X`) the letter run is empty, so only the separator count decides. When every record follows one convention, everything is kept. stderr prints the longest record, its prefix and separator count, and how many records were selected. `--include-bed` and `--exclude-bed` combine with it as usual: includes form a union and exclusions run last.
 
 FASTA matching uses the first token after `>`, including accession versions. GFA1 matching uses `P` path names or `S` segment names when no paths exist.
 
@@ -58,7 +61,7 @@ For database FASTA, use exact accession.version IDs from the NCBI [genome sequen
 | --- | --- | --- | --- |
 | `-c` | `--canonical` | reference telomere repeat | `TTAGGG` |
 | `-p` | `--patterns` | comma-separated search patterns | derived from `-c` |
-| `-x` | `--edit-distance` | allowed mismatches per repeat unit | `1` |
+| `-x` | `--edit-distance` | allowed mismatches per repeat unit (`0`–`2`) | `1` |
 
 Notes:
 
@@ -85,7 +88,7 @@ When `-s` equals `-w`, window outputs are non-overlapping BEDgraph bins.
 | `-y` | `--min-block-density` | minimum repeat-covered fraction for a piece, in `(0,1]` | `0.5` |
 | `-t` | `--terminal-limit` | how far in from each end to look | `50000` |
 |  | `--terminal-tolerance` | how far from an end a telomere may start | `3000` |
-|  | `--label-threshold` | forward-strand fraction for the p/q label; `b` between | `0.667` |
+|  | `--label-threshold` | forward-strand fraction for the p/q label; `b` between, in `(0.5,1]` | `0.667` |
 |  | `--min-block-counts` | minimum canonical matches per block | `2` |
 
 The start zone is the smaller of `--terminal-tolerance` and `-t`, counted in called bases.
@@ -102,10 +105,11 @@ A piece or row exactly at a threshold — `-l`, `-y`, or `--min-block-counts` �
 | `-m` | `--out-matches` | write canonical and terminal non-canonical match BED files | `false` |
 | `-i` | `--out-its` | scan whole sequences for interstitial telomeres (the interstitial BED is always written) | `false` |
 | `-u` | `--ultra-fast` | scan sequence ends only | `true` |
-| `-n` | `--manual-curation` | also report telomeres at contig ends; implies `-i` | `false` |
+| `-n` | `--manual-curation` | also report telomeres at contig ends | `false` |
+| `-a` | `--out-fasta` | write the terminal telomere sequences as FASTA | `false` |
 |  | `--plot-report` | write a PDF report after the run | `false` |
 
-Any of `-r`, `-g`, `-e`, `-m`, or `-i` forces the full scan; `-n` forces it too, and additionally moves contig-terminal telomeres into the terminal BED.
+Any of `-r`, `-g`, `-e`, `-m`, or `-i` forces the full scan. `-n` keeps the fast scan but reads both end windows of every contig and adds contig-terminal rows to the terminal BED.
 
 ## Informational flags
 

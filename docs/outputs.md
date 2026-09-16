@@ -31,7 +31,7 @@ Always written:
 | `*_gaps.bed` | gap intervals from runs of `N`/`n`/`X`/`x` |
 | `*_report.tsv` | per-sequence and assembly summaries |
 
-`*_interstitial_telomeres.bed` is always written. In fast mode it holds only what the head and tail scan windows found; `-i` or `-n` forces the full scan so it holds every array.
+`*_interstitial_telomeres.bed` is always written. In fast mode it holds what the end windows found: by default the first contig's head and the last contig's tail, with `-n` both end windows of every contig. Pass `-i` to scan everything.
 
 Optional:
 
@@ -44,6 +44,7 @@ Optional:
 | `*_window_entropy.bedgraph` | `-e` | Shannon entropy per window |
 | `*_canonical_matches.bed` | `-m` | canonical repeat matches |
 | `*_noncanonical_matches.bed` | `-m` | terminal non-canonical repeat matches |
+| `*_terminal_telomeres.fa` | `-a` | terminal telomere sequences, header `>{chr}:{start}-{end}` with the BED row's coordinates |
 | `*_plot_report.pdf` | `--plot-report` | PDF summary report |
 
 ## Run provenance
@@ -88,6 +89,10 @@ For an ordinary telomere `teloLabel` and `closestEnd` agree: a `p` row carries t
 “Forward” is a sequence-family convention, not a reference `+` strand annotation. Teloscope orders the canonical motif and its reverse complement lexicographically and calls the smaller string forward. With the default motif pair, forward is `CCCTAA`, normally seen at a chromosome start, and reverse is `TTAGGG`, normally seen at a chromosome end. Each concrete seed after IUPAC expansion is assigned to the closer canonical orientation (ties go to forward), and its edit-distance variants inherit that orientation.
 
 `teloType=scaffold` marks an arm row in the terminal file. `teloType=contig` marks a contig-terminal row in the terminal file; those only appear with `-n`. In the interstitial file `teloType` is always a junction class, judged against the nearest row within `-d` on the same contig: `fusion` for a reverse array then a forward one, `tail_to_tail` for forward then reverse, `fragmentation` for two arrays of the same strand, and `single` when nothing is that close.
+
+## `*_terminal_telomeres.fa`
+
+Written with `-a`, one record per row of `*_terminal_telomeres.bed` — scaffold arms, plus contig rows when `-n` is also given. The header is `>{chr}:{start}-{end}`, using the BED row's own zero-based, half-open coordinates, so a record joins back to its BED row without arithmetic. The sequence is the block span as scanned, uppercase, on one line. A fragmented telomere is written as its whole span, spacers included.
 
 ## `*_gaps.bed`
 

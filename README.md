@@ -13,7 +13,7 @@ In FASTA mode, Teloscope writes terminal telomere annotations, gap coordinates, 
 
 ## What Teloscope writes
 
-- FASTA mode: `*_terminal_telomeres.bed`, `*_interstitial_telomeres.bed`, `*_gaps.bed`, `*_report.tsv`, plus optional window tracks, match BED files, and a PDF report.
+- FASTA mode: `*_terminal_telomeres.bed`, `*_interstitial_telomeres.bed`, `*_gaps.bed`, `*_report.tsv`, plus optional window tracks, match BED files, an optional telomere FASTA (`-a`), and a PDF report.
 - GFA mode: `<input>.telo.annotated.gfa` with telomere placeholder segments linked to the original graph, plus `<input>.telo.annotated.colors.csv` that paints the caps green for BandageNG.
 - FASTQ subset mode: unchanged passing FASTQ records on stdout.
 - BAM subset mode: a valid BAM stream containing the original header and unchanged passing alignment records.
@@ -73,7 +73,7 @@ Notes:
 
 - Teloscope always searches both each input pattern and its reverse complement.
 - If `-p` is omitted, Teloscope derives the search set from `-c`.
-- Any of `-r`, `-g`, `-e`, `-m`, `-i`, or `-n` forces the full scan instead of the fast end-only scan; `-n` also adds contig-terminal rows to the terminal BED.
+- Any of `-r`, `-g`, `-e`, `-m`, or `-i` forces the full scan instead of the fast end-only scan. In fast mode `-n` reads both end windows of every contig and adds contig-terminal rows to the terminal BED.
 - GFA mode attaches telomere caps with `L` links at `0M` overlap; `J` records stay reserved for real assembly gaps.
 - Gzipped stdin is not supported. Decompress before piping.
 - `--fastq-subset` writes FASTQ to stdout and diagnostics to stderr. Pass `-o` to save the reads to a file instead of streaming them.
@@ -83,7 +83,7 @@ Notes:
 
 ## Filter assembly records
 
-Filtering is off by default. All four flags can be repeated, and matching is case-sensitive.
+Filtering is off by default. The include/exclude flags can be repeated, and matching is case-sensitive. `--chr-only` is a single on/off switch.
 
 | Flag | Effect | Default |
 | --- | --- | --- |
@@ -91,6 +91,9 @@ Filtering is off by default. All four flags can be repeated, and matching is cas
 | `--exclude-bed FILE` | remove IDs listed in column 1 | unset |
 | `--include-prefix LIST` | keep IDs with any comma-separated prefix | unset |
 | `--exclude-prefix LIST` | remove IDs with any comma-separated prefix | unset |
+| `--chr-only` | keep records named like the longest one | `false` |
+
+`--chr-only` combines with the other filters. See [Parameters](docs/parameters.md#assembly-record-filters) for the naming rule.
 
 Includes form a union and exclusions run last. Without an include flag, all records start selected. Prefixes are literal strings. Selector files accept one ID per line or BED3+ rows; column 1 selects a whole record, and BED coordinates never crop sequences.
 
@@ -105,12 +108,17 @@ FASTA run:
 ```text
 results/
   asm.fa_terminal_telomeres.bed
+  asm.fa_terminal_telomeres.fa
   asm.fa_interstitial_telomeres.bed
   asm.fa_gaps.bed
   asm.fa_report.tsv
   asm.fa_window_repeat_density.bedgraph
   asm.fa_window_canonical_ratio.bedgraph
   asm.fa_window_strand_ratio.bedgraph
+  asm.fa_window_gc.bedgraph
+  asm.fa_window_entropy.bedgraph
+  asm.fa_canonical_matches.bed
+  asm.fa_noncanonical_matches.bed
   asm.fa_plot_report.pdf
 ```
 
@@ -133,7 +141,6 @@ results/
 | [Report generation](docs/report.md) | `--plot-report`, ITS plotting, standalone plotting, and report inputs |
 | [Simulation](docs/simulation.md) | the synthetic benchmark generator and evaluator |
 | [Testing](docs/testing.md) | invariant and intent checks, validator runs, and test regeneration |
-| [Conflict register](docs/conflicts.md) | places the documentation and the code disagree, and what was decided |
 | [Troubleshooting](docs/troubleshooting.md) | common build, input, and runtime failures |
 | [Release checklist](docs/release.md) | GitHub, Bioconda, and Zenodo release steps |
 | [Validation format](https://github.com/vgl-hub/teloscope/blob/main/validateFiles/README.md) | the `.tst` harness, including directive-mode GFA cases |
