@@ -1,16 +1,18 @@
-testFiles/mirror_rev_start_long.fa -f testFiles/mirror_rev_start_long.fa -t 1000 -n
-embedded
 
 +++ Path Summary Report +++
 pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	chr_mirror_rev_start_long	1	p	0	incomplete	discordant_p	P*
+1	chr1	2	pq	0	t2t	.	PQ
+2	chr2	0	none	0	none	.	
+3	chrX	2	pq	0	t2t	.	PQ
 
 +++ Assembly Summary Report +++
-Total paths:	1
+Total paths:	3
+Filter input paths:	5
+Filter selected paths:	3
 Total gaps:	0
-Scaffold N50:	5200
-Contig N50:	5200
-Total telomeres:	1
+Scaffold N50:	20000
+Contig N50:	20000
+Total telomeres:	4
 
 +++ Telomere Statistics +++
 Mean length:	600
@@ -19,20 +21,20 @@ Min length:	600
 Max length:	600
 
 +++ Chromosome Telomere Counts+++
-Two telomeres:	0
-One telomere:	1
-Zero telomeres:	0
+Two telomeres:	2
+One telomere:	0
+Zero telomeres:	1
 
 +++ Chromosome Telomere/Gap Completeness+++
-T2T:	0
+T2T:	2
 Gapped T2T:	0
-Incomplete:	1
+Incomplete:	0
 Gapped incomplete:	0
-No telomeres:	0
+No telomeres:	1
 Gapped no telomeres:	0
 
 +++ Scaffold Anomalies +++
-Scaffolds flagged:	1
-Scaffolds clean:	0
-Discordant arms:	1
+Scaffolds flagged:	0
+Scaffolds clean:	3
+Discordant arms:	0
 Fragmented arms:	0

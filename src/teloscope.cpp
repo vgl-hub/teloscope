@@ -6,8 +6,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <type_traits>
-#include <chrono>
 
 #include "log.h"
 #include "global.h"
@@ -38,15 +36,13 @@ struct CoverRun {
 
 namespace {
 
-constexpr std::string_view teloscopeVersion = "0.1.6";
-
 void writeProvenanceHeader(std::ofstream& file, const UserInputTeloscope& input,
                            std::string_view columns) {
     if (!file.is_open()) return;
 
     std::ostringstream header;
     header << std::boolalpha
-           << "#teloscope version=" << teloscopeVersion
+           << "#teloscope version=" << version
            << " commit=" << TELOSCOPE_COMMIT << '\n'
            << "#params canonical=" << input.canonicalFwd << '/' << input.canonicalRev
            << " patterns=" << input.patterns.size()
@@ -83,7 +79,7 @@ char closestEnd(uint64_t start, uint32_t blockLen, uint64_t pathSize, char ancho
     return (mid2 <= pathSize) ? 'p' : 'q';
 }
 
-// R9: chr start end teloLen teloLabel closestEnd fwdCan revCan fwdNonCan revNonCan chrSize teloType
+// chr start end teloLen teloLabel closestEnd fwdCan revCan fwdNonCan revNonCan chrSize teloType
 void writeBlockRow(std::ofstream& file, std::string_view pathName,
                    const TelomereBlock& block, uint64_t pathSize, std::string_view teloType) {
     file << pathName << '\t'
@@ -223,7 +219,7 @@ uint64_t trimInward(const std::vector<CoverRun>& runs, uint64_t anchor, uint64_t
     double cumulative = 0.0;
     uint64_t bestPos = anchor, prev = anchor;
     bool bridging = false; // only true once a covered run is behind us
-    probe = anchor; // furthest run edge visited (R6 probe); unchanged if none
+    probe = anchor; // furthest run edge visited; unchanged if none
 
     if (toRight) {
         for (const CoverRun& run : runs) {
@@ -340,14 +336,14 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<MatchInfo>& matches
     const float weight = (density >= 1.0f) ? 1e9f : density / (1.0f - density);
     const uint32_t zone = std::min(userInput.terminalTolerance, userInput.terminalLimit);
 
-    // R6: furthest coordinate any trim looked toward the interior, plus its bridging margin
+    // furthest coordinate any trim looked toward the interior, plus its bridging margin
     uint64_t probeBound = fromStart ? contigStart : contigEnd;
     auto trackProbe = [&](uint64_t probe) {
         probeBound = fromStart ? std::max(probeBound, probe + maxBlockDist)
                                 : std::min(probeBound, probe > maxBlockDist ? probe - maxBlockDist : 0);
     };
 
-    // an array is real when its own unclamped trim reaches -l, -c and is strand-pure (R1)
+    // an array is real when its own unclamped trim reaches -l, -c and is strand-pure
     auto isRealArray = [&](const std::vector<CoverRun>& runs, uint64_t anchorEdge) -> bool {
         uint64_t farEdge = fromStart ? contigEnd : contigStart;
         uint64_t probe;
@@ -435,7 +431,7 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<MatchInfo>& matches
         uint32_t canCount = mFwd ? tally.fwdCanCount : tally.revCanCount;
         if (canCount < minCounts) continue;
         char pieceLabel = computeStrandLabel(tally.fwdCanCount, tally.fwdCanCount + tally.revCanCount, userInput.labelThreshold);
-        if (pieceLabel != (mFwd ? 'p' : 'q')) continue; // pieces are strand-pure (R1)
+        if (pieceLabel != (mFwd ? 'p' : 'q')) continue; // pieces are strand-pure
 
         pieces.push_back({pStart, pEnd});
         chain.fwdCanCount += tally.fwdCanCount;
@@ -458,7 +454,7 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<MatchInfo>& matches
         }
     }
 
-    // R6: the furthest of every trim's reach and the final anchor-search bound
+    // the furthest of every trim's reach and the final anchor-search bound
     outProbe = fromStart ? std::max(probeBound, reach) : std::min(probeBound, reach);
     if (pieces.empty()) return chain;
     uint64_t lo = pieces.front().first, hi = pieces.front().second;
@@ -774,7 +770,7 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos,
         if (wholeContig) {
             processRegion(0, segmentSize, segmentData.allMatches);
         } else {
-            // R6: tiled, non-overlapping ranges extended while the terminal builder still looks that far
+            // tiled, non-overlapping ranges extended while the terminal builder still looks that far
             uint64_t h  = buildP ? std::min<uint64_t>(t, segmentSize) : 0;
             uint64_t t0 = buildQ ? (segmentSize > t ? segmentSize - t : 0) : segmentSize;
             std::vector<MatchInfo> headMatches, tailMatches;
@@ -899,7 +895,7 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos,
     bool haveP = chainP.pieces > 0, haveQ = chainQ.pieces > 0;
     if (haveP && haveQ && chainP.strandLabel == chainQ.strandLabel &&
         chainP.start + chainP.blockLen > chainQ.start) {
-        // R3: one array reached from both ends belongs to the end its strand points to
+        // one array reached from both ends belongs to the end its strand points to
         if (chainP.strandLabel == 'q') chainP = chainQ;
         haveQ = false;
     }
@@ -939,6 +935,10 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos,
 
     if (haveP) segmentData.terminalBlocks.push_back(chainP);
     if (haveQ) segmentData.terminalBlocks.push_back(chainQ);
+    if (userInput.outFasta) {
+        if (haveP) segmentData.terminalSeqs.push_back(sequence.substr(chainP.start - absPos, chainP.blockLen));
+        if (haveQ) segmentData.terminalSeqs.push_back(sequence.substr(chainQ.start - absPos, chainQ.blockLen));
+    }
 
     return segmentData;
 }
@@ -954,10 +954,10 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
                             std::ofstream& terminalBlocksFile,
                             std::ofstream& interstitialBlocksFile,
                             std::ofstream& gapFile,
-                            std::ofstream& reportFile) {
+                            std::ofstream& reportFile,
+                            std::ofstream& telomereFastaFile) {
 
-    // Keep BED and BEDGraph streams free of non-data comments. The always-written
-    // report is the single run-level provenance record for their shared basename.
+    // BED and BEDGraph files carry no comment lines; the report holds the run provenance
     writeProvenanceHeader(
         reportFile, userInput,
         userInput.ultraFastMode
@@ -1002,10 +1002,15 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
         int longestCount = 0;
         std::string longestLabels;
 
-        for (const auto& block : pathData.terminalBlocks) {
+        for (size_t i = 0; i < pathData.terminalBlocks.size(); ++i) {
+            const auto& block = pathData.terminalBlocks[i];
             if (block.isScaffold || userInput.manualCuration) {
                 writeBlockRow(terminalBlocksFile, header, block, pathSize,
                              block.isScaffold ? "scaffold" : "contig");
+                if (userInput.outFasta && i < pathData.terminalSeqs.size()) {
+                    telomereFastaFile << '>' << header << ':' << block.start << '-' << (block.start + block.blockLen) << '\n'
+                                      << pathData.terminalSeqs[i] << '\n';
+                }
             }
 
             if (block.isScaffold) {
@@ -1138,7 +1143,7 @@ void Teloscope::handleBEDFile() {
     std::vector<char> gcBuf(ioBufSize), entropyBuf(ioBufSize);
     std::vector<char> canonMatchBuf(ioBufSize), noncanonMatchBuf(ioBufSize);
     std::vector<char> termBlockBuf(ioBufSize), itsBlockBuf(ioBufSize), gapBuf(ioBufSize);
-    std::vector<char> reportBuf(ioBufSize);
+    std::vector<char> reportBuf(ioBufSize), fastaBuf(ioBufSize);
 
     std::ofstream windowDensityFile;
     std::ofstream windowCanonicalRatioFile;
@@ -1151,6 +1156,7 @@ void Teloscope::handleBEDFile() {
     std::ofstream interstitialBlocksFile;
     std::ofstream gapFile;
     std::ofstream reportFile;
+    std::ofstream telomereFastaFile;
 
     std::string base = userInput.outRoute + "/" + userInput.inSequenceName;
 
@@ -1184,13 +1190,14 @@ void Teloscope::handleBEDFile() {
     openFile(terminalBlocksFile, base + "_terminal_telomeres.bed", termBlockBuf);
     openFile(gapFile, base + "_gaps.bed", gapBuf);
     openFile(reportFile, base + "_report.tsv", reportBuf);
+    if (userInput.outFasta) openFile(telomereFastaFile, base + "_terminal_telomeres.fa", fastaBuf);
 
     writeBEDFile(windowDensityFile, windowCanonicalRatioFile,
                 windowStrandRatioFile,
                 windowGCFile, windowEntropyFile,
                 canonicalMatchFile, noncanonicalMatchFile,
                 terminalBlocksFile, interstitialBlocksFile,
-                gapFile, reportFile);
+                gapFile, reportFile, telomereFastaFile);
 
     printSummary(reportFile);
     reportFile.close();
@@ -1216,6 +1223,7 @@ void Teloscope::handleBEDFile() {
     interstitialBlocksFile.close();
     terminalBlocksFile.close();
     gapFile.close();
+    if (userInput.outFasta) telomereFastaFile.close();
 }
 
 

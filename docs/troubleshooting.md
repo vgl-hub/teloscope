@@ -157,11 +157,15 @@ That is expected. GFA mode writes only:
 
 ### `-n` did not change classification
 
-`-n/--manual-curation` implies the full scan and writes contig-terminal telomeres to `*_terminal_telomeres.bed` as `teloType=contig` rows, removing them from the interstitial BED. Contig rows never drive `type`, `anomaly`, or the length statistics in `*_report.tsv`; they appear lowercase in `granular`.
+`-n/--manual-curation` reads both end windows of every contig and writes contig-terminal telomeres to `*_terminal_telomeres.bed` as `teloType=contig` rows. Contig rows never drive `type`, `anomaly`, or the length statistics in `*_report.tsv`; they appear lowercase in `granular`.
+
+### `--chr-only` missed a chromosome
+
+`--chr-only` misses a chromosome when its name breaks the longest record's convention (for example `chromosome_X` beside `chr1`…`chr22`). Add `--include-bed FILE` with the missed name alongside `--chr-only`.
 
 ### Runtime increased after enabling output flags
 
-`-r`, `-g`, `-e`, `-m`, `-i`, and `-n` all force the full scan instead of the fast end-only scan. That slowdown is expected.
+`-r`, `-g`, `-e`, `-m`, and `-i` force the full scan instead of the fast end-only scan. `-n` keeps the fast scan but reads every contig's two end windows, which costs more than the default. That slowdown is expected.
 
 ## Calls look wrong
 
@@ -199,7 +203,7 @@ If a telomere is reported in pieces, raise `-d`.
 
 `*_report.tsv` is based on the two arms: the first contig's p chain and the last contig's q chain.
 
-- `-n` implies the full scan and adds contig-terminal rows to `*_terminal_telomeres.bed`; it does not affect classification
+- `-n` reads both end windows of every contig and adds contig-terminal rows to `*_terminal_telomeres.bed`. It does not affect classification
 - `-n` does not change `t2t`, `incomplete`, `discordant_p`/`discordant_q`, `fragmented_p`/`fragmented_q`, or `none`
 
 If classification looks wrong, recheck:
@@ -274,6 +278,6 @@ If a run looks wrong, check these in order:
 1. Confirm whether you are running FASTA mode or GFA mode.
 2. Confirm the canonical motif in `-c`.
 3. Confirm which optional outputs you actually requested.
-4. Check whether `-r`, `-g`, `-e`, `-m`, `-i`, or `-n` forced the full scan.
+4. Check whether `-r`, `-g`, `-e`, `-m`, or `-i` forced the full scan.
 5. Revisit `-t`, `-l`, `-y`, `-k`, and `-d`.
 6. Rerun once with `--cmd --verbose`.

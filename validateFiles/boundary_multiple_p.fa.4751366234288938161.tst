@@ -2,8 +2,8 @@ testFiles/boundary_multiple_p.fa -f testFiles/boundary_multiple_p.fa -n
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	chr_boundary_multi_p	1	p	0	incomplete	.	P	0	200	0
+pos	header	telomeres	labels	gaps	type	anomaly	granular
+1	chr_boundary_multi_p	1	p	0	incomplete	.	P
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -11,9 +11,6 @@ Total gaps:	0
 Scaffold N50:	7200
 Contig N50:	7200
 Total telomeres:	1
-Total ITS blocks:	0
-Total canonical matches:	200
-Total windows analyzed:	0
 
 +++ Telomere Statistics +++
 Mean length:	1500

@@ -2,8 +2,8 @@ testFiles/gapped_discordant_q.fa -f testFiles/gapped_discordant_q.fa -n
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	chr_gapped_discordant_q	0	none	1	none	.	q	0	100	0
+pos	header	telomeres	labels	gaps	type	anomaly	granular
+1	chr_gapped_discordant_q	0	none	1	none	.	q
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -11,9 +11,6 @@ Total gaps:	1
 Scaffold N50:	5000
 Contig N50:	2600
 Total telomeres:	0
-Total ITS blocks:	0
-Total canonical matches:	100
-Total windows analyzed:	0
 
 +++ Telomere Statistics +++
 No telomeres found for statistics.

@@ -23,6 +23,7 @@ struct UserInputTeloscope : UserInput {
     std::vector<std::string> includePrefixes;
     std::vector<std::string> excludePrefixes;
     bool sequenceFilterActive = false;
+    bool chrOnly = false;
     uint64_t filterInputCount = 0;
     uint64_t filterSelectedCount = 0;
     std::unordered_map<std::string, uint8_t> hammingDistances;
@@ -38,7 +39,6 @@ struct UserInputTeloscope : UserInput {
     uint32_t step = 1000;
     uint32_t terminalLimit = 50000;
     uint8_t editDistance = 1;
-    uint8_t kmerLen = 21;
 
     uint32_t maxMatchDist = 50;
     uint32_t minBlockLen = 300;

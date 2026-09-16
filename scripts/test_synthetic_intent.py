@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check every fixture against the intent declared for it in the synthetic manifest.
-A disagreement is a finding (fixture, expectation, or code is wrong); record it in
-docs/conflicts.md rather than editing the manifest to match.
+A disagreement means the fixture, the expectation, or the code is wrong; fix it
+deliberately rather than editing the manifest to match.
 
 Usage:
     python3 scripts/test_synthetic_intent.py [--only GLOB]
@@ -18,18 +18,12 @@ import subprocess
 import sys
 import tempfile
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import teloscope_model as M  # noqa: E402
-
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_TELOSCOPE = ROOT / "build/bin" / ("teloscope.exe" if os.name == "nt" else "teloscope")
 TELOSCOPE = pathlib.Path(os.environ.get("TELOSCOPE", DEFAULT_TELOSCOPE))
 MANIFEST = ROOT / "testFiles" / "synthetic" / "manifest.tsv"
-WAIVERS = ROOT / "validateFiles" / "intent_waivers.tsv"
-BLOCKED = ROOT / "validateFiles" / "intent_blocked.tsv"
-REGISTER = ROOT / "docs" / "conflicts.md"
 
-# Manifest column -> report column; expect_its is checked only in full-scan mode.
+# Manifest column -> report column; expect_its is checked only when the report has an its column.
 CHECKED = [
     ("expect_type", "type"),
     ("expect_anomaly", "anomaly"),
@@ -39,6 +33,30 @@ CHECKED = [
     ("expect_gaps", "gaps"),
     ("expect_its", "its"),
 ]
+
+BED_FIELDS = [
+    "chrom", "start", "end", "teloLen", "teloLabel", "closestEnd", "fwdCan", "revCan",
+    "fwdNonCan", "revNonCan", "chrSize", "teloType",
+]
+INT_FIELDS = {"start", "end", "teloLen", "fwdCan", "revCan", "fwdNonCan", "revNonCan", "chrSize"}
+
+
+def read_block_bed(path):
+    """Terminal or interstitial BED -> list of dicts, in file order."""
+    rows = []
+    if not path.exists():
+        return rows
+    with open(path) as fh:
+        for line in fh:
+            s = line.rstrip("\n").rstrip("\r")
+            if not s.strip() or s.lstrip().startswith(("#", "track", "browser")):
+                continue
+            f = s.split("\t")
+            row = dict(zip(BED_FIELDS, f))
+            for k in INT_FIELDS:
+                row[k] = int(row[k])
+            rows.append(row)
+    return rows
 
 
 def load_manifest(path):
@@ -54,28 +72,6 @@ def load_manifest(path):
     if header is None:
         raise SystemExit(f"{path}: no header row")
     return rows
-
-
-def load_waivers(path):
-    """(id, scaffold, column) -> register id for expectations the binary does not meet yet."""
-    out = {}
-    if not path.exists():
-        return out
-    for raw in path.read_text().splitlines():
-        if raw.startswith("#") or not raw.strip():
-            continue
-        f = raw.split("\t")
-        if len(f) < 5:
-            raise SystemExit(f"{path}: malformed waiver row: {raw!r}")
-        out[(f[0], f[1], f[2])] = f[3]
-    return out
-
-
-def open_register_ids(path):
-    if not path.exists():
-        return None
-    import re
-    return set(re.findall(r"REG-\d{3}", path.read_text()))
 
 
 def parse_report(text):
@@ -109,17 +105,6 @@ def main():
     if not MANIFEST.exists():
         raise SystemExit(f"{MANIFEST} missing; run testFiles/generate_synthetic.sh")
 
-    waivers = load_waivers(WAIVERS)
-    blocked_reg = load_waivers(BLOCKED)
-    register = open_register_ids(REGISTER)
-    if register is not None:
-        unknown = {v for v in list(waivers.values()) + list(blocked_reg.values())
-                   if v not in register}
-        if unknown:
-            raise SystemExit(
-                f"{WAIVERS}: waivers cite register ids absent from {REGISTER}: "
-                f"{sorted(unknown)}")
-
     all_rows = load_manifest(MANIFEST)
     if not all_rows:
         raise SystemExit(f"{MANIFEST} has no rows; run testFiles/generate_synthetic.sh")
@@ -131,8 +116,7 @@ def main():
     for row in rows:
         by_run.setdefault((row["id"], row["path"], row["flags"]), []).append(row)
 
-    failures, blocked, checks = [], [], 0
-    waived, stale = [], []
+    failures, checks = [], 0
 
     for (fid, path, flags), group in sorted(by_run.items()):
         outdir = tempfile.mkdtemp(prefix="telo_intent_")
@@ -146,7 +130,7 @@ def main():
             report = parse_report(proc.stdout.decode("utf-8", "replace"))
             terminal_bed = {}
             bed_path = pathlib.Path(outdir) / f"{pathlib.Path(path).name}_terminal_telomeres.bed"
-            for b in M.read_block_bed(bed_path):
+            for b in read_block_bed(bed_path):
                 terminal_bed.setdefault(b["chrom"], []).append(b)
 
             for row in group:
@@ -162,16 +146,9 @@ def main():
                     if want == "-":
                         continue
                     if want == "?":
-                        rkey = (fid, scaffold, column)
-                        reg = blocked_reg.get(rkey)
-                        if reg is None:
-                            failures.append(
-                                f"{fid} [{flags}] {scaffold}: {column} is '?' but no row in "
-                                f"{BLOCKED.name} says which conflict it waits on. An absent "
-                                f"expectation defaults to '?', so this is as likely to be a "
-                                f"forgotten field as a deliberate one.")
-                        else:
-                            blocked.append(f"{fid}/{scaffold}.{column} [{reg}]")
+                        failures.append(
+                            f"{fid} [{flags}] {scaffold}: {column} is '?', an unstated "
+                            f"expectation")
                         continue
                     if column not in actual:
                         # `its` is absent under ultra-fast; that is expected, not a failure.
@@ -182,14 +159,7 @@ def main():
                         continue
                     checks += 1
                     got = actual[column]
-                    ok = got == want
-                    reg = waivers.get((fid, scaffold, column))
-                    if ok and reg:
-                        stale.append(f"{fid}/{scaffold}.{column} (waived under {reg})")
-                    elif not ok and reg:
-                        waived.append(f"{fid}/{scaffold}.{column}: {column} should be "
-                                      f"{want!r}, is {got!r} [{reg}]")
-                    elif not ok:
+                    if got != want:
                         failures.append(
                             f"{fid} [{flags}] {scaffold}: {column} expected {want!r}, "
                             f"got {got!r}\n    intent: {row['intent']}")
@@ -198,14 +168,8 @@ def main():
                 if want_telolen == "-":
                     continue
                 if want_telolen == "?":
-                    rkey = (fid, scaffold, "teloLen")
-                    reg = blocked_reg.get(rkey)
-                    if reg is None:
-                        failures.append(
-                            f"{fid} [{flags}] {scaffold}: expect_telolen is '?' but no row in "
-                            f"{BLOCKED.name} says which conflict it waits on.")
-                    else:
-                        blocked.append(f"{fid}/{scaffold}.teloLen [{reg}]")
+                    failures.append(
+                        f"{fid} [{flags}] {scaffold}: teloLen is '?', an unstated expectation")
                     continue
                 arm_rows = [b for b in terminal_bed.get(scaffold, [])
                             if b["teloType"] == "scaffold"]
@@ -219,14 +183,7 @@ def main():
                 got_telolens = [b["teloLen"] for b in arm_rows]
                 # A record can carry two arms; the intent names one teloLen, not a slot.
                 got_telolen = want_int if want_int in got_telolens else got_telolens[0]
-                ok = want_int in got_telolens
-                reg = waivers.get((fid, scaffold, "teloLen"))
-                if ok and reg:
-                    stale.append(f"{fid}/{scaffold}.teloLen (waived under {reg})")
-                elif not ok and reg:
-                    waived.append(f"{fid}/{scaffold}.teloLen: teloLen should be "
-                                  f"{want_int!r}, is {got_telolen!r} [{reg}]")
-                elif not ok:
+                if want_int not in got_telolens:
                     failures.append(
                         f"{fid} [{flags}] {scaffold}: teloLen expected {want_int!r}, "
                         f"got {got_telolen!r}\n    intent: {row['intent']}")
@@ -235,24 +192,12 @@ def main():
 
     print(f"binary:  {TELOSCOPE}")
     print(f"fixtures: {len(by_run)} runs, {len(rows)} scaffold expectations, {checks} field checks")
-    if blocked:
-        print(f"blocked on docs/conflicts.md: {len(blocked)} fields ({', '.join(sorted(set(blocked))[:6])}...)")
-    if waived:
-        print(f"\nwaived, known open in docs/conflicts.md: {len(waived)}")
-        for w in waived:
-            print("  " + w)
-    if stale:
-        print(f"\n{len(stale)} STALE waiver(s): these now pass and must be removed from")
-        print(f"{WAIVERS} together with the fix that made them pass:")
-        for w in stale:
-            print("  " + w)
-        return 1
     if failures:
         print(f"\n{len(failures)} disagreement(s):\n")
         for f in failures:
             print("  " + f)
-        print("\nA disagreement is a finding. Record it in docs/conflicts.md and fix the "
-              "code or the expectation deliberately; do not edit the manifest to match.")
+        print("\nA disagreement means the fixture, the expectation, or the code is wrong; "
+              "fix it deliberately, do not edit the manifest to match.")
         return 1
     print("PASS: every stated intent holds")
     return 0

@@ -20,17 +20,12 @@ make test-invariants    # invariants alone
 `TELOSCOPE=/path/to/binary` overrides the binary for either script.
 
 `scripts/test_synthetic_intent.py` asserts `testFiles/synthetic/manifest.tsv` against what
-the binary reports. `scripts/check_invariants.py`, with `scripts/teloscope_model.py`, needs
-no recorded expected values: derivation checks re-derive a report field from the BED files,
-oracle checks measure telomere recall directly against the input FASTA, and cross-run
-checks compare two runs against each other — determinism, thread count, fast mode against
-full scan, `-x` monotonicity at match level, a tip-window check (a small `-t` gives the same
-terminal BED as the default), and a manual-curation check (`-n` only adds contig rows, and
-only to the terminal BED).
-
-A known deviation is waived in `validateFiles/intent_waivers.tsv` or
-`validateFiles/invariant_waivers.tsv` against a [conflict register](conflicts.md) id, never
-by editing the manifest to match the binary; a waiver that stops failing fails the run.
+the binary reports. `scripts/check_invariants.py` needs no recorded expected values:
+derivation checks re-derive a report field from the BED files, and cross-run checks compare
+two runs against each other — determinism, thread count, fast mode against full scan, `-x`
+monotonicity at match level, a tip-window check (a small `-t` gives the same terminal BED as
+the default), and a manual-curation check (`-n` only adds contig rows, and only to the
+terminal BED).
 
 ### Fixtures
 
@@ -50,8 +45,7 @@ Declaration format, as used by `fx` in `testFiles/synthetic_fixtures.sh`:
 - `<expect>` is `key=value` pairs joined by `;`; for a multi-record file, one `<expect>` per record joined by `|`, or a single one for all.
 - `type` t2t, incomplete or none; `anom` `.` or comma-joined anomaly flags; `telo` terminal row count; `labels` lowercase arm letters or none; `gaps` gap rows.
 - `gran` one token per terminal row by start (uppercase an arm, lowercase a contig row, `*` after a discordant row); empty with no row.
-- `its` interstitial block count in every full-scan run (`-i`, `-n`, `-r`, `-g`, `-e`, or `-m`), `-` otherwise.
-- A key missing from `<expect>` reads `?`: blocked on a `docs/conflicts.md` entry named in `validateFiles/intent_blocked.tsv`.
+- `its` interstitial block count in every full-scan run (`-i`, `-r`, `-g`, `-e`, or `-m`), `-` otherwise.
 
 ## Build the helper binaries
 

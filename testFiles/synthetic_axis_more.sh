@@ -18,13 +18,13 @@ fx mo_inc_q_clean synthetic/mo_inc_q_clean.fa \
    'type=incomplete;anom=.;gran=Q;telo=1;labels=q;gaps=0' \
    'One concordant q arm'
 
-# Filler > tolerance 3000, so the p end never reaches this array too and reclaims it (R3).
+# Filler > tolerance 3000, so the p end never reaches this array too and reclaims it.
 fx mo_inc_q_disc synthetic/mo_inc_q_disc.fa \
    'chr_mo_inc_q_disc=L:7200+F:CCCTAAx100' '-' \
    'type=incomplete;anom=discordant_q;gran=Q*;telo=1;labels=q;gaps=0' \
    'One inverted q arm'
 
-# Interleaved orientations never qualify as a chain piece (R1/R3): no telomere at either end.
+# Interleaved orientations never qualify as a chain piece: no telomere at either end.
 fx mo_inc_p_bal_gapped synthetic/mo_inc_p_bal_gapped.fa \
    'chr_mo_inc_p_bal_gapped=M:CCCTAATTAGGGx50+L:1300+N:200+L:1300' '-' \
    'type=none;anom=.;gran=;telo=0;labels=none;gaps=1' \
@@ -35,7 +35,7 @@ fx mo_inc_q_disc_gapped synthetic/mo_inc_q_disc_gapped.fa \
    'type=incomplete;anom=discordant_q;gran=Q*;telo=1;labels=q;gaps=1' \
    'One inverted q arm on a gapped scaffold'
 
-# Two same-strand arrays bridge into one block; the canonical-count election (REG-005) is retired.
+# Two same-strand arrays bridge into one block; the canonical-count election is retired.
 fx mo_inc_p_extra synthetic/mo_inc_p_extra.fa \
    'chr_mo_inc_p_extra=F:CCCTAAx100+L:600+F:CCCTAAx100+L:5400' '-' \
    'type=incomplete;anom=.;gran=P;telo=1;labels=p;gaps=0;telolen=1800' \
@@ -52,7 +52,7 @@ fx mo_inc_p_three_piece synthetic/mo_inc_p_three_piece.fa \
    'type=incomplete;anom=.;gran=P;telo=1;labels=p;gaps=0;telolen=3200' \
    'Three p arrays 700 bp apart bridge into one p arm: coverage from the tip never falls below -y at a block end'
 
-# Filler > tolerance 3000 keeps the q end from reaching and reclaiming this structure (R3).
+# Filler > tolerance 3000 keeps the q end from reaching and reclaiming this structure.
 fx mo_inc_p_extra_disc synthetic/mo_inc_p_extra_disc.fa \
    'chr_mo_inc_p_extra_disc=R:TTAGGGx100+L:600+R:TTAGGGx100+L:6600' '-' \
    'type=incomplete;anom=discordant_p;gran=P*;telo=1;labels=p;gaps=0;telolen=1800' \
@@ -63,7 +63,7 @@ fx mo_inc_p_extra_bal synthetic/mo_inc_p_extra_bal.fa \
    'type=incomplete;anom=.;gran=P;telo=1;labels=p;gaps=0;its=1' \
    'Interleaved orientations at the very start fail every anchor attempt and are skipped; the plain forward array 1200 bp in, beyond -d, is the p arm, and the interleaved run is a single interstitial b row'
 
-# Chaining under -d replaces canonical-count election outright (REG-005 retired).
+# Chaining under -d replaces canonical-count election outright.
 fx mo_elect_longer_loses synthetic/mo_elect_longer_loses.fa \
    'chr_mo_elect_longer_loses=M:CCCTAAACGATCx60+L:700+F:CCCTAAx100+L:5180' '-' \
    'type=incomplete;anom=fragmented_p;gran=P;telo=1;labels=p;gaps=0;telolen=1314' \

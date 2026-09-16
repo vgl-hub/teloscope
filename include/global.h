@@ -6,12 +6,14 @@
 #include <queue>
 #include <thread>
 #include <functional>
+#include <string>
 
 #include "log.h"
 #include "threadpool.h"
 
 //global time
 extern std::chrono::high_resolution_clock::time_point start;
+extern std::string version;
 
 // flags are global variables
 extern int tabular_flag;

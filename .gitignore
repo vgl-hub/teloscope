@@ -14,12 +14,6 @@ build/
 __pycache__/
 *.pyc
 
-# Local agent and tooling config
-.claude/
-/.codex
-.agents/
-CLAUDE.md
-
 # Scratch notes and captured output
 tmp.txt
 err.txt
@@ -53,7 +47,3 @@ testFiles/**/*_window_*.bedgraph
 /*_canonical_matches.bed
 /*_noncanonical_matches.bed
 /*_window_*.bedgraph
-
-# Block regression extractions
-/old_rows.tsv
-/new_rows.tsv
