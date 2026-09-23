@@ -25,6 +25,26 @@ REPORT = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(REPORT)
 
 
+def _its_row(chrom, start, end, label, telo_type, fwd_can=0, rev_can=0,
+             fwd_noncan=0, rev_noncan=0, chrom_size=100_000, closest_end=None):
+    closest_end = closest_end if closest_end is not None else ("q" if label == "q" else "p")
+    telo_len = end - start
+    return (f"{chrom}\t{start}\t{end}\t{telo_len}\t{label}\t{closest_end}\t"
+            f"{fwd_can}\t{rev_can}\t{fwd_noncan}\t{rev_noncan}\t{chrom_size}\t{telo_type}\n")
+
+
+def _its_frame(rows, tmpdir):
+    bed_path = Path(tmpdir) / "its.bed"
+    bed_path.write_text("".join(rows), encoding="utf-8")
+    return REPORT.load_its_frame(str(bed_path))
+
+
+def _gaps_frame(rows, tmpdir):
+    path = Path(tmpdir) / "gaps.bed"
+    path.write_text("".join(rows), encoding="utf-8")
+    return REPORT.load_gaps_frame(str(path))
+
+
 def _block(start, end, label, chrom_size, closest_end=None):
     start, end = int(start), int(end)
     return {
@@ -429,6 +449,104 @@ class TeloscopeReportTests(unittest.TestCase):
         block_rows = REPORT._compute_block_rows(arm_blocks, chrom_sizes)
         total_arm_telomeres = len(block_rows)
         self.assertEqual(total_arm_telomeres, 1)
+
+    def test_pair_fusions_pairs_a_q_then_p_within_distance(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            df = _its_frame([
+                _its_row("chrA", 1000, 1100, "q", "fusion", rev_can=5),
+                _its_row("chrA", 1110, 1180, "p", "fragmentation", fwd_can=4),
+            ], tmpdir)
+            gaps = _gaps_frame([], tmpdir)
+
+        pairs = REPORT.pair_fusions(df, gaps, 1000)
+
+        self.assertEqual(len(pairs), 1)
+        row = pairs.iloc[0]
+        self.assertEqual((row["chr"], row["start"], row["end"]), ("chrA", 1000, 1180))
+        self.assertEqual((row["q_bp"], row["p_bp"], row["min_arm"]), (100, 70, 70))
+        self.assertEqual((row["combined_bp"], row["spacer_bp"]), (170, 10))
+        self.assertAlmostEqual(row["q_can_share"], 1.0)
+        self.assertAlmostEqual(row["p_can_share"], 1.0)
+
+    def test_pair_fusions_rejects_spacer_greater_than_d(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            df = _its_frame([
+                _its_row("chrA", 1000, 1100, "q", "fusion", rev_can=5),
+                _its_row("chrA", 3000, 3070, "p", "fragmentation", fwd_can=4),
+            ], tmpdir)
+            gaps = _gaps_frame([], tmpdir)
+
+        pairs = REPORT.pair_fusions(df, gaps, 1000)
+
+        self.assertEqual(len(pairs), 0)
+
+    def test_pair_fusions_rejects_an_n_gap_between_the_pair(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            df = _its_frame([
+                _its_row("chrA", 1000, 1100, "q", "fusion", rev_can=5),
+                _its_row("chrA", 1110, 1180, "p", "fragmentation", fwd_can=4),
+            ], tmpdir)
+            gaps = _gaps_frame(["chrA\t1105\t1108\n"], tmpdir)
+
+        pairs = REPORT.pair_fusions(df, gaps, 1000)
+
+        self.assertEqual(len(pairs), 0)
+
+    def test_pair_fusions_requires_the_c_engine_fusion_label(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            df = _its_frame([
+                _its_row("chrA", 1000, 1100, "q", "single", rev_can=5),
+                _its_row("chrA", 1110, 1180, "p", "fragmentation", fwd_can=4),
+            ], tmpdir)
+            gaps = _gaps_frame([], tmpdir)
+
+        pairs = REPORT.pair_fusions(df, gaps, 1000)
+
+        self.assertEqual(len(pairs), 0)
+
+    def test_pair_fusions_ranks_by_min_arm_then_combined_bp(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            df = _its_frame([
+                # chrA: min_arm 50 (q 50 / p 200), combined 250
+                _its_row("chrA", 0, 50, "q", "fusion"),
+                _its_row("chrA", 60, 260, "p", "fragmentation"),
+                # chrB: min_arm 90 (q 90 / p 90), combined 180
+                _its_row("chrB", 0, 90, "q", "fusion"),
+                _its_row("chrB", 100, 190, "p", "fragmentation"),
+                # chrC: min_arm 90 (q 90 / p 95), combined 185 -- ties chrB on min_arm, wins on combined
+                _its_row("chrC", 0, 90, "q", "fusion"),
+                _its_row("chrC", 100, 195, "p", "fragmentation"),
+            ], tmpdir)
+            gaps = _gaps_frame([], tmpdir)
+
+        pairs = REPORT.pair_fusions(df, gaps, 1000)
+
+        self.assertEqual(list(pairs["chr"]), ["chrC", "chrB", "chrA"])
+        self.assertEqual(list(pairs["min_arm"]), [90, 90, 50])
+
+    def test_read_params_parses_the_hash_params_line(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            report_path = Path(tmpdir) / "report.tsv"
+            report_path.write_text(
+                "#teloscope version=0.1.6 commit=abc1234\n"
+                "#params canonical=CCCTAA/TTAGGG patterns=38 window=1000 step=1000 "
+                "terminal_limit=20000 max_match_dist=50 max_block_dist=500 min_block_len=300 "
+                "min_block_density=0.5 min_block_counts=2 min_canonical_count=4 "
+                "terminal_tolerance=3000 label_threshold=0.667 edit_distance=1 "
+                "ultra_fast=false manual_curation=false\n"
+                "#columns\tpos\theader\n",
+                encoding="utf-8",
+            )
+
+            params = REPORT.read_params(str(report_path))
+
+        self.assertEqual(params, {"max_block_dist": 500, "terminal_limit": 20000, "ultra_fast": False})
+
+    def test_read_params_defaults_when_the_report_is_missing(self):
+        self.assertEqual(REPORT.read_params(None),
+                         {"max_block_dist": 1000, "terminal_limit": None, "ultra_fast": True})
+        self.assertEqual(REPORT.read_params("/no/such/report.tsv"),
+                         {"max_block_dist": 1000, "terminal_limit": None, "ultra_fast": True})
 
 
 if __name__ == "__main__":
