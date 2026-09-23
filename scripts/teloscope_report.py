@@ -19,6 +19,7 @@ import glob
 import re
 import argparse
 import textwrap
+import inspect
 from collections import Counter, defaultdict, OrderedDict
 
 import numpy as np
@@ -771,6 +772,21 @@ def _classify_outliers(values):
     return (values < lo) | (values > hi)
 
 
+_ORIENT_KW_CACHE = {}
+
+def _orient_kw(fn, vert):
+    """Orientation kwargs: 'orientation' on matplotlib >= 3.10, 'vert' before."""
+    fn_name = fn.__name__
+    if fn_name not in _ORIENT_KW_CACHE:
+        has_orientation = "orientation" in inspect.signature(fn).parameters
+        _ORIENT_KW_CACHE[fn_name] = has_orientation
+
+    if _ORIENT_KW_CACHE[fn_name]:
+        return {"orientation": "vertical" if vert else "horizontal"}
+    else:
+        return {"vert": vert}
+
+
 def _draw_raincloud_group(ax, values, position, color, rng, vert=False):
     """Draw a half-violin + boxplot + jittered points group.
 
@@ -787,10 +803,12 @@ def _draw_raincloud_group(ax, values, position, color, rng, vert=False):
         core_values = values
 
     if len(core_values) >= 2 and np.ptp(core_values) > 0:
+        violin_kw = _orient_kw(ax.violinplot, vert)
         violin = ax.violinplot(
-            [core_values], positions=[position], vert=vert,
+            [core_values], positions=[position],
             widths=0.28, showmeans=False, showmedians=False,
             showextrema=False,
+            **violin_kw
         )
         body = violin["bodies"][0]
         body.set_facecolor(color)
@@ -824,15 +842,16 @@ def _draw_raincloud_group(ax, values, position, color, rng, vert=False):
                    edgecolors="none", linewidths=0.0,
                    rasterized=True, zorder=4)
 
+    boxplot_kw = _orient_kw(ax.boxplot, vert)
     box = ax.boxplot(
         [core_values],
         positions=[position],
-        orientation="vertical" if vert else "horizontal",
         widths=0.042,
         patch_artist=True,
         showfliers=False,
         whis=1.5,
         manage_ticks=False,
+        **boxplot_kw
     )
     for patch in box["boxes"]:
         patch.set_facecolor("white")
@@ -1518,6 +1537,7 @@ def compute_view_windows(blocks_list, chrom_size):
     When both arms exist and extents are within MAX_RATIO, a common limit
     is used so arm lengths can be compared directly; otherwise independent
     per-arm limits preserve detail for the smaller arm.
+    Only considers arm telomere blocks (term=="scaffold"), not contig rows.
     """
     PADDING_FACTOR = 2.0
     MIN_WINDOW = 1_000
@@ -1548,8 +1568,8 @@ def compute_view_windows(blocks_list, chrom_size):
         padded = min(int(chrom_size), max(int(round(furthest * PADDING_FACTOR)), MIN_WINDOW))
         return _normalize_terminal_limit_bp(padded)
 
-    p_blocks = [b for b in blocks_list if b["closestEnd"] == "p"]
-    q_blocks = [b for b in blocks_list if b["closestEnd"] == "q"]
+    p_blocks = [b for b in blocks_list if b.get("term") != "contig" and b["closestEnd"] == "p"]
+    q_blocks = [b for b in blocks_list if b.get("term") != "contig" and b["closestEnd"] == "q"]
     p_limit = _arm_limit(p_blocks, "p")
     q_limit = _arm_limit(q_blocks, "q")
 
@@ -1587,11 +1607,13 @@ def clip_bedgraph(bg_tuple, view_start, view_end):
 
 
 def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, label=None,
-                       telomere_present=True, its_blocks_list=None, gap_blocks_list=None):
+                       telomere_present=True, its_blocks_list=None, gap_blocks_list=None,
+                       contig_blocks_list=None):
     """Draw telomere blocks as a thin track on a backbone line.
 
     Nature-style monochrome gradient:
-      terminal blocks → COLORS["terminal"] (dark)
+      terminal blocks → COLORS["terminal"] (dark, filled)
+      contig rows     → COLORS["terminal"] (dark, outline-only)
       ITS blocks      → COLORS["its"]      (medium grey)
       gap blocks      → COLORS["gap"]      (light grey)
     p/q arm letters are centered on each block when the block is wide enough.
@@ -1620,6 +1642,22 @@ def _draw_blocks_track(ax, blocks_list, view_start, view_end, chrom_size, arm, l
         ax.add_patch(rect)
         if _block_symbol_fits(de - ds, view_span, b["label"]):
             _draw_block_symbol(ax, (ds + de) / 2, backbone_y, b["label"], zorder=4)
+
+    # ---- Contig rows (outline-only) ----
+    if contig_blocks_list:
+        for b in contig_blocks_list:
+            if b["end"] <= view_start or b["start"] >= view_end:
+                continue
+            cs = max(b["start"], view_start)
+            ce = min(b["end"], view_end)
+            ds, de = _project_terminal_interval(cs, ce, chrom_size, arm)
+            if de < ds:
+                ds, de = de, ds
+            rect = Rectangle(
+                (ds, backbone_y - 0.07), de - ds, 0.14,
+                facecolor="none", edgecolor=COLORS["terminal"], linewidth=0.6, zorder=3,
+            )
+            ax.add_patch(rect)
 
     # ---- ITS blocks ----
     if its_blocks_list:
@@ -1741,11 +1779,12 @@ def _hide_panel(ax, message="No telomere"):
 def plot_terminal_zoom(chrom, chrom_size, blocks_list,
                        density_data=None, canonical_data=None, strand_data=None,
                        its_blocks_list=None, gc_data=None, entropy_data=None,
-                       gap_blocks_list=None):
+                       gap_blocks_list=None, contig_blocks_list=None):
     """Two-column terminal zoom: p-end (left) and q-end (right).
 
     Each column shows tracks (blocks, density, canonical ratio, strand bias, GC, entropy).
     If windows overlap on a short chromosome, a single merged panel is used.
+    contig_blocks_list: optional contig-terminal rows to draw as outline-only.
     """
     has_density = density_data is not None and len(density_data[0]) > 0
     has_canonical = canonical_data is not None and len(canonical_data[0]) > 0
@@ -1839,6 +1878,7 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
                     telomere_present=telomere_present,
                     its_blocks_list=its_blocks_list if has_its else None,
                     gap_blocks_list=gap_blocks_list,
+                    contig_blocks_list=contig_blocks_list,
                 )
             elif track_name == "density":
                 visible = _draw_fraction_track(
@@ -1958,6 +1998,18 @@ def main():
     print(f"Found files: {', '.join(files.keys())}", file=sys.stderr)
 
     blocks = parse_terminal_bed(files["terminal"])
+
+    # Split terminal blocks into arm telomeres (scaffold) and contig-terminal rows (contig)
+    arm_blocks = {}
+    contig_blocks = {}
+    for chrom, blist in blocks.items():
+        arm_blist = [b for b in blist if b.get("term") == "scaffold"]
+        contig_blist = [b for b in blist if b.get("term") == "contig"]
+        if arm_blist:
+            arm_blocks[chrom] = arm_blist
+        if contig_blist:
+            contig_blocks[chrom] = contig_blist
+
     density_data = parse_bedgraph(files["density"]) if "density" in files else None
     canonical_data = parse_bedgraph(files["canonical_ratio"]) if "canonical_ratio" in files else None
     strand_data  = parse_bedgraph(files["strand_ratio"]) if "strand_ratio" in files else None
@@ -1971,17 +2023,17 @@ def main():
     classifications = parse_report(files["report"]) if "report" in files else OrderedDict()
     # a flagged scaffold appears under its completeness class and its anomaly, so count it once
     total_chroms = len({chrom for v in classifications.values() for chrom in v})
-    total_telo = sum(len(blist) for blist in blocks.values())
+    total_telo = sum(len(blist) for blist in arm_blocks.values())
     cat_summary = ", ".join(f"{k}={len(v)}" for k, v in classifications.items()) or "none"
     print(f"Chromosomes: {total_chroms}  |  Telomere blocks: {total_telo}  |  "
           f"Categories: {cat_summary}",
           file=sys.stderr)
 
     # Only generate figures for chromosomes that have telomere blocks
-    profile_chroms = [chrom for chrom in sorted(blocks.keys(),
+    profile_chroms = [chrom for chrom in sorted(arm_blocks.keys(),
                                                 key=lambda c: chrom_sizes.get(c, 0), reverse=True)
                       if chrom_sizes.get(chrom, 0) > 0]
-    skipped_no_size = sorted(set(blocks) - set(profile_chroms))
+    skipped_no_size = sorted(set(arm_blocks) - set(profile_chroms))
     if skipped_no_size:
         _warn(f"Skipping {len(skipped_no_size)} chromosome(s) with no usable size: {', '.join(skipped_no_size[:5])}"
               f"{' ...' if len(skipped_no_size) > 5 else ''}.")
@@ -1998,7 +2050,7 @@ def main():
         ov1_path = os.path.join(out_dir, "teloscope_overview_1.png")
         ov1_ok, ov1_err = _save_figure_with_fallback(
             lambda fig: fig.savefig(ov1_path, dpi=args.dpi),
-            lambda: plot_overview_page1(classifications, blocks, chrom_sizes),
+            lambda: plot_overview_page1(classifications, arm_blocks, chrom_sizes),
             "Assembly overview (page 1)",
             "Failed to render overview page 1. A placeholder image was written instead.",
         )
@@ -2011,7 +2063,7 @@ def main():
         ov2_path = os.path.join(out_dir, "teloscope_overview_2.png")
         ov2_ok, ov2_err = _save_figure_with_fallback(
             lambda fig: fig.savefig(ov2_path, dpi=args.dpi),
-            lambda: plot_overview_page2(blocks, chrom_sizes),
+            lambda: plot_overview_page2(arm_blocks, chrom_sizes),
             "Assembly overview (page 2)",
             "Failed to render overview page 2. A placeholder image was written instead.",
         )
@@ -2025,7 +2077,8 @@ def main():
             csize = chrom_sizes.get(chrom, 0)
             if csize == 0:
                 continue
-            blist = blocks.get(chrom, [])
+            arm_blist = arm_blocks.get(chrom, [])
+            contig_blist = contig_blocks.get(chrom, [])
             den = density_data.get(chrom) if density_data else None
             can = canonical_data.get(chrom) if canonical_data else None
             strand = strand_data.get(chrom) if strand_data else None
@@ -2038,9 +2091,10 @@ def main():
             path = os.path.join(out_dir, f"teloscope_{safe_name}.png")
             ok, error_text = _save_figure_with_fallback(
                 lambda fig, path=path: fig.savefig(path, dpi=args.dpi),
-                lambda chrom=chrom, csize=csize, blist=blist, den=den, can=can, strand=strand,
-                       its=its, gc=gc, ent=ent, gaps=gaps:
-                    plot_terminal_zoom(chrom, csize, blist, den, can, strand, its, gc, ent, gaps),
+                lambda chrom=chrom, csize=csize, arm_blist=arm_blist, contig_blist=contig_blist,
+                       den=den, can=can, strand=strand, its=its, gc=gc, ent=ent, gaps=gaps:
+                    plot_terminal_zoom(chrom, csize, arm_blist, den, can, strand, its, gc, ent,
+                                       gaps, contig_blocks_list=contig_blist),
                 chrom,
                 f"Failed to render the terminal zoom for {chrom}. A placeholder image was written instead.",
             )
@@ -2057,7 +2111,7 @@ def main():
             # Overview page 1: classification + flagged scaffolds
             ov1_ok, ov1_err = _save_figure_with_fallback(
                 lambda fig: pdf.savefig(fig),
-                lambda: plot_overview_page1(classifications, blocks, chrom_sizes),
+                lambda: plot_overview_page1(classifications, arm_blocks, chrom_sizes),
                 "Assembly overview (page 1)",
                 "Failed to render overview page 1. A placeholder page was written instead.",
             )
@@ -2069,7 +2123,7 @@ def main():
             # Overview page 2: distributions
             ov2_ok, ov2_err = _save_figure_with_fallback(
                 lambda fig: pdf.savefig(fig),
-                lambda: plot_overview_page2(blocks, chrom_sizes),
+                lambda: plot_overview_page2(arm_blocks, chrom_sizes),
                 "Assembly overview (page 2)",
                 "Failed to render overview page 2. A placeholder page was written instead.",
             )
@@ -2083,7 +2137,8 @@ def main():
                 csize = chrom_sizes.get(chrom, 0)
                 if csize == 0:
                     continue
-                blist = blocks.get(chrom, [])
+                arm_blist = arm_blocks.get(chrom, [])
+                contig_blist = contig_blocks.get(chrom, [])
                 den = density_data.get(chrom) if density_data else None
                 can = canonical_data.get(chrom) if canonical_data else None
                 strand = strand_data.get(chrom) if strand_data else None
@@ -2094,9 +2149,10 @@ def main():
 
                 ok, error_text = _save_figure_with_fallback(
                     lambda fig: pdf.savefig(fig),
-                    lambda chrom=chrom, csize=csize, blist=blist, den=den, can=can, strand=strand,
-                           its=its, gc=gc, ent=ent, gaps=gaps:
-                        plot_terminal_zoom(chrom, csize, blist, den, can, strand, its, gc, ent, gaps),
+                    lambda chrom=chrom, csize=csize, arm_blist=arm_blist, contig_blist=contig_blist,
+                           den=den, can=can, strand=strand, its=its, gc=gc, ent=ent, gaps=gaps:
+                        plot_terminal_zoom(chrom, csize, arm_blist, den, can, strand, its, gc, ent,
+                                           gaps, contig_blocks_list=contig_blist),
                     chrom,
                     f"Failed to render the terminal zoom for {chrom}. A placeholder page was written instead.",
                 )

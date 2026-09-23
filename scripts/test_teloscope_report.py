@@ -56,6 +56,26 @@ def _synthetic_terminal_dataset(chrom_size=20_000):
 
 
 class TeloscopeReportTests(unittest.TestCase):
+    def test_orient_kw_returns_vert_for_old_matplotlib(self):
+        def fake_violinplot(**kwargs):
+            pass
+        fake_violinplot.__name__ = "violinplot_old"
+        kw = REPORT._orient_kw(fake_violinplot, True)
+        self.assertEqual(kw, {"vert": True})
+        kw = REPORT._orient_kw(fake_violinplot, False)
+        self.assertEqual(kw, {"vert": False})
+
+    def test_orient_kw_returns_orientation_for_new_matplotlib(self):
+        def fake_boxplot(**kwargs):
+            pass
+        fake_boxplot.__name__ = "boxplot_new"
+        import inspect
+        sig = inspect.signature(lambda orientation=None: None)
+        REPORT._ORIENT_KW_CACHE["boxplot_new"] = "orientation" in sig.parameters
+        kw = REPORT._orient_kw(fake_boxplot, True)
+        self.assertIn("orientation", kw)
+        self.assertEqual(kw["orientation"], "vertical")
+
     def test_parse_terminal_bed_reads_the_twelve_column_schema(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             bed_path = Path(tmpdir) / "blocks.bed"
@@ -384,6 +404,31 @@ class TeloscopeReportTests(unittest.TestCase):
         page2_flagged = next(ax for ax in fig2.axes if ax.get_xlabel() == "Flagged length (log10 bp)")
         self.assertIsNone(page2_flagged.spines["left"].get_bounds())
         self.assertTrue(page2_flagged.spines["bottom"].get_visible())
+
+    def test_contig_rows_are_excluded_from_overview_statistics(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bed_path = Path(tmpdir) / "blocks.bed"
+            bed_path.write_text(
+                "chrMixed\t100\t700\t600\tp\tp\t3\t2\t5\t7\t20000\tscaffold\n"
+                "chrMixed\t5000\t5400\t400\tq\tq\t2\t1\t3\t4\t20000\tcontig\n",
+                encoding="utf-8",
+            )
+
+            parsed = REPORT.parse_terminal_bed(str(bed_path))
+
+        self.assertEqual(len(parsed["chrMixed"]), 2)
+        arm_blist = [b for b in parsed["chrMixed"] if b.get("term") == "scaffold"]
+        contig_blist = [b for b in parsed["chrMixed"] if b.get("term") == "contig"]
+        self.assertEqual(len(arm_blist), 1)
+        self.assertEqual(len(contig_blist), 1)
+
+        arm_blocks = {"chrMixed": arm_blist}
+        contig_blocks = {"chrMixed": contig_blist}
+        chrom_sizes = {"chrMixed": 20000}
+
+        block_rows = REPORT._compute_block_rows(arm_blocks, chrom_sizes)
+        total_arm_telomeres = len(block_rows)
+        self.assertEqual(total_arm_telomeres, 1)
 
 
 if __name__ == "__main__":

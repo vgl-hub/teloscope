@@ -122,7 +122,8 @@ def _region_axis_spec(view_start, view_end):
 # Track drawing
 # ---------------------------------------------------------------------------
 
-def _draw_ideogram(ax, chrom_size, view_start, view_end, blocks_list, its_blocks_list):
+def _draw_ideogram(ax, chrom_size, view_start, view_end, blocks_list, its_blocks_list,
+                   contig_blocks_list=None):
     """Whole-scaffold overview: terminal caps, all ITS ticks, and the zoom window boxed."""
     bar_y, bar_h = 0.60, 0.34
     bottom = bar_y - bar_h / 2.0
@@ -132,10 +133,19 @@ def _draw_ideogram(ax, chrom_size, view_start, view_end, blocks_list, its_blocks
     # Terminal telomeres as dark end caps (min width so they stay visible).
     cap_min = chrom_size * 0.004
     for b in blocks_list or []:
+        if b.get("term") == "contig":
+            continue
         w = max(b["end"] - b["start"], cap_min)
         x = min(b["start"], chrom_size - w) if b["start"] > chrom_size / 2.0 else b["start"]
         ax.add_patch(Rectangle((x, bottom), w, bar_h, facecolor=COLORS["terminal"],
                                edgecolor="none", zorder=2))
+
+    # Contig rows as outline-only caps.
+    for b in contig_blocks_list or []:
+        w = max(b["end"] - b["start"], cap_min)
+        x = min(b["start"], chrom_size - w) if b["start"] > chrom_size / 2.0 else b["start"]
+        ax.add_patch(Rectangle((x, bottom), w, bar_h, facecolor="none",
+                               edgecolor=COLORS["terminal"], linewidth=0.6, zorder=3))
 
     # Every interstitial telomere on the scaffold as an orientation-colored tick.
     for b in its_blocks_list or []:
@@ -169,7 +179,7 @@ def _draw_ideogram(ax, chrom_size, view_start, view_end, blocks_list, its_blocks
 
 
 def _draw_its_blocks_track(ax, view_start, view_end, blocks_list, its_blocks_list,
-                           gap_blocks_list, label="Blocks"):
+                           gap_blocks_list, label="Blocks", contig_blocks_list=None):
     """Single-panel block track in genomic coordinates; ITS colored by orientation."""
     backbone_y = 0.5
     view_span = max(view_end - view_start, 1)
@@ -187,9 +197,22 @@ def _draw_its_blocks_track(ax, view_start, view_end, blocks_list, its_blocks_lis
             if _block_symbol_fits(de - ds, view_span, b.get("label", "")):
                 _draw_block_symbol(ax, (ds + de) / 2, backbone_y, b.get("label", ""), zorder + 1)
 
-    _draw(blocks_list, lambda b: COLORS["terminal"], 2)
-    _draw(its_blocks_list, lambda b: ITS_ORIENT_COLORS.get(b.get("label", ""), COLORS["its"]), 3)
-    _draw(gap_blocks_list, lambda b: COLORS["gap"], 5)
+    def _draw_outline(seq, color, zorder):
+        for b in seq or []:
+            if b["end"] <= view_start or b["start"] >= view_end:
+                continue
+            ds, de = max(b["start"], view_start), min(b["end"], view_end)
+            ax.add_patch(Rectangle((ds, backbone_y - 0.07), de - ds, 0.14,
+                                   facecolor="none", edgecolor=color, linewidth=0.6,
+                                   zorder=zorder))
+
+    _draw([b for b in blocks_list if b.get("term") != "contig"] if blocks_list else [],
+          lambda b: COLORS["terminal"], 2)
+    _draw_outline([b for b in blocks_list if b.get("term") == "contig"] if blocks_list else [],
+                  COLORS["terminal"], 3)
+    _draw(its_blocks_list, lambda b: ITS_ORIENT_COLORS.get(b.get("label", ""), COLORS["its"]), 4)
+    _draw(gap_blocks_list, lambda b: COLORS["gap"], 6)
+    _draw_outline(contig_blocks_list, COLORS["terminal"], 5)
 
     ax.set_ylim(0.28, 0.72)
     ax.set_yticks([])
