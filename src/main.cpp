@@ -10,6 +10,10 @@
 #include <mach-o/dyld.h>
 #endif
 
+#ifdef _WIN32
+#include <fcntl.h>
+#endif
+
 std::string version = "0.1.6";
 
 // global
@@ -69,6 +73,28 @@ static std::string findReportScript(const char* argv0) {
     return "";
 }
 
+// backs std::cin with fread(stdin) so detection and every reader avoid the default per-character stdio sync cost
+class StdinBuffer : public std::streambuf {
+public:
+    StdinBuffer() { setg(buffer, buffer, buffer); }
+protected:
+    int_type underflow() override {
+        if (gptr() < egptr()) return traits_type::to_int_type(*gptr());
+        const size_t got = fread(buffer, 1, sizeof(buffer), stdin);
+        if (got == 0) return traits_type::eof();
+        setg(buffer, buffer, buffer + got);
+        return traits_type::to_int_type(*gptr());
+    }
+private:
+    char buffer[1 << 16]; // 64 KiB
+};
+
+// an assembly must start like FASTA ('>') or GFA ('#', or a record letter and a tab)
+static bool looksLikeAssembly(unsigned char first, unsigned char second) {
+    return first == '>' || first == '#' ||
+        (std::string("HSLCPWJEFGOU").find(static_cast<char>(first)) != std::string::npos && second == '\t');
+}
+
 // FASTQ or BAM input: the telomeric reads, the read telomere BED and the report, all under outRoute
 static void runReads(Input &in) {
     const bool bam = userInput.readInput == ReadInput::bam;
@@ -103,7 +129,7 @@ static void runReads(Input &in) {
     } catch (const std::exception &error) {
         fprintf(stderr, "Error: %s.\n", error.what());
         if (bam && userInput.inSequence.empty())
-            fprintf(stderr, "  Compressed FASTQ or FASTA on stdin is not supported: pass the file path instead.\n");
+            fprintf(stderr, "  Compressed FASTQ or FASTA on stdin or a pipe is not supported: pass the file, or decompress it first (zcat reads.fq.gz | teloscope).\n");
         threadPool.join();
         removeOutputs();
         exit(EXIT_FAILURE);
@@ -663,7 +689,7 @@ int main(int argc, char **argv) {
     if (userInput.inSequence.empty() && isPipe) {
         userInput.pipeType = 'f';
         userInput.inSequenceName = "stdin";
-        if (userInput.outRoute.empty())
+        if (!userInput.outRouteSet)
             userInput.outRoute = ".";
     }
 
@@ -673,10 +699,58 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    // reads are detected by content: the BAM magic or a FASTQ header; anything else is an assembly
+    // reads are detected by content: the BAM magic, a FASTQ header, or a FASTA/GFA start; anything else is refused
     std::error_code fileError;
-    if (std::filesystem::is_regular_file(userInput.inSequence, fileError)) {
+    if (std::filesystem::is_directory(userInput.inSequence, fileError)) {
+        fprintf(stderr, "Error: input '%s' is a directory.\n", userInput.inSequence.c_str());
+        exit(EXIT_FAILURE);
+    }
+
+    // a named path that is not a regular file (a FIFO, /dev/fd/N, /dev/stdin, a character device) reads exactly like stdin
+    std::string namedPipeInput;
+    if (!userInput.inSequence.empty() && !std::filesystem::is_regular_file(userInput.inSequence, fileError)) {
+        namedPipeInput = userInput.inSequence;
+        if (!freopen(namedPipeInput.c_str(), "rb", stdin)) {
+            fprintf(stderr, "Error: cannot open input '%s'.\n", namedPipeInput.c_str());
+            exit(EXIT_FAILURE);
+        }
+        userInput.inSequence.clear();
+        userInput.pipeType = 'f';
+        if (!userInput.outRouteSet)
+            userInput.outRoute = ".";
+    }
+
+    if (userInput.inSequence.empty()) {
+        static StdinBuffer stdinBuffer;
+        std::cin.rdbuf(&stdinBuffer); // gfalibs, bam.cpp and the filtered FASTA loader all read std::cin
+#ifdef _WIN32
+        _setmode(_fileno(stdin), _O_BINARY); // detection buffers bytes before bam.cpp would otherwise set this
+#endif
+        const int first = std::cin.peek(); // gzip on stdin/a pipe can only be a BAM; BgzfReader checks the magic
+        if (first == EOF) {
+            if (namedPipeInput.empty())
+                fprintf(stderr, "Error: input on stdin is empty.\n");
+            else
+                fprintf(stderr, "Error: input '%s' is empty.\n", namedPipeInput.c_str());
+            exit(EXIT_FAILURE);
+        }
+        if (first == '@') userInput.readInput = ReadInput::fastq;
+        else if (first == 0x1f) userInput.readInput = ReadInput::bam;
+        else {
+            std::cin.get(); // both bytes sit in stdinBuffer, so unget restores the first
+            const int second = std::cin.peek();
+            std::cin.unget();
+            if (!looksLikeAssembly(first, second)) {
+                if (namedPipeInput.empty())
+                    fprintf(stderr, "Error: input on stdin is not FASTA, GFA, FASTQ or BAM.\n");
+                else
+                    fprintf(stderr, "Error: input '%s' is not FASTA, GFA, FASTQ or BAM.\n", namedPipeInput.c_str());
+                exit(EXIT_FAILURE);
+            }
+        }
+    } else {
         char magic[4] = {0, 0, 0, 0}; // gzread inflates gzip/BGZF and passes plain files through
+        bool sniffed = false; // an unopenable file reaches the loader's own open error
         if (gzFile file = gzopen(userInput.inSequence.c_str(), "rb")) {
             const int got = gzread(file, magic, sizeof(magic));
             int status = Z_OK;
@@ -690,17 +764,14 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "Error: input '%s' is empty.\n", userInput.inSequence.c_str());
                 exit(EXIT_FAILURE);
             }
+            sniffed = true;
         }
         if (memcmp(magic, "BAM\1", 4) == 0) userInput.readInput = ReadInput::bam;
         else if (magic[0] == '@') userInput.readInput = ReadInput::fastq;
-    } else if (userInput.inSequence.empty()) {
-        const int first = std::cin.peek(); // gzip on stdin can only be a BAM; BgzfReader checks the magic
-        if (first == EOF) {
-            fprintf(stderr, "Error: input on stdin is empty.\n");
+        else if (sniffed && !looksLikeAssembly(magic[0], magic[1])) {
+            fprintf(stderr, "Error: input '%s' is not FASTA, GFA, FASTQ or BAM.\n", userInput.inSequence.c_str());
             exit(EXIT_FAILURE);
         }
-        if (first == '@') userInput.readInput = ReadInput::fastq;
-        else if (first == 0x1f) userInput.readInput = ReadInput::bam;
     }
 
     if (userInput.sequenceFilterActive && userInput.readInput != ReadInput::none) {

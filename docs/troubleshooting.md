@@ -64,12 +64,13 @@ Common cases:
 - `-y`
 - `-x`
 
-### Compressed stdin is not supported
+### Compressed stdin or a pipe is not supported
 
-This does not work:
+This does not work, whether piped or through a FIFO or process substitution:
 
 ```sh
 cat asm.fa.gz | teloscope -o results/
+teloscope <(cat asm.fa.gz) -o results/
 ```
 
 Use one of these:
@@ -85,7 +86,11 @@ BAM is the exception because BAM mode reads BGZF directly:
 cat reads.bam | teloscope -o results/
 ```
 
-Gzipped FASTQ on stdin is not supported either: stdin is only peeked one byte, so it cannot tell gzipped FASTQ from BAM, and the BAM decode then fails with a hint to pass the file path instead. A gzipped FASTQ *file* works, since decompression happens before the content is sniffed.
+Gzipped FASTQ on stdin or a pipe is not supported either: a pipe cannot be rewound, so gzip there is taken as BAM, and the BAM decode fails with a hint to pass the file or decompress it first. A gzipped FASTQ *file* works, since it is inflated before it is sniffed.
+
+### "is not FASTA, GFA, FASTQ or BAM"
+
+The input does not start like FASTA (`>`), GFA (`#`, or a record letter and a tab), FASTQ (`@`) or BAM, so it is refused before the assembly loader. Only the first bytes are checked: a GFA that starts correctly but is missing columns further in can still stop the GFA reader.
 
 ### Reads mode rejects the BAM input
 

@@ -633,7 +633,7 @@ def test_cli_guards_and_cleanup(tmp):
 
 
 def test_detection_boundary(tmp):
-    # detection is a literal byte check: anything but '@' or 'BAM\1' falls through to assembly
+    # detection is a literal byte check: '@' -> FASTQ, 'BAM\1' -> BAM, else the bytes must still look like FASTA/GFA
     record = bam_record("pass", "TTAGGG" * 8, flag=0x4)
     payload = bam_payload([record])
 
@@ -641,15 +641,17 @@ def test_detection_boundary(tmp):
     not_bgzf_path.write_bytes(b"not bam")
     out_dir = tmp / "not_bgzf_out"
     result = run([str(not_bgzf_path), "-o", str(out_dir)])
-    require(result.returncode == 0, "raw bytes that are not gzip should fall through to assembly mode, not fail")
-    require(not list(out_dir.glob("*_telomeric.*")), "non-BAM bytes were treated as reads-mode input")
+    require(result.returncode != 0, "raw bytes that are not gzip, FASTA or GFA should be refused, not run as an assembly")
+    require(b"is not FASTA, GFA, FASTQ or BAM" in result.stderr, "non-BAM bytes lacked the detection diagnostic")
+    require(not list(out_dir.iterdir()), "non-BAM bytes left output behind")
 
     bad_magic_path = tmp / "bad_magic.bam"
     bad_magic_path.write_bytes(bgzf(b"BAD\1" + payload[4:]))
     out_dir2 = tmp / "bad_magic_out"
     result2 = run([str(bad_magic_path), "-o", str(out_dir2)])
-    require(result2.returncode == 0, "valid BGZF with the wrong magic bytes should fall through to assembly mode")
-    require(not list(out_dir2.glob("*_telomeric.*")), "mismatched magic bytes were treated as reads-mode input")
+    require(result2.returncode != 0, "valid BGZF with the wrong magic bytes should be refused, not run as an assembly")
+    require(b"is not FASTA, GFA, FASTQ or BAM" in result2.stderr, "mismatched magic bytes lacked the detection diagnostic")
+    require(not list(out_dir2.iterdir()), "mismatched magic bytes left output behind")
 
     # detection cannot even open an unreadable file to sniff it, so it also falls through
     if os.name != "nt" and os.geteuid() != 0:
@@ -824,7 +826,7 @@ def test_gzipped_non_bam_stdin_aborts_cleanly(tmp):
     result, _ = run_reads(out_dir, [], bgzf(b"this is plain text, not a BAM payload, once BGZF-decompressed"))
     require(result.returncode == 1, f"expected exit 1, got {result.returncode}")
     require(b"Error: invalid BAM magic." in result.stderr, f"missing BAM magic error: {result.stderr!r}")
-    require(b"Compressed FASTQ or FASTA on stdin is not supported" in result.stderr,
+    require(b"Compressed FASTQ or FASTA on stdin or a pipe is not supported" in result.stderr,
             f"missing compressed-stdin hint: {result.stderr!r}")
     require(not list(out_dir.iterdir()), "gzipped non-BAM stdin left partial output behind")
 

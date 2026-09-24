@@ -5,9 +5,11 @@ import math
 import os
 import pathlib
 import random
+import shlex
 import subprocess
 import sys
 import tempfile
+import threading
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import test_bam_subset as bamlib  # reuses the BAM/BGZF synthesiser
@@ -15,7 +17,7 @@ import test_bam_subset as bamlib  # reuses the BAM/BGZF synthesiser
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_TELOSCOPE = ROOT / "build/bin" / ("teloscope.exe" if os.name == "nt" else "teloscope")
-TELOSCOPE = pathlib.Path(os.environ.get("TELOSCOPE", DEFAULT_TELOSCOPE))
+TELOSCOPE = pathlib.Path(os.environ.get("TELOSCOPE", DEFAULT_TELOSCOPE)).resolve()  # absolute: some tests run with cwd set
 
 FWD = "CCCTAA"  # p: forward canonical, expected at a read start
 REV = "TTAGGG"  # q: reverse canonical, expected at a read end
@@ -27,16 +29,54 @@ def require(condition, message):
         raise AssertionError(message)
 
 
-def run(args, stdin=None):
+def run(args, stdin=None, cwd=None, timeout=60):
     result = subprocess.run(
         [str(TELOSCOPE), *[str(arg) for arg in args]],
         input=stdin,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
-        timeout=60,
+        cwd=cwd,
+        timeout=timeout,
     )
     return result
+
+
+HAS_FIFO = hasattr(os, "mkfifo")  # FIFOs and bash process substitution are POSIX-only
+
+
+def run_through_fifo(fifo_path, data, extra_args, cwd=None, timeout=60):
+    # a FIFO must be opened for writing by someone else before a reader unblocks, so feed it from a thread
+    if fifo_path.exists():
+        fifo_path.unlink()
+    os.mkfifo(fifo_path)
+
+    def feed():
+        with open(fifo_path, "wb") as fifo:
+            fifo.write(data)
+
+    writer = threading.Thread(target=feed)
+    writer.start()
+    try:
+        result = run([str(fifo_path), *extra_args], cwd=cwd, timeout=timeout)
+    finally:
+        writer.join(timeout=timeout)
+        fifo_path.unlink(missing_ok=True)
+    return result
+
+
+def run_via_process_substitution(data_path, extra_args, cwd=None, timeout=60):
+    # bash-only: python's subprocess has no equivalent of <(...), so shell out to bash for this one
+    command = f"{shlex.quote(str(TELOSCOPE))} <(cat {shlex.quote(str(data_path))})"
+    command += "".join(f" {shlex.quote(str(arg))}" for arg in extra_args)
+    return subprocess.run(
+        ["bash", "-c", command],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        cwd=cwd,
+        timeout=timeout,
+    )
 
 
 def read_bed(path):
@@ -439,6 +479,200 @@ def test_empty_stdin_error(tmp):
             f"expected the empty-stdin diagnostic, got: {result.stderr!r}")
 
 
+def test_non_sequence_input_refused(tmp):
+    # neither FASTQ, BAM, FASTA nor GFA: must exit 1, never crash, and leave no output
+    diagnostic = b"is not FASTA, GFA, FASTQ or BAM"
+    known_crash_bytes = bytes([0x4f, 0x8a, 0x85, 0x00, 0x1e, 0x1c, 0x66, 0xae])  # the reported crash, first bytes
+    path = tmp / "not_sequence.bin"
+    path.write_bytes(known_crash_bytes)
+    out = tmp / "not_sequence_out"
+    out.mkdir(exist_ok=True)
+    result = run([str(path), "-o", str(out)])
+    require(result.returncode == 1, f"expected exit 1, got {result.returncode} (signal if negative)")
+    require(diagnostic in result.stderr, f"expected the detection diagnostic, got: {result.stderr!r}")
+    require(not list(out.iterdir()), "non-sequence input left output behind")
+
+    stdin_result = run([], stdin=known_crash_bytes)
+    require(stdin_result.returncode == 1, f"expected exit 1 on stdin, got {stdin_result.returncode}")
+    require(b"Error: input on stdin " + diagnostic in stdin_result.stderr,
+            f"expected the stdin detection diagnostic, got: {stdin_result.stderr!r}")
+
+    if HAS_FIFO:
+        fifo_out = tmp / "not_sequence_fifo_out"
+        fifo_out.mkdir(exist_ok=True)
+        fifo_result = run_through_fifo(tmp / "not_sequence.fifo", known_crash_bytes, ["-o", str(fifo_out)])
+        require(fifo_result.returncode == 1, f"expected exit 1 through a FIFO, got {fifo_result.returncode}")
+        require(b"not_sequence.fifo' " + diagnostic in fifo_result.stderr,
+                f"a FIFO should be refused with its path, got: {fifo_result.stderr!r}")
+        require(not list(fifo_out.iterdir()), "non-sequence input through a FIFO left output behind")
+
+    space_path = tmp / "space_first.bin"
+    space_path.write_bytes(b"S \tnot a real GFA record\n")  # 'S' alone is not enough without the tab
+    space_out = tmp / "space_first_out"
+    space_out.mkdir(exist_ok=True)
+    space_result = run([str(space_path), "-o", str(space_out)])
+    require(space_result.returncode == 1, f"'S ' should be refused, got {space_result.returncode}")
+
+    directory_out = tmp / "directory_input_out"
+    directory_out.mkdir(exist_ok=True)
+    directory_result = run([str(tmp), "-o", str(directory_out)])
+    require(directory_result.returncode != 0, "a directory input should not run as an assembly")
+
+    random.seed(20260924)
+    crashes, refused = 0, 0
+    for _ in range(30):
+        data = bytes(random.randrange(256) for _ in range(random.randint(1, 200)))
+        rand_path = tmp / "rand_input.bin"
+        rand_path.write_bytes(data)
+        rand_out = tmp / "rand_input_out"
+        rand_out.mkdir(exist_ok=True)
+        rand_result = run([str(rand_path), "-o", str(rand_out)])
+        if rand_result.returncode < 0:
+            crashes += 1
+        elif rand_result.returncode == 1:
+            refused += 1
+        for leftover in rand_out.iterdir():
+            leftover.unlink()
+    require(crashes == 0, f"{crashes} of 30 random inputs crashed on a signal")
+    require(refused == 30, f"only {refused} of 30 random inputs were cleanly refused")
+
+
+def test_fastq_through_pipe_like_inputs(tmp):
+    # a FIFO and bash process substitution must read exactly like the same file
+    sequences = {
+        "p_read": make_p_read(600),
+        "q_read": make_q_read(600),
+        "discordant": REV * 80 + "A" * 2000,
+    }
+    path = tmp / "pipe_reads.fq"
+    with open(path, "w") as f:
+        for name, sequence in sequences.items():
+            f.write(f"@{name}\n{sequence}\n+\n{'I' * len(sequence)}\n")
+    data = path.read_bytes()
+
+    file_out = tmp / "pipe_fastq_file_out"
+    file_out.mkdir()
+    file_result = run([str(path), "-o", str(file_out)])
+    require(file_result.returncode == 0, file_result.stderr.decode())
+    file_subset = (file_out / f"{path.name}_telomeric.fastq").read_bytes()
+    file_bed = (file_out / f"{path.name}_terminal_telomeres.bed").read_bytes()
+    file_report = (file_out / f"{path.name}_report.tsv").read_bytes()
+
+    fifo_out = tmp / "pipe_fastq_fifo_out"
+    fifo_out.mkdir()
+    fifo_result = run_through_fifo(tmp / "pipe_reads.fq.fifo", data, ["-o", str(fifo_out)])
+    require(fifo_result.returncode == 0, fifo_result.stderr.decode())
+    require(next(fifo_out.glob("*_telomeric.fastq")).read_bytes() == file_subset,
+            "FASTQ through a FIFO produced different subset bytes than the file run")
+    require(next(fifo_out.glob("*_terminal_telomeres.bed")).read_bytes() == file_bed,
+            "FASTQ through a FIFO produced a different BED than the file run")
+    require(next(fifo_out.glob("*_report.tsv")).read_bytes() == file_report,
+            "FASTQ through a FIFO produced a different report than the file run")
+
+    ps_out = tmp / "pipe_fastq_ps_out"
+    ps_out.mkdir()
+    ps_result = run_via_process_substitution(path, ["-o", str(ps_out)])
+    require(ps_result.returncode == 0, ps_result.stderr.decode())
+    require(next(ps_out.glob("*_telomeric.fastq")).read_bytes() == file_subset,
+            "FASTQ through process substitution produced different subset bytes than the file run")
+    require(next(ps_out.glob("*_terminal_telomeres.bed")).read_bytes() == file_bed,
+            "FASTQ through process substitution produced a different BED than the file run")
+    require(next(ps_out.glob("*_report.tsv")).read_bytes() == file_report,
+            "FASTQ through process substitution produced a different report than the file run")
+
+    # no -o: a FIFO (like plain stdin) writes into the current directory
+    cwd_dir = tmp / "pipe_fastq_cwd"
+    cwd_dir.mkdir()
+    nodefault_result = run_through_fifo(tmp / "pipe_reads_nodefault.fq.fifo", data, [], cwd=cwd_dir)
+    require(nodefault_result.returncode == 0, nodefault_result.stderr.decode())
+    require(list(cwd_dir.glob("*_telomeric.fastq")),
+            "a FIFO without -o should default output to the current directory")
+
+
+def test_bam_through_fifo(tmp):
+    sequences = {"p_read": make_p_read(600), "q_read": make_q_read(600)}
+    records = [bamlib.bam_record(name, sequence, flag=0x4) for name, sequence in sequences.items()]
+    path = tmp / "pipe_reads.bam"
+    data = bamlib.bgzf(bamlib.bam_payload(records))
+    path.write_bytes(data)
+
+    file_out = tmp / "pipe_bam_file_out"
+    file_out.mkdir()
+    file_result = run([str(path), "-o", str(file_out)])
+    require(file_result.returncode == 0, file_result.stderr.decode())
+    file_bam = (file_out / f"{path.stem}_telomeric.bam").read_bytes()
+    file_bed = (file_out / f"{path.name}_terminal_telomeres.bed").read_bytes()
+    file_report = (file_out / f"{path.name}_report.tsv").read_bytes()
+
+    fifo_out = tmp / "pipe_bam_fifo_out"
+    fifo_out.mkdir()
+    fifo_result = run_through_fifo(tmp / "pipe_reads.bam.fifo", data, ["-o", str(fifo_out)])
+    require(fifo_result.returncode == 0, fifo_result.stderr.decode())
+    require(next(fifo_out.glob("*_telomeric.bam")).read_bytes() == file_bam,
+            "BAM through a FIFO produced a different subset than the file run")
+    require(next(fifo_out.glob("*_terminal_telomeres.bed")).read_bytes() == file_bed,
+            "BAM through a FIFO produced a different BED than the file run")
+    require(next(fifo_out.glob("*_report.tsv")).read_bytes() == file_report,
+            "BAM through a FIFO produced a different report than the file run")
+
+
+def test_fasta_pipe_like_inputs(tmp):
+    # assembly-mode (FASTA) input must detect and read the same way through a FIFO or stdin
+    sequence = FWD * 100 + "A" * 5000 + REV * 100
+    fasta_text = f">chr1\n{sequence}\n"
+    path = tmp / "pipe_reads.fa"
+    path.write_text(fasta_text)
+    data = fasta_text.encode()
+
+    file_out = tmp / "pipe_fasta_file_out"
+    file_out.mkdir()
+    file_result = run([str(path), "-o", str(file_out)])
+    require(file_result.returncode == 0, file_result.stderr.decode())
+    file_bed = (file_out / f"{path.name}_terminal_telomeres.bed").read_bytes()
+    require(file_bed, "expected terminal telomere rows for the FASTA fixture")
+
+    stdin_out = tmp / "pipe_fasta_stdin_out"
+    stdin_out.mkdir()
+    stdin_result = run(["-o", str(stdin_out)], stdin=data)
+    require(stdin_result.returncode == 0, stdin_result.stderr.decode())
+    require((stdin_out / "stdin_terminal_telomeres.bed").read_bytes() == file_bed,
+            "FASTA on stdin produced a different terminal BED than the file run")
+
+    if HAS_FIFO:
+        fifo_out = tmp / "pipe_fasta_fifo_out"
+        fifo_out.mkdir()
+        fifo_result = run_through_fifo(tmp / "pipe_reads.fa.fifo", data, ["-o", str(fifo_out)])
+        require(fifo_result.returncode == 0, fifo_result.stderr.decode())
+        require(next(fifo_out.glob("*_terminal_telomeres.bed")).read_bytes() == file_bed,
+                "FASTA through a FIFO produced a different terminal BED than the file run")
+
+
+def test_gzipped_fastq_through_fifo_refused(tmp):
+    # a FIFO cannot tell gzipped FASTQ from BAM either, same as plain stdin
+    sequence = make_p_read(600)
+    fastq_text = f"@p_read\n{sequence}\n+\n{'I' * len(sequence)}\n"
+    data = gzip.compress(fastq_text.encode())
+
+    out = tmp / "pipe_gzip_fifo_out"
+    out.mkdir()
+    result = run_through_fifo(tmp / "pipe_gzip.fq.gz.fifo", data, ["-o", str(out)])
+    require(result.returncode == 1, f"expected exit 1, got {result.returncode}")
+    require(b"Compressed FASTQ or FASTA on stdin or a pipe is not supported" in result.stderr,
+            f"missing the compressed-input hint: {result.stderr!r}")
+    require(not list(out.iterdir()), "gzipped FASTQ through a FIFO left output behind")
+
+
+def test_gfa_hash_first_line_accepted(tmp):
+    # a leading '#' comment line is valid GFA and must not be refused by the detection sniff
+    path = tmp / "hash_first.gfa"
+    path.write_text("# a comment before the header\nH\tVN:Z:1.0\n")
+    out = tmp / "hash_first_out"
+    out.mkdir()
+    result = run([str(path), "-o", str(out)])
+    require(b"is not FASTA, GFA, FASTQ or BAM" not in result.stderr,
+            f"a '#'-first GFA file should not be refused: {result.stderr!r}")
+
+
 def test_reads_measured_counts_every_fastq_read(tmp):
     # "Reads measured" counts every FASTQ read, whether or not it has telomeric content
     sequences = {
@@ -518,6 +752,14 @@ def main():
         test_tiled_matches_whole_read_scan(tmp)
         test_empty_input_error(tmp)
         test_empty_stdin_error(tmp)
+        test_non_sequence_input_refused(tmp)
+        if HAS_FIFO:
+            test_fastq_through_pipe_like_inputs(tmp)
+            test_bam_through_fifo(tmp)
+        test_fasta_pipe_like_inputs(tmp)
+        if HAS_FIFO:
+            test_gzipped_fastq_through_fifo_refused(tmp)
+        test_gfa_hash_first_line_accepted(tmp)
         test_reads_measured_counts_every_fastq_read(tmp)
         test_no_complete_telomeres_statistics_omitted(tmp)
         test_output_path_blocked_by_existing_directory(tmp)

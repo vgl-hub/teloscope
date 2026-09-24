@@ -170,7 +170,7 @@ teloscope reads.bam -j 32 -o results/
 
 ## Reads mode
 
-FASTQ or BAM input is detected by content, not by a flag. A regular file is sniffed for the BAM magic bytes or a FASTQ `@` header; gzipped FASTQ files are sniffed the same way, since decompression happens first. Stdin is only peeked one byte, so it recognizes plain FASTQ (`@`) or BAM (BGZF's `0x1f`); gzipped FASTQ on stdin looks like BAM and fails with a hint to pass the file path instead. Anything else is read as an assembly. The two removed flags (`--fastq-subset`, `--bam-subset`) exit 1 with a message pointing at this.
+FASTQ or BAM input is detected by content, not by a flag, from the first bytes only: a regular file's inflated first bytes, or the raw first bytes of stdin or a pipe, which cannot be rewound. `@` is FASTQ and the BAM magic is BAM (`BAM\1` inflated; on stdin or a pipe any gzip byte `0x1f` is taken as BAM). Anything else must start like FASTA (`>`) or GFA (`#`, or a record letter and a tab), or the run exits 1. A GFA with missing columns further in can still stop the GFA reader. The two removed flags (`--fastq-subset`, `--bam-subset`) exit 1 with a message pointing at this.
 
 One pass measures and subsets every read together: each read is scanned like an assembly contig end (the same block rule, and the same `-d`, `-y`, `-x`, `-c`, and `-p`), which produces the BED row(s) and report; separately, a read is kept in the output FASTQ/BAM when it has a BED row or when a much more permissive scan — the whole read, a fixed 42 bp floor (seven repeats of the default 6 bp motif) instead of `-l` — finds a block on its own. `-l` (default `300`, same as assembly) sets the measurement; the subset already holds every read that passes the fixed 42 bp scan, so `-l` can only add reads to it through new BED rows.
 
@@ -184,17 +184,18 @@ Assembly output flags are ignored with a warning; assembly record filters (`--in
 
 BAM-specific rules: the keep scan runs on every record, including secondary and supplementary ones, so they can still end up in the kept BAM. The measured scan skips secondary/supplementary records (flag `0x900`) and any record hard-clipped at either end of its CIGAR; both counts are printed on stderr. A `0x10` (reverse-strand) record's stored `SEQ` is reverse-complemented before measuring, so an aligned BAM's row matches what the same read's FASTQ row would show.
 
-Outputs are written under `-o` (default: the input's own directory; `./stdin_*` for stdin): `<name>_telomeric.fastq` or `<stem>_telomeric.bam` (the BAM name drops the input's extension), `<name>_terminal_telomeres.bed`, and `<name>_report.tsv`; the report's rows are also printed to stdout. See [Outputs](outputs.md#reads-mode-outputs). On any failure, all three are removed.
+Outputs are written under `-o` (default: the input's own directory; `.` for stdin or a pipe, so `./stdin_*` or `./<name>_*`): `<name>_telomeric.fastq` or `<stem>_telomeric.bam` (the BAM name drops the input's extension), `<name>_terminal_telomeres.bed`, and `<name>_report.tsv`; the report's rows are also printed to stdout. See [Outputs](outputs.md#reads-mode-outputs). On any failure, all three are removed.
 
-## Stdin
+## Stdin and pipes
 
-Teloscope reads from stdin when no input file is given:
+Teloscope reads from stdin when no input file is given. A path that is not a regular file (a named pipe, `<(...)`, `/dev/stdin`) is read the same way, and its outputs default to `.`.
 
 ```sh
 cat asm.fa | teloscope -o results/
 zcat asm.fa.gz | teloscope -o results/
 zcat reads.fq.gz | teloscope -o results/
 cat reads.bam | teloscope -o results/
+teloscope <(zcat reads.fq.gz) -o results/
 ```
 
-Compressed FASTA or FASTQ stdin is not supported (gzipped FASTQ on stdin fails with a hint to pass the file path instead). BAM stdin is supported because BAM mode handles BGZF directly.
+Compressed FASTA or FASTQ on stdin or a pipe is not supported (it fails with a hint to pass the file, or decompress it first). BAM on stdin or a pipe is supported because BAM mode handles BGZF directly.
