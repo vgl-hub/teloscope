@@ -7,7 +7,7 @@
 [![Anaconda-Server Badge](https://anaconda.org/bioconda/teloscope/badges/license.svg)](https://anaconda.org/bioconda/teloscope)
 [![Anaconda-Server Badge](https://anaconda.org/bioconda/teloscope/badges/downloads.svg)](https://anaconda.org/bioconda/teloscope)
 
-Teloscope scans assembly ends for telomeric repeats. It reads `FASTA`, `FASTA.gz`, and `GFA` inputs, merges repeat matches into telomere blocks, classifies scaffolds in FASTA mode, and writes files that are easy to inspect in BED, TSV, BEDgraph, PDF, or GFA form. It can also subset telomeric FASTQ reads and BAM records.
+Teloscope scans assembly ends for telomeric repeats. It reads `FASTA`, `FASTA.gz`, and `GFA` inputs, merges repeat matches into telomere blocks, classifies scaffolds in FASTA mode, and writes files that are easy to inspect in BED, TSV, BEDgraph, PDF, or GFA form. FASTQ and BAM input is detected automatically (no flag): Teloscope writes the telomeric reads, a per-read telomere BED, and a report with an alignment-free, per-read telomere length estimate.
 
 In FASTA mode, Teloscope writes terminal telomere annotations, gap coordinates, and a summary table. In GFA mode, it writes an annotated graph for BandageNG. Synthetic telomere nodes attach to the assembly with `L` links at `0M` overlap, the direct adjacency a cap represents, so BandageNG draws them as caps. `J` jump records stay reserved for real assembly gaps.
 
@@ -15,8 +15,7 @@ In FASTA mode, Teloscope writes terminal telomere annotations, gap coordinates, 
 
 - FASTA mode: `*_terminal_telomeres.bed`, `*_interstitial_telomeres.bed`, `*_gaps.bed`, `*_report.tsv`, plus optional window tracks, match BED files, an optional telomere FASTA (`-a`), and a PDF report.
 - GFA mode: `<input>.telo.annotated.gfa` with telomere placeholder segments linked to the original graph, plus `<input>.telo.annotated.colors.csv` that paints the caps green for BandageNG.
-- FASTQ subset mode: unchanged passing FASTQ records on stdout.
-- BAM subset mode: a valid BAM stream containing the original header and unchanged passing alignment records.
+- Reads mode (FASTQ or BAM input, detected automatically): the telomeric reads (`*_telomeric.fastq` or `*_telomeric.bam`, unchanged records), `*_terminal_telomeres.bed` with one row per read telomere, and a `*_report.tsv` summary; an alignment-free estimate (see [Parameters](docs/parameters.md#reads-mode)).
 
 ## Install
 
@@ -65,8 +64,8 @@ For `--plot-report`, install Python 3 with `matplotlib`, `numpy`, and `pandas`.
 | Switch to a plant canonical repeat | `teloscope asm.fa -c CCCTAAA` |
 | Search explicit motif variants | `teloscope asm.fa -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG` |
 | Annotate a graph for BandageNG | `teloscope asm.gfa -o results/` |
-| Subset telomeric HiFi reads before mapping | `teloscope --fastq-subset reads.fq.gz -j 32 \| minimap2 -ax map-hifi ref.fa -` |
-| Subset telomeric records from BAM | `teloscope --bam-subset reads.bam -j 32 > telomeric.bam` |
+| Subset telomeric reads and estimate their telomere length, from FASTQ | `teloscope reads.fq.gz -j 32 -o results/` |
+| Subset telomeric reads and estimate their telomere length, from BAM | `teloscope reads.bam -j 32 -o results/` |
 | Also report telomeres at contig ends, e.g. before manual curation | `teloscope asm.fa -n` |
 | Keep only records named like the longest one | `teloscope asm.fa --chr-only` |
 | Read decompressed stdin | `zcat asm.fa.gz \| teloscope -o results/` |
@@ -77,10 +76,10 @@ Notes:
 - If `-p` is omitted, Teloscope derives the search set from `-c`.
 - Any of `-r`, `-g`, `-e`, `-m`, or `-i` forces the full scan instead of the fast end-only scan. In fast mode `-n` reads both end windows of every contig and adds contig-terminal rows to the terminal BED.
 - GFA mode attaches telomere caps with `L` links at `0M` overlap; `J` records stay reserved for real assembly gaps.
-- Gzipped stdin is not supported. Decompress before piping.
-- `--fastq-subset` writes FASTQ to stdout and diagnostics to stderr. Pass `-o` to save the reads to a file instead of streaming them.
-- `--bam-subset` writes BAM to stdout and diagnostics to stderr. Pass `-o` to write `<input_stem>_telomeric.bam`.
-- Read subset modes use a `42` bp default minimum block length; assembly annotation keeps the `300` bp default. Use `-l` to override either mode.
+- Gzipped FASTA/FASTQ stdin is not supported. Decompress before piping, or pass the file path directly. BAM stdin is supported (BAM mode reads BGZF directly).
+- FASTQ or BAM input is detected by content, not by flag or file extension: a regular file (including gzipped FASTQ) is sniffed for the BAM magic or a FASTQ `@` header, and stdin is peeked one byte for the same two cases. Anything else is read as an assembly. See [Parameters](docs/parameters.md#reads-mode).
+- Reads mode always writes files under `-o` (default: the input's own directory; `./stdin_*` when reading from stdin); the report's rows are also printed to stdout. `-l` (default `300`, same as assembly) sets the measured BED rows and report only, adding reads to the subset only when set below the fixed 42 bp floor. See [Parameters](docs/parameters.md#reads-mode).
+- Reads mode is an alignment-free estimate: reads pool chromosome ends by coverage, and a read broken inside a telomere looks complete and pulls the estimate down.
 - BAM support has no external bioinformatics runtime dependency: it uses `zlib` directly and does not require HTSlib, `samtools`, or another converter.
 
 ## Filter assembly records
@@ -99,7 +98,7 @@ Filtering is off by default. The include/exclude flags can be repeated, and matc
 
 Includes form a union and exclusions run last. Without an include flag, all records start selected. Prefixes are literal strings. Selector files accept one ID per line or BED3+ rows; column 1 selects a whole record, and BED coordinates never crop sequences.
 
-FASTA matching uses the first token after `>`. GFA1 matching uses `P` names or, in a pathless graph, `S` names. Filters reject FASTQ, BAM, and read-subset modes. Every selector must match, and an empty selection fails. See [Parameters](docs/parameters.md#assembly-record-filters) for validation and GFA limits.
+FASTA matching uses the first token after `>`. GFA1 matching uses `P` names or, in a pathless graph, `S` names. Filters reject FASTQ and BAM input. Every selector must match, and an empty selection fails. See [Parameters](docs/parameters.md#assembly-record-filters) for validation and GFA limits.
 
 For NCBI FASTA, prefer exact accession.version IDs from the [genome sequence report](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/reference-docs/data-reports/genome-sequence/) or [assembly report](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/data-processing/policies-annotation/genomeftp/). `GCA_` and `GCF_` name assemblies, not FASTA records, and prefixes such as `CM` or `NC_` are not universal chromosome tests.
 
@@ -131,6 +130,24 @@ GFA run:
 results/
   asm.gfa.telo.annotated.gfa
   asm.gfa.telo.annotated.colors.csv
+```
+
+Reads run (FASTQ):
+
+```text
+results/
+  reads.fq.gz_telomeric.fastq
+  reads.fq.gz_terminal_telomeres.bed
+  reads.fq.gz_report.tsv
+```
+
+Reads run (BAM; the subset file drops the input's extension):
+
+```text
+results/
+  reads_telomeric.bam
+  reads.bam_terminal_telomeres.bed
+  reads.bam_report.tsv
 ```
 
 ## Documentation
@@ -182,6 +199,13 @@ Run the gap BED regression script:
 
 ```sh
 bash scripts/test_gaps_bed.sh
+```
+
+Run the reads-mode (FASTQ/BAM) regression scripts:
+
+```sh
+make test-bam
+make test-read-tl
 ```
 
 ## Citation

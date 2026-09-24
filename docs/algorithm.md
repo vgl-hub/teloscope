@@ -2,12 +2,11 @@
 
 # Teloscope algorithm
 
-Teloscope has four input modes:
+Teloscope has three input modes, chosen by content, not by flag:
 
 - FASTA mode scans sequence ends, groups telomeric matches into blocks, and classifies each path or scaffold.
 - GFA mode scans graph segments and writes an annotated graph with synthetic telomere nodes.
-- FASTQ subset mode streams reads and writes only records with Teloscope-valid telomeric blocks.
-- BAM subset mode streams alignments and writes only records whose stored `SEQ` has a valid block.
+- Reads mode (FASTQ or BAM input) measures and subsets reads in one pass, writing the telomeric reads, a per-read telomere BED, and a report.
 
 ## FASTA mode
 
@@ -47,17 +46,18 @@ When paths are present, Teloscope annotates only path-terminal segment ends. Thi
 
 Synthetic telomere nodes are placeholders. They carry tags that preserve the detected telomere length while keeping the graph easier to display in BandageNG.
 
-## FASTQ subset mode
+## Reads mode
 
-`--fastq-subset` reads FASTQ records in bounded batches, scans each read as a whole sequence with the same pattern expansion and block filters used by FASTA mode, and writes unchanged passing FASTQ records to stdout. Read order is preserved. By default records stream to stdout so the output can be piped straight into a mapper; pass `-o` to save them to `<output>/<input>_telomeric.fastq` instead. Diagnostics and final counts are written to stderr. FASTQ subset mode defaults to a 42 bp minimum block length, while assembly annotation keeps the 300 bp default.
+FASTQ or BAM input is recognized by content (the BAM magic bytes, or a FASTQ `@` header) as soon as Teloscope opens it; there is no flag. Everything else — including a file named `.fq` or `.bam` whose content does not match — is read as an assembly instead.
 
-## BAM subset mode
+Reads are processed in bounded batches, in parallel across `-j` worker threads, but always written out in input order regardless of thread count. Each read gets one pass with two independent scans that share the same pattern expansion as FASTA mode:
 
-`--bam-subset` reads BGZF-compressed BAM directly through `zlib`, without HTSlib or command-line converters. It preserves the BAM header, scans each record's stored `SEQ`, and writes passing records unchanged. Primary, secondary, supplementary, mapped, and unmapped records are evaluated independently. Records without `SEQ` are dropped and counted separately.
+1. A measure scan: the same block rule as an assembly contig end (`-d`, `-y`, `-x`, `-c`, `-p`, and `-l` at its `300` bp assembly default), anchored within `--terminal-tolerance` (`300` bp for reads) of each read end, tiled from `-t` (`2000` bp for reads) outward. This is what produces the BED row(s) and the report/length statistics.
+2. A keep scan: the same block rule over the whole read, with a fixed 42 bp floor (seven repeats of the default 6 bp motif) in place of `-l`. This is what decides whether the read is written to the output FASTQ/BAM.
 
-BGZF blocks are inflated by `-j` worker threads in groups of up to 64 and handed to the record parser in file order, so the output does not depend on the thread count. Records are processed in bounded byte and record batches. Worker threads score sequences while the main thread writes passing records in input order. The output is valid BGZF with an EOF marker; no index is copied or generated. Missing input EOF markers produce a warning, while malformed BGZF or BAM data is rejected.
+A read is kept when the measure scan produced a row, or the keep scan alone finds a block; see [Reads mode](parameters.md#reads-mode) for how `-l` relates to the kept set.
 
-FASTQ and BAM use the same read-scoring wrapper and 42 bp default. BAM I/O is isolated from scoring so a future SAM parser or optional CRAM backend can reuse the same filter.
+For BAM input, this is layered on the raw BGZF/BAM decode: BGZF blocks are inflated by `-j` worker threads in groups of up to 64 and handed to the record parser in file order, so output never depends on thread count. The keep scan runs on every record, including secondary/supplementary ones and unmapped reads; the measure scan skips secondary/supplementary records (flag `0x900`) and any record hard-clipped at either CIGAR end, counting both on stderr, and reverse-complements a `0x10` record's stored `SEQ` first so it measures in sequencing orientation. Records without `SEQ` are dropped and counted separately. The BAM output is valid BGZF with an EOF marker; no index is copied or generated. Missing input EOF markers produce a warning, while malformed BGZF or BAM data aborts the run and removes all three reads-mode outputs. BAM I/O is isolated from scoring so a future SAM parser or optional CRAM backend can reuse the same filter.
 
 ## Pattern handling
 

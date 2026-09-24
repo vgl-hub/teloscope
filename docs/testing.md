@@ -140,13 +140,14 @@ make test-filters
 
 This builds temporary FASTA and GFA fixtures and checks exact-ID and prefix selection, include/exclude precedence, selector validation, compressed input, line endings, unsupported modes, and output isolation. The CI workflow runs the same script on Linux, macOS, and Windows.
 
-## BAM subset regression script
+## Reads mode regression scripts
 
 ```sh
-python3 scripts/test_bam_subset.py
+make test-bam       # scripts/test_bam_subset.py
+make test-read-tl   # scripts/test_read_tl.py
 ```
 
-The script uses only the Python standard library. It generates BAM/BGZF fixtures in a temporary directory and checks record preservation, scoring parity, malformed input handling, batching, thread determinism, and deterministic mutations.
+Both scripts use only the Python standard library and drive the flagless CLI (FASTQ or BAM detected by content), reading the kept reads, BED, and report from their output files rather than stdout. `scripts/test_bam_subset.py` generates BAM/BGZF fixtures in a temporary directory and checks record preservation, the fixed 42 bp keep floor versus the measured `-l`, scoring parity, malformed input handling, batching, thread determinism, and deterministic mutations. `scripts/test_read_tl.py` covers per-read telomere length measurement: concordant/discordant/reaching-end classification, the report's length statistics, tip tolerance, CRLF/gzip input, and BAM-specific rules (secondary/supplementary, hard clips, reverse-strand orientation).
 
 ## BAM hardening
 

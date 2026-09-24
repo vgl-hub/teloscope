@@ -2,7 +2,7 @@
 
 # Outputs
 
-Teloscope writes different outputs in assembly and read subset modes.
+Teloscope writes different outputs in assembly mode and reads mode (FASTQ or BAM input).
 
 ## File naming
 
@@ -16,9 +16,10 @@ GFA mode writes one graph file:
 
 - `asm.gfa.telo.annotated.gfa`
 
-BAM subset mode with `-o results/` writes:
+Reads mode keeps the input file name as a prefix for the BED and report, but the telomeric FASTQ/BAM uses the input's own name (BAM drops its extension):
 
-- `results/reads_telomeric.bam`
+- `reads.fq_telomeric.fastq`, `reads.fq_terminal_telomeres.bed`, `reads.fq_report.tsv`
+- `reads_telomeric.bam`, `reads.bam_terminal_telomeres.bed`, `reads.bam_report.tsv`
 
 ## FASTA mode outputs
 
@@ -190,6 +191,26 @@ Each telomere link points from the synthetic node (`+`) to the assembly segment,
 
 No BED, BEDgraph, or TSV files are written in GFA mode. Record filters do not delete supported original graph records; they limit which terminal segment ends Teloscope scans for new annotations.
 
-## BAM subset output
+## Reads mode outputs
 
-BAM subset output contains the original BAM header and unchanged passing records in input order. Records without `SEQ` are omitted. The output has a standard BGZF EOF marker but no `.bai` or `.csi` index.
+FASTQ or BAM input (detected by content, no flag) writes three files under `-o` (default: the input's own directory; `./stdin_*` for stdin):
+
+- `*_telomeric.fastq` or `*_telomeric.bam`: the kept reads, byte-identical to their input records, in input order. FASTQ uses the full input name as a prefix; BAM drops the input's extension instead (`reads.bam` → `reads_telomeric.bam`).
+- `*_terminal_telomeres.bed`: one row per measured read telomere, same [terminal BED layout](#telomere-block-bed-files) as assembly mode. `chr` is the read name, `chrSize` the read length, and `teloType` is `read`. Rows follow input order for any `-j`; a read can have both a `p` and a `q` row, or none.
+- `*_report.tsv`: the summary below. The same rows are also printed to stdout.
+
+A read is kept when it has a BED row, or when a separate, more permissive scan (the whole read, a fixed 42 bp floor (seven repeats of the default 6 bp motif)) finds a block on its own, regardless of `-l`; see [Reads mode](parameters.md#reads-mode) for the full rule. On any failure, none of the three files are left behind.
+
+`*_report.tsv` starts with the provenance header, then `label<TAB>value` lines:
+
+- `Reads measured`: FASTQ counts every read; BAM counts primary records that have a sequence and are not hard-clipped at either CIGAR end
+- `Reads kept`: records written to the telomeric FASTQ/BAM subset; can exceed `Reads measured` on an aligned BAM, since secondary, supplementary, and hard-clipped records can still pass the keep scan
+- `Read telomeres`: BED rows written
+- `Complete`: strand matches the end (C-rich at a read start, G-rich at a read end), and the read continues at least `-d` past the telomere
+- `Reaching read end`: strand matches, but the read ends within `-d` of the telomere
+- `Discordant`: strand does not match the end
+- `Mean length`, `Median length`, `25th percentile length`, `75th percentile length`, `90th percentile length` (R type 7 / numpy default: linear interpolation between the two closest ranks, two decimals), `Min length`, `Max length` (integers) — over `Complete` rows only; omitted with none
+
+A last line states the limits of the estimate: it is alignment-free, so reads pool chromosome ends by coverage, and a read broken inside a telomere looks complete and pulls the estimate down.
+
+BAM input keeps every record that passes the keep scan, including secondary and supplementary ones; the measured BED rows skip secondary/supplementary records and any record hard-clipped at either CIGAR end (both counts are printed to stderr), and a `0x10` record's `SEQ` is reverse-complemented first, so its row matches the same read's FASTQ row.
