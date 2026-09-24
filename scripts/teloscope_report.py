@@ -35,6 +35,7 @@ from matplotlib.patches import Rectangle, Patch, ConnectionPatch
 from matplotlib.lines import Line2D
 from matplotlib.collections import LineCollection, PatchCollection
 import matplotlib.ticker as ticker
+import matplotlib.patheffects as patheffects
 from matplotlib import transforms
 
 # ---------------------------------------------------------------------------
@@ -1867,7 +1868,7 @@ def _region_axis_spec(view_start, view_end):
 
 
 def _draw_locus_ideogram(ax, chrom_size, view_start, view_end, blocks_list, its_blocks_list,
-                         contig_blocks_list=None):
+                         contig_blocks_list=None, label="Scaffold"):
     """Whole-scaffold overview for a single-locus zoom: terminal caps, all ITS ticks, zoom box."""
     bar_y, bar_h = 0.60, 0.34
     bottom = bar_y - bar_h / 2.0
@@ -1922,7 +1923,7 @@ def _draw_locus_ideogram(ax, chrom_size, view_start, view_end, blocks_list, its_
     ax.tick_params(axis="x", length=2, width=0.4, pad=1.0,
                    labelsize=AXIS_TICK_SIZE, colors="#666666")
     ax.set_xlabel("Scaffold (Mbp)", fontsize=AXIS_TICK_SIZE, color="#666666", labelpad=1.5)
-    _set_track_label(ax, "Scaffold")
+    _set_track_label(ax, label)
     return box_l, box_r, box_bottom
 
 
@@ -2039,6 +2040,8 @@ def _draw_its_ideogram_panel(ax, chroms, df, arm_blocks, chrom_sizes, cluster_by
         def to_x(chrom, pos):
             return pos / 1e6
 
+    axis_width = (right_edge - left_edge) if fast_mode else max(float(np.max(x_max)), 1.0) * 1.05
+
     if not sub.empty:
         y_its = sub["chr"].map(row_of).to_numpy(dtype=np.float64)
         if fast_mode:
@@ -2086,16 +2089,25 @@ def _draw_its_ideogram_panel(ax, chroms, df, arm_blocks, chrom_sizes, cluster_by
             ax.plot([bx0, bx0, bx1, bx1], [by - 0.07, by, by, by - 0.07],
                     color="#7a7a7a", linewidth=0.6, zorder=2, solid_capstyle="butt")
 
-    for text, chrom, pos in top_marks:
-        row = row_of.get(chrom)
-        if row is None:
-            continue
-        x = to_x(chrom, pos)
+    # Label each mark just right of its marker at the row's own y; a mark on an adjacent row
+    # that sits close in x would collide, so it is nudged to the left side instead.
+    visible_marks = [(text, chrom, pos) for text, chrom, pos in top_marks if chrom in row_of]
+    mark_xy = [(to_x(chrom, pos), row_of[chrom]) for _, chrom, pos in visible_marks]
+    close_x = 0.08 * axis_width
+    sides = ["right"] * len(visible_marks)
+    for i, (xi, ri) in enumerate(mark_xy):
+        for xj, rj in mark_xy[:i]:
+            if abs(ri - rj) == 1 and abs(xi - xj) < close_x:
+                sides[i] = "left"
+    halo = [patheffects.withStroke(linewidth=1.6, foreground="white")]
+    for (text, chrom, pos), (x, row), side in zip(visible_marks, mark_xy, sides):
         ax.scatter([x], [row], marker="*", s=20, color=CLASS_COLORS["fusion"],
                   edgecolors="white", linewidths=0.3, zorder=4)
-        ax.annotate(text, xy=(x, row), xytext=(4, 3), textcoords="offset points",
-                   ha="left", va="center", fontsize=MIN_TEXT_SIZE,
-                   color="#222222", fontweight="bold", zorder=5)
+        dx, ha = (3, "left") if side == "right" else (-3, "right")
+        ax.annotate(text, xy=(x, row), xytext=(dx, 0), textcoords="offset points",
+                   ha=ha, va="center", fontsize=MIN_TEXT_SIZE,
+                   color="#222222", fontweight="bold", zorder=5,
+                   path_effects=halo)
 
     ax.set_ylim(n - 0.4, -0.9)
     ax.set_yticks(y_all)
@@ -2128,12 +2140,15 @@ def _draw_its_ideogram_panel(ax, chroms, df, arm_blocks, chrom_sizes, cluster_by
 
 
 def _draw_its_genome_ideogram(fig, gs_cell, df, arm_blocks, chrom_sizes, clusters, top_marks,
-                              fast_mode, terminal_limit):
+                              fast_mode, terminal_limit, legend_y):
     """Panel a: one row per scaffold with a terminal telomere or ITS, longest first.
 
     Full scan: split into long (>=20% of the longest) / short side-by-side panels, each on
     its own linear Mb axis, so microchromosomes stay readable. Fast mode: one unfolded panel,
     p end left and q end right on independent log10 distance-to-end axes (as the arm zoom pages).
+
+    legend_y is the figure-fraction y for the legend's own band, set by the caller so it
+    never competes with the panel titles below it (see plot_its_overview_page).
     """
     atlas_chroms_all = _its_atlas_chroms(df, arm_blocks, chrom_sizes)
     atlas_chroms = atlas_chroms_all[:60]
@@ -2146,12 +2161,13 @@ def _draw_its_genome_ideogram(fig, gs_cell, df, arm_blocks, chrom_sizes, cluster
         ax.set_xticks([]); ax.set_yticks([])
         for spine in ax.spines.values():
             spine.set_visible(False)
-        return [ax]
+        return [ax], False
 
     cluster_by_chrom = defaultdict(list)
     for c in clusters.itertuples(index=False):
         cluster_by_chrom[c.chr].append(c)
 
+    has_title = False
     if fast_mode:
         ax = fig.add_subplot(gs_cell)
         _draw_its_ideogram_panel(ax, atlas_chroms, df, arm_blocks, chrom_sizes, cluster_by_chrom,
@@ -2171,9 +2187,13 @@ def _draw_its_genome_ideogram(fig, gs_cell, df, arm_blocks, chrom_sizes, cluster
                                      cluster_by_chrom, top_marks, False, terminal_limit)
             _draw_its_ideogram_panel(ax_short, short_chroms, df, arm_blocks, chrom_sizes,
                                      cluster_by_chrom, top_marks, False, terminal_limit)
-            ax_long.set_title("Long scaffolds (≥20% of the longest)", fontsize=PANEL_TITLE_SIZE, pad=2)
-            ax_short.set_title("Short scaffolds", fontsize=PANEL_TITLE_SIZE, pad=2)
+            # loc="left" anchors each title to its own axes' left edge; a centered title on the
+            # narrow long-scaffold panel can overflow past the panel-label sitting just left of it.
+            ax_long.set_title("Long scaffolds (≥20% of the longest)", fontsize=PANEL_TITLE_SIZE,
+                              pad=2, loc="left")
+            ax_short.set_title("Short scaffolds", fontsize=PANEL_TITLE_SIZE, pad=2, loc="left")
             axes = [ax_long, ax_short]
+            has_title = True
         else:
             ax = fig.add_subplot(gs_cell)
             _draw_its_ideogram_panel(ax, atlas_chroms, df, arm_blocks, chrom_sizes,
@@ -2187,8 +2207,9 @@ def _draw_its_genome_ideogram(fig, gs_cell, df, arm_blocks, chrom_sizes, cluster
     handles.append(Line2D([0], [0], color="#7a7a7a", lw=0.9, label="cluster (≥3 rows)"))
     handles.append(Line2D([0], [0], marker="*", markersize=5.5, color=CLASS_COLORS["fusion"],
                           linewidth=0, label="top hit"))
-    top_y = max(a.get_position().y1 for a in axes)
-    fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, top_y + 0.006),
+    # legend_y is the BOTTOM of the legend's own reserved band (loc="lower center"), well clear
+    # of both the subtitle above it and the panel titles below it.
+    fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, legend_y),
               bbox_transform=fig.transFigure, ncol=len(handles), fontsize=LEGEND_TEXT_SIZE,
               frameon=False, handlelength=1.3, handletextpad=0.35, columnspacing=1.1)
 
@@ -2196,7 +2217,7 @@ def _draw_its_genome_ideogram(fig, gs_cell, df, arm_blocks, chrom_sizes, cluster
         axes[-1].text(0.99, 1.045, f"+{n_hidden} more in *_its_top_hits.tsv",
                       transform=axes[-1].transAxes, ha="right", va="bottom",
                       fontsize=MIN_TEXT_SIZE, color="#999999")
-    return axes
+    return axes, has_title
 
 
 def _draw_its_length_hist_panel(ax, df):
@@ -2297,7 +2318,10 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params)
     ideo_in = 2.45
     bc_in = 1.55
     gap_in = 0.42
-    top_margin_in = 0.60
+    # Top margin holds, top to bottom: suptitle, subtitle, a dedicated legend band, then
+    # clearance before the ideogram row (and its own panel titles) begins.
+    suptitle_d, subtitle_d, legend_d = 0.16, 0.36, 0.70
+    top_margin_in = 1.05
     bottom_margin_in = 0.36
     fig_h = top_margin_in + ideo_in + gap_in + bc_in + bottom_margin_in
 
@@ -2306,8 +2330,10 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params)
     fig.subplots_adjust(left=0.10, right=0.97, top=1 - top_margin_in / fig_h,
                         bottom=bottom_margin_in / fig_h)
 
-    axes_a = _draw_its_genome_ideogram(fig, gs[0, 0], df, arm_blocks, chrom_sizes,
-                                       clusters, top_marks, fast_mode, terminal_limit)
+    legend_y = 1 - legend_d / fig_h
+    axes_a, a_has_title = _draw_its_genome_ideogram(fig, gs[0, 0], df, arm_blocks, chrom_sizes,
+                                                    clusters, top_marks, fast_mode, terminal_limit,
+                                                    legend_y)
 
     gs_bc = gs[2, 0].subgridspec(1, 2, width_ratios=[1.3, 1.0], wspace=0.45)
     gs_b = gs_bc[0, 0].subgridspec(1, 2, width_ratios=[0.8, 1.2], wspace=0.30)
@@ -2320,16 +2346,18 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params)
 
     label_style = dict(fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="bottom", ha="left")
     bbox = axes_a[0].get_position()
-    fig.text(max(0.005, bbox.x0 - 0.035), bbox.y1 + 0.012, "a", **label_style)
+    # A split ideogram carries its own panel titles just above it; clear those before placing "a".
+    a_offset = 0.040 if a_has_title else 0.012
+    fig.text(max(0.005, bbox.x0 - 0.035), bbox.y1 + a_offset, "a", **label_style)
     bbox = ax_count.get_position()
     fig.text(max(0.005, bbox.x0 - 0.035), bbox.y1 + 0.012, "b", **label_style)
     bbox = ax_c.get_position()
     fig.text(max(0.005, bbox.x0 - 0.035), bbox.y1 + 0.012, "c", **label_style)
 
     fig.suptitle("Interstitial telomeres: genome view", fontsize=FIGURE_TITLE_SIZE,
-                fontweight="bold", x=0.5, y=1 - 0.18 * top_margin_in / fig_h, ha="center")
+                fontweight="bold", x=0.5, y=1 - suptitle_d / fig_h, ha="center")
     n_shown = min(len(_its_atlas_chroms(df, arm_blocks, chrom_sizes)), 60)
-    fig.text(0.5, 1 - 0.48 * top_margin_in / fig_h,
+    fig.text(0.5, 1 - subtitle_d / fig_h,
             f"ITS rows (n={len(df):,}), scaffolds shown (n={n_shown})",
             ha="center", va="top", fontsize=FIGURE_SUMMARY_SIZE, color="#444444")
     return fig
@@ -2572,7 +2600,9 @@ def plot_its_loci_page(loci, chrom_sizes, arm_blocks, its_blocks, gap_blocks,
         show_label = col == 0
 
         ideo_ax = axes[0][col]
-        box_l, box_r, box_bottom = _draw_locus_ideogram(ideo_ax, size, start, end, blist, itslist)
+        box_l, box_r, box_bottom = _draw_locus_ideogram(
+            ideo_ax, size, start, end, blist, itslist,
+            label="Scaffold" if show_label else None)
 
         axis_spec = _region_axis_spec(start, end)
         visible_rows = []
