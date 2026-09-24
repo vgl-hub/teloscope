@@ -139,18 +139,19 @@ def split_bam(payload):
     return header, records
 
 
-def run(args, stdin=None):
+def run(args, stdin=None, cwd=None):
     try:
         return subprocess.run(
-            [str(TELOSCOPE), *args],
+            [str(TELOSCOPE), *[str(arg) for arg in args]],
             input=stdin,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            cwd=cwd,
             check=False,
             timeout=30,
         )
     except subprocess.TimeoutExpired as error:
-        raise AssertionError(f"Teloscope timed out: {' '.join(args)}") from error
+        raise AssertionError(f"Teloscope timed out: {' '.join(str(a) for a in args)}") from error
 
 
 def require(condition, message):
@@ -163,9 +164,49 @@ def record_name(record):
     return record[36:36 + name_length - 1].decode()
 
 
-def output_records(result):
-    require(result.returncode == 0, result.stderr.decode())
-    return split_bam(unpack_bgzf(result.stdout))
+# Reads mode always writes files under -o; the report also prints to stdout.
+
+def run_reads(out_dir, options, data, path=None):
+    """Run teloscope over reads-mode input, either from a file at `path` or from stdin.
+    Returns (result, input_name) where input_name is the base used for output filenames."""
+    if path is None:
+        result = run([*options, "-o", str(out_dir)], stdin=data)
+        return result, "stdin"
+    path.write_bytes(data)
+    result = run([*options, str(path), "-o", str(out_dir)])
+    return result, path.name
+
+
+def bed_rows(out_dir, name):
+    bed_path = out_dir / f"{name}_terminal_telomeres.bed"
+    if not bed_path.exists():
+        return []
+    return [line.split("\t") for line in bed_path.read_text().splitlines() if line]
+
+
+def report_text(out_dir, name):
+    return (out_dir / f"{name}_report.tsv").read_text()
+
+
+def fastq_subset_bytes(out_dir, name):
+    return (out_dir / f"{name}_telomeric.fastq").read_bytes()
+
+
+def same_records(actual, golden):
+    # Windows reads text files with CRLF translated, as the retired validator's goldens did
+    if os.name == "nt":
+        actual, golden = actual.replace(b"\r\n", b"\n"), golden.replace(b"\r\n", b"\n")
+    return actual == golden
+
+
+def bam_subset_path(out_dir, name):
+    return out_dir / f"{pathlib.Path(name).stem}_telomeric.bam"
+
+
+def bam_subset_records(out_dir, name):
+    path = bam_subset_path(out_dir, name)
+    require(path.exists(), f"missing BAM output: {path}")
+    return split_bam(unpack_bgzf(path.read_bytes()))
 
 
 def fastq_payload(sequences):
@@ -175,35 +216,39 @@ def fastq_payload(sequences):
     return bytes(data)
 
 
-def assert_fastq_bam_parity(sequences, options):
-    records = [bam_record(name, sequence, flag=0x4) for name, sequence in sequences.items()]
-    bam_result = run(["--bam-subset", *options], bgzf(bam_payload(records)))
-    _, bam_records = output_records(bam_result)
-    fastq_result = run(["--fastq-subset", *options], fastq_payload(sequences))
+# the keep-scan floor is fixed at 42bp regardless of -l; -y/-k/-d/-x still gate it
+def explicit_args():
+    return ["-x", "0", "-y", "0.8", "-k", "10", "-d", "10"]
+
+
+def assert_fastq_bam_parity(tmp, label, sequences, options):
+    bam_dir = tmp / f"{label}_bam_out"
+    bam_records_input = [bam_record(name, sequence, flag=0x4) for name, sequence in sequences.items()]
+    bam_result, bam_name = run_reads(bam_dir, options, bgzf(bam_payload(bam_records_input)))
+    require(bam_result.returncode == 0, bam_result.stderr.decode())
+    _, bam_out_records = bam_subset_records(bam_dir, bam_name)
+    bam_names = [record_name(record) for record in bam_out_records]
+
+    fastq_dir = tmp / f"{label}_fastq_out"
+    fastq_result, fastq_name = run_reads(fastq_dir, options, fastq_payload(sequences))
     require(fastq_result.returncode == 0, fastq_result.stderr.decode())
-    bam_names = [record_name(record) for record in bam_records]
-    fastq_names = [line[1:].decode() for line in fastq_result.stdout.splitlines()[::4]]
-    require(bam_names == fastq_names, "FASTQ/BAM scoring parity failed")
+    fastq_bytes = fastq_subset_bytes(fastq_dir, fastq_name)
+    fastq_names = [line[1:].decode() for line in fastq_bytes.splitlines()[::4]]
+    require(bam_names == fastq_names, f"FASTQ/BAM scoring parity failed ({label}): {bam_names} vs {fastq_names}")
     return bam_names
 
 
-def explicit_args(path="-"):
-    args = ["--bam-subset", "-x", "0", "-l", "18", "-y", "0.8", "-k", "10", "-d", "10"]
-    if path != "-":
-        args.append(str(path))
-    return args
-
-
 def test_basic_and_record_preservation(tmp):
+    # 8 repeat units (48bp) clear the fixed 42bp keep floor regardless of -l
     passing = [
-        bam_record("mapped_p", "CCCTAACCCTAACCCTAA", ref_id=0, pos=10, cigar=((18, 0),), tags=b"NM\x69\x00\x00\x00\x00"),
-        bam_record("reverse_q", "TTAGGGTTAGGGTTAGGG", flag=0x10, ref_id=0, pos=20, cigar=((18, 0),)),
-        bam_record("secondary", "TTAGGGTTAGGGTTAGGG", flag=0x100),
-        bam_record("supplementary", "CCCTAACCCTAACCCTAA", flag=0x800),
-        bam_record("odd_ambiguous", "NTTAGGGTTAGGGTTAGGG", flag=0x4),
-        bam_record("paired_first", "TTAGGGTTAGGGTTAGGG", flag=0x41),
-        bam_record("paired_second", "CCCTAACCCTAACCCTAA", flag=0x81),
-        bam_record("all_codes", "=ACMGRSVTWYHKDBNTTAGGGTTAGGGTTAGGG", flag=0x4),
+        bam_record("mapped_p", "CCCTAA" * 8, ref_id=0, pos=10, cigar=((48, 0),), tags=b"NM\x69\x00\x00\x00\x00"),
+        bam_record("reverse_q", "TTAGGG" * 8, flag=0x10, ref_id=0, pos=20, cigar=((48, 0),)),
+        bam_record("secondary", "TTAGGG" * 8, flag=0x100),
+        bam_record("supplementary", "CCCTAA" * 8, flag=0x800),
+        bam_record("odd_ambiguous", "N" + "TTAGGG" * 8, flag=0x4),
+        bam_record("paired_first", "TTAGGG" * 8, flag=0x41),
+        bam_record("paired_second", "CCCTAA" * 8, flag=0x81),
+        bam_record("all_codes", "=ACMGRSVTWYHKDBN" + "TTAGGG" * 8, flag=0x4),
     ]
     failing = [
         bam_record("ordinary", "ACGTACGTACGTACGTAC", flag=0x4),
@@ -221,9 +266,10 @@ def test_basic_and_record_preservation(tmp):
         comment=b"fixture",
         header_crc=True,
     )
-    result = run(explicit_args(), input_bam)
+    out_dir = tmp / "basic_out"
+    result, name = run_reads(out_dir, explicit_args(), input_bam)
     require(result.returncode == 0, result.stderr.decode())
-    header, records = split_bam(unpack_bgzf(result.stdout))
+    header, records = bam_subset_records(out_dir, name)
     expected_header, _ = split_bam(input_payload)
     require(header == expected_header, "BAM header changed")
     require(records == passing, "passing BAM records were not preserved exactly")
@@ -231,12 +277,34 @@ def test_basic_and_record_preservation(tmp):
     require(b"skipped 1 record without SEQ" in result.stderr, "missing SEQ count mismatch")
 
 
+def test_measured_vs_kept_counts(tmp):
+    # measured (BED-row) rows skip secondary/supplementary/hard-clipped, but all can be kept
+    sequence = "TTAGGG" * 100 + "A" * 2000
+    records = [
+        bam_record("primary", sequence, flag=0x4),
+        bam_record("secondary", sequence, flag=0x104),
+        bam_record("supplementary", sequence, flag=0x804),
+        bam_record("clipped", sequence, flag=0x4, ref_id=0, pos=0,
+                   cigar=((10, 5), (len(sequence) - 10, 0))),  # op 5 = hard clip, leading end
+    ]
+    out_dir = tmp / "measured_vs_kept_out"
+    result, name = run_reads(out_dir, [], bgzf(bam_payload(records)))
+    require(result.returncode == 0, result.stderr.decode())
+    require(b"1 secondary/supplementary record not measured" not in result.stderr and
+            b"2 secondary/supplementary records not measured" in result.stderr,
+            "secondary/supplementary not-measured count is wrong")
+    require(b"1 hard-clipped record not measured" in result.stderr, "hard-clip not-measured count is wrong")
+    require(b"kept 4 of 4 records" in result.stderr, "all four records should still be kept")
+    rows = bed_rows(out_dir, name)
+    require([row[0] for row in rows] == ["primary"], f"only the primary record should be measured: {rows}")
+
+
 def test_file_output_and_threads(tmp):
     records = []
     expected = []
     for index in range(700):
         if index % 4:
-            record = bam_record(f"pass_{index}", "TTAGGG" * (3 + index % 7), flag=0x4)
+            record = bam_record(f"pass_{index}", "TTAGGG" * (7 + index % 7), flag=0x4)
             expected.append(record)
         else:
             record = bam_record(f"fail_{index}", "ACGT" * 20, flag=0x4)
@@ -244,57 +312,84 @@ def test_file_output_and_threads(tmp):
     input_path = tmp / "many.bam"
     input_path.write_bytes(bgzf(bam_payload(records), chunk_size=113))
 
-    single = run([*explicit_args(input_path), "-j", "1"])
-    multi = run([*explicit_args(input_path), "-j", "8"])
+    single_dir, multi_dir = tmp / "many_j1", tmp / "many_j8"
+    single = run([str(input_path), "-j", "1", "-o", str(single_dir)])
+    multi = run([str(input_path), "-j", "8", "-o", str(multi_dir)])
     require(single.returncode == 0, single.stderr.decode())
     require(multi.returncode == 0, multi.stderr.decode())
-    require(single.stdout == multi.stdout, "thread count changed BAM output")
-    _, actual = split_bam(unpack_bgzf(single.stdout))
+    single_bytes = bam_subset_path(single_dir, input_path.name).read_bytes()
+    multi_bytes = bam_subset_path(multi_dir, input_path.name).read_bytes()
+    require(single_bytes == multi_bytes, "thread count changed BAM output")
+    _, actual = split_bam(unpack_bgzf(single_bytes))
     require(actual == expected, "large-batch filtering mismatch")
+    require(b"BAM\1" not in single.stdout, "stdout carried binary BAM bytes instead of the text report")
 
-    out_dir = tmp / "out"
-    saved = run([*explicit_args(input_path), "-o", str(out_dir)])
-    require(saved.returncode == 0, saved.stderr.decode())
-    output_path = out_dir / "many_telomeric.bam"
-    require(output_path.exists(), "BAM -o output name mismatch")
-    require(output_path.read_bytes() == single.stdout, "file and stdout BAM differ")
-    require(saved.stdout == b"", "BAM -o wrote binary data to stdout")
+
+def test_multiblock_determinism(tmp):
+    generator = random.Random(7)
+    records = []
+    expected = []
+    for index in range(640):
+        sequence = "".join(generator.choices("ACGT", k=16000))
+        if index % 5 == 0:
+            sequence = sequence[:-300] + "TTAGGG" * 50
+            records.append(bam_record(f"pass_{index}", sequence, flag=0x4))
+            expected.append(records[-1])
+        else:
+            records.append(bam_record(f"fail_{index}", sequence, flag=0x4))
+    input_path = tmp / "multiblock.bam"
+    input_path.write_bytes(bgzf(bam_payload(records)))
+
+    single_dir, multi_dir = tmp / "multi_j1", tmp / "multi_j8"
+    single = run([str(input_path), "-j", "1", "-o", str(single_dir)])
+    multi = run([str(input_path), "-j", "8", "-o", str(multi_dir)])
+    require(single.returncode == 0, single.stderr.decode())
+    require(multi.returncode == 0, multi.stderr.decode())
+    single_bytes = bam_subset_path(single_dir, input_path.name).read_bytes()
+    multi_bytes = bam_subset_path(multi_dir, input_path.name).read_bytes()
+    require(single_bytes == multi_bytes, "thread count changed multi-block BAM output")
+    _, actual = split_bam(unpack_bgzf(single_bytes))
+    require(actual == expected, "multi-block filtering mismatch")
 
 
 def test_header_only_and_missing_eof(tmp):
     payload = bam_payload([])
-    result = run(explicit_args(), bgzf(payload, eof=False))
+    out_dir = tmp / "header_only_out"
+    result, name = run_reads(out_dir, [], bgzf(payload, eof=False))
     require(result.returncode == 0, result.stderr.decode())
     require(b"missing the BGZF EOF marker" in result.stderr, "missing EOF warning absent")
-    header, records = split_bam(unpack_bgzf(result.stdout))
+    header, records = bam_subset_records(out_dir, name)
     require(header == payload and records == [], "header-only BAM changed")
 
 
 def test_header_variants_and_empty_results(tmp):
     passing = [
-        bam_record("first", "TTAGGG" * 3, flag=0x4),
-        bam_record("second", "CCCTAA" * 4, flag=0x4),
+        bam_record("first", "TTAGGG" * 8, flag=0x4),
+        bam_record("second", "CCCTAA" * 8, flag=0x4),
     ]
     payload = bam_payload(
         passing,
         header_text=b"",
         references=(("a", 1), ("long_reference_name", 2**31 - 1)),
     )
-    result = run(explicit_args(), bgzf(payload))
-    header, records = output_records(result)
+    out_dir = tmp / "variant_out"
+    result, name = run_reads(out_dir, [], bgzf(payload))
+    header, records = bam_subset_records(out_dir, name)
     expected_header, _ = split_bam(payload)
     require(header == expected_header and records == passing, "BAM header variant changed")
 
     no_reference_payload = bam_payload(passing, header_text=b"@CO\tempty references\n", references=())
-    no_reference = run(explicit_args(), bgzf(no_reference_payload))
-    header, records = output_records(no_reference)
+    no_reference_dir = tmp / "no_reference_out"
+    no_reference, name2 = run_reads(no_reference_dir, [], bgzf(no_reference_payload))
+    header, records = bam_subset_records(no_reference_dir, name2)
     expected_header, _ = split_bam(no_reference_payload)
     require(header == expected_header and records == passing, "reference-free BAM changed")
 
     failing = [bam_record(f"fail_{index}", "ACGT" * (index + 2), flag=0x4) for index in range(5)]
     fail_payload = bam_payload(failing)
-    all_fail = run(explicit_args(), bgzf(fail_payload))
-    header, records = output_records(all_fail)
+    all_fail_dir = tmp / "all_fail_out"
+    all_fail, name3 = run_reads(all_fail_dir, [], bgzf(fail_payload))
+    header, records = bam_subset_records(all_fail_dir, name3)
     expected_header, _ = split_bam(fail_payload)
     require(header == expected_header and records == [], "all-fail BAM was not header-only")
     require(b"kept 0 of 5 records" in all_fail.stderr, "all-fail count mismatch")
@@ -302,15 +397,16 @@ def test_header_variants_and_empty_results(tmp):
 
 def test_embedded_eof(tmp):
     records = [
-        bam_record("first", "TTAGGG" * 3, flag=0x4),
-        bam_record("second", "CCCTAA" * 3, flag=0x4),
+        bam_record("first", "TTAGGG" * 8, flag=0x4),
+        bam_record("second", "CCCTAA" * 8, flag=0x4),
     ]
     payload = bam_payload(records)
     split = len(payload) // 2
     input_bam = bgzf(payload[:split]) + bgzf(payload[split:])
-    result = run(explicit_args(), input_bam)
+    out_dir = tmp / "embedded_eof_out"
+    result, name = run_reads(out_dir, [], input_bam)
     require(result.returncode == 0, result.stderr.decode())
-    _, actual = split_bam(unpack_bgzf(result.stdout))
+    _, actual = bam_subset_records(out_dir, name)
     require(actual == records, "embedded BGZF EOF interrupted input")
 
 
@@ -320,65 +416,158 @@ def test_cross_block_large_record(tmp):
     qualities = [generator.randrange(94) for _ in sequence]
     record = bam_record("large", sequence, flag=0x4, qualities=qualities)
     payload = bam_payload([record])
-    result = run(explicit_args(), bgzf(payload, chunk_size=60000))
+    out_dir = tmp / "cross_block_out"
+    result, name = run_reads(out_dir, [], bgzf(payload, chunk_size=60000))
     require(result.returncode == 0, result.stderr.decode())
-    _, records = split_bam(unpack_bgzf(result.stdout))
+    _, records = bam_subset_records(out_dir, name)
     require(records == [record], "record spanning BGZF blocks changed")
 
 
 def test_byte_bounded_batch(tmp):
     aux_count = 33 * 1024 * 1024
     huge_aux = b"ZZBC" + struct.pack("<i", aux_count) + bytes(aux_count)
-    huge = bam_record("huge_aux", "TTAGGG" * 3, flag=0x4, tags=huge_aux)
-    tail = bam_record("tail", "CCCTAA" * 3, flag=0x4)
-    result = run([*explicit_args(), "-j", "2"], bgzf(bam_payload([huge, tail])))
-    _, records = output_records(result)
+    huge = bam_record("huge_aux", "TTAGGG" * 8, flag=0x4, tags=huge_aux)
+    tail = bam_record("tail", "CCCTAA" * 8, flag=0x4)
+    out_dir = tmp / "byte_bounded_out"
+    result, name = run_reads(out_dir, ["-j", "2"], bgzf(bam_payload([huge, tail])))
+    require(result.returncode == 0, result.stderr.decode())
+    _, records = bam_subset_records(out_dir, name)
     require(records == [huge, tail], "byte-bounded batch changed records")
 
 
 def test_default_threshold_parity(tmp):
+    # the fixed keep floor is 42bp: 6 repeats (36bp) fail, 7 (42bp) and up pass
     sequences = {
         "short": "TTAGGG" * 6,
         "default_pass": "TTAGGG" * 7,
         "long": "CCCTAA" * 15,
         "fail": "ACGT" * 20,
     }
-    names = assert_fastq_bam_parity(sequences, [])
+    names = assert_fastq_bam_parity(tmp, "default_threshold", sequences, [])
     require(names == ["default_pass", "long"], "default threshold boundary failed")
 
     sequence = "TTAGGG" * 10
     crlf = f"@crlf\r\n{sequence}\r\n+\r\n{'I' * len(sequence)}\r\n".encode()
-    result = run(["--fastq-subset"], crlf)
+    crlf_dir = tmp / "crlf_stdin_out"
+    result, name = run_reads(crlf_dir, [], crlf)
     require(result.returncode == 0, result.stderr.decode())
-    require(result.stdout.startswith(b"@crlf\r\n"), "CRLF FASTQ filtering failed")
+    require(fastq_subset_bytes(crlf_dir, name).startswith(b"@crlf\r\n"), "CRLF FASTQ filtering failed")
+
+
+def test_l_changes_measurement_not_subset(tmp):
+    # -l no longer gates the subset (fixed at 42bp); it still gates the measured BED rows
+    fixture = ROOT / "testFiles" / "fastq_subset_threshold.fq"
+    low_dir, high_dir = tmp / "l_low_out", tmp / "l_high_out"
+    low = run([str(fixture), "-y", "0.8", "-k", "10", "-d", "10", "-l", "20", "-o", str(low_dir)])
+    high = run([str(fixture), "-y", "0.8", "-k", "10", "-d", "10", "-l", "5000", "-o", str(high_dir)])
+    require(low.returncode == 0, low.stderr.decode())
+    require(high.returncode == 0, high.stderr.decode())
+    require(
+        fastq_subset_bytes(low_dir, fixture.name) == fastq_subset_bytes(high_dir, fixture.name),
+        "-l changed which reads were kept",
+    )
+    require(len(bed_rows(low_dir, fixture.name)) == 3, "-l 20 should measure all three reads")
+    require(len(bed_rows(high_dir, fixture.name)) == 0, "-l 5000 should measure none of the three reads")
+    golden = (ROOT / "testFiles" / "expected" / "fastq_subset_threshold_default.fq").read_bytes()
+    require(same_records(fastq_subset_bytes(low_dir, fixture.name), golden), "kept reads changed from the checked-in golden")
+
+
+def test_checked_in_fastq_fixtures(tmp):
+    # the file-output equivalent of the retired fastq_subset_*.tst goldens
+    expected_dir = ROOT / "testFiles" / "expected"
+    default_golden = (expected_dir / "fastq_subset.fq").read_bytes()
+
+    for name, path in (
+        ("blanklines", ROOT / "testFiles" / "fastq_subset_blanklines.fq"),
+        ("file", ROOT / "testFiles" / "fastq_subset.fq"),
+        ("gz", ROOT / "testFiles" / "fastq_subset.fq.gz"),
+    ):
+        out_dir = tmp / f"fixture_{name}_out"
+        result = run([str(path), "-o", str(out_dir)])
+        require(result.returncode == 0, f"{name}: {result.stderr.decode()}")
+        require(same_records(fastq_subset_bytes(out_dir, path.name), default_golden), f"{name}: kept reads changed")
+
+    # stdin, piped from the same fixture
+    stdin_dir = tmp / "fixture_stdin_out"
+    stdin_result, stdin_name = run_reads(stdin_dir, [], (ROOT / "testFiles" / "fastq_subset.fq").read_bytes())
+    require(stdin_result.returncode == 0, stdin_result.stderr.decode())
+    require(same_records(fastq_subset_bytes(stdin_dir, stdin_name), default_golden), "stdin: kept reads changed")
+
+    # CRLF: its own golden, since the kept records carry \r\n
+    crlf_path = ROOT / "testFiles" / "fastq_subset_crlf.fq"
+    crlf_golden = (expected_dir / "fastq_subset_crlf.fq").read_bytes()
+    crlf_out = tmp / "fixture_crlf_out"
+    crlf_result = run([str(crlf_path), "-o", str(crlf_out)])
+    require(crlf_result.returncode == 0, crlf_result.stderr.decode())
+    require(same_records(fastq_subset_bytes(crlf_out, crlf_path.name), crlf_golden), "crlf: kept reads changed")
+
+    # realistic: a wider mix of terminal/internal/softmasked/N-flanked/scattered reads
+    realistic_path = ROOT / "testFiles" / "fastq_subset_realistic.fq"
+    realistic_golden = (expected_dir / "fastq_subset_realistic.fq").read_bytes()
+    realistic_out = tmp / "fixture_realistic_out"
+    realistic_result = run([str(realistic_path), "-y", "0.8", "-k", "10", "-d", "10", "-o", str(realistic_out)])
+    require(realistic_result.returncode == 0, realistic_result.stderr.decode())
+    require(same_records(fastq_subset_bytes(realistic_out, realistic_path.name), realistic_golden),
+            "realistic: kept reads changed")
+
+
+def test_fastq_malformed_fixture_aborts(tmp):
+    path = ROOT / "testFiles" / "fastq_malformed.fq"
+    out_dir = tmp / "malformed_out"
+    result = run([str(path), "-o", str(out_dir)])
+    require(result.returncode == 1, "malformed FASTQ should exit 1")
+    require(b"sequence and quality length differ" in result.stderr, "malformed FASTQ diagnostic changed")
+    require(not out_dir.exists() or not list(out_dir.iterdir()), "malformed FASTQ left partial output")
+
+
+def test_fastq_file_output_and_threads(tmp):
+    # the FASTQ equivalent of test_file_output_and_threads: batching boundaries and -j parity
+    lines = []
+    expected_names = []
+    for index in range(700):
+        if index % 4:
+            sequence = "TTAGGG" * (7 + index % 7)
+            expected_names.append(f"pass_{index}")
+        else:
+            sequence = "ACGT" * 20
+        lines.append(f"@{'pass' if index % 4 else 'fail'}_{index}\n{sequence}\n+\n{'I' * len(sequence)}\n")
+    input_path = tmp / "many.fq"
+    input_path.write_text("".join(lines))
+
+    single_dir, multi_dir = tmp / "many_j1", tmp / "many_j8"
+    single = run([str(input_path), "-j", "1", "-o", str(single_dir)])
+    multi = run([str(input_path), "-j", "8", "-o", str(multi_dir)])
+    require(single.returncode == 0, single.stderr.decode())
+    require(multi.returncode == 0, multi.stderr.decode())
+    single_bytes = fastq_subset_bytes(single_dir, input_path.name)
+    multi_bytes = fastq_subset_bytes(multi_dir, input_path.name)
+    require(single_bytes == multi_bytes, "thread count changed FASTQ output")
+    kept_names = [line[1:] for line in single_bytes.decode().splitlines()[::4]]
+    require(kept_names == expected_names, "large-batch FASTQ filtering mismatch")
 
 
 def test_exact_math_boundaries(tmp):
-    lengths = {
-        "one_repeat": "TTAGGG",
-        "exact_12": "TTAGGG" * 2,
-        "flanked_exact": "ACGT" + "CCCTAA" * 2 + "TGCA",
-        "exact_18": "TTAGGG" * 3,
-    }
-    length_12 = ["-x", "0", "-l", "12", "-y", "1", "-k", "10", "-d", "10"]
-    length_18 = ["-x", "0", "-l", "18", "-y", "1", "-k", "10", "-d", "10"]
-    names = assert_fastq_bam_parity(lengths, length_12)
-    require(names == ["exact_12", "flanked_exact", "exact_18"], "12 bp length boundary failed")
-    names = assert_fastq_bam_parity(lengths, length_18)
-    require(names == ["exact_18"], "18 bp length boundary failed")
+    # the keep floor sits at exactly 7 canonical repeat units (42bp); a threshold match is kept
+    lengths = {"six_repeats": "TTAGGG" * 6, "seven_repeats": "TTAGGG" * 7}
+    names = assert_fastq_bam_parity(tmp, "unit_boundary", lengths, ["-x", "0", "-y", "1", "-k", "10", "-d", "10"])
+    require(names == ["seven_repeats"], "42bp/7-unit boundary failed")
 
-    density = {"two_thirds": "TTAGGGAAAAAATTAGGG"}
-    pass_options = ["-x", "0", "-l", "18", "-y", "0.666", "-k", "20", "-d", "10"]
-    fail_options = ["-x", "0", "-l", "18", "-y", "0.667", "-k", "20", "-d", "10"]
-    require(assert_fastq_bam_parity(density, pass_options) == ["two_thirds"], "density lower boundary failed")
-    require(assert_fastq_bam_parity(density, fail_options) == [], "density upper boundary failed")
+    # density boundary, scaled up so the whole block clears the 42bp floor either way
+    density = {"two_thirds": "TTAGGG" * 6 + "AAAAAA" * 6 + "TTAGGG" * 6}
+    pass_options = ["-x", "0", "-y", "0.666", "-k", "40", "-d", "40"]
+    fail_options = ["-x", "0", "-y", "0.667", "-k", "40", "-d", "40"]
+    require(assert_fastq_bam_parity(tmp, "density_pass", density, pass_options) == ["two_thirds"],
+            "density lower boundary failed")
+    require(assert_fastq_bam_parity(tmp, "density_fail", density, fail_options) == [],
+            "density upper boundary failed")
 
     plant = {
-        "plant_pass": "TTTAGGG" * 3,
-        "vertebrate_fail": "TTAGGG" * 4,
+        "plant_pass": "TTTAGGG" * 6,
+        "vertebrate_fail": "TTAGGG" * 7,
     }
-    plant_options = ["-c", "CCCTAAA", "-x", "0", "-l", "21", "-y", "1"]
-    require(assert_fastq_bam_parity(plant, plant_options) == ["plant_pass"], "custom canonical failed")
+    plant_options = ["-c", "CCCTAAA", "-x", "0", "-y", "1"]
+    require(assert_fastq_bam_parity(tmp, "plant", plant, plant_options) == ["plant_pass"],
+            "custom canonical failed")
 
 
 def test_randomized_fastq_bam_parity(tmp):
@@ -396,57 +585,89 @@ def test_randomized_fastq_bam_parity(tmp):
         sequences[f"random_{index:03d}"] = sequence
 
     option_sets = [
-        ["-x", "0", "-l", "18", "-y", "0.8", "-k", "10", "-d", "10"],
-        ["-x", "1", "-l", "42", "-y", "0.5", "-k", "50", "-d", "50"],
-        ["-x", "0", "-l", "60", "-y", "1", "-k", "10", "-d", "10"],
+        ["-x", "0", "-y", "0.8", "-k", "10", "-d", "10"],
+        ["-x", "1", "-y", "0.5", "-k", "50", "-d", "50"],
+        ["-x", "0", "-y", "1", "-k", "10", "-d", "10"],
     ]
-    for options in option_sets:
-        assert_fastq_bam_parity(sequences, options)
+    for index, options in enumerate(option_sets):
+        assert_fastq_bam_parity(tmp, f"randomized_{index}", sequences, options)
 
 
 def test_cli_guards_and_cleanup(tmp):
-    record = bam_record("pass", "TTAGGG" * 3, flag=0x4)
+    record = bam_record("pass", "TTAGGG" * 8, flag=0x4)
     input_bam = bgzf(bam_payload([record]))
-    command = run([*explicit_args(), "--cmd"], input_bam)
+    cmd_dir = tmp / "cmd_out"
+    command = run(["--cmd", "-o", str(cmd_dir)], input_bam)
     require(command.returncode == 0, command.stderr.decode())
-    _, records = split_bam(unpack_bgzf(command.stdout))
-    require(records == [record], "--cmd corrupted BAM stdout")
-    require(b"--bam-subset" in command.stderr, "--cmd did not use stderr")
+    _, records = bam_subset_records(cmd_dir, "stdin")
+    require(records == [record], "--cmd run corrupted the BAM output file")
+    require(b"teloscope" in command.stdout, "--cmd did not echo the command line to stdout")
 
-    conflict = run(["--bam-subset", "--fastq-subset"], input_bam)
-    require(conflict.returncode != 0, "conflicting subset modes succeeded")
+    for flag in ("--bam-subset", "--fastq-subset"):
+        removed = run([flag], input_bam)
+        require(removed.returncode != 0, f"{flag} unexpectedly succeeded")
+        require(
+            b"--fastq-subset and --bam-subset were removed" in removed.stderr,
+            f"{flag} lacked the removal diagnostic",
+        )
 
     input_path = tmp / "broken.bam"
     input_path.write_bytes(input_bam[:20])
     out_dir = tmp / "broken_out"
-    failed = run([*explicit_args(input_path), "-o", str(out_dir)])
+    failed = run([str(input_path), "-o", str(out_dir)])
     require(failed.returncode != 0, "truncated file unexpectedly succeeded")
-    require(not (out_dir / "broken_telomeric.bam").exists(), "partial BAM output was retained")
+    require(not list(out_dir.iterdir()), "partial reads-mode output was retained")
 
     if os.name != "nt" and os.geteuid() != 0:
-        unreadable = tmp / "unreadable.bam"
-        unreadable.write_bytes(input_bam)
-        unreadable.chmod(0)
-        try:
-            failed = run(explicit_args(unreadable))
-            require(failed.returncode != 0, "unreadable BAM unexpectedly succeeded")
-            require(b"cannot open BAM input" in failed.stderr, "input open failure was unclear")
-        finally:
-            unreadable.chmod(0o600)
-
+        valid_path = tmp / "valid.bam"
+        valid_path.write_bytes(input_bam)
         unwritable = tmp / "unwritable"
         unwritable.mkdir()
         unwritable.chmod(0o500)
         try:
-            failed = run([*explicit_args(input_path), "-o", str(unwritable)])
+            failed = run([str(valid_path), "-o", str(unwritable)])
             require(failed.returncode != 0, "unwritable output unexpectedly succeeded")
-            require(b"cannot write telomeric records" in failed.stderr, "output open failure was unclear")
+            require(b"is not writable" in failed.stderr, "output open failure was unclear")
         finally:
             unwritable.chmod(0o700)
 
 
+def test_detection_boundary(tmp):
+    # detection is a literal byte check: anything but '@' or 'BAM\1' falls through to assembly
+    record = bam_record("pass", "TTAGGG" * 8, flag=0x4)
+    payload = bam_payload([record])
+
+    not_bgzf_path = tmp / "not_bgzf.bam"
+    not_bgzf_path.write_bytes(b"not bam")
+    out_dir = tmp / "not_bgzf_out"
+    result = run([str(not_bgzf_path), "-o", str(out_dir)])
+    require(result.returncode == 0, "raw bytes that are not gzip should fall through to assembly mode, not fail")
+    require(not list(out_dir.glob("*_telomeric.*")), "non-BAM bytes were treated as reads-mode input")
+
+    bad_magic_path = tmp / "bad_magic.bam"
+    bad_magic_path.write_bytes(bgzf(b"BAD\1" + payload[4:]))
+    out_dir2 = tmp / "bad_magic_out"
+    result2 = run([str(bad_magic_path), "-o", str(out_dir2)])
+    require(result2.returncode == 0, "valid BGZF with the wrong magic bytes should fall through to assembly mode")
+    require(not list(out_dir2.glob("*_telomeric.*")), "mismatched magic bytes were treated as reads-mode input")
+
+    # detection cannot even open an unreadable file to sniff it, so it also falls through
+    if os.name != "nt" and os.geteuid() != 0:
+        unreadable_path = tmp / "unreadable.bam"
+        unreadable_path.write_bytes(bgzf(payload))
+        unreadable_path.chmod(0)
+        out_dir3 = tmp / "unreadable_out"
+        try:
+            result3 = run([str(unreadable_path), "-o", str(out_dir3)])
+            require(result3.returncode == 0, "an unreadable file should fall through to assembly mode")
+            require(not list(out_dir3.glob("*_telomeric.*")), "an unreadable file was treated as reads-mode input")
+        finally:
+            unreadable_path.chmod(0o600)
+
+
+# inputs that keep the literal "BAM\1" magic: detected as BAM, must abort cleanly, no partial output
 def test_failures(tmp):
-    record = bam_record("pass", "TTAGGG" * 3, flag=0x4)
+    record = bam_record("pass", "TTAGGG" * 8, flag=0x4)
     payload = bam_payload([record])
     valid = bytearray(bgzf(payload))
     header, records = split_bam(payload)
@@ -454,11 +675,20 @@ def test_failures(tmp):
 
     cases = {}
     gzip_compressor = zlib.compressobj(6, zlib.DEFLATED, 31)
-    cases["not_bgzf"] = b"not bam"
-    cases["plain_gzip"] = gzip_compressor.compress(payload) + gzip_compressor.flush()
-    cases["bad_magic"] = bgzf(b"BAD\1" + payload[4:])
+    cases["plain_gzip"] = gzip_compressor.compress(payload) + gzip_compressor.flush()  # gzip, not BGZF-chunked
     cases["truncated"] = bytes(valid[:20])
-    cases["empty"] = b""
+
+    # a corrupt second block surfaces from the threaded pipeline, not the single-block sniff
+    many_records = [bam_record(f"multi_{i}", "TTAGGG" * 8, flag=0x4) for i in range(50)]
+    multiblock = bytearray(bgzf(bam_payload(many_records), chunk_size=200))
+    first_block_len = struct.unpack_from("<H", multiblock, 16)[0] + 1
+    second_block_len = struct.unpack_from("<H", multiblock, first_block_len + 16)[0] + 1
+    second_block_crc_offset = first_block_len + second_block_len - 8
+    multiblock[second_block_crc_offset] ^= 1
+    cases["second_block_bad_crc"] = bytes(multiblock)
+
+    # a valid block followed by non-gzip bytes: the reader thread's block-boundary check
+    cases["trailing_junk"] = bgzf(payload, eof=False) + b"NOTAGZIPBLOCKTRAILINGJUNK1234567890"
 
     corrupt_crc = bytearray(valid)
     first_size = struct.unpack_from("<H", corrupt_crc, 16)[0] + 1
@@ -581,16 +811,29 @@ def test_failures(tmp):
     cases["truncated_record_fields"] = bgzf(header + bytes(truncated_record))
 
     for name, data in cases.items():
-        result = run(explicit_args(), data)
+        out_dir = tmp / f"fail_{name}"
+        result = run(["-o", str(out_dir)], data)
         require(result.returncode != 0, f"{name} unexpectedly succeeded")
-        require(b"BAM subset failed" in result.stderr, f"{name} lacked a clear error")
+        require(b"Error:" in result.stderr, f"{name} lacked a clear error")
+        require(not list(out_dir.iterdir()), f"{name} left partial output behind")
+
+
+def test_gzipped_non_bam_stdin_aborts_cleanly(tmp):
+    # gzip's leading byte routes stdin straight to BAM mode; a non-BAM payload trips the magic check inside
+    out_dir = tmp / "gz_non_bam_out"
+    result, _ = run_reads(out_dir, [], bgzf(b"this is plain text, not a BAM payload, once BGZF-decompressed"))
+    require(result.returncode == 1, f"expected exit 1, got {result.returncode}")
+    require(b"Error: invalid BAM magic." in result.stderr, f"missing BAM magic error: {result.stderr!r}")
+    require(b"Compressed FASTQ or FASTA on stdin is not supported" in result.stderr,
+            f"missing compressed-stdin hint: {result.stderr!r}")
+    require(not list(out_dir.iterdir()), "gzipped non-BAM stdin left partial output behind")
 
 
 def test_mutation_robustness(tmp):
     case_count = int(os.environ.get("BAM_MUTATION_CASES", "48"))
     generator = random.Random(91)
     records = [
-        bam_record(f"record_{index}", "TTAGGG" * (3 + index % 5), flag=0x4)
+        bam_record(f"record_{index}", "TTAGGG" * (8 + index % 5), flag=0x4)
         for index in range(8)
     ]
     payload = bam_payload(records)
@@ -600,8 +843,10 @@ def test_mutation_robustness(tmp):
     for index in range(case_count):
         mode = index % 7
         if mode == 0:
+            # real magic + random tail, so this still routes to BAM (see test_detection_boundary)
             size = generator.randrange(0, 2048)
-            data = bytes(generator.getrandbits(8) for _ in range(size))
+            garbage = bytes(generator.getrandbits(8) for _ in range(size))
+            data = bgzf(b"BAM\1" + garbage)
         elif mode == 1:
             data = bgzf(payload[:generator.randrange(len(payload) + 1)])
         elif mode == 2:
@@ -625,12 +870,16 @@ def test_mutation_robustness(tmp):
             kept = split_records[:generator.randrange(len(split_records) + 1)]
             data = bgzf(header + b"".join(kept))
 
-        result = run(["--bam-subset", "-j", "1"], data)
+        out_dir = tmp / f"mutation_{index}"
+        result = run(["-j", "1", "-o", str(out_dir)], data)
         if result.returncode == 0:
-            split_bam(unpack_bgzf(result.stdout))
+            # either a real BAM decode, or content that fell through to the assembly path
+            bam_path = bam_subset_path(out_dir, "stdin")
+            if bam_path.exists():
+                split_bam(unpack_bgzf(bam_path.read_bytes()))
         else:
-            require(b"BAM subset failed" in result.stderr,
-                    f"mutation {index} lacked a clear error")
+            require(b"Error:" in result.stderr, f"mutation {index} (mode {mode}) lacked a clear error")
+            require(not list(out_dir.iterdir()), f"mutation {index} (mode {mode}) left partial output behind")
 
 
 def main():
@@ -638,17 +887,25 @@ def main():
     with tempfile.TemporaryDirectory(prefix="teloscope_bam_") as temp:
         tmp = pathlib.Path(temp)
         test_basic_and_record_preservation(tmp)
+        test_measured_vs_kept_counts(tmp)
         test_file_output_and_threads(tmp)
+        test_multiblock_determinism(tmp)
         test_header_only_and_missing_eof(tmp)
         test_header_variants_and_empty_results(tmp)
         test_embedded_eof(tmp)
         test_cross_block_large_record(tmp)
         test_byte_bounded_batch(tmp)
         test_default_threshold_parity(tmp)
+        test_l_changes_measurement_not_subset(tmp)
+        test_checked_in_fastq_fixtures(tmp)
+        test_fastq_malformed_fixture_aborts(tmp)
+        test_fastq_file_output_and_threads(tmp)
         test_exact_math_boundaries(tmp)
         test_randomized_fastq_bam_parity(tmp)
         test_cli_guards_and_cleanup(tmp)
+        test_detection_boundary(tmp)
         test_failures(tmp)
+        test_gzipped_non_bam_stdin_aborts_cleanly(tmp)
         test_mutation_robustness(tmp)
     print("PASS BAM subset integration")
 

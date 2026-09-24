@@ -836,9 +836,14 @@ def test_cli_surface_and_read_subset_guards(tmp):
     require("Teloscope v0.1.6" in decode(version_result.stdout), "binary version is not the release version")
 
     for mode in ("--fastq-subset", "--bam-subset"):
-        result = run([mode, "--include-prefix", "contig"], stdin=b"")
-        require_failure(result, f"{mode} filter guard", "cannot be used in read subset mode")
+        result = run([mode], stdin=b"")
+        require_failure(
+            result, f"{mode} removed-flag guard",
+            "--fastq-subset and --bam-subset were removed: FASTQ or BAM input is detected and "
+            "always writes the telomeric reads, the read telomere BED and the report.",
+        )
 
+    # content detection recognizes this file as FASTQ despite its assembly-sounding name, so the assembly-only --include-prefix filter is rejected
     assembly_fastq = tmp / "assembly_mode.fastq"
     assembly_fastq.write_text(
         "@read1\nTTAGGGTTAGGG\n+\nIIIIIIIIIIII\n",
@@ -852,10 +857,11 @@ def test_cli_surface_and_read_subset_guards(tmp):
     )
     require_failure(
         assembly_fastq_result,
-        "filtered FASTQ in assembly mode",
-        "require FASTA input or a recognized GFA file",
+        "filtered FASTQ now detected as reads mode",
+        "--include-bed/--exclude-bed/--include-prefix/--exclude-prefix/--chr-only filter assembly "
+        "records and cannot be used with FASTQ or BAM input.",
     )
-    require(not list(fastq_out.glob("*_report.tsv")), "filtered assembly-mode FASTQ produced a report")
+    require(not list(fastq_out.glob("*_report.tsv")), "filtered reads-mode FASTQ produced an assembly report")
 
     for option in ("--include-bed", "--exclude-bed", "--include-prefix", "--exclude-prefix"):
         missing_argument = run(["-f", MULTI_FASTA, option])
