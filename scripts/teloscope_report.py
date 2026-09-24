@@ -105,6 +105,7 @@ PANEL_LABEL_SIZE = 8.0
 PANEL_TITLE_SIZE = 6.9
 AXIS_LABEL_SIZE = 6.2
 AXIS_TICK_SIZE = 5.5
+PANEL_D_TICK_SIZE = 4.6  # panel d's two narrow log-x sub-panels need smaller decade ticks
 LEGEND_TEXT_SIZE = 5.4
 TABLE_TEXT_SIZE = 6.3
 TABLE_ROW_IN = 0.135  # fixed physical row height (header + data rows alike) for ITS tables
@@ -1720,6 +1721,18 @@ def _pick_bp_unit(max_bp):
     return 1.0, "bp"
 
 
+def _fmt_bp_auto(bp, _pos=None):
+    """Format a bp value in its own best-fitting unit, trimming trailing zeros."""
+    if bp <= 0:
+        return "0"
+    divisor, unit = _pick_bp_unit(bp)
+    if unit == "bp":
+        return f"{int(round(bp)):,} bp"
+    decimals = 2 if unit == "Mb" else 1
+    text = f"{bp / divisor:.{decimals}f}".rstrip("0").rstrip(".")
+    return f"{text} {unit}"
+
+
 def _fmt_log_bp_tick(value):
     """Format a signed log10(bp) decade tick (value=0 at the scaffold end) as clean bp/kb/Mb text."""
     if value == 0:
@@ -1956,21 +1969,21 @@ def _draw_its_length_can_panel(ax, df):
 def _draw_its_class_totals_panel(ax_count, ax_mb, df):
     """Panel d: count and length per junction class; log-x thin bars, values labelled directly.
 
-    Both bars share one bp unit for the whole length panel, picked from the largest class.
+    The length axis is log-scale bp throughout, but each bar is labelled in its own
+    best-fitting unit (a shared unit would round a small class down to "0.0 Mb").
     """
     counts, totals_bp = _class_totals(df)
     y_pos = np.arange(len(CLASS_ORDER))
     colors = [CLASS_COLORS[c] for c in CLASS_ORDER]
     count_values = counts.to_numpy(dtype=np.float64)
-    divisor, unit = _pick_bp_unit(float(totals_bp.max()) if len(totals_bp) else 0.0)
-    length_values = totals_bp.to_numpy(dtype=np.float64) / divisor
+    length_values = totals_bp.to_numpy(dtype=np.float64)
     fmt_count = lambda v: f"{int(v):,}" if v > 0 else "0"
-    fmt_length = lambda v: f"{v:.1f} {unit}" if v > 0 else "0"
     specs = [
-        (ax_count, count_values, fmt_count, "Count (log10)"),
-        (ax_mb, length_values, fmt_length, f"Length (log10, {unit})"),
+        (ax_count, count_values, fmt_count, "Count (log10)", None),
+        (ax_mb, length_values, _fmt_bp_auto, "Length (bp, log)",
+         ticker.FuncFormatter(_fmt_bp_auto)),
     ]
-    for ax, values, fmt, xlabel in specs:
+    for ax, values, fmt, xlabel, x_formatter in specs:
         positive = values[values > 0]
         floor = float(positive.min()) / 10.0 if positive.size else 0.1
         # Bars start at the shared log-scale floor; a zero class gets zero width (no fake sliver).
@@ -1989,10 +2002,16 @@ def _draw_its_class_totals_panel(ax_count, ax_mb, df):
             ax.tick_params(axis="y", pad=2.0)
         else:
             ax.set_yticklabels([])
+            ax.tick_params(axis="y", length=0)
         ax.set_xlabel(xlabel, fontsize=AXIS_LABEL_SIZE)
         ax.xaxis.set_major_locator(ticker.LogLocator(base=10, numticks=3))
         ax.xaxis.set_minor_locator(ticker.NullLocator())
-        ax.tick_params(labelsize=AXIS_TICK_SIZE, length=2.0, width=0.35)
+        if x_formatter is not None:
+            ax.xaxis.set_major_formatter(x_formatter)
+        # A smaller x-tick size (these two narrow sub-panels only) keeps 3-4 decade
+        # labels from crowding each other; row labels keep the normal AXIS_TICK_SIZE.
+        ax.tick_params(axis="x", labelsize=PANEL_D_TICK_SIZE, length=2.0, width=0.35)
+        ax.tick_params(axis="y", length=2.0, width=0.35)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.spines["left"].set_visible(False)
@@ -2052,8 +2071,8 @@ def _draw_its_tables(ax_fusion, ax_longest, pairs, df, ax_height_in):
                for i, (row, name) in enumerate(zip(top_long.itertuples(index=False), short_names))]
         tab = ax_longest.table(
             cellText=rows,
-            colLabels=["#", "scaffold", "length", "class", "can. share"],
-            colWidths=[0.06, 0.34, 0.17, 0.18, 0.25],
+            colLabels=["#", "scaffold", "length", "class", "share"],
+            colWidths=[0.05, 0.36, 0.25, 0.18, 0.16],
             loc="upper left", cellLoc="left", colLoc="left",
             bbox=_table_bbox(len(rows), ax_height_in),
         )
@@ -2079,14 +2098,14 @@ def plot_its_page(df, pairs, arm_blocks, chrom_sizes, params):
 
     fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, fig_h))
     gs = fig.add_gridspec(5, 3, height_ratios=[atlas_in, gap_in, bcd_in, gap_in, table_in],
-                          width_ratios=[0.82, 0.82, 1.36], hspace=0, wspace=0.58)
+                          width_ratios=[0.82, 0.78, 1.40], hspace=0, wspace=0.72)
     fig.subplots_adjust(left=0.135, right=0.97,
                         top=1 - top_margin_in / fig_h, bottom=bottom_margin_in / fig_h)
 
     ax_atlas = fig.add_subplot(gs[0, :])
     ax_pos = fig.add_subplot(gs[2, 0])
     ax_len = fig.add_subplot(gs[2, 1])
-    gs_d = gs[2, 2].subgridspec(1, 2, width_ratios=[1.35, 1.0], wspace=0.55)
+    gs_d = gs[2, 2].subgridspec(1, 2, width_ratios=[0.85, 1.15], wspace=0.55)
     ax_count = fig.add_subplot(gs_d[0, 0])
     ax_mb = fig.add_subplot(gs_d[0, 1])
     ax_fusion_tab = fig.add_subplot(gs[4, 0:2])
