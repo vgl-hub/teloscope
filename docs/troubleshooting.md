@@ -253,6 +253,10 @@ rg "telomere_" results/asm.gfa.telo.annotated.gfa
 
 ## Report generation
 
+### `Axes.boxplot() got an unexpected keyword argument 'orientation'`
+
+Report scripts from before this fix needed matplotlib 3.10 or newer. Update Teloscope's `scripts/`, or upgrade matplotlib.
+
 ### Teloscope could not find `teloscope_report.py`
 
 If you see `Warning: Could not locate teloscope_report.py` or `Warning: Report generation failed`, run the script directly:

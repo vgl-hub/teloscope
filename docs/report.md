@@ -24,7 +24,15 @@ Prefix filters are also available, but database prefixes are not universal chrom
 
 - page 1: assembly overview, scaffold classes, and flagged scaffolds
 - page 2: telomere length summary and flagged telomere blocks
+- page 3: interstitial telomere summary (when the interstitial BED has rows)
 - later pages: one terminal zoom figure per scaffold with called telomere blocks
+
+The interstitial telomere (ITS) summary page includes:
+- atlas: scaffolds with telomeres or ITS, showing position and extent
+- ITS position distribution along the scaffold length
+- ITS length versus canonical sequence share (hexbin)
+- row counts and total bp per junction class
+- tables of candidate fusions and longest ITS rows
 
 Each terminal zoom page can include:
 
@@ -56,6 +64,8 @@ python3 scripts/plot_its.py results/ CHROM --png -o its_figures/
 
 A bare `CHROM` auto-centers on the largest interstitial telomere cluster on that scaffold.
 
+Contig-terminal rows (written with `-n`) are excluded from telomere counts and length panels on the report, and are drawn outline-only on the terminal zoom pages.
+
 Minimum required input:
 
 - `*_terminal_telomeres.bed`
@@ -82,7 +92,7 @@ Common optional inputs:
 ## Requirements
 
 - Python 3
-- `matplotlib`
+- `matplotlib` 3.5 or newer
 - `numpy`
 - `pandas`
 
