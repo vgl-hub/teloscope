@@ -72,8 +72,7 @@ COLORS = {
     "no_data":      "#e0e0e0",
 }
 
-# ITS junction classes, fixed order; fusion is the one accent hue, the rest recede to grey.
-# Recessive greys are picked to each clear 3:1 contrast on white (COLORS["gap"] does not).
+# ITS junction classes, fixed order; fusion is the one accent hue, the rest recede to greys picked for >=3:1 contrast on white.
 CLASS_ORDER = ["fusion", "tail_to_tail", "fragmentation", "single"]
 CLASS_SHORT = {"fusion": "fusion", "tail_to_tail": "t2t", "fragmentation": "frag", "single": "single"}
 CLASS_COLORS = {
@@ -105,7 +104,7 @@ PANEL_LABEL_SIZE = 8.0
 PANEL_TITLE_SIZE = 6.9
 AXIS_LABEL_SIZE = 6.2
 AXIS_TICK_SIZE = 5.5
-PANEL_D_TICK_SIZE = 4.6  # panel d's two narrow log-x sub-panels need smaller decade ticks
+PANEL_D_TICK_SIZE = 5.0  # panel d's two narrow log-x sub-panels need smaller decade ticks
 LEGEND_TEXT_SIZE = 5.4
 TABLE_TEXT_SIZE = 6.3
 TABLE_ROW_IN = 0.135  # fixed physical row height (header + data rows alike) for ITS tables
@@ -533,8 +532,7 @@ def parse_report(path):
             chrom = parts[header_col]
             raw_type = parts[type_col].lower()
             cat = _TYPE_MAP.get(raw_type)
-            # v0.1.6 splits gappedness out of the type, so re-attach it from the
-            # gaps column; older reports already carry it in the type string.
+            # v0.1.6 splits gappedness out of the type, so re-attach it from the gaps column; older reports already carry it in the type string.
             if cat and gaps_col is not None and not raw_type.startswith("gapped_"):
                 if len(parts) > gaps_col and parts[gaps_col].isdigit() and int(parts[gaps_col]) > 0:
                     cat = _GAPPED_OF.get(cat, cat)
@@ -685,13 +683,25 @@ def _format_bp_axis(ax, max_bp):
         ax.set_xlabel("Position (bp)")
 
 
-def _fmt_bp(bp):
-    """Format base pairs for display."""
-    if bp >= 1_000_000:
-        return f"{bp/1e6:.2f} Mb"
-    elif bp >= 1_000:
-        return f"{bp/1e3:.1f} kb"
-    return f"{bp:,} bp"
+def _pick_bp_unit(max_bp):
+    """Pick one bp/kb/Mb unit for a value or panel from its largest value."""
+    if max_bp >= 1_000_000:
+        return 1e6, "Mb"
+    if max_bp >= 1_000:
+        return 1e3, "kb"
+    return 1.0, "bp"
+
+
+def _fmt_bp(bp, _pos=None):
+    """Format a bp value in its own best-fitting unit, trimming trailing zeros."""
+    if bp <= 0:
+        return "0"
+    divisor, unit = _pick_bp_unit(bp)
+    if unit == "bp":
+        return f"{int(round(bp)):,} bp"
+    decimals = 2 if unit == "Mb" else 1
+    text = f"{bp / divisor:.{decimals}f}".rstrip("0").rstrip(".")
+    return f"{text} {unit}"
 
 
 def _fmt_kbp(bp):
@@ -1712,27 +1722,6 @@ def _fmt_share(value):
     return f"{value:.2f}" if np.isfinite(value) else "NA"
 
 
-def _pick_bp_unit(max_bp):
-    """Pick one bp/kb/Mb unit for a whole panel from its largest value."""
-    if max_bp >= 1_000_000:
-        return 1e6, "Mb"
-    if max_bp >= 1_000:
-        return 1e3, "kb"
-    return 1.0, "bp"
-
-
-def _fmt_bp_auto(bp, _pos=None):
-    """Format a bp value in its own best-fitting unit, trimming trailing zeros."""
-    if bp <= 0:
-        return "0"
-    divisor, unit = _pick_bp_unit(bp)
-    if unit == "bp":
-        return f"{int(round(bp)):,} bp"
-    decimals = 2 if unit == "Mb" else 1
-    text = f"{bp / divisor:.{decimals}f}".rstrip("0").rstrip(".")
-    return f"{text} {unit}"
-
-
 def _fmt_log_bp_tick(value):
     """Format a signed log10(bp) decade tick (value=0 at the scaffold end) as clean bp/kb/Mb text."""
     if value == 0:
@@ -1769,8 +1758,9 @@ def _its_atlas_chroms(df, arm_blocks, chrom_sizes):
 def _draw_its_atlas(ax, df, pairs, arm_blocks, chrom_sizes, fast_mode, terminal_limit, atlas_chroms):
     """Panel a: one row per scaffold with a telomere or ITS, sorted by length.
 
-    Full scan: x is position in Mb. Fast mode: x is signed log10 distance to the
-    nearer end (p left, q right), since only the end windows were scanned.
+    Full scan: x is position in Mb. Fast mode: p end is the left edge and q end is the
+    right edge (as in the arm zoom pages), each with its own log10 distance-to-end axis
+    growing inward; the unscanned interior is the blank gap between the two halves.
     """
     n = len(atlas_chroms)
     if n == 0:
@@ -1783,8 +1773,8 @@ def _draw_its_atlas(ax, df, pairs, arm_blocks, chrom_sizes, fast_mode, terminal_
 
     row_of = {c: i for i, c in enumerate(atlas_chroms)}
     y_all = np.arange(n, dtype=np.float64)
-    EPS = 0.04
     MIN_STUB_LOG = 0.3
+    OUTER_PAD = 0.2
 
     if fast_mode:
         p_its = (df.loc[df["closestEnd"] == "p"].groupby("chr")["end_dist"].max()
@@ -1801,20 +1791,28 @@ def _draw_its_atlas(ax, df, pairs, arm_blocks, chrom_sizes, fast_mode, terminal_
                     q_blk[chrom] = max(q_blk.get(chrom, 0), size - int(b["start"]))
         p_ext = np.array([max(p_its.get(c, 0), p_blk.get(c, 0), 1) for c in atlas_chroms], dtype=np.float64)
         q_ext = np.array([max(q_its.get(c, 0), q_blk.get(c, 0), 1) for c in atlas_chroms], dtype=np.float64)
-        x_min = -np.maximum(np.log10(p_ext + 1.0), MIN_STUB_LOG)
-        x_max = np.maximum(np.log10(q_ext + 1.0), MIN_STUB_LOG)
-    else:
-        x_min = np.zeros(n)
-        x_max = np.array([chrom_sizes.get(c, 0) / 1e6 for c in atlas_chroms], dtype=np.float64)
+        row_p_log = np.maximum(np.log10(p_ext + 1.0), MIN_STUB_LOG)
+        row_q_log = np.maximum(np.log10(q_ext + 1.0), MIN_STUB_LOG)
+        span = max(float(row_p_log.max()), float(row_q_log.max()), 1.0)
+        boundary = np.log10(terminal_limit + 1.0) if terminal_limit else None
+        if boundary is not None:
+            span = max(span, boundary + 0.3)
+        left_edge, right_edge = -(span + OUTER_PAD), span + OUTER_PAD
 
-    ax.hlines(y_all, x_min, x_max, color="#cfcfcf", linewidth=0.6, zorder=1)
+        ax.hlines(y_all, np.full(n, left_edge), left_edge + row_p_log,
+                 color="#cfcfcf", linewidth=0.6, zorder=1, rasterized=True)
+        ax.hlines(y_all, right_edge - row_q_log, np.full(n, right_edge),
+                 color="#cfcfcf", linewidth=0.6, zorder=1, rasterized=True)
+    else:
+        x_max = np.array([chrom_sizes.get(c, 0) / 1e6 for c in atlas_chroms], dtype=np.float64)
+        ax.hlines(y_all, np.zeros(n), x_max, color="#cfcfcf", linewidth=0.6, zorder=1, rasterized=True)
 
     if not df.empty:
         y_its = df["chr"].map(row_of).to_numpy(dtype=np.float64)
         if fast_mode:
-            end_dist = df["end_dist"].to_numpy(dtype=np.float64)
-            x_its = np.where(df["closestEnd"].to_numpy() == "p",
-                             -np.log10(end_dist + 1.0), np.log10(end_dist + 1.0))
+            log_d = np.log10(df["end_dist"].to_numpy(dtype=np.float64) + 1.0)
+            is_p = df["closestEnd"].to_numpy() == "p"
+            x_its = np.where(is_p, left_edge + log_d, right_edge - log_d)
         else:
             x_its = (df["start"].to_numpy(dtype=np.float64) + df["end"].to_numpy(dtype=np.float64)) / 2.0 / 1e6
 
@@ -1841,9 +1839,9 @@ def _draw_its_atlas(ax, df, pairs, arm_blocks, chrom_sizes, fast_mode, terminal_
         for b in blist:
             end = b.get("closestEnd")
             if end == "p":
-                cap_x.append(-EPS if fast_mode else 0.0)
+                cap_x.append(left_edge if fast_mode else 0.0)
             elif end == "q":
-                cap_x.append(EPS if fast_mode else size / 1e6)
+                cap_x.append(right_edge if fast_mode else size / 1e6)
             else:
                 continue
             cap_y.append(row)
@@ -1851,8 +1849,7 @@ def _draw_its_atlas(ax, df, pairs, arm_blocks, chrom_sizes, fast_mode, terminal_
         ax.scatter(cap_x, cap_y, s=6, color=COLORS["terminal"], edgecolors="none",
                   zorder=3, rasterized=True)
 
-    # Top-10 candidate fusions get numbered markers matching the table (fixed n<=10; no
-    # vectorisation needed at this scale).
+    # Top-10 candidate fusions get numbered markers matching the table (fixed n<=10; no vectorisation needed at this scale).
     for rank, prow in enumerate(pairs.head(10).itertuples(index=False), start=1):
         row = row_of.get(prow.chr)
         if row is None:
@@ -1860,7 +1857,8 @@ def _draw_its_atlas(ax, df, pairs, arm_blocks, chrom_sizes, fast_mode, terminal_
         if fast_mode:
             size = chrom_sizes.get(prow.chr, 0)
             dist_p, dist_q = prow.start, max(size - prow.end, 0)
-            x = -np.log10(dist_p + 1.0) if dist_p <= dist_q else np.log10(dist_q + 1.0)
+            x = (left_edge + np.log10(dist_p + 1.0) if dist_p <= dist_q
+                 else right_edge - np.log10(dist_q + 1.0))
         else:
             x = (prow.start + prow.end) / 2.0 / 1e6
         ax.scatter([x], [row], marker="*", s=22, color=CLASS_COLORS["fusion"],
@@ -1877,30 +1875,28 @@ def _draw_its_atlas(ax, df, pairs, arm_blocks, chrom_sizes, fast_mode, terminal_
     else:
         ax.set_yticks([])
         ax.set_ylabel("scaffolds, by length", fontsize=AXIS_LABEL_SIZE)
-    ax.tick_params(axis="y", length=0)  # labels only; a tick dash at x=0 would overlap the p-end cap
+    ax.tick_params(axis="y", length=0)  # labels only, no tick dash needed
     ax.spines["left"].set_visible(False)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
     if fast_mode:
-        span = max(float(np.max(np.abs(x_min))), float(np.max(x_max)), 1.0)
-        if terminal_limit:
-            boundary = np.log10(terminal_limit + 1.0)
-            for sign in (-1, 1):
-                ax.axvline(sign * boundary, color="#888888", linewidth=OVERVIEW_DASH_WIDTH,
-                          linestyle=OVERVIEW_DASH_STYLE, zorder=1)
-            span = max(span, boundary + 0.3)
-        ax.axvline(0, color="#e6e6e6", linewidth=0.4, zorder=0)
-        ax.set_xlim(-span - 0.2, span + 0.2)
-        # Decades at 100 bp / 10 kb / 1 Mb always show; 1 kb / 100 kb fill in when the
-        # bracketing decade on either side already has room, so ticks stay symmetric.
+        if boundary is not None:
+            ax.axvline(left_edge + boundary, color="#888888", linewidth=OVERVIEW_DASH_WIDTH,
+                      linestyle=OVERVIEW_DASH_STYLE, zorder=1)
+            ax.axvline(right_edge - boundary, color="#888888", linewidth=OVERVIEW_DASH_WIDTH,
+                      linestyle=OVERVIEW_DASH_STYLE, zorder=1)
+        ax.set_xlim(left_edge - 0.15, right_edge + 0.15)
+        # Decades at 100 bp/10 kb/1 Mb always show; 1 kb/100 kb fill in when both neighbours do; "0" sits at each outer edge.
         core = [t for t in (2, 4, 6) if t <= span + 0.05]
         extra = [t for t in (3, 5) if t - 1 in core and t + 1 in core]
-        decades = sorted(core + extra)
-        ticks = sorted({-t for t in decades} | {0} | set(decades))
-        ax.set_xticks(ticks)
-        ax.set_xticklabels([_fmt_log_bp_tick(t) for t in ticks], fontsize=AXIS_TICK_SIZE)
-        ax.set_xlabel("Distance to end  (p ← 0 → q)", fontsize=AXIS_LABEL_SIZE)
+        decades = [0] + sorted(core + extra)
+        tick_pos = np.array([left_edge + d for d in decades] + [right_edge - d for d in decades])
+        tick_lab = [_fmt_log_bp_tick(d) for d in decades] * 2
+        order = np.argsort(tick_pos)
+        ax.set_xticks(tick_pos[order])
+        ax.set_xticklabels([tick_lab[i] for i in order], fontsize=AXIS_TICK_SIZE)
+        ax.set_xlabel("Distance from p end →      ← Distance from q end", fontsize=AXIS_LABEL_SIZE)
     else:
         ax.set_xlim(0, max(float(np.max(x_max)), 1.0) * 1.03)
         ax.set_xlabel("Position (Mb)", fontsize=AXIS_LABEL_SIZE)
@@ -1980,20 +1976,20 @@ def _draw_its_class_totals_panel(ax_count, ax_mb, df):
     fmt_count = lambda v: f"{int(v):,}" if v > 0 else "0"
     specs = [
         (ax_count, count_values, fmt_count, "Count (log10)", None),
-        (ax_mb, length_values, _fmt_bp_auto, "Length (bp, log)",
-         ticker.FuncFormatter(_fmt_bp_auto)),
+        (ax_mb, length_values, _fmt_bp, "Length (bp, log)", ticker.FuncFormatter(_fmt_bp)),
     ]
     for ax, values, fmt, xlabel, x_formatter in specs:
         positive = values[values > 0]
         floor = float(positive.min()) / 10.0 if positive.size else 0.1
-        # Bars start at the shared log-scale floor; a zero class gets zero width (no fake sliver).
-        ax.barh(y_pos, values, left=floor, color=colors, height=0.5, edgecolor="white",
+        # Bars run from the shared log-scale floor to the value itself; a zero class gets zero width, clipped not negative.
+        widths = np.clip(values - floor, 0.0, None)
+        ax.barh(y_pos, widths, left=floor, color=colors, height=0.5, edgecolor="white",
                linewidth=0.4, zorder=2)
         ax.set_xscale("log")
-        top = float((values + floor).max()) if values.size else floor * 2.0
+        top = float(values.max()) if values.size else floor * 2.0
         ax.set_xlim(floor * 0.5, top * 12.0)
         for y, v in zip(y_pos, values):
-            ax.text((v + floor) * 1.3, y, fmt(v), va="center", ha="left",
+            ax.text(max(v, floor) * 1.3, y, fmt(v), va="center", ha="left",
                     fontsize=MIN_TEXT_SIZE, color="#222222", zorder=3)
         ax.set_ylim(len(CLASS_ORDER) - 0.4, -0.6)
         ax.set_yticks(y_pos)
@@ -2008,8 +2004,7 @@ def _draw_its_class_totals_panel(ax_count, ax_mb, df):
         ax.xaxis.set_minor_locator(ticker.NullLocator())
         if x_formatter is not None:
             ax.xaxis.set_major_formatter(x_formatter)
-        # A smaller x-tick size (these two narrow sub-panels only) keeps 3-4 decade
-        # labels from crowding each other; row labels keep the normal AXIS_TICK_SIZE.
+        # Smaller x-ticks (only on these two narrow sub-panels) keep 3-4 decade labels apart.
         ax.tick_params(axis="x", labelsize=PANEL_D_TICK_SIZE, length=2.0, width=0.35)
         ax.tick_params(axis="y", length=2.0, width=0.35)
         ax.spines["top"].set_visible(False)
@@ -2085,9 +2080,7 @@ def plot_its_page(df, pairs, arm_blocks, chrom_sizes, params):
     terminal_limit = params.get("terminal_limit")
     atlas_chroms = _its_atlas_chroms(df, arm_blocks, chrom_sizes)
 
-    # The atlas grows with scaffold count (capped); the panel rows below it stay fixed,
-    # so a page with few scaffolds is not mostly whitespace. Blank spacer rows (rather than
-    # gridspec hspace) give an exact, fixed-inches gap that does not tax the real rows.
+    # Atlas height grows with scaffold count (capped) so a page with few scaffolds isn't mostly blank; blank spacer rows give an exact gap instead of taxing real rows via gridspec hspace.
     atlas_in = float(np.clip(0.55 + 0.115 * len(atlas_chroms), 0.95, 3.0))
     bcd_in = 1.85
     table_in = 1.55
@@ -2105,7 +2098,7 @@ def plot_its_page(df, pairs, arm_blocks, chrom_sizes, params):
     ax_atlas = fig.add_subplot(gs[0, :])
     ax_pos = fig.add_subplot(gs[2, 0])
     ax_len = fig.add_subplot(gs[2, 1])
-    gs_d = gs[2, 2].subgridspec(1, 2, width_ratios=[0.85, 1.15], wspace=0.55)
+    gs_d = gs[2, 2].subgridspec(1, 2, width_ratios=[0.8, 1.2], wspace=0.30)
     ax_count = fig.add_subplot(gs_d[0, 0])
     ax_mb = fig.add_subplot(gs_d[0, 1])
     ax_fusion_tab = fig.add_subplot(gs[4, 0:2])
