@@ -55,7 +55,7 @@ Synthetic telomere nodes are placeholders. They carry tags that preserve the det
 
 `--bam-subset` reads BGZF-compressed BAM directly through `zlib`, without HTSlib or command-line converters. It preserves the BAM header, scans each record's stored `SEQ`, and writes passing records unchanged. Primary, secondary, supplementary, mapped, and unmapped records are evaluated independently. Records without `SEQ` are dropped and counted separately.
 
-Records are processed in bounded byte and record batches. Worker threads score sequences while the main thread writes passing records in input order. The output is valid BGZF with an EOF marker; no index is copied or generated. Missing input EOF markers produce a warning, while malformed BGZF or BAM data is rejected.
+BGZF blocks are inflated by `-j` worker threads in groups of up to 64 and handed to the record parser in file order, so the output does not depend on the thread count. Records are processed in bounded byte and record batches. Worker threads score sequences while the main thread writes passing records in input order. The output is valid BGZF with an EOF marker; no index is copied or generated. Missing input EOF markers produce a warning, while malformed BGZF or BAM data is rejected.
 
 FASTQ and BAM use the same read-scoring wrapper and 42 bp default. BAM I/O is isolated from scoring so a future SAM parser or optional CRAM backend can reuse the same filter.
 

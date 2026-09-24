@@ -188,11 +188,11 @@ bool readRecord(BgzfReader &reader, BamRecord &record) {
 BamSubsetStats subsetBam(std::istream &input,
                          std::ostream &output,
                          const UserInputTeloscope &userInput) {
-    BgzfReader reader(input);
+    const uint32_t threads = std::max<uint32_t>(1, threadPool.totalThreads());
+    BgzfReader reader(input, threads);
     BgzfWriter writer(output);
     copyBamHeader(reader, writer);
 
-    const uint32_t threads = std::max<uint32_t>(1, threadPool.totalThreads());
     const size_t recordsPerBatch = std::min<size_t>(
         2048, std::max<size_t>(256, static_cast<size_t>(threads) * 32));
 

@@ -4,20 +4,23 @@
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
+#include <memory>
 #include <vector>
 
 class BgzfReader {
-    std::istream &input;
+    struct Pipeline;
+    std::unique_ptr<Pipeline> pipeline;
     std::vector<uint8_t> uncompressed;
     size_t offset = 0;
     bool physicalEof = false;
     bool sawEofBlock = false;
 
-    void readPhysical(uint8_t *data, size_t size, const char *context);
-    bool loadBlock();
+    bool loadGroup();
 
 public:
-    explicit BgzfReader(std::istream &stream);
+    // threads counts inflate workers; bytes are still delivered in file order
+    explicit BgzfReader(std::istream &stream, unsigned threads = 1);
+    ~BgzfReader();
     size_t read(uint8_t *data, size_t size);
     void readExact(uint8_t *data, size_t size, const char *context);
     bool eofBlockMissing() const;
