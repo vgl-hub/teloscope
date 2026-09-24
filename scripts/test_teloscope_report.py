@@ -548,6 +548,26 @@ class TeloscopeReportTests(unittest.TestCase):
         self.assertEqual(REPORT.read_params("/no/such/report.tsv"),
                          {"max_block_dist": 1000, "terminal_limit": None, "ultra_fast": True})
 
+    def test_read_params_keeps_other_keys_when_one_value_is_malformed(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            report_path = Path(tmpdir) / "report.tsv"
+            report_path.write_text(
+                "#params max_block_dist=500 terminal_limit=none ultra_fast=false\n",
+                encoding="utf-8",
+            )
+
+            params = REPORT.read_params(str(report_path))
+
+        self.assertEqual(params, {"max_block_dist": 500, "terminal_limit": None, "ultra_fast": False})
+
+    def test_load_gaps_frame_empty_file_keeps_int64_columns(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gaps = _gaps_frame([], tmpdir)
+
+        self.assertEqual(len(gaps), 0)
+        self.assertEqual(str(gaps["start"].dtype), "int64")
+        self.assertEqual(str(gaps["end"].dtype), "int64")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -106,6 +106,8 @@ PANEL_TITLE_SIZE = 6.9
 AXIS_LABEL_SIZE = 6.2
 AXIS_TICK_SIZE = 5.5
 LEGEND_TEXT_SIZE = 5.4
+TABLE_TEXT_SIZE = 6.3
+TABLE_ROW_IN = 0.135  # fixed physical row height (header + data rows alike) for ITS tables
 MIN_TEXT_SIZE = 5.0
 ANNOTATION_TEXT_SIZE = MIN_TEXT_SIZE
 PLACEHOLDER_TEXT_SIZE = 6.2
@@ -409,16 +411,20 @@ def load_its_frame(path):
 def load_gaps_frame(path):
     """Read a BED3 gaps file into a plain chr/start/end DataFrame."""
     cols = ["chr", "start", "end"]
+    dtypes = {"chr": str, "start": np.int64, "end": np.int64}
     try:
         return pd.read_csv(path, sep="\t", header=None, usecols=[0, 1, 2], names=cols,
-                           dtype={"chr": str, "start": np.int64, "end": np.int64},
-                           engine="c", on_bad_lines="skip")
+                           dtype=dtypes, engine="c", on_bad_lines="skip")
     except pd.errors.EmptyDataError:
-        return pd.DataFrame(columns=cols)
+        return pd.DataFrame(columns=cols).astype(dtypes)
 
 
 def read_params(report_tsv):
-    """Parse the report's #params line for max_block_dist, terminal_limit and ultra_fast."""
+    """Parse the report's #params line for max_block_dist, terminal_limit and ultra_fast.
+
+    Each key is converted on its own, so one malformed value cannot abort the whole
+    line and silently leave the later keys at their defaults.
+    """
     result = {"max_block_dist": 1000, "terminal_limit": None, "ultra_fast": True}
     if not report_tsv:
         return result
@@ -429,13 +435,19 @@ def read_params(report_tsv):
                     continue
                 tokens = dict(tok.split("=", 1) for tok in line.split() if "=" in tok)
                 if "max_block_dist" in tokens:
-                    result["max_block_dist"] = int(tokens["max_block_dist"])
+                    try:
+                        result["max_block_dist"] = int(tokens["max_block_dist"])
+                    except ValueError:
+                        pass
                 if "terminal_limit" in tokens:
-                    result["terminal_limit"] = int(tokens["terminal_limit"])
+                    try:
+                        result["terminal_limit"] = int(tokens["terminal_limit"])
+                    except ValueError:
+                        pass
                 if "ultra_fast" in tokens:
                     result["ultra_fast"] = tokens["ultra_fast"].lower() == "true"
                 break
-    except (OSError, ValueError):
+    except OSError:
         pass
     return result
 
@@ -1699,10 +1711,22 @@ def _fmt_share(value):
     return f"{value:.2f}" if np.isfinite(value) else "NA"
 
 
+def _pick_bp_unit(max_bp):
+    """Pick one bp/kb/Mb unit for a whole panel from its largest value."""
+    if max_bp >= 1_000_000:
+        return 1e6, "Mb"
+    if max_bp >= 1_000:
+        return 1e3, "kb"
+    return 1.0, "bp"
+
+
 def _fmt_log_bp_tick(value):
-    """Format a signed log10(bp+1) axis tick back into human bp/kb/Mb text."""
-    bp = (10 ** abs(value)) - 1
-    return _fmt_bp(int(round(bp))) if bp >= 1 else "0"
+    """Format a signed log10(bp) decade tick (value=0 at the scaffold end) as clean bp/kb/Mb text."""
+    if value == 0:
+        return "0"
+    bp = 10 ** abs(value)
+    divisor, unit = _pick_bp_unit(bp)
+    return f"{bp / divisor:g} {unit}"
 
 
 def _short_scaffold_labels(names, width=18):
@@ -1722,16 +1746,19 @@ def _short_scaffold_labels(names, width=18):
     return [n if len(n) <= width else n[:width - 1] + "…" for n in names]
 
 
-def _draw_its_atlas(ax, df, pairs, arm_blocks, chrom_sizes, fast_mode, terminal_limit):
+def _its_atlas_chroms(df, arm_blocks, chrom_sizes):
+    """Scaffolds carrying a telomere or ITS row, longest first (panel a's row order)."""
+    telomere_chroms = {c for c, blist in arm_blocks.items() if blist}
+    its_chroms = set(df["chr"].unique()) if not df.empty else set()
+    return sorted(telomere_chroms | its_chroms, key=lambda c: chrom_sizes.get(c, 0), reverse=True)
+
+
+def _draw_its_atlas(ax, df, pairs, arm_blocks, chrom_sizes, fast_mode, terminal_limit, atlas_chroms):
     """Panel a: one row per scaffold with a telomere or ITS, sorted by length.
 
     Full scan: x is position in Mb. Fast mode: x is signed log10 distance to the
     nearer end (p left, q right), since only the end windows were scanned.
     """
-    telomere_chroms = {c for c, blist in arm_blocks.items() if blist}
-    its_chroms = set(df["chr"].unique()) if not df.empty else set()
-    atlas_chroms = sorted(telomere_chroms | its_chroms,
-                          key=lambda c: chrom_sizes.get(c, 0), reverse=True)
     n = len(atlas_chroms)
     if n == 0:
         ax.text(0.5, 0.5, "No telomeres or ITS to plot", transform=ax.transAxes,
@@ -1852,7 +1879,12 @@ def _draw_its_atlas(ax, df, pairs, arm_blocks, chrom_sizes, fast_mode, terminal_
             span = max(span, boundary + 0.3)
         ax.axvline(0, color="#e6e6e6", linewidth=0.4, zorder=0)
         ax.set_xlim(-span - 0.2, span + 0.2)
-        ticks = [-6, -4, -2, 0, 2, 4, 6]
+        # Decades at 100 bp / 10 kb / 1 Mb always show; 1 kb / 100 kb fill in when the
+        # bracketing decade on either side already has room, so ticks stay symmetric.
+        core = [t for t in (2, 4, 6) if t <= span + 0.05]
+        extra = [t for t in (3, 5) if t - 1 in core and t + 1 in core]
+        decades = sorted(core + extra)
+        ticks = sorted({-t for t in decades} | {0} | set(decades))
         ax.set_xticks(ticks)
         ax.set_xticklabels([_fmt_log_bp_tick(t) for t in ticks], fontsize=AXIS_TICK_SIZE)
         ax.set_xlabel("Distance to end  (p ← 0 → q)", fontsize=AXIS_LABEL_SIZE)
@@ -1875,21 +1907,22 @@ def _draw_its_position_panel(ax, df, fast_mode):
         ax.set_xticks([]); ax.set_yticks([])
         return
 
-    weights = df["teloLen"].to_numpy(dtype=np.float64) / 1e6
+    weights_bp = df["teloLen"].to_numpy(dtype=np.float64)
     if fast_mode:
         x = np.log10(df["end_dist"].to_numpy(dtype=np.float64) + 1.0)
         rng = (0.0, max(float(x.max()), 1.0))
-        counts, edges = np.histogram(x, bins=30, range=rng, weights=weights)
+        counts, edges = np.histogram(x, bins=30, range=rng, weights=weights_bp)
         ax.set_xlabel("Distance to end (log10 bp)", fontsize=AXIS_LABEL_SIZE)
     else:
         x = df["pos_frac"].to_numpy(dtype=np.float64)
         valid = np.isfinite(x)
-        counts, edges = np.histogram(x[valid], bins=40, range=(0.0, 1.0), weights=weights[valid])
+        counts, edges = np.histogram(x[valid], bins=40, range=(0.0, 1.0), weights=weights_bp[valid])
         ax.set_xlabel("Position along scaffold (fraction)", fontsize=AXIS_LABEL_SIZE)
 
+    divisor, unit = _pick_bp_unit(float(counts.max()) if counts.size else 0.0)
     centers = (edges[:-1] + edges[1:]) / 2.0
-    ax.bar(centers, counts, width=np.diff(edges), color=COLORS["its"], edgecolor="none", zorder=2)
-    ax.set_ylabel("ITS length (Mb)", fontsize=AXIS_LABEL_SIZE)
+    ax.bar(centers, counts / divisor, width=np.diff(edges), color=COLORS["its"], edgecolor="none", zorder=2)
+    ax.set_ylabel(f"ITS length ({unit})", fontsize=AXIS_LABEL_SIZE)
     ax.tick_params(labelsize=AXIS_TICK_SIZE, length=2.0, width=0.35)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -1913,26 +1946,29 @@ def _draw_its_length_can_panel(ax, df):
     cb.locator = ticker.MaxNLocator(integer=True, nbins=4)
     cb.update_ticks()
     cb.ax.tick_params(labelsize=AXIS_TICK_SIZE)
-    cb.ax.set_title("n", fontsize=AXIS_LABEL_SIZE, pad=2)
+    cb.ax.set_title("rows", fontsize=AXIS_LABEL_SIZE, pad=2)
     ax.set_xlabel("ITS length (log10 bp)", fontsize=AXIS_LABEL_SIZE)
     ax.set_ylabel("Canonical share", fontsize=AXIS_LABEL_SIZE)
     ax.set_ylim(0, 1)
     ax.tick_params(labelsize=AXIS_TICK_SIZE, length=2.0, width=0.35)
 
 
-def _fmt_class_mb(value):
-    """Format a class total in Mb, switching to kb so a small class never reads as 0.00."""
-    return f"{value * 1000:.1f} kb" if value < 0.01 else f"{value:.2f} Mb"
-
-
 def _draw_its_class_totals_panel(ax_count, ax_mb, df):
-    """Panel d: count and Mb per junction class; log-x thin bars, values labelled directly."""
+    """Panel d: count and length per junction class; log-x thin bars, values labelled directly.
+
+    Both bars share one bp unit for the whole length panel, picked from the largest class.
+    """
     counts, totals_bp = _class_totals(df)
     y_pos = np.arange(len(CLASS_ORDER))
     colors = [CLASS_COLORS[c] for c in CLASS_ORDER]
+    count_values = counts.to_numpy(dtype=np.float64)
+    divisor, unit = _pick_bp_unit(float(totals_bp.max()) if len(totals_bp) else 0.0)
+    length_values = totals_bp.to_numpy(dtype=np.float64) / divisor
+    fmt_count = lambda v: f"{int(v):,}" if v > 0 else "0"
+    fmt_length = lambda v: f"{v:.1f} {unit}" if v > 0 else "0"
     specs = [
-        (ax_count, counts.to_numpy(dtype=np.float64), lambda v: f"{int(v):,}", "Count (log10)"),
-        (ax_mb, totals_bp.to_numpy(dtype=np.float64) / 1e6, _fmt_class_mb, "Length (log10)"),
+        (ax_count, count_values, fmt_count, "Count (log10)"),
+        (ax_mb, length_values, fmt_length, f"Length (log10, {unit})"),
     ]
     for ax, values, fmt, xlabel in specs:
         positive = values[values > 0]
@@ -1962,7 +1998,23 @@ def _draw_its_class_totals_panel(ax_count, ax_mb, df):
         ax.spines["left"].set_visible(False)
 
 
-def _draw_its_tables(ax_fusion, ax_longest, pairs, df):
+def _table_bbox(n_data_rows, ax_height_in):
+    """Top-aligned bbox giving every table row a fixed physical height instead of stretching."""
+    frac = min(1.0, (n_data_rows + 1) * TABLE_ROW_IN / ax_height_in)
+    return [0.0, 1.0 - frac, 1.0, frac]
+
+
+def _style_table(tab):
+    """Compact table style: small text, thin horizontal-only rules, no vertical lines."""
+    tab.auto_set_font_size(False)
+    tab.set_fontsize(TABLE_TEXT_SIZE)
+    for cell in tab.get_celld().values():
+        cell.set_linewidth(0.3)
+        cell.set_edgecolor("#cccccc")
+        cell.visible_edges = "horizontal"
+
+
+def _draw_its_tables(ax_fusion, ax_longest, pairs, df, ax_height_in):
     """Panel e: minimal ax.table renders (no colour fills); full detail lives in the TSV."""
     ax_fusion.axis("off")
     ax_longest.axis("off")
@@ -1971,7 +2023,8 @@ def _draw_its_tables(ax_fusion, ax_longest, pairs, df):
                         loc="left", fontsize=PANEL_TITLE_SIZE, pad=2)
     top_pairs = pairs.head(10)
     if top_pairs.empty:
-        ax_fusion.text(0.02, 0.6, "No candidate fusions", fontsize=MIN_TEXT_SIZE, color="#999999")
+        ax_fusion.text(0.02, 0.9, "No candidate fusions", fontsize=TABLE_TEXT_SIZE,
+                       va="top", color="#999999")
     else:
         short_names = _short_scaffold_labels(list(top_pairs["chr"]))
         rows = [[str(i + 1), name, f"{(row.start + row.end) / 2e6:.3f}",
@@ -1982,18 +2035,16 @@ def _draw_its_tables(ax_fusion, ax_longest, pairs, df):
             cellText=rows,
             colLabels=["#", "scaffold", "pos (Mb)", "q bp", "p bp", "spacer", "can. share q/p"],
             colWidths=[0.04, 0.26, 0.13, 0.13, 0.13, 0.11, 0.20],
-            loc="upper left", cellLoc="left", colLoc="left", bbox=[0.0, 0.0, 1.0, 1.0],
+            loc="upper left", cellLoc="left", colLoc="left",
+            bbox=_table_bbox(len(rows), ax_height_in),
         )
-        tab.auto_set_font_size(False)
-        tab.set_fontsize(MIN_TEXT_SIZE)
-        for cell in tab.get_celld().values():
-            cell.set_linewidth(0.3)
-            cell.set_edgecolor("#cccccc")
+        _style_table(tab)
 
     ax_longest.set_title("Longest ITS rows", loc="left", fontsize=PANEL_TITLE_SIZE, pad=2)
     top_long = df.nlargest(5, "teloLen") if not df.empty else df
     if top_long.empty:
-        ax_longest.text(0.02, 0.6, "No ITS rows", fontsize=MIN_TEXT_SIZE, color="#999999")
+        ax_longest.text(0.02, 0.9, "No ITS rows", fontsize=TABLE_TEXT_SIZE,
+                        va="top", color="#999999")
     else:
         short_names = _short_scaffold_labels(list(top_long["chr"]), width=13)
         rows = [[str(i + 1), name, _fmt_bp(int(row.teloLen)),
@@ -2003,39 +2054,50 @@ def _draw_its_tables(ax_fusion, ax_longest, pairs, df):
             cellText=rows,
             colLabels=["#", "scaffold", "length", "class", "can. share"],
             colWidths=[0.06, 0.34, 0.17, 0.18, 0.25],
-            loc="upper left", cellLoc="left", colLoc="left", bbox=[0.0, 0.0, 1.0, 1.0],
+            loc="upper left", cellLoc="left", colLoc="left",
+            bbox=_table_bbox(len(rows), ax_height_in),
         )
-        tab.auto_set_font_size(False)
-        tab.set_fontsize(MIN_TEXT_SIZE)
-        for cell in tab.get_celld().values():
-            cell.set_linewidth(0.3)
-            cell.set_edgecolor("#cccccc")
+        _style_table(tab)
 
 
 def plot_its_page(df, pairs, arm_blocks, chrom_sizes, params):
     """One 183 mm ITS summary page: atlas, position, length/canonical share, class totals, tables."""
     fast_mode = bool(params.get("ultra_fast", True))
     terminal_limit = params.get("terminal_limit")
+    atlas_chroms = _its_atlas_chroms(df, arm_blocks, chrom_sizes)
 
-    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 9.4))
-    gs = fig.add_gridspec(3, 3, height_ratios=[3.1, 1.35, 1.55],
-                          width_ratios=[0.82, 0.82, 1.36], hspace=0.62, wspace=0.58)
-    fig.subplots_adjust(left=0.135, right=0.97, top=0.945, bottom=0.05)
+    # The atlas grows with scaffold count (capped); the panel rows below it stay fixed,
+    # so a page with few scaffolds is not mostly whitespace. Blank spacer rows (rather than
+    # gridspec hspace) give an exact, fixed-inches gap that does not tax the real rows.
+    atlas_in = float(np.clip(0.55 + 0.115 * len(atlas_chroms), 0.95, 3.0))
+    bcd_in = 1.85
+    table_in = 1.55
+    gap_in = 0.55
+    top_margin_in = 0.60
+    bottom_margin_in = 0.15
+    fig_h = top_margin_in + atlas_in + gap_in + bcd_in + gap_in + table_in + bottom_margin_in
+
+    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, fig_h))
+    gs = fig.add_gridspec(5, 3, height_ratios=[atlas_in, gap_in, bcd_in, gap_in, table_in],
+                          width_ratios=[0.82, 0.82, 1.36], hspace=0, wspace=0.58)
+    fig.subplots_adjust(left=0.135, right=0.97,
+                        top=1 - top_margin_in / fig_h, bottom=bottom_margin_in / fig_h)
 
     ax_atlas = fig.add_subplot(gs[0, :])
-    ax_pos = fig.add_subplot(gs[1, 0])
-    ax_len = fig.add_subplot(gs[1, 1])
-    gs_d = gs[1, 2].subgridspec(1, 2, width_ratios=[1.35, 1.0], wspace=0.55)
+    ax_pos = fig.add_subplot(gs[2, 0])
+    ax_len = fig.add_subplot(gs[2, 1])
+    gs_d = gs[2, 2].subgridspec(1, 2, width_ratios=[1.35, 1.0], wspace=0.55)
     ax_count = fig.add_subplot(gs_d[0, 0])
     ax_mb = fig.add_subplot(gs_d[0, 1])
-    ax_fusion_tab = fig.add_subplot(gs[2, 0:2])
-    ax_longest_tab = fig.add_subplot(gs[2, 2])
+    ax_fusion_tab = fig.add_subplot(gs[4, 0:2])
+    ax_longest_tab = fig.add_subplot(gs[4, 2])
 
-    _draw_its_atlas(ax_atlas, df, pairs, arm_blocks, chrom_sizes, fast_mode, terminal_limit)
+    _draw_its_atlas(ax_atlas, df, pairs, arm_blocks, chrom_sizes, fast_mode, terminal_limit, atlas_chroms)
     _draw_its_position_panel(ax_pos, df, fast_mode)
     _draw_its_length_can_panel(ax_len, df)
     _draw_its_class_totals_panel(ax_count, ax_mb, df)
-    _draw_its_tables(ax_fusion_tab, ax_longest_tab, pairs, df)
+    table_ax_height_in = ax_fusion_tab.get_position().height * fig_h
+    _draw_its_tables(ax_fusion_tab, ax_longest_tab, pairs, df, table_ax_height_in)
 
     fig.canvas.draw()
     label_style = dict(fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="bottom", ha="left")
@@ -2045,8 +2107,9 @@ def plot_its_page(df, pairs, arm_blocks, chrom_sizes, params):
         fig.text(max(0.005, bbox.x0 - 0.028), bbox.y1 + 0.012, lbl, **label_style)
 
     fig.suptitle("Interstitial telomeres (ITS)", fontsize=FIGURE_TITLE_SIZE, fontweight="bold",
-                x=0.5, y=0.985, ha="center")
-    fig.text(0.5, 0.965, f"ITS rows (n={len(df):,}), candidate fusions (n={len(pairs):,})",
+                x=0.5, y=1 - 0.20 * top_margin_in / fig_h, ha="center")
+    fig.text(0.5, 1 - 0.52 * top_margin_in / fig_h,
+            f"ITS rows (n={len(df):,}), candidate fusions (n={len(pairs):,})",
             ha="center", va="top", fontsize=FIGURE_SUMMARY_SIZE, color="#444444")
     return fig
 
