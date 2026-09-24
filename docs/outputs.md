@@ -131,7 +131,7 @@ Written during `--plot-report` when the interstitial BED has rows. Two sections:
 A candidate fusion requires a q array followed by a p array on the same scaffold, at most `-d` apart, with no N-gap between them, where at least one row is classed as fusion. The shorter array's bp is the longest length cutoff at which the pair still has both arms.
 
 **Section 2: Longest interstitial telomere rows** (default 25, any class). Columns:
-- `chr`, `start`, `end`, `teloLen`, `label` (`teloLabel`), `class` (`teloType`), `can_share`, `pos_frac`
+- `chr`, `start`, `end`, `teloLen`, `label`, `class`, `can_share`, `pos_frac` (`label` and `class` are the BED `teloLabel` and `teloType`)
 
 ## `*_report.tsv`
 

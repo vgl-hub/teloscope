@@ -10,7 +10,7 @@ Reads Teloscope output files from the given directory and generates:
   Page 1-2: Assembly overview (classification summary + telomere length distributions)
   Page 3:   ITS summary (atlas, position, length vs canonical share, class totals, top hits)
             — skipped when the interstitial BED is missing or empty
-  Page 4+:  Per-chromosome terminal zoom figures (blocks, density, canonical ratio, strand bias)
+  Then:     Per-chromosome terminal zoom figures (blocks, density, canonical ratio, strand bias)
 
 Requires: Python 3.6+, matplotlib, numpy, pandas
 """
