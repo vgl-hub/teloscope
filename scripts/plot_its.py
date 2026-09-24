@@ -23,26 +23,27 @@ import glob
 import argparse
 
 import numpy as np
+import pandas as pd
 
-# Importing the report module first configures the Agg backend and Nature style.
+# Importing the report module first configures the Agg backend and Nature style. The
+# single-locus drawing helpers (ideogram, blocks track, region axis, orientation palette)
+# and the ITS clustering math live in teloscope_report so both modules share one
+# implementation without plot_its importing back into it (teloscope_report never imports
+# from plot_its, so this stays a one-way dependency).
 from teloscope_report import (
     find_files, parse_terminal_bed, parse_bedgraph, parse_interval_bed,
     get_chrom_sizes, _draw_fraction_track, _draw_strand_track,
     _apply_terminal_x_axis, _save_figure_with_fallback, _fmt_bp,
-    _sanitize_filename, _warn, _block_symbol_fits, _draw_block_symbol,
-    _set_track_label, _hide_x_axis, COLORS, FIG_WIDTH_SINGLE, PANEL_LABEL_SIZE,
-    LEGEND_TEXT_SIZE, FIGURE_SUMMARY_SIZE, AXIS_TICK_SIZE,
+    _sanitize_filename, _warn, _draw_locus_ideogram, _draw_its_blocks_track,
+    _region_axis_spec, pad_window, summarize_its_clusters, _set_track_label, _hide_x_axis,
+    ITS_ORIENT_COLORS, ITS_ORIENT_LABELS, ZOOM_COLOR,
+    COLORS, FIG_WIDTH_SINGLE, PANEL_LABEL_SIZE,
+    LEGEND_TEXT_SIZE, FIGURE_SUMMARY_SIZE,
 )
 
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.patches import Rectangle, Patch, ConnectionPatch
-
-# Orientation palette for interstitial blocks; balanced uses green per request.
-ITS_ORIENT_COLORS = {"p": COLORS["p"], "q": COLORS["q"], "b": "#009E73"}
-ITS_ORIENT_LABELS = (("p", "p (forward)"), ("q", "q (reverse)"), ("b", "balanced"))
-ZOOM_COLOR = COLORS["Discordant"]  # red box/funnel marking the zoom region
+from matplotlib.patches import Patch, ConnectionPatch
 
 # Every track is individually togglable; the scaffold ideogram is off by default.
 ALL_TRACKS = ("ideogram", "blocks", "matches", "density", "canonical", "strand", "gc", "entropy")
@@ -83,145 +84,29 @@ def _parse_region(spec, chrom_sizes):
 
 
 def _auto_region_window(its_blocks_list, chrom_size, pad=None, merge_gap=50_000):
-    """Window around the largest interstitial cluster on a scaffold; None if no ITS blocks."""
+    """Window around the ITS cluster with the most ITS bp on this scaffold; None if no ITS blocks.
+
+    Delegates to teloscope_report.summarize_its_clusters, the same vectorised clustering
+    used by the ITS-1 ideogram and ITS-2/TSV cluster tables.
+    """
     if not its_blocks_list:
         return None
-    blocks = sorted(its_blocks_list, key=lambda b: b["start"])
-    clusters = []
-    cur = {"start": blocks[0]["start"], "end": blocks[0]["end"], "bp": blocks[0]["length"]}
-    for b in blocks[1:]:
-        if b["start"] - cur["end"] <= merge_gap:
-            cur["end"] = max(cur["end"], b["end"])
-            cur["bp"] += b["length"]
-        else:
-            clusters.append(cur)
-            cur = {"start": b["start"], "end": b["end"], "bp": b["length"]}
-    clusters.append(cur)
-    best = max(clusters, key=lambda c: c["bp"])
-    span = best["end"] - best["start"]
-    use_pad = pad if pad is not None else max(2 * span, 10_000)
-    return max(0, best["start"] - use_pad), min(int(chrom_size), best["end"] + use_pad)
-
-
-def _region_axis_spec(view_start, view_end):
-    """Round genomic ticks for an absolute-position window; positions always in Mbp."""
-    span_mb = max(view_end - view_start, 1) / 1e6
-    dec = 1 if span_mb >= 2 else 2 if span_mb >= 0.2 else 3
-    ticks = [t for t in ticker.MaxNLocator(nbins=6, steps=[1, 2, 2.5, 5, 10]).tick_values(
-        view_start, view_end) if view_start <= t <= view_end]
-    if len(ticks) < 2:
-        ticks = list(np.linspace(view_start, view_end, 5))
-    return {
-        "axis_start": view_start, "axis_end": view_end, "tick_pos": ticks,
-        "tick_labels": [f"{t / 1e6:.{dec}f}" for t in ticks],
-        "xlabel": "Position (Mbp)",
-    }
+    df = pd.DataFrame({
+        "chr": "x",
+        "start": [b["start"] for b in its_blocks_list],
+        "end": [b["end"] for b in its_blocks_list],
+        "teloLen": [b["length"] for b in its_blocks_list],
+    })
+    clusters = summarize_its_clusters(df, merge_gap=merge_gap, min_rows=1)
+    if clusters.empty:
+        return None
+    best = clusters.iloc[0]
+    return pad_window(int(best["start"]), int(best["end"]), chrom_size, pad)
 
 
 # ---------------------------------------------------------------------------
 # Track drawing
 # ---------------------------------------------------------------------------
-
-def _draw_ideogram(ax, chrom_size, view_start, view_end, blocks_list, its_blocks_list,
-                   contig_blocks_list=None):
-    """Whole-scaffold overview: terminal caps, all ITS ticks, and the zoom window boxed."""
-    bar_y, bar_h = 0.60, 0.34
-    bottom = bar_y - bar_h / 2.0
-    ax.add_patch(Rectangle((0, bottom), chrom_size, bar_h, facecolor="#ececec",
-                           edgecolor="#b9b9b9", linewidth=0.5, zorder=1))
-
-    # Terminal telomeres as dark end caps (min width so they stay visible).
-    cap_min = chrom_size * 0.004
-    for b in blocks_list or []:
-        if b.get("term") == "contig":
-            continue
-        w = max(b["end"] - b["start"], cap_min)
-        x = min(b["start"], chrom_size - w) if b["start"] > chrom_size / 2.0 else b["start"]
-        ax.add_patch(Rectangle((x, bottom), w, bar_h, facecolor=COLORS["terminal"],
-                               edgecolor="none", zorder=2))
-
-    # Contig rows as outline-only caps.
-    for b in contig_blocks_list or []:
-        w = max(b["end"] - b["start"], cap_min)
-        x = min(b["start"], chrom_size - w) if b["start"] > chrom_size / 2.0 else b["start"]
-        ax.add_patch(Rectangle((x, bottom), w, bar_h, facecolor="none",
-                               edgecolor=COLORS["terminal"], linewidth=0.6, zorder=3))
-
-    # Every interstitial telomere on the scaffold as an orientation-colored tick.
-    for b in its_blocks_list or []:
-        xm = (b["start"] + b["end"]) / 2.0
-        ax.plot([xm, xm], [bottom, bottom + bar_h],
-                color=ITS_ORIENT_COLORS.get(b.get("label", ""), COLORS["its"]),
-                linewidth=0.7, zorder=3)
-
-    # Zoom window marker (min visible width).
-    mid = (view_start + view_end) / 2.0
-    half = max((view_end - view_start) / 2.0, chrom_size * 0.0035)
-    box_l, box_r = max(0, mid - half), min(chrom_size, mid + half)
-    box_bottom = bottom - 0.12
-    ax.add_patch(Rectangle((box_l, box_bottom), box_r - box_l, bar_h + 0.24,
-                           facecolor="none", edgecolor=ZOOM_COLOR, linewidth=1.0, zorder=5))
-
-    ax.set_xlim(-chrom_size * 0.012, chrom_size * 1.012)
-    ax.set_ylim(0, 1)
-    ax.set_yticks([])
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    ticks = [t for t in ticker.MaxNLocator(nbins=5, steps=[1, 2, 2.5, 5, 10]).tick_values(
-        0, chrom_size) if 0 <= t <= chrom_size]
-    ax.set_xticks(ticks)
-    ax.set_xticklabels([f"{t / 1e6:.0f}" for t in ticks])
-    ax.tick_params(axis="x", length=2, width=0.4, pad=1.0,
-                   labelsize=AXIS_TICK_SIZE, colors="#666666")
-    ax.set_xlabel("Scaffold (Mbp)", fontsize=AXIS_TICK_SIZE, color="#666666", labelpad=1.5)
-    _set_track_label(ax, "Scaffold")
-    return box_l, box_r, box_bottom
-
-
-def _draw_its_blocks_track(ax, view_start, view_end, blocks_list, its_blocks_list,
-                           gap_blocks_list, label="Blocks", contig_blocks_list=None):
-    """Single-panel block track in genomic coordinates; ITS colored by orientation."""
-    backbone_y = 0.5
-    view_span = max(view_end - view_start, 1)
-    ax.plot([view_start, view_end], [backbone_y, backbone_y],
-            color="#d6d6d6", linewidth=0.9, solid_capstyle="round", zorder=1)
-
-    def _draw(seq, color_fn, zorder):
-        for b in seq or []:
-            if b["end"] <= view_start or b["start"] >= view_end:
-                continue
-            ds, de = max(b["start"], view_start), min(b["end"], view_end)
-            ax.add_patch(Rectangle((ds, backbone_y - 0.07), de - ds, 0.14,
-                                   facecolor=color_fn(b), edgecolor="none",
-                                   alpha=0.98, zorder=zorder))
-            if _block_symbol_fits(de - ds, view_span, b.get("label", "")):
-                _draw_block_symbol(ax, (ds + de) / 2, backbone_y, b.get("label", ""), zorder + 1)
-
-    def _draw_outline(seq, color, zorder):
-        for b in seq or []:
-            if b["end"] <= view_start or b["start"] >= view_end:
-                continue
-            ds, de = max(b["start"], view_start), min(b["end"], view_end)
-            ax.add_patch(Rectangle((ds, backbone_y - 0.07), de - ds, 0.14,
-                                   facecolor="none", edgecolor=color, linewidth=0.6,
-                                   zorder=zorder))
-
-    _draw([b for b in blocks_list if b.get("term") != "contig"] if blocks_list else [],
-          lambda b: COLORS["terminal"], 2)
-    _draw_outline([b for b in blocks_list if b.get("term") == "contig"] if blocks_list else [],
-                  COLORS["terminal"], 3)
-    _draw(its_blocks_list, lambda b: ITS_ORIENT_COLORS.get(b.get("label", ""), COLORS["its"]), 4)
-    _draw(gap_blocks_list, lambda b: COLORS["gap"], 6)
-    _draw_outline(contig_blocks_list, COLORS["terminal"], 5)
-
-    ax.set_ylim(0.28, 0.72)
-    ax.set_yticks([])
-    ax.spines["left"].set_visible(False)
-    ax.spines["bottom"].set_visible(False)
-    _set_track_label(ax, label)
-    _hide_x_axis(ax)
-    return True
-
 
 def _draw_matches_track(ax, view_start, view_end, matches_list, color, label="Canonical\nmatches"):
     """Thin tick track marking individual repeat-match positions in the window."""
@@ -281,7 +166,7 @@ def plot_region_zoom(chrom, chrom_size, view_start, view_end, blocks_list,
     row_offset = 0
     if show_ideogram:
         ideo_ax = axes[0][0]
-        box_l, box_r, box_bottom = _draw_ideogram(
+        box_l, box_r, box_bottom = _draw_locus_ideogram(
             ideo_ax, chrom_size, view_start, view_end, blocks_list, its_blocks_list)
         row_offset = 1
 
