@@ -1,7 +1,10 @@
 #include "main.h"
 #include "bam.h"
+#include "read-filter.h"
+#include "teloscope.h"
 #include <input.h>
 #include <iostream>
+#include <zlib.h>
 
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
@@ -66,6 +69,49 @@ static std::string findReportScript(const char* argv0) {
     return "";
 }
 
+// FASTQ or BAM input: the telomeric reads, the read telomere BED and the report, all under outRoute
+static void runReads(Input &in) {
+    const bool bam = userInput.readInput == ReadInput::bam;
+    const std::string base = userInput.outRoute + "/" + userInput.inSequenceName;
+    const std::string bedPath = base + "_terminal_telomeres.bed", reportPath = base + "_report.tsv";
+    const std::string subsetPath = bam
+        ? userInput.outRoute + "/" + std::filesystem::path(userInput.inSequenceName).stem().string() + "_telomeric.bam"
+        : base + "_telomeric.fastq";
+
+    std::ofstream subset(subsetPath, std::ios::binary), bed(bedPath), report(reportPath);
+    auto removeOutputs = [&]() {
+        subset.close(); bed.close(); report.close(); // Windows cannot remove an open file
+        for (const std::string &path : {subsetPath, bedPath, reportPath}) {
+            std::error_code removeError;
+            std::filesystem::remove(path, removeError);
+        }
+    };
+    if (!subset.is_open() || !bed.is_open() || !report.is_open()) {
+        fprintf(stderr, "Error: cannot write telomeric records to '%s'.\n", userInput.outRoute.c_str());
+        removeOutputs();
+        threadPool.join();
+        exit(EXIT_FAILURE);
+    }
+
+    ReadTlStats stats;
+    try {
+        if (bam) readBamReads(userInput, subset, bed, stats);
+        else in.readFastqReads(subset, bed, stats);
+        if (!bed.flush().good()) throw std::runtime_error("failed while writing the read telomere BED");
+        writeReadTlReport(report, makeReadTlInput(userInput), stats);
+        if (!report.flush().good()) throw std::runtime_error("failed while writing the report");
+    } catch (const std::exception &error) {
+        fprintf(stderr, "Error: %s.\n", error.what());
+        if (bam && userInput.inSequence.empty())
+            fprintf(stderr, "  Compressed FASTQ or FASTA on stdin is not supported: pass the file path instead.\n");
+        threadPool.join();
+        removeOutputs();
+        exit(EXIT_FAILURE);
+    }
+
+    fprintf(stderr, "Wrote %s, %s and %s.\n", subsetPath.c_str(), bedPath.c_str(), reportPath.c_str());
+}
+
 int main(int argc, char **argv) {
     
     short int c; // optarg
@@ -85,7 +131,7 @@ int main(int argc, char **argv) {
     
     if (argc == 1 && !isPipe) { // case: with no arguments and no pipe
 
-        printf("teloscope input.[fa|fa.gz|gfa] [options]\nteloscope --fastq-subset input.[fq|fq.gz] > telomeric.fq\nteloscope --bam-subset input.bam > telomeric.bam\nUse -h for additional help.\n");
+        printf("teloscope input.[fa|fa.gz|gfa|fq|fq.gz|bam] [options]\nUse -h for additional help.\n");
         exit(0);
 
     }
@@ -244,10 +290,11 @@ int main(int argc, char **argv) {
             case 0: // long options without short options
                 if (strcmp(long_options[option_index].name, "plot-report") == 0)
                     userInput.outPlotReport = true;
-                else if (strcmp(long_options[option_index].name, "fastq-subset") == 0)
-                    userInput.fastqSubset = true;
-                else if (strcmp(long_options[option_index].name, "bam-subset") == 0)
-                    userInput.bamSubset = true;
+                else if (strcmp(long_options[option_index].name, "fastq-subset") == 0 ||
+                         strcmp(long_options[option_index].name, "bam-subset") == 0) {
+                    fprintf(stderr, "Error: --fastq-subset and --bam-subset were removed: FASTQ or BAM input is detected and always writes the telomeric reads, the read telomere BED and the report.\n");
+                    exit(EXIT_FAILURE);
+                }
                 else if (strcmp(long_options[option_index].name, "include-bed") == 0)
                     addBedFilterFile(optarg, userInput.includeBedFiles, "--include-bed");
                 else if (strcmp(long_options[option_index].name, "exclude-bed") == 0)
@@ -260,8 +307,10 @@ int main(int argc, char **argv) {
                     userInput.chrOnly = true;
                     userInput.sequenceFilterActive = true;
                 }
-                else if (strcmp(long_options[option_index].name, "terminal-tolerance") == 0)
+                else if (strcmp(long_options[option_index].name, "terminal-tolerance") == 0) {
                     userInput.terminalTolerance = parsePositive(optarg, "--terminal-tolerance");
+                    userInput.terminalToleranceSet = true;
+                }
                 else if (strcmp(long_options[option_index].name, "label-threshold") == 0)
                     userInput.labelThreshold = parseLabelThreshold(optarg);
                 else if (strcmp(long_options[option_index].name, "min-block-counts") == 0)
@@ -405,7 +454,8 @@ int main(int argc, char **argv) {
             case 't' : {
                 try {
                     userInput.terminalLimit = std::stoi(optarg);
-                    
+                    userInput.terminalLimitSet = true;
+
                     if (userInput.terminalLimit <= 0) {
                         fprintf(stderr, "Error: Terminal limit (-t or --terminal-limit) must be > 0.\n");
                         exit(EXIT_FAILURE);
@@ -437,8 +487,7 @@ int main(int argc, char **argv) {
             case 'l': {
                 try {
                     userInput.minBlockLen = std::stoi(optarg);
-                    userInput.minBlockLenSet = true;
-                    
+
                     if (userInput.minBlockLen <= 0) {
                         fprintf(stderr, "Error: Min block length (-l or --min-block-length) must be > 0.\n");
                         exit(EXIT_FAILURE);
@@ -564,23 +613,22 @@ int main(int argc, char **argv) {
                 break;
 
             case 'h': // help
-                printf("teloscope input.[fa|fa.gz|gfa] [options]\n");
-                printf("teloscope -f input.[fa|fa.gz|gfa] [options]\n");
-                printf("teloscope --fastq-subset input.[fq|fq.gz] [options] > telomeric.fq\n");
-                printf("teloscope --bam-subset input.bam [options] > telomeric.bam\n");
+                printf("teloscope input.[fa|fa.gz|gfa|fq|fq.gz|bam] [options]\n");
+                printf("teloscope -f input.[fa|fa.gz|gfa|fq|fq.gz|bam] [options]\n");
+                printf("FASTQ or BAM input is detected and writes the telomeric reads, the read telomere BED and the report (estimates; see docs).\n");
                 printf("\nRequired Parameters:\n");
                 printf("\t'-f'\t--input-sequence\tInput FASTA, GFA, FASTQ, or BAM file (or pass as first positional argument).\n");
                 printf("\t'-o'\t--output\tSet output route. [Default: Input path]\n");
                 printf("\t'-c'\t--canonical\tSet canonical pattern. [Default: TTAGGG]\n");
                 printf("\t'-p'\t--patterns\tSet patterns to explore, separate them by commas [Default: TTAGGG]\n");
                 printf("\t'-j'\t--threads\tSet maximum number of threads. [Default: max. available]\n");
-                printf("\t'-t'\t--terminal-limit\tSet how far in from each end to look. [Default: 50000]\n");
+                printf("\t'-t'\t--terminal-limit\tSet how far in from each end to look; also the read tile size. [Default: 50000 assembly, 2000 reads]\n");
                 printf("\t'-k'\t--max-match-distance\tSet maximum distance for merging matches. [Default: 50]\n");
                 printf("\t'-d'\t--max-block-distance\tSet maximum non-telomeric stretch inside a telomere. [Default: 1000]\n");
-                printf("\t'-l'\t--min-block-length\tSet minimum block length. [Default: 300 assembly, 42 read subset]\n");
+                printf("\t'-l'\t--min-block-length\tSet minimum block length. [Default: 300]\n");
                 printf("\t'-y'\t--min-block-density\tSet minimum block density. [Default: 0.5]\n");
                 printf("\t'-x'\t--edit-distance\tSet edit distance for pattern matching (0-2). [Default: 1]\n");
-                printf("\t\t--terminal-tolerance\tSet how far from an end a telomere may start. [Default: 3000]\n");
+                printf("\t\t--terminal-tolerance\tSet how far from an end a telomere may start. [Default: 3000 assembly, 300 reads]\n");
                 printf("\t\t--label-threshold\tSet forward-strand fraction for the p/q label. [Default: 0.667]\n");
                 printf("\t\t--min-block-counts\tSet minimum canonical matches per block. [Default: 2]\n");
 
@@ -602,8 +650,6 @@ int main(int argc, char **argv) {
                 printf("\t'-u'\t--ultra-fast\tUltra-fast mode. Only scans terminal telomeres at scaffold ends. [Default: true]\n");
                 printf("\t'-n'\t--manual-curation\tAlso report telomeres at contig ends. [Default: scaffold only]\n");
                 printf("\t\t--plot-report\tGenerate terminal and ITS PDF reports after analysis (requires Python 3 + matplotlib). [Default: false]\n");
-                printf("\t\t--fastq-subset\tStream FASTQ reads with Teloscope-valid telomeric blocks to stdout, or save to a file with -o. [Default: false]\n");
-                printf("\t\t--bam-subset\tStream BAM records with Teloscope-valid telomeric blocks to stdout, or save to a file with -o. [Default: false]\n");
 
                 printf("\t'-v'\t--version\tPrint current software version.\n");
                 printf("\t'-h'\t--help\tPrint current software options.\n");
@@ -621,30 +667,45 @@ int main(int argc, char **argv) {
             userInput.outRoute = ".";
     }
 
-    // gzipped stdin not supported
-    if (isPipe && userInput.pipeType == 'f' && !userInput.bamSubset) {
-        int b = std::cin.peek();
-        if (b == 0x1f) {
-            fprintf(stderr, "Error: Compressed input on stdin is not supported. Decompress first:\n");
-            fprintf(stderr, "  zcat file.fa.gz | teloscope -o results/\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-
     // no input
     if (userInput.inSequence.empty() && userInput.pipeType == 'n') {
         fprintf(stderr, "Error: No input file provided. Use -f or pass as positional argument.\n");
         exit(EXIT_FAILURE);
     }
 
-    if (userInput.fastqSubset && userInput.bamSubset) {
-        fprintf(stderr, "Error: --fastq-subset and --bam-subset are mutually exclusive.\n");
-        exit(EXIT_FAILURE);
+    // reads are detected by content: the BAM magic or a FASTQ header; anything else is an assembly
+    std::error_code fileError;
+    if (std::filesystem::is_regular_file(userInput.inSequence, fileError)) {
+        char magic[4] = {0, 0, 0, 0}; // gzread inflates gzip/BGZF and passes plain files through
+        if (gzFile file = gzopen(userInput.inSequence.c_str(), "rb")) {
+            const int got = gzread(file, magic, sizeof(magic));
+            int status = Z_OK;
+            gzerror(file, &status);
+            gzclose(file);
+            if (status != Z_OK && status != Z_STREAM_END) {
+                fprintf(stderr, "Error: cannot inflate compressed input '%s'.\n", userInput.inSequence.c_str());
+                exit(EXIT_FAILURE);
+            }
+            if (got == 0) {
+                fprintf(stderr, "Error: input '%s' is empty.\n", userInput.inSequence.c_str());
+                exit(EXIT_FAILURE);
+            }
+        }
+        if (memcmp(magic, "BAM\1", 4) == 0) userInput.readInput = ReadInput::bam;
+        else if (magic[0] == '@') userInput.readInput = ReadInput::fastq;
+    } else if (userInput.inSequence.empty()) {
+        const int first = std::cin.peek(); // gzip on stdin can only be a BAM; BgzfReader checks the magic
+        if (first == EOF) {
+            fprintf(stderr, "Error: input on stdin is empty.\n");
+            exit(EXIT_FAILURE);
+        }
+        if (first == '@') userInput.readInput = ReadInput::fastq;
+        else if (first == 0x1f) userInput.readInput = ReadInput::bam;
     }
 
-    if (userInput.sequenceFilterActive && (userInput.fastqSubset || userInput.bamSubset)) {
-        fprintf(stderr, "Error: --include-bed/--exclude-bed/--include-prefix/--exclude-prefix "
-                        "filter assembly records and cannot be used in read subset mode.\n");
+    if (userInput.sequenceFilterActive && userInput.readInput != ReadInput::none) {
+        fprintf(stderr, "Error: --include-bed/--exclude-bed/--include-prefix/--exclude-prefix/--chr-only "
+                        "filter assembly records and cannot be used with FASTQ or BAM input.\n");
         exit(EXIT_FAILURE);
     }
 
@@ -659,7 +720,7 @@ int main(int argc, char **argv) {
     }
 
     // writable check
-    if (!userInput.outRoute.empty() && !userInput.fastqSubset && !userInput.bamSubset) {
+    if (!userInput.outRoute.empty()) {
         std::string testPath = userInput.outRoute + "/.teloscope_write_test";
         std::ofstream test(testPath);
         if (!test.is_open()) {
@@ -688,8 +749,8 @@ int main(int argc, char **argv) {
     userInput.patterns.clear();
     userInput.patterns.reserve(userInput.patternInfo.size());
     // only the assembly FASTA path scans in windows, so only it can outgrow one
-    const bool usesWindows = !userInput.ultraFastMode && !userInput.fastqSubset &&
-                             !userInput.bamSubset && !isGfaAssemblyPath(userInput.inSequence);
+    const bool usesWindows = !userInput.ultraFastMode && userInput.readInput == ReadInput::none &&
+                             !isGfaAssemblyPath(userInput.inSequence);
     for (const auto& [pattern, isForward] : userInput.patternInfo) {
         userInput.patterns.push_back(pattern);
         if (pattern.size() > 255) { // a match records its size in eight bits
@@ -734,20 +795,19 @@ int main(int argc, char **argv) {
     if (!outputSummary.empty()) {
         fprintf(stderr, "Outputs: %s.\n", outputSummary.c_str());
     }
-    if ((userInput.fastqSubset || userInput.bamSubset) &&
+    if (userInput.readInput != ReadInput::none &&
         (userInput.outFasta || userInput.outWinRepeats || userInput.outGC ||
          userInput.outEntropy || userInput.outMatches || fullScanRequested ||
          userInput.outPlotReport || userInput.manualCuration)) {
-        fprintf(stderr, "Warning: assembly output flags are ignored in read subset mode.\n");
+        fprintf(stderr, "Warning: assembly output flags are ignored for FASTQ or BAM input.\n");
     }
 
     // command echo
     if (cmd_flag) {
-        FILE *commandStream = (userInput.fastqSubset || userInput.bamSubset) ? stderr : stdout;
         for (unsigned short int arg_counter = 0; arg_counter < argc; arg_counter++) {
-            fprintf(commandStream, "%s ", argv[arg_counter]);
+            printf("%s ", argv[arg_counter]);
         }
-        fprintf(commandStream, "\n");
+        printf("\n");
         
     }
 
@@ -758,34 +818,8 @@ int main(int argc, char **argv) {
     in.load(userInput); // load user input
     lg.verbose("Loaded user input");
 
-    if (userInput.fastqSubset) {
-        if (userInput.outRouteSet) { // -o given: save to a file instead of streaming to stdout
-            std::string fastqOutPath = userInput.outRoute + "/" + userInput.inSequenceName + "_telomeric.fastq";
-            std::ofstream fastqOut(fastqOutPath);
-            if (!fastqOut.is_open()) {
-                fprintf(stderr, "Error: Cannot write telomeric reads to '%s'.\n", fastqOutPath.c_str());
-                threadPool.join();
-                exit(EXIT_FAILURE);
-            }
-            in.readFastqSubset(fastqOut);
-            fastqOut.close();
-            fprintf(stderr, "Wrote telomeric reads to %s.\n", fastqOutPath.c_str());
-        } else {
-            in.readFastqSubset(std::cout); // default: stream to stdout for piping
-        }
-        threadPool.join();
-        exit(EXIT_SUCCESS);
-    }
-
-    if (userInput.bamSubset) {
-        try {
-            runBamSubsetMode(userInput);
-        } catch (const std::exception &error) {
-            fprintf(stderr, "Error: BAM subset failed: %s.\n", error.what());
-            threadPool.join();
-            exit(EXIT_FAILURE);
-        }
-
+    if (userInput.readInput != ReadInput::none) {
+        runReads(in);
         threadPool.join();
         exit(EXIT_SUCCESS);
     }

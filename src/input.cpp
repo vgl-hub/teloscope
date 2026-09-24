@@ -1,5 +1,6 @@
 #include <iostream>
 #include <algorithm>
+#include <atomic>
 #include <stdint.h>
 #include <inttypes.h>
 #include <stdlib.h>
@@ -47,12 +48,6 @@ struct FastqRecord {
     std::string quality;
 };
 
-struct FastqChunkResult {
-    std::string output;
-    uint64_t scanned = 0;
-    uint64_t passed = 0;
-};
-
 std::vector<Tag> makeSyntheticTelomereTags(uint32_t blockLen) {
     return {
         Tag{'i', "LN", "6"},
@@ -88,11 +83,6 @@ void appendTelomereConnection(InSequences &inSequences,
     inSequences.appendEdge(edge);
 }
 
-[[noreturn]] void fastqExitFailure() {
-    threadPool.join();
-    exit(EXIT_FAILURE);
-}
-
 size_t logicalLineLength(const std::string &line) {
     if (!line.empty() && line.back() == '\r') {
         return line.size() - 1;
@@ -101,13 +91,7 @@ size_t logicalLineLength(const std::string &line) {
 }
 
 [[noreturn]] void fastqInputError(uint64_t recordNumber, const std::string &message) {
-    if (recordNumber > 0) {
-        fprintf(stderr, "Error: FASTQ record %" PRIu64 ": %s.\n",
-                recordNumber, message.c_str());
-    } else {
-        fprintf(stderr, "Error: %s.\n", message.c_str());
-    }
-    fastqExitFailure();
+    throw std::runtime_error("FASTQ record " + std::to_string(recordNumber) + ": " + message);
 }
 
 bool readFastqRecord(std::istream &stream, FastqRecord &record, uint64_t recordNumber) {
@@ -779,101 +763,98 @@ void Input::read(InSequences &inSequences) {
 }
 
 
-void Input::readFastqSubset(std::ostream &out) {
+// one pass: every read is measured, then kept when it has a block or passes the 42 bp keep scan
+void Input::readFastqReads(std::ostream &subset, std::ostream &bed, ReadTlStats &stats) {
     StreamObj streamObj;
     std::shared_ptr<std::istream> stream = streamObj.openStream(userInput, 'f');
-    if (!stream) {
-        fprintf(stderr, "Error: Stream not successful: %s.\n", userInput.inSequence.c_str());
-        fastqExitFailure();
-    }
-
-    int first = stream->peek();
-    if (first == EOF) {
-        fastqInputError(0, "FASTQ input is empty");
-    }
-    if (first != '@') {
-        fastqInputError(0, "FASTQ input must start with '@'");
+    if (!stream || stream->peek() == EOF) {
+        throw std::runtime_error("cannot read FASTQ input '" + userInput.inSequence + "'");
     }
 
     const uint32_t threads = std::max<uint32_t>(1, threadPool.totalThreads());
     const size_t recordsPerBatch = std::min<size_t>(
         2048, std::max<size_t>(256, static_cast<size_t>(threads) * 32));
 
-    std::vector<FastqRecord> batch;
-    batch.reserve(recordsPerBatch);
-
+    // two batches alternate: the reader fills one while the workers scan the other
+    struct Batch {
+        std::vector<FastqRecord> records;
+        std::vector<std::vector<TelomereBlock>> blocks;
+        std::vector<std::string> output; // the record's FASTQ text when kept, else empty
+        std::atomic<size_t> next{0};
+    };
+    Batch batches[2];
     uint64_t recordNumber = 0;
-    uint64_t totalReads = 0;
-    uint64_t passedReads = 0;
 
-    auto processBatch = [&]() {
-        if (batch.empty()) {
-            return;
+    auto readBatch = [&](Batch &batch) {
+        batch.records.clear();
+        FastqRecord record;
+        while (batch.records.size() < recordsPerBatch &&
+               readFastqRecord(*stream, record, recordNumber + 1)) {
+            recordNumber++;
+            batch.records.push_back(std::move(record));
         }
+    };
 
-        const size_t chunkCount = std::min<size_t>(threads, batch.size());
-        const size_t chunkSize = (batch.size() + chunkCount - 1) / chunkCount;
-        std::vector<FastqChunkResult> results(chunkCount);
-
-        for (size_t chunk = 0; chunk < chunkCount; ++chunk) {
-            const size_t start = chunk * chunkSize;
-            const size_t end = std::min(batch.size(), start + chunkSize);
-            if (start >= end) {
-                continue;
-            }
-
-            threadPool.queueJob([&, chunk, start, end]() {
+    // one job per thread; each pulls the next record so a run of long reads does not idle the rest
+    auto scanBatch = [&](Batch &batch) {
+        const size_t count = batch.records.size();
+        batch.blocks.assign(count, {});
+        batch.output.assign(count, {});
+        batch.next = 0;
+        for (size_t job = 0; job < std::min<size_t>(threads, count); ++job) {
+            threadPool.queueJob([&, count]() {
+                ReadTelomereScanner scanner(userInput);
                 ReadTelomereFilter filter(userInput);
-                FastqChunkResult &result = results[chunk];
-                result.scanned = end - start;
-
-                for (size_t i = start; i < end; ++i) {
-                    if (filter.matches(batch[i].sequence)) {
-                        appendFastqRecord(result.output, batch[i]);
-                        result.passed++;
+                for (size_t i = batch.next++; i < count; i = batch.next++) {
+                    batch.blocks[i] = scanner.scan(batch.records[i].sequence);
+                    if (!batch.blocks[i].empty() || filter.matches(batch.records[i].sequence)) {
+                        appendFastqRecord(batch.output[i], batch.records[i]);
                     }
                 }
-
                 return true;
             });
         }
-
-        jobWait(threadPool);
-
-        for (const auto &result : results) {
-            if (!result.output.empty()) {
-                out.write(result.output.data(), static_cast<std::streamsize>(result.output.size()));
-            }
-            totalReads += result.scanned;
-            passedReads += result.passed;
-        }
-
-        if (!out.good()) {
-            fprintf(stderr, "Error: failed while writing FASTQ subset to stdout.\n");
-            fastqExitFailure();
-        }
-
-        batch.clear();
     };
 
-    while (true) {
-        FastqRecord record;
-        if (!readFastqRecord(*stream, record, recordNumber + 1)) {
-            break;
+    // written sequentially here, in input read order, regardless of -j
+    auto writeBatch = [&](const Batch &batch) {
+        for (const std::string &output : batch.output) {
+            subset.write(output.data(), static_cast<std::streamsize>(output.size()));
         }
-        recordNumber++;
-        batch.push_back(std::move(record));
+        if (!subset.good()) {
+            throw std::runtime_error("failed while writing the telomeric reads");
+        }
+        for (size_t i = 0; i < batch.records.size(); ++i) {
+            stats.readsMeasured++;
+            stats.readsKept += !batch.output[i].empty();
+            const std::string &header = batch.records[i].header; // "@name description..."
+            size_t nameEnd = header.find_first_of(" \t\r", 1);
+            std::string name = (nameEnd == std::string::npos) ? header.substr(1)
+                                                               : header.substr(1, nameEnd - 1);
+            uint64_t readLen = logicalLineLength(batch.records[i].sequence);
+            for (const TelomereBlock &block : batch.blocks[i]) {
+                writeReadTelomereRow(bed, userInput, name, readLen, block, stats);
+            }
+        }
+    };
 
-        if (batch.size() == recordsPerBatch) {
-            processBatch();
+    // batch N+1 is read and batch N-1 written while the workers scan batch N
+    Batch *scanning = nullptr;
+    try {
+        for (size_t fill = 0; ; fill ^= 1) {
+            Batch &next = batches[fill];
+            readBatch(next);
+            if (scanning != nullptr) jobWait(threadPool);
+            if (!next.records.empty()) scanBatch(next);
+            if (scanning != nullptr) writeBatch(*scanning);
+            if (next.records.empty()) break;
+            scanning = &next;
         }
+    } catch (...) {
+        jobWait(threadPool); // the running jobs still use a batch on this frame
+        throw;
     }
-
-    processBatch();
-    out.flush();
-
-    fprintf(stderr, "FASTQ subset: kept %" PRIu64 " of %" PRIu64 " reads.\n",
-            passedReads, totalReads);
+    if (!subset.flush().good()) throw std::runtime_error("failed while writing the telomeric reads");
 }
 
 

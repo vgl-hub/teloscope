@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cinttypes>
 #include <cstring>
 #include <fstream>
@@ -15,6 +16,7 @@
 #include "bgzf.h"
 #include "global.h"
 #include "read-filter.h"
+#include "teloscope.h"
 #include "threadpool.h"
 
 #ifdef _WIN32
@@ -47,19 +49,6 @@ int32_t getI32(const uint8_t *data) {
     std::memcpy(&result, &value, sizeof(result));
     return result;
 }
-
-struct BamRecord {
-    std::vector<uint8_t> raw;
-    std::string sequence;
-    bool hasSequence = false;
-};
-
-struct BamSubsetStats {
-    uint64_t totalRecords = 0;
-    uint64_t passedRecords = 0;
-    uint64_t missingSequenceRecords = 0;
-    bool missingEofBlock = false;
-};
 
 void copyBytes(BgzfReader &reader, BgzfWriter &writer, size_t size,
                const char *context) {
@@ -119,6 +108,7 @@ void copyBamHeader(BgzfReader &reader, BgzfWriter &writer) {
     }
 }
 
+// validates the record layout; IUPAC codes and '=' become N since the engine matches ACGT only
 std::string decodeSequence(const std::vector<uint8_t> &raw) {
     const uint8_t *core = raw.data() + 4;
     const size_t payloadSize = raw.size() - 4;
@@ -152,7 +142,7 @@ std::string decodeSequence(const std::vector<uint8_t> &raw) {
         throw std::runtime_error("BAM read name is not NUL-terminated");
     }
 
-    static constexpr char bases[] = "=ACMGRSVTWYHKDBN";
+    static constexpr char bases[] = "NACNGNNNTNNNNNNN";
     std::string sequence(sequenceLength, 'N');
     for (size_t i = 0; i < sequenceLength; ++i) {
         const uint8_t packed = core[sequenceOffset + i / 2];
@@ -162,7 +152,8 @@ std::string decodeSequence(const std::vector<uint8_t> &raw) {
     return sequence;
 }
 
-bool readRecord(BgzfReader &reader, BamRecord &record) {
+// size and bounds are validated here, on the reader thread; SEQ is decoded in the worker jobs
+bool readRawRecord(BgzfReader &reader, std::vector<uint8_t> &raw) {
     std::array<uint8_t, 4> sizeBytes{};
     const size_t got = reader.read(sizeBytes.data(), sizeBytes.size());
     if (got == 0) return false;
@@ -176,141 +167,180 @@ bool readRecord(BgzfReader &reader, BamRecord &record) {
         throw std::runtime_error("invalid BAM record block_size");
     }
 
-    record.raw.resize(static_cast<size_t>(blockSize) + sizeBytes.size());
-    std::copy(sizeBytes.begin(), sizeBytes.end(), record.raw.begin());
-    reader.readExact(record.raw.data() + sizeBytes.size(),
-                     static_cast<size_t>(blockSize), "record");
-    record.sequence = decodeSequence(record.raw);
-    record.hasSequence = !record.sequence.empty();
+    raw.resize(static_cast<size_t>(blockSize) + sizeBytes.size());
+    std::copy(sizeBytes.begin(), sizeBytes.end(), raw.begin());
+    reader.readExact(raw.data() + sizeBytes.size(), static_cast<size_t>(blockSize), "record");
     return true;
 }
 
-BamSubsetStats subsetBam(std::istream &input,
-                         std::ostream &output,
-                         const UserInputTeloscope &userInput) {
-    const uint32_t threads = std::max<uint32_t>(1, threadPool.totalThreads());
-    BgzfReader reader(input, threads);
-    BgzfWriter writer(output);
-    copyBamHeader(reader, writer);
-
-    const size_t recordsPerBatch = std::min<size_t>(
-        2048, std::max<size_t>(256, static_cast<size_t>(threads) * 32));
-
-    std::vector<BamRecord> batch;
-    batch.reserve(recordsPerBatch);
-    size_t batchBytes = 0;
-    BamSubsetStats stats;
-
-    auto processBatch = [&]() {
-        if (batch.empty()) return;
-
-        std::vector<uint8_t> passed(batch.size(), 0);
-        const size_t chunkCount = std::min<size_t>(threads, batch.size());
-        const size_t chunkSize = (batch.size() + chunkCount - 1) / chunkCount;
-
-        for (size_t chunk = 0; chunk < chunkCount; ++chunk) {
-            const size_t start = chunk * chunkSize;
-            const size_t end = std::min(batch.size(), start + chunkSize);
-            if (start >= end) continue;
-
-            threadPool.queueJob([&, start, end]() {
-                ReadTelomereFilter filter(userInput);
-                for (size_t i = start; i < end; ++i) {
-                    if (batch[i].hasSequence &&
-                        filter.matches(std::move(batch[i].sequence))) {
-                        passed[i] = 1;
-                    }
-                }
-                return true;
-            });
-        }
-        jobWait(threadPool);
-
-        for (size_t i = 0; i < batch.size(); ++i) {
-            stats.totalRecords++;
-            if (!batch[i].hasSequence) {
-                stats.missingSequenceRecords++;
-            } else if (passed[i]) {
-                writer.write(batch[i].raw.data(), batch[i].raw.size());
-                stats.passedRecords++;
-            }
-        }
-
-        batch.clear();
-        batchBytes = 0;
-    };
-
-    BamRecord record;
-    while (readRecord(reader, record)) {
-        if (!batch.empty() &&
-            (batch.size() >= recordsPerBatch ||
-             record.raw.size() > BAM_BATCH_BYTES - std::min(batchBytes, BAM_BATCH_BYTES))) {
-            processBatch();
-        }
-        batchBytes += record.raw.size();
-        batch.push_back(std::move(record));
-        record = BamRecord();
-    }
-    processBatch();
-    writer.finish();
-
-    stats.missingEofBlock = reader.eofBlockMissing();
-    return stats;
+uint16_t recordFlag(const std::vector<uint8_t> &raw) {
+    return getU16(raw.data() + 4 + 14);
 }
+
+std::string recordName(const std::vector<uint8_t> &raw) {
+    const uint8_t *core = raw.data() + 4;
+    return std::string(reinterpret_cast<const char *>(core + BAM_CORE_SIZE), core[8] - 1);
+}
+
+// only valid after decodeSequence accepted the record layout
+bool hardClipped(const std::vector<uint8_t> &raw) {
+    const uint8_t *core = raw.data() + 4;
+    const size_t cigarCount = getU16(core + 12);
+    if (cigarCount == 0) return false;
+    const uint8_t *cigar = core + BAM_CORE_SIZE + core[8];
+    return (getU32(cigar) & 0xf) == 5 || (getU32(cigar + 4 * (cigarCount - 1)) & 0xf) == 5;
+}
+
+// per record: measured (primary, SEQ present, no hard clip) or not; kept when a block exists or the keep scan passes
+struct BamRecordResult {
+    std::vector<TelomereBlock> blocks;
+    bool hasSequence = false;
+    bool measured = false;
+    bool kept = false;
+    bool malformed = false;
+};
 
 } // namespace
 
-void runBamSubsetMode(const UserInputTeloscope &userInput) {
+void readBamReads(const UserInputTeloscope &userInput, std::ostream &subset,
+                  std::ostream &bed, ReadTlStats &stats) {
 #ifdef _WIN32
     _setmode(_fileno(stdin), _O_BINARY);
-    _setmode(_fileno(stdout), _O_BINARY);
 #endif
     std::ifstream inputFile;
     std::istream *input = &std::cin;
     if (!userInput.inSequence.empty()) {
         inputFile.open(userInput.inSequence, std::ios::binary);
-        if (!inputFile.is_open()) {
-            throw std::runtime_error("cannot open BAM input '" + userInput.inSequence + "'");
-        }
         input = &inputFile;
     }
 
-    std::ofstream outputFile;
-    std::ostream *output = &std::cout;
-    std::string outputPath;
-    if (userInput.outRouteSet) {
-        const std::filesystem::path inputName(userInput.inSequenceName);
-        outputPath = userInput.outRoute + "/" + inputName.stem().string() + "_telomeric.bam";
-        outputFile.open(outputPath, std::ios::binary);
-        if (!outputFile.is_open()) {
-            throw std::runtime_error("cannot write telomeric records to '" + outputPath + "'");
-        }
-        output = &outputFile;
-    }
+    const uint32_t threads = std::max<uint32_t>(1, threadPool.totalThreads());
+    BgzfReader reader(*input, threads);
+    BgzfWriter writer(subset);
+    copyBamHeader(reader, writer);
 
-    BamSubsetStats stats;
-    try {
-        stats = subsetBam(*input, *output, userInput);
-    } catch (...) {
-        if (outputFile.is_open()) {
-            outputFile.close();
-            std::error_code removeError;
-            std::filesystem::remove(outputPath, removeError);
+    const size_t recordsPerBatch = std::min<size_t>(
+        2048, std::max<size_t>(256, static_cast<size_t>(threads) * 32));
+
+    // two batches alternate: the reader fills one while the workers scan the other
+    struct Batch {
+        std::vector<std::vector<uint8_t>> records;
+        std::vector<BamRecordResult> results;
+        std::atomic<size_t> next{0};
+    };
+    Batch batches[2];
+    std::vector<uint8_t> raw; // a record read ahead that did not fit the batch being filled
+    uint64_t totalRecords = 0, missingSequence = 0, secondary = 0, clipped = 0;
+
+    auto readBatch = [&](Batch &batch) {
+        batch.records.clear();
+        size_t bytes = 0;
+        while (!raw.empty() || readRawRecord(reader, raw)) {
+            if (!batch.records.empty() &&
+                (batch.records.size() >= recordsPerBatch ||
+                 raw.size() > BAM_BATCH_BYTES - std::min(bytes, BAM_BATCH_BYTES))) {
+                return;
+            }
+            bytes += raw.size();
+            batch.records.push_back(std::move(raw));
+            raw.clear();
         }
+    };
+
+    // one job per thread; each pulls the next record so a run of long reads does not idle the rest
+    auto scanBatch = [&](Batch &batch) {
+        const size_t count = batch.records.size();
+        batch.results.assign(count, {});
+        batch.next = 0;
+        for (size_t job = 0; job < std::min<size_t>(threads, count); ++job) {
+            threadPool.queueJob([&, count]() {
+                ReadTelomereScanner scanner(userInput);
+                ReadTelomereFilter filter(userInput);
+                for (size_t i = batch.next++; i < count; i = batch.next++) {
+                    const std::vector<uint8_t> &record = batch.records[i];
+                    BamRecordResult &result = batch.results[i];
+                    std::string sequence;
+                    try {
+                        sequence = decodeSequence(record);
+                    } catch (const std::exception &) {
+                        result.malformed = true;
+                        continue;
+                    }
+                    if (sequence.empty()) continue;
+                    result.hasSequence = true;
+
+                    const uint16_t flag = recordFlag(record);
+                    result.measured = !(flag & 0x900) && !hardClipped(record);
+                    if (result.measured) // reverse-strand records are measured in sequencing orientation
+                        result.blocks = scanner.scan((flag & 0x10) ? revCom(sequence) : sequence);
+                    result.kept = !result.blocks.empty() || filter.matches(std::move(sequence));
+                }
+                return true;
+            });
+        }
+    };
+
+    // written sequentially here, in input record order, regardless of -j
+    auto writeBatch = [&](const Batch &batch) {
+        for (size_t i = 0; i < batch.records.size(); ++i) {
+            const std::vector<uint8_t> &record = batch.records[i];
+            const BamRecordResult &result = batch.results[i];
+            if (result.malformed) decodeSequence(record); // rethrows the record's error
+            totalRecords++;
+            if (!result.hasSequence) {
+                missingSequence++;
+                continue;
+            }
+            if (result.kept) {
+                writer.write(record.data(), record.size());
+                stats.readsKept++;
+            }
+            if (!result.measured) {
+                if (recordFlag(record) & 0x900) secondary++;
+                else clipped++;
+                continue;
+            }
+            stats.readsMeasured++;
+            const std::string name = recordName(record);
+            const uint64_t readLen = static_cast<uint64_t>(getI32(record.data() + 4 + 16));
+            for (const TelomereBlock &block : result.blocks) {
+                writeReadTelomereRow(bed, userInput, name, readLen, block, stats);
+            }
+        }
+    };
+
+    // batch N+1 is read and batch N-1 written while the workers scan batch N
+    Batch *scanning = nullptr;
+    try {
+        for (size_t fill = 0; ; fill ^= 1) {
+            Batch &next = batches[fill];
+            readBatch(next);
+            if (scanning != nullptr) jobWait(threadPool);
+            if (!next.records.empty()) scanBatch(next);
+            if (scanning != nullptr) writeBatch(*scanning);
+            if (next.records.empty()) break;
+            scanning = &next;
+        }
+    } catch (...) {
+        jobWait(threadPool); // the running jobs still use a batch on this frame
         throw;
     }
+    writer.finish();
 
-    if (stats.missingEofBlock) {
+    if (reader.eofBlockMissing()) {
         fprintf(stderr, "Warning: BAM input is missing the BGZF EOF marker.\n");
     }
-    if (stats.missingSequenceRecords > 0) {
-        fprintf(stderr, "BAM subset: skipped %" PRIu64 " record%s without SEQ.\n",
-                stats.missingSequenceRecords,
-                stats.missingSequenceRecords == 1 ? "" : "s");
+    if (missingSequence > 0) {
+        fprintf(stderr, "BAM: skipped %" PRIu64 " record%s without SEQ.\n",
+                missingSequence, missingSequence == 1 ? "" : "s");
     }
-    fprintf(stderr, "BAM subset: kept %" PRIu64 " of %" PRIu64 " records.\n",
-            stats.passedRecords, stats.totalRecords);
-    if (!outputPath.empty()) {
-        fprintf(stderr, "Wrote telomeric records to %s.\n", outputPath.c_str());
+    if (secondary > 0) {
+        fprintf(stderr, "BAM: %" PRIu64 " secondary/supplementary record%s not measured.\n",
+                secondary, secondary == 1 ? "" : "s");
     }
+    if (clipped > 0) {
+        fprintf(stderr, "BAM: %" PRIu64 " hard-clipped record%s not measured.\n",
+                clipped, clipped == 1 ? "" : "s");
+    }
+    fprintf(stderr, "BAM: kept %" PRIu64 " of %" PRIu64 " records.\n", stats.readsKept, totalRecords);
 }

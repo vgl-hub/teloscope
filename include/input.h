@@ -11,6 +11,10 @@
 #include "struct.h"
 
 class InSequences;
+struct ReadTlStats;
+
+// set by content detection in main: FASTQ or BAM input is subset and measured, anything else is an assembly
+enum class ReadInput : uint8_t { none, fastq, bam };
 
 struct UserInputTeloscope : UserInput {
     
@@ -38,14 +42,15 @@ struct UserInputTeloscope : UserInput {
     uint32_t windowSize = 1000;
     uint32_t step = 1000;
     uint32_t terminalLimit = 50000;
+    bool terminalLimitSet = false;
     uint8_t editDistance = 1;
 
     uint32_t maxMatchDist = 50;
     uint32_t minBlockLen = 300;
-    bool minBlockLenSet = false;
     uint32_t maxBlockDist = 1000;
     uint32_t minBlockCounts = 2;
     uint32_t terminalTolerance = 3000;
+    bool terminalToleranceSet = false;
     float minBlockDensity = 0.5f;
     float labelThreshold = 0.667f;
 
@@ -57,8 +62,7 @@ struct UserInputTeloscope : UserInput {
     bool ultraFastMode = true;
     bool manualCuration = false;
     bool outPlotReport = false;
-    bool fastqSubset = false;
-    bool bamSubset = false;
+    ReadInput readInput = ReadInput::none;
 
     double maxMem = 0;
     std::string prefix = ".", outFile = "";
@@ -70,14 +74,14 @@ class Input {
 
     UserInputTeloscope userInput;
     std::shared_ptr<std::istream> stream;
-    
+
 public:
 
     std::vector<Log> logs;
 
     void load(UserInputTeloscope userInput);
     void read(InSequences &inSequence);
-    void readFastqSubset(std::ostream &out);
+    void readFastqReads(std::ostream &subset, std::ostream &bed, ReadTlStats &stats);
 
 };
 

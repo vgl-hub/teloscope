@@ -34,8 +34,6 @@ struct CoverRun {
     uint32_t len;
 };
 
-namespace {
-
 void writeProvenanceHeader(std::ofstream& file, const UserInputTeloscope& input,
                            std::string_view columns) {
     if (!file.is_open()) return;
@@ -64,6 +62,8 @@ void writeProvenanceHeader(std::ofstream& file, const UserInputTeloscope& input,
     file << header.str();
 }
 
+namespace {
+
 const char* junctionToString(char code) {
     switch (code) {
         case 'f': return "fusion";
@@ -77,23 +77,6 @@ char closestEnd(uint64_t start, uint32_t blockLen, uint64_t pathSize, char ancho
     if (anchorSide != '\0') return anchorSide; // terminal row: the end its telomere belongs to
     uint64_t mid2 = 2 * start + blockLen;
     return (mid2 <= pathSize) ? 'p' : 'q';
-}
-
-// chr start end teloLen teloLabel closestEnd fwdCan revCan fwdNonCan revNonCan chrSize teloType
-void writeBlockRow(std::ofstream& file, std::string_view pathName,
-                   const TelomereBlock& block, uint64_t pathSize, std::string_view teloType) {
-    file << pathName << '\t'
-         << block.start << '\t'
-         << (block.start + block.blockLen) << '\t'
-         << block.teloLen << '\t'
-         << block.strandLabel << '\t'
-         << closestEnd(block.start, block.blockLen, pathSize, block.anchorSide) << '\t'
-         << block.fwdCanCount << '\t'
-         << block.revCanCount << '\t'
-         << block.fwdNonCanCount << '\t'
-         << block.revNonCanCount << '\t'
-         << pathSize << '\t'
-         << teloType << '\n';
 }
 
 constexpr uint32_t minCanonicalCount = 4;
@@ -321,6 +304,101 @@ void assignJunctions(std::vector<TelomereBlock*>& rows, uint32_t maxBlockDist) {
     }
 }
 } // namespace
+
+// chr start end teloLen teloLabel closestEnd fwdCan revCan fwdNonCan revNonCan chrSize teloType
+void writeBlockRow(std::ostream& file, std::string_view pathName,
+                   const TelomereBlock& block, uint64_t pathSize, std::string_view teloType) {
+    file << pathName << '\t'
+         << block.start << '\t'
+         << (block.start + block.blockLen) << '\t'
+         << block.teloLen << '\t'
+         << block.strandLabel << '\t'
+         << closestEnd(block.start, block.blockLen, pathSize, block.anchorSide) << '\t'
+         << block.fwdCanCount << '\t'
+         << block.revCanCount << '\t'
+         << block.fwdNonCanCount << '\t'
+         << block.revNonCanCount << '\t'
+         << pathSize << '\t'
+         << teloType << '\n';
+}
+
+// concordant when strandLabel matches anchorSide; complete when the read continues at least -d past the telomere
+void writeReadTelomereRow(std::ostream& bedFile, const UserInputTeloscope& userInput,
+                          std::string_view readName, uint64_t readLen,
+                          const TelomereBlock& block, ReadTlStats& stats) {
+    writeBlockRow(bedFile, readName, block, readLen, "read");
+    stats.telomeresTotal++;
+
+    if (block.strandLabel != block.anchorSide) {
+        stats.telomeresDiscordant++;
+        return;
+    }
+
+    uint64_t end = block.start + block.blockLen;
+    uint64_t flank = (block.anchorSide == 'p') ? (readLen > end ? readLen - end : 0) : block.start;
+    if (flank >= userInput.maxBlockDist) {
+        stats.telomeresComplete++;
+        stats.completeLengths.push_back(block.teloLen);
+        stats.completeLengthSum += block.teloLen;
+    } else {
+        stats.telomeresReachingEnd++;
+    }
+}
+
+namespace {
+// R type 7 / numpy default: linear interpolation between the two closest ranks
+double percentile(const std::vector<uint64_t>& sorted, double p) {
+    double h = (sorted.size() - 1) * p;
+    size_t lo = static_cast<size_t>(std::floor(h));
+    size_t hi = std::min(lo + 1, sorted.size() - 1);
+    return sorted[lo] + (h - lo) * (static_cast<double>(sorted[hi]) - sorted[lo]);
+}
+} // namespace
+
+void writeReadTlReport(std::ofstream& reportFile, const UserInputTeloscope& userInput,
+                       const ReadTlStats& stats) {
+    writeProvenanceHeader(reportFile, userInput, "metric\tvalue");
+
+    auto out = [&](const auto&... args) {
+        std::ostringstream ss;
+        (ss << ... << args);
+        std::string s = ss.str();
+        std::cout << s;
+        reportFile << s;
+    };
+
+    out("Reads measured:\t", stats.readsMeasured, "\n");
+    out("Reads kept:\t", stats.readsKept, "\n");
+    out("Read telomeres:\t", stats.telomeresTotal, "\n");
+    out("Complete:\t", stats.telomeresComplete, "\n");
+    out("Reaching read end:\t", stats.telomeresReachingEnd, "\n");
+    out("Discordant:\t", stats.telomeresDiscordant, "\n");
+
+    if (!stats.completeLengths.empty()) {
+        std::vector<uint64_t> sorted = stats.completeLengths;
+        std::sort(sorted.begin(), sorted.end());
+        double mean = static_cast<double>(stats.completeLengthSum) / sorted.size();
+
+        char buf[64];
+        auto fixed2 = [&](double value) {
+            snprintf(buf, sizeof(buf), "%.2f", value);
+            return std::string(buf);
+        };
+
+        out("Mean length:\t", fixed2(mean), "\n");
+        out("Median length:\t", fixed2(percentile(sorted, 0.5)), "\n");
+        out("25th percentile length:\t", fixed2(percentile(sorted, 0.25)), "\n");
+        out("75th percentile length:\t", fixed2(percentile(sorted, 0.75)), "\n");
+        out("90th percentile length:\t", fixed2(percentile(sorted, 0.90)), "\n");
+        out("Min length:\t", sorted.front(), "\n");
+        out("Max length:\t", sorted.back(), "\n");
+    } else {
+        out("No complete concordant telomeres for statistics.\n");
+    }
+
+    out("\nAlignment-free estimate: reads pool chromosome ends by coverage; "
+        "reads broken inside a telomere look complete and pull the estimate down.\n");
+}
 
 
 // per contig: chain qualifying same-strand pieces inward from the anchored end, stopping at a real opposite array
