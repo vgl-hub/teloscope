@@ -792,7 +792,13 @@ int main(int argc, char **argv) {
 
     InSequences inSequences; // initialize sequence collection object
     lg.verbose("Sequence object generated");
-    in.read(inSequences); // read input content to inSequences container
+    try {
+        in.read(inSequences); // read input content to inSequences container
+    } catch (const std::exception &error) {
+        fprintf(stderr, "Error: Could not read input '%s': %s.\n", userInput.inSequence.c_str(), error.what());
+        threadPool.join();
+        exit(EXIT_FAILURE);
+    }
 
     lg.verbose("Finished reading input files");
     if(verbose_flag) {std::cerr<<"\n";}; // giulio?
