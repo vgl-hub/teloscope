@@ -46,6 +46,7 @@ Optional:
 | `*_noncanonical_matches.bed` | `-m` | terminal non-canonical repeat matches |
 | `*_terminal_telomeres.fa` | `-a` | terminal telomere sequences, header `>{chr}:{start}-{end}` with the BED row's coordinates |
 | `*_plot_report.pdf` | `--plot-report` | PDF summary report |
+| `*_its_top_hits.tsv` | `--plot-report` (when ITS present) | candidate fusion pairs and longest ITS rows |
 
 ## Run provenance
 
@@ -113,6 +114,24 @@ bedtools closest -a blocks.bed -b asm.fa_gaps.bed -d > blocks_with_nearest_gap.t
 ```
 
 The output contains the three block fields, the three gap fields, and the block-to-gap distance.
+
+## `*_its_top_hits.tsv`
+
+Written during `--plot-report` when the interstitial BED has rows. Two sections:
+
+**Section 1: Candidate fusion pairs** (q→p), sorted by shorter arm bp descending, ties broken by combined bp descending. Columns:
+- `chr`, `start`, `end` (spanning both arrays)
+- `q_bp`, `p_bp` (bp per arm)
+- `min_arm` (minimum of q_bp and p_bp)
+- `combined_bp` (sum of both arms)
+- `spacer_bp` (gap between the two arrays)
+- `q_can_share`, `p_can_share` (canonical sequence share per array)
+- `pos_frac` (midpoint position as fraction of scaffold length)
+
+A candidate fusion requires a q array followed by a p array on the same scaffold, at most `-d` apart, with no N-gap between them, where at least one row is classed as fusion. The shorter array's bp is the longest length cutoff at which the pair still has both arms.
+
+**Section 2: Longest interstitial telomere rows** (default 25, any class). Columns:
+- `chr`, `start`, `end`, `teloLen`, `label` (`teloLabel`), `class` (`teloType`), `can_share`, `pos_frac`
 
 ## `*_report.tsv`
 
