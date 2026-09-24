@@ -1,0 +1,29 @@
+name: Plot reports
+
+on:
+  push:
+    paths:
+      - 'scripts/teloscope_report.py'
+      - 'scripts/plot_its.py'
+      - 'scripts/test_teloscope_report.py'
+      - '.github/workflows/report.yml'
+  pull_request:
+    paths:
+      - 'scripts/teloscope_report.py'
+      - 'scripts/plot_its.py'
+      - 'scripts/test_teloscope_report.py'
+      - '.github/workflows/report.yml'
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        matplotlib: ['3.8.4', '3.10.8']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install "matplotlib==${{ matrix.matplotlib }}" "numpy<2" "pandas<3"
+      - run: python scripts/test_teloscope_report.py

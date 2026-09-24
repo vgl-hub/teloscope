@@ -808,7 +808,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "  Ensure the scripts/ directory is present alongside the teloscope binary.\n");
         } else {
             std::string pdfPath = userInput.outRoute + "/" + userInput.inSequenceName + "_plot_report.pdf";
-            fprintf(stderr, "Generating plot report: %s\n", pdfPath.c_str());
+            fprintf(stderr, "Generating terminal and ITS reports (output stem: %s)\n", pdfPath.c_str());
 
             std::string cmd = "python3 \"" + scriptPath + "\" \""
                             + userInput.outRoute + "\" -o \"" + pdfPath + "\"";
