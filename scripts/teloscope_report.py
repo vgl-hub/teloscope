@@ -779,6 +779,11 @@ def _pick_bp_unit(max_bp):
     return 1.0, "bp"
 
 
+def _mb_tick_decimals(span_mb):
+    """Decimal places for an Mb-axis tick label, so nearby ticks never round to duplicates."""
+    return 1 if span_mb >= 2 else 2 if span_mb >= 0.2 else 3
+
+
 def _fmt_bp(bp, _pos=None):
     """Format a bp value in its own best-fitting unit, trimming trailing zeros."""
     if bp <= 0:
@@ -1842,6 +1847,20 @@ def _its_atlas_chroms(df, arm_blocks, chrom_sizes):
     return sorted(telomere_chroms | its_chroms, key=lambda c: chrom_sizes.get(c, 0), reverse=True)
 
 
+def _split_long_short_chroms(atlas_chroms, chrom_sizes):
+    """Split scaffolds into >=20%-of-longest and shorter, preserving length-descending order.
+
+    Shared by plot_its_overview_page (row-count-driven ideogram height) and
+    _draw_its_genome_ideogram (the actual long/short panel split) so they never disagree.
+    """
+    if not atlas_chroms:
+        return [], []
+    cutoff = chrom_sizes.get(atlas_chroms[0], 0) * 0.20
+    long_chroms = [c for c in atlas_chroms if chrom_sizes.get(c, 0) >= cutoff]
+    short_chroms = [c for c in atlas_chroms if chrom_sizes.get(c, 0) < cutoff]
+    return long_chroms, short_chroms
+
+
 def _nearest_end(pos, chrom_size):
     """Return ('p'|'q', distance) for whichever scaffold end pos sits closest to."""
     dist_p, dist_q = pos, max(chrom_size - pos, 0)
@@ -1855,7 +1874,7 @@ def _nearest_end(pos, chrom_size):
 def _region_axis_spec(view_start, view_end):
     """Round genomic ticks for an absolute-position window; positions always in Mbp."""
     span_mb = max(view_end - view_start, 1) / 1e6
-    dec = 1 if span_mb >= 2 else 2 if span_mb >= 0.2 else 3
+    dec = _mb_tick_decimals(span_mb)
     ticks = [t for t in ticker.MaxNLocator(nbins=6, steps=[1, 2, 2.5, 5, 10]).tick_values(
         view_start, view_end) if view_start <= t <= view_end]
     if len(ticks) < 2:
@@ -1918,8 +1937,9 @@ def _draw_locus_ideogram(ax, chrom_size, view_start, view_end, blocks_list, its_
         spine.set_visible(False)
     ticks = [t for t in ticker.MaxNLocator(nbins=5, steps=[1, 2, 2.5, 5, 10]).tick_values(
         0, chrom_size) if 0 <= t <= chrom_size]
+    dec = _mb_tick_decimals(chrom_size / 1e6)
     ax.set_xticks(ticks)
-    ax.set_xticklabels([f"{t / 1e6:.0f}" for t in ticks])
+    ax.set_xticklabels([f"{t / 1e6:.{dec}f}" for t in ticks])
     ax.tick_params(axis="x", length=2, width=0.4, pad=1.0,
                    labelsize=AXIS_TICK_SIZE, colors="#666666")
     ax.set_xlabel("Scaffold (Mbp)", fontsize=AXIS_TICK_SIZE, color="#666666", labelpad=1.5)
@@ -2025,9 +2045,16 @@ def _draw_its_ideogram_panel(ax, chroms, df, arm_blocks, chrom_sizes, cluster_by
             span = max(span, boundary + 0.3)
         left_edge, right_edge = -(span + OUTER_PAD), span + OUTER_PAD
 
-        def to_x(chrom, pos):
-            end, dist = _nearest_end(pos, chrom_sizes.get(chrom, 0))
-            return (left_edge + np.log10(dist + 1.0)) if end == "p" else (right_edge - np.log10(dist + 1.0))
+        def to_x(chrom, pos, side=None):
+            # side=None picks the nearest end for this single point; a caller projecting a
+            # whole cluster (start and end) should pass the SAME side for both so a cluster
+            # that straddles the midpoint doesn't draw a bracket across the unscanned middle.
+            if side is None:
+                side, dist = _nearest_end(pos, chrom_sizes.get(chrom, 0))
+            else:
+                size = chrom_sizes.get(chrom, 0)
+                dist = pos if side == "p" else max(size - pos, 0)
+            return (left_edge + np.log10(dist + 1.0)) if side == "p" else (right_edge - np.log10(dist + 1.0))
 
         ax.hlines(y_all, np.full(n, left_edge), left_edge + row_p_log,
                  color="#cfcfcf", linewidth=0.6, zorder=1, rasterized=True)
@@ -2037,7 +2064,7 @@ def _draw_its_ideogram_panel(ax, chroms, df, arm_blocks, chrom_sizes, cluster_by
         x_max = np.array([chrom_sizes.get(c, 0) / 1e6 for c in chroms], dtype=np.float64)
         ax.hlines(y_all, np.zeros(n), x_max, color="#cfcfcf", linewidth=0.6, zorder=1, rasterized=True)
 
-        def to_x(chrom, pos):
+        def to_x(chrom, pos, side=None):
             return pos / 1e6
 
     axis_width = (right_edge - left_edge) if fast_mode else max(float(np.max(x_max)), 1.0) * 1.05
@@ -2083,24 +2110,52 @@ def _draw_its_ideogram_panel(ax, chroms, df, arm_blocks, chrom_sizes, cluster_by
 
     for chrom in chroms:
         row = row_of[chrom]
+        size = chrom_sizes.get(chrom, 0)
         for c in cluster_by_chrom.get(chrom, []):
-            bx0, bx1 = sorted((to_x(chrom, c.start), to_x(chrom, c.end)))
+            # Fast mode: project the whole cluster to whichever end its midpoint is nearest,
+            # not each end independently -- otherwise a cluster whose start and end happen to
+            # be nearest different scaffold ends draws a bracket across the unscanned middle.
+            # On a short scaffold the p and q windows can nearly meet, so even the forced-side
+            # projection is clipped to that half (it can otherwise still reach past the centre,
+            # since the far end's true distance can exceed anything that set that half's scale).
+            side = _nearest_end((c.start + c.end) / 2.0, size)[0] if fast_mode else None
+            bx0, bx1 = sorted((to_x(chrom, c.start, side), to_x(chrom, c.end, side)))
+            if fast_mode:
+                bx0, bx1 = (max(bx0, left_edge), min(bx1, 0.0)) if side == "p" else \
+                           (max(bx0, 0.0), min(bx1, right_edge))
             by = row + 0.40
             ax.plot([bx0, bx0, bx1, bx1], [by - 0.07, by, by, by - 0.07],
                     color="#7a7a7a", linewidth=0.6, zorder=2, solid_capstyle="butt")
 
-    # Label each mark just right of its marker at the row's own y; a mark on an adjacent row
-    # that sits close in x would collide, so it is nudged to the left side instead.
+    # Label each mark just right of its marker at the row's own y. Two marks on the SAME row
+    # that sit close in x share one scaffold and can't be told apart by side, so they are
+    # merged into one star and one combined label ("C1 L1"); a mark on an ADJACENT row that
+    # sits close in x is a different scaffold and is nudged to the left side instead.
     visible_marks = [(text, chrom, pos) for text, chrom, pos in top_marks if chrom in row_of]
     mark_xy = [(to_x(chrom, pos), row_of[chrom]) for _, chrom, pos in visible_marks]
     close_x = 0.08 * axis_width
-    sides = ["right"] * len(visible_marks)
+
+    leader = list(range(len(visible_marks)))
     for i, (xi, ri) in enumerate(mark_xy):
-        for xj, rj in mark_xy[:i]:
+        for j, (xj, rj) in enumerate(mark_xy[:i]):
+            if ri == rj and abs(xi - xj) < close_x:
+                leader[i] = leader[j]
+    groups = OrderedDict()
+    for i, lead in enumerate(leader):
+        groups.setdefault(lead, []).append(i)
+    group_items = [(
+        " ".join(visible_marks[m][0] for m in members),
+        float(np.mean([mark_xy[m][0] for m in members])),
+        mark_xy[members[0]][1],
+    ) for members in groups.values()]
+
+    sides = ["right"] * len(group_items)
+    for i, (_, xi, ri) in enumerate(group_items):
+        for _, xj, rj in group_items[:i]:
             if abs(ri - rj) == 1 and abs(xi - xj) < close_x:
                 sides[i] = "left"
     halo = [patheffects.withStroke(linewidth=1.6, foreground="white")]
-    for (text, chrom, pos), (x, row), side in zip(visible_marks, mark_xy, sides):
+    for (text, x, row), side in zip(group_items, sides):
         ax.scatter([x], [row], marker="*", s=20, color=CLASS_COLORS["fusion"],
                   edgecolors="white", linewidths=0.3, zorder=4)
         dx, ha = (3, "left") if side == "right" else (-3, "right")
@@ -2174,13 +2229,12 @@ def _draw_its_genome_ideogram(fig, gs_cell, df, arm_blocks, chrom_sizes, cluster
                                  top_marks, True, terminal_limit)
         axes = [ax]
     else:
-        longest = chrom_sizes.get(atlas_chroms[0], 0)
-        cutoff = longest * 0.20
-        long_chroms = [c for c in atlas_chroms if chrom_sizes.get(c, 0) >= cutoff]
-        short_chroms = [c for c in atlas_chroms if chrom_sizes.get(c, 0) < cutoff]
+        long_chroms, short_chroms = _split_long_short_chroms(atlas_chroms, chrom_sizes)
         if short_chroms and long_chroms:
-            gs_sub = gs_cell.subgridspec(1, 2, width_ratios=[max(len(long_chroms), 1),
-                                                             max(len(short_chroms), 1)], wspace=0.55)
+            # A fixed split, not one weighted by scaffold count: both panels show a full
+            # genomic axis regardless of how many rows they hold, so e.g. 2 long scaffolds
+            # against 40 short ones must not squeeze the long panel down to a sliver.
+            gs_sub = gs_cell.subgridspec(1, 2, width_ratios=[1.0, 1.4], wspace=0.55)
             ax_long = fig.add_subplot(gs_sub[0, 0])
             ax_short = fig.add_subplot(gs_sub[0, 1])
             _draw_its_ideogram_panel(ax_long, long_chroms, df, arm_blocks, chrom_sizes,
@@ -2315,7 +2369,19 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params)
         f0 = pairs.iloc[0]
         top_marks.append(("F1", f0["chr"], (f0["start"] + f0["end"]) / 2.0))
 
-    ideo_in = 2.45
+    atlas_chroms = _its_atlas_chroms(df, arm_blocks, chrom_sizes)[:60]
+    if fast_mode:
+        max_rows = max(len(atlas_chroms), 1)
+    else:
+        long_chroms, short_chroms = _split_long_short_chroms(atlas_chroms, chrom_sizes)
+        max_rows = max(len(long_chroms), len(short_chroms), 1)
+
+    ROWS_PER_BASE_HEIGHT = 40
+    BASE_IDEO_IN = 2.45
+    # Row spacing is ideo_in / (rows in the busiest panel); past ~40 rows, grow the panel so
+    # per-row spacing (and its 5 pt scaffold labels) doesn't keep shrinking, up to the 60-row cap.
+    ideo_in = BASE_IDEO_IN if max_rows <= ROWS_PER_BASE_HEIGHT else (
+        BASE_IDEO_IN * max_rows / ROWS_PER_BASE_HEIGHT)
     bc_in = 1.55
     gap_in = 0.42
     # Top margin holds, top to bottom: suptitle, subtitle, a dedicated legend band, then
@@ -2356,9 +2422,8 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params)
 
     fig.suptitle("Interstitial telomeres: genome view", fontsize=FIGURE_TITLE_SIZE,
                 fontweight="bold", x=0.5, y=1 - suptitle_d / fig_h, ha="center")
-    n_shown = min(len(_its_atlas_chroms(df, arm_blocks, chrom_sizes)), 60)
     fig.text(0.5, 1 - subtitle_d / fig_h,
-            f"ITS rows (n={len(df):,}), scaffolds shown (n={n_shown})",
+            f"ITS rows (n={len(df):,}), scaffolds shown (n={len(atlas_chroms)})",
             ha="center", va="top", fontsize=FIGURE_SUMMARY_SIZE, color="#444444")
     return fig
 
@@ -2368,8 +2433,10 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params)
 # ---------------------------------------------------------------------------
 
 def _draw_its_composition_panel(ax, df, motif_len, min_canonical_count):
-    """Panel a: log-log length vs canonical bp, coloured by strand; dashed 100%-canonical
-    diagonal and the engine's canonical-count floor (every ITS row clears it by construction)."""
+    """Panel a: log-log length vs canonical bp, with a dashed 100%-canonical diagonal and the
+    engine's canonical-count floor (every ITS row clears it by construction). Points are
+    coloured by strand below ~20k rows; above that a density-coloured hexbin replaces the
+    per-strand scatter (a strand legend there would need per-strand hexbins, one per axes)."""
     if df.empty:
         ax.text(0.5, 0.5, "No ITS rows", transform=ax.transAxes, ha="center", va="center",
                 fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999")

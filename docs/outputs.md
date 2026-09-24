@@ -133,7 +133,7 @@ A candidate fusion requires a q array followed by a p array on the same scaffold
 **Section 2: Longest interstitial telomere rows by canonical bp** (top 25), sorted by canonical bp descending, ties broken by `teloLen` descending. `canonical_bp` is `(fwdCan+revCan) x` the canonical motif length (6 for `CCCTAA`/`TTAGGG`, from the report's `#params canonical=` line). Columns:
 - `chr`, `start`, `end`, `teloLen`, `canonical_bp`, `can_prop` (`canonical_bp / teloLen`), `label`, `class`, `pos_frac` (`label` and `class` are the BED `teloLabel` and `teloType`)
 
-**Section 3: ITS clusters**, same-scaffold rows merged when the gap to the previous row's end is <= 50 kb, kept when a cluster has >= 3 rows, sorted by summed ITS bp descending. Columns:
+**Section 3: ITS clusters**. Same-scaffold rows are merged into one cluster while `start - <furthest end seen so far>` stays <= 50 kb, where "furthest end seen so far" is the running maximum of `end` over the rows already placed in that cluster (not just the previous row's `end`), so a row nested inside an earlier, longer row doesn't wrongly split the cluster. Kept when a cluster has >= 3 rows, sorted by summed ITS bp descending. Columns:
 - `chr`, `start`, `end`, `rows`, `span`, `its_bp`, `canonical_bp`
 
 ## `*_report.tsv`
