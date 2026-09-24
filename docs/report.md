@@ -24,15 +24,18 @@ Prefix filters are also available, but database prefixes are not universal chrom
 
 - page 1: assembly overview, scaffold classes, and flagged scaffolds
 - page 2: telomere length summary and flagged telomere blocks
-- page 3: interstitial telomere summary (when the interstitial BED has rows)
-- later pages: one terminal zoom figure per scaffold with called telomere blocks
+- next pages: one terminal zoom figure per scaffold with called telomere blocks
+- last pages: three interstitial telomere (ITS) pages (when the interstitial BED has rows)
 
-The interstitial telomere (ITS) summary page includes:
-- atlas: scaffolds with telomeres or ITS, showing position and extent
-- ITS position distribution along the scaffold length
-- ITS length versus canonical sequence share (hexbin)
-- row counts and total bp per junction class
-- tables of candidate fusions and longest ITS rows
+The three ITS pages, in order:
+- **genome view**: an ideogram of every scaffold with a terminal telomere or ITS (split into
+  long/short panels in full-scan mode, unfolded distance-to-end in fast mode), row/bp counts
+  per junction class, and an ITS length distribution per strand
+- **composition and top hits**: a length-vs-canonical-bp scatter (hexbin above ~20k rows) with
+  the 100%-canonical diagonal and the engine's canonical-count floor, plus three ranked tables
+  (longest ITS by canonical bp, ITS clusters, candidate fusions)
+- **top loci**: terminal-zoom-style track columns for the top cluster, longest ITS row, and top
+  candidate fusion
 
 Each terminal zoom page can include:
 

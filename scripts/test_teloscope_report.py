@@ -465,8 +465,9 @@ class TeloscopeReportTests(unittest.TestCase):
         self.assertEqual((row["chr"], row["start"], row["end"]), ("chrA", 1000, 1180))
         self.assertEqual((row["q_bp"], row["p_bp"], row["min_arm"]), (100, 70, 70))
         self.assertEqual((row["combined_bp"], row["spacer_bp"]), (170, 10))
-        self.assertAlmostEqual(row["q_can_share"], 1.0)
-        self.assertAlmostEqual(row["p_can_share"], 1.0)
+        # canonical_bp = matches x motif length (6); can_prop = canonical_bp / teloLen
+        self.assertAlmostEqual(row["q_can_prop"], 30 / 100)
+        self.assertAlmostEqual(row["p_can_prop"], 24 / 70)
 
     def test_pair_fusions_rejects_spacer_greater_than_d(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -524,6 +525,79 @@ class TeloscopeReportTests(unittest.TestCase):
         self.assertEqual(list(pairs["chr"]), ["chrC", "chrB", "chrA"])
         self.assertEqual(list(pairs["min_arm"]), [90, 90, 50])
 
+    def test_load_its_frame_computes_canonical_bp_and_can_prop(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            df = _its_frame([
+                _its_row("chrA", 0, 100, "p", "single", fwd_can=4),   # engine floor: 4 matches
+                _its_row("chrA", 200, 400, "q", "single", rev_can=10),
+            ], tmpdir)
+
+        floor_row, long_row = df.iloc[0], df.iloc[1]
+        self.assertEqual(floor_row["canonical_bp"], 4 * 6)
+        self.assertAlmostEqual(floor_row["can_prop"], 24 / 100)
+        self.assertEqual(long_row["canonical_bp"], 10 * 6)
+        self.assertAlmostEqual(long_row["can_prop"], 60 / 200)
+
+    def test_load_its_frame_respects_a_non_default_motif_length(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bed_path = Path(tmpdir) / "its.bed"
+            bed_path.write_text(_its_row("chrA", 0, 100, "p", "single", fwd_can=4), encoding="utf-8")
+            df = REPORT.load_its_frame(str(bed_path), motif_len=7)
+
+        self.assertEqual(df.iloc[0]["canonical_bp"], 4 * 7)
+
+    def test_rank_long_its_orders_by_canonical_bp_then_length(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            df = _its_frame([
+                _its_row("chrA", 0, 500, "p", "single", fwd_can=10),  # canonical_bp=60, longest
+                _its_row("chrB", 0, 100, "p", "single", fwd_can=10),  # canonical_bp=60, ties A, shorter
+                _its_row("chrC", 0, 300, "p", "single", fwd_can=4),   # canonical_bp=24, lowest
+            ], tmpdir)
+
+        ranked = REPORT.rank_long_its(df, top_n=25)
+
+        self.assertEqual(list(ranked["chr"]), ["chrA", "chrB", "chrC"])
+        self.assertEqual(list(ranked["canonical_bp"]), [60, 60, 24])
+
+    def test_compute_its_clusters_merges_within_the_gap_and_splits_beyond_it(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            df = _its_frame([
+                _its_row("chrA", 0, 100, "p", "single"),
+                _its_row("chrA", 40_000, 40_100, "p", "single"),      # 39_900 bp gap: same cluster
+                _its_row("chrA", 200_000, 200_100, "p", "single"),    # 159_900 bp gap: new cluster
+            ], tmpdir)
+
+        clustered = REPORT.compute_its_clusters(df, merge_gap=50_000)
+
+        self.assertEqual(list(clustered["cluster_id"]), [1, 1, 2])
+
+    def test_summarize_its_clusters_filters_by_min_rows_and_ranks_by_its_bp(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            df = _its_frame([
+                # chrA: 3 rows within 50 kb, 300 bp total
+                _its_row("chrA", 0, 100, "p", "single"),
+                _its_row("chrA", 1_000, 1_100, "p", "single"),
+                _its_row("chrA", 2_000, 2_100, "p", "single"),
+                # chrB: only 2 rows -- below the min_rows=3 floor, dropped
+                _its_row("chrB", 0, 5_000, "p", "single"),
+                _its_row("chrB", 6_000, 11_000, "p", "single"),
+                # chrC: 3 rows, 6_000 bp total -- ranked above chrA
+                _its_row("chrC", 0, 2_000, "p", "single"),
+                _its_row("chrC", 3_000, 5_000, "p", "single"),
+                _its_row("chrC", 6_000, 8_000, "p", "single"),
+            ], tmpdir)
+
+        clusters = REPORT.summarize_its_clusters(df, merge_gap=50_000, min_rows=3)
+
+        self.assertEqual(list(clusters["chr"]), ["chrC", "chrA"])
+        self.assertEqual(list(clusters["rows"]), [3, 3])
+        self.assertEqual(clusters.iloc[0]["its_bp"], 6_000)
+        self.assertEqual(clusters.iloc[1]["its_bp"], 300)
+
+    def test_pad_window_defaults_to_twice_the_span_floored_at_10kb(self):
+        self.assertEqual(REPORT.pad_window(100_000, 100_200, 1_000_000), (90_000, 110_200))
+        self.assertEqual(REPORT.pad_window(0, 100_000, 1_000_000), (0, 300_000))
+
     def test_read_params_parses_the_hash_params_line(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             report_path = Path(tmpdir) / "report.tsv"
@@ -540,13 +614,14 @@ class TeloscopeReportTests(unittest.TestCase):
 
             params = REPORT.read_params(str(report_path))
 
-        self.assertEqual(params, {"max_block_dist": 500, "terminal_limit": 20000, "ultra_fast": False})
+        self.assertEqual(params, {"max_block_dist": 500, "terminal_limit": 20000, "ultra_fast": False,
+                                  "motif_len": 6, "min_canonical_count": 4})
 
     def test_read_params_defaults_when_the_report_is_missing(self):
-        self.assertEqual(REPORT.read_params(None),
-                         {"max_block_dist": 1000, "terminal_limit": None, "ultra_fast": True})
-        self.assertEqual(REPORT.read_params("/no/such/report.tsv"),
-                         {"max_block_dist": 1000, "terminal_limit": None, "ultra_fast": True})
+        defaults = {"max_block_dist": 1000, "terminal_limit": None, "ultra_fast": True,
+                   "motif_len": 6, "min_canonical_count": 4}
+        self.assertEqual(REPORT.read_params(None), defaults)
+        self.assertEqual(REPORT.read_params("/no/such/report.tsv"), defaults)
 
     def test_read_params_keeps_other_keys_when_one_value_is_malformed(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -558,7 +633,21 @@ class TeloscopeReportTests(unittest.TestCase):
 
             params = REPORT.read_params(str(report_path))
 
-        self.assertEqual(params, {"max_block_dist": 500, "terminal_limit": None, "ultra_fast": False})
+        self.assertEqual(params, {"max_block_dist": 500, "terminal_limit": None, "ultra_fast": False,
+                                  "motif_len": 6, "min_canonical_count": 4})
+
+    def test_read_params_derives_motif_length_from_the_canonical_pattern(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            report_path = Path(tmpdir) / "report.tsv"
+            report_path.write_text(
+                "#params canonical=CCCTAA/TTAGGG min_canonical_count=4 ultra_fast=false\n",
+                encoding="utf-8",
+            )
+
+            params = REPORT.read_params(str(report_path))
+
+        self.assertEqual(params["motif_len"], 6)
+        self.assertEqual(params["min_canonical_count"], 4)
 
     def test_load_gaps_frame_empty_file_keeps_int64_columns(self):
         with tempfile.TemporaryDirectory() as tmpdir:

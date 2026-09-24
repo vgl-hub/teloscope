@@ -46,7 +46,7 @@ Optional:
 | `*_noncanonical_matches.bed` | `-m` | terminal non-canonical repeat matches |
 | `*_terminal_telomeres.fa` | `-a` | terminal telomere sequences, header `>{chr}:{start}-{end}` with the BED row's coordinates |
 | `*_plot_report.pdf` | `--plot-report` | PDF summary report |
-| `*_its_top_hits.tsv` | `--plot-report` (when ITS present) | candidate fusion pairs and longest ITS rows |
+| `*_its_top_hits.tsv` | `--plot-report` (when ITS present) | candidate fusion pairs, longest ITS rows by canonical bp, and ITS clusters |
 
 ## Run provenance
 
@@ -117,7 +117,7 @@ The output contains the three block fields, the three gap fields, and the block-
 
 ## `*_its_top_hits.tsv`
 
-Written during `--plot-report` when the interstitial BED has rows. Two sections:
+Written during `--plot-report` when the interstitial BED has rows. Three sections:
 
 **Section 1: Candidate fusion pairs** (q→p), sorted by shorter arm bp descending, ties broken by combined bp descending. Columns:
 - `chr`, `start`, `end` (spanning both arrays)
@@ -125,13 +125,16 @@ Written during `--plot-report` when the interstitial BED has rows. Two sections:
 - `min_arm` (minimum of q_bp and p_bp)
 - `combined_bp` (sum of both arms)
 - `spacer_bp` (gap between the two arrays)
-- `q_can_share`, `p_can_share` (canonical sequence share per array)
+- `q_can_prop`, `p_can_prop` (canonical bp / array bp, per array)
 - `pos_frac` (midpoint position as fraction of scaffold length)
 
 A candidate fusion requires a q array followed by a p array on the same scaffold, at most `-d` apart, with no N-gap between them, where at least one row is classed as fusion. The shorter array's bp is the longest length cutoff at which the pair still has both arms.
 
-**Section 2: Longest interstitial telomere rows** (default 25, any class). Columns:
-- `chr`, `start`, `end`, `teloLen`, `label`, `class`, `can_share`, `pos_frac` (`label` and `class` are the BED `teloLabel` and `teloType`)
+**Section 2: Longest interstitial telomere rows by canonical bp** (top 25), sorted by canonical bp descending, ties broken by `teloLen` descending. `canonical_bp` is `(fwdCan+revCan) x` the canonical motif length (6 for `CCCTAA`/`TTAGGG`, from the report's `#params canonical=` line). Columns:
+- `chr`, `start`, `end`, `teloLen`, `canonical_bp`, `can_prop` (`canonical_bp / teloLen`), `label`, `class`, `pos_frac` (`label` and `class` are the BED `teloLabel` and `teloType`)
+
+**Section 3: ITS clusters**. Same-scaffold rows are merged into one cluster while `start - <furthest end seen so far>` stays <= 50 kb, where "furthest end seen so far" is the running maximum of `end` over the rows already placed in that cluster (not just the previous row's `end`), so a row nested inside an earlier, longer row doesn't wrongly split the cluster. Kept when a cluster has >= 3 rows, sorted by summed ITS bp descending. Columns:
+- `chr`, `start`, `end`, `rows`, `span`, `its_bp`, `canonical_bp`
 
 ## `*_report.tsv`
 
