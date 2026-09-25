@@ -2,11 +2,11 @@
 
 # Teloscope algorithm
 
-Teloscope has three input modes, chosen by content, not by flag:
+Teloscope has three input modes:
 
 - FASTA mode scans sequence ends, groups telomeric matches into blocks, and classifies each path or scaffold.
 - GFA mode scans graph segments and writes an annotated graph with synthetic telomere nodes.
-- Reads mode (FASTQ or BAM input) measures and subsets reads in one pass, writing the telomeric reads, a per-read telomere BED, and a report.
+- Reads mode (FASTQ or BAM input) measures and subsets reads in one pass.
 
 ## FASTA mode
 
@@ -48,16 +48,7 @@ Synthetic telomere nodes are placeholders. They carry tags that preserve the det
 
 ## Reads mode
 
-FASTQ or BAM input is recognized by content (the BAM magic bytes, or a FASTQ `@` header) as soon as Teloscope opens it; there is no flag. Everything else — including a file named `.fq` or `.bam` whose content does not match — is read as an assembly instead.
-
-Reads are processed in bounded batches, in parallel across `-j` worker threads, but always written out in input order regardless of thread count. Each read gets one pass with two independent scans that share the same pattern expansion as FASTA mode:
-
-1. A measure scan: the same block rule as an assembly contig end (`-d`, `-y`, `-x`, `-c`, `-p`, and `-l` at its `300` bp assembly default), anchored within `--terminal-tolerance` (`300` bp for reads) of each read end, tiled from `-t` (`2000` bp for reads) outward. This is what produces the BED row(s) and the report/length statistics.
-2. A keep scan: the same block rule over the whole read, with a fixed 42 bp floor (seven repeats of the default 6 bp motif) in place of `-l`. This is what decides whether the read is written to the output FASTQ/BAM.
-
-A read is kept when the measure scan produced a row, or the keep scan alone finds a block; see [Reads mode](parameters.md#reads-mode) for how `-l` relates to the kept set.
-
-For BAM input, this is layered on the raw BGZF/BAM decode: BGZF blocks are inflated by `-j` worker threads in groups of up to 64 and handed to the record parser in file order, so output never depends on thread count. The keep scan runs on every record, including secondary/supplementary ones and unmapped reads; the measure scan skips secondary/supplementary records (flag `0x900`) and any record hard-clipped at either CIGAR end, counting both on stderr, and reverse-complements a `0x10` record's stored `SEQ` first so it measures in sequencing orientation. Records without `SEQ` are dropped and counted separately. The BAM output is valid BGZF with an EOF marker; no index is copied or generated. Missing input EOF markers produce a warning, while malformed BGZF or BAM data aborts the run and removes all three reads-mode outputs. BAM I/O is isolated from scoring so a future SAM parser or optional CRAM backend can reuse the same filter.
+Each read is scanned twice with the FASTA-mode patterns: the assembly block rule (`-l`) gives its BED rows, and a whole-read scan with a fixed 42 bp floor decides whether it is kept. A read with a BED row is always kept. BAM reverse-strand records are measured in read orientation; secondary, supplementary and hard-clipped records are not measured but can be kept.
 
 ## Pattern handling
 

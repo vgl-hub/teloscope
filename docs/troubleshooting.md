@@ -86,19 +86,15 @@ BAM is the exception because BAM mode reads BGZF directly:
 cat reads.bam | teloscope -o results/
 ```
 
-Gzipped FASTQ on stdin or a pipe is not supported either: a pipe cannot be rewound, so gzip there is taken as BAM, and the BAM decode fails with a hint to pass the file or decompress it first. A gzipped FASTQ *file* works, since it is inflated before it is sniffed.
+Gzipped FASTQ on a pipe is read as BAM and fails with a hint; pass the file instead.
 
 ### "is not FASTA, GFA, FASTQ or BAM"
 
-The input does not start like FASTA (`>`), GFA (`#`, or a record letter and a tab), FASTQ (`@`) or BAM, so it is refused before the assembly loader. Only the first bytes are checked: a GFA that starts correctly but is missing columns further in can still stop the GFA reader.
+The input does not start like FASTA, GFA, FASTQ or BAM. Only the first bytes are checked, so a GFA with missing columns further in can still stop the GFA reader.
 
 ### Reads mode rejects the BAM input
 
-BAM input requires BGZF compression, not SAM, CRAM, plain gzip, or an uncompressed BAM payload. Teloscope rejects invalid block sizes, checksums, headers, and record boundaries, and removes any reads-mode output already written. A missing BGZF EOF marker is accepted with a warning.
-
-### The removed FASTQ/BAM flags
-
-`--fastq-subset` and `--bam-subset` no longer exist. FASTQ and BAM input are detected automatically; passing either flag exits 1 with a message saying so.
+BAM input requires BGZF compression, not SAM, CRAM, plain gzip, or an uncompressed BAM payload. Teloscope rejects invalid block sizes, checksums, headers, and record boundaries. A missing BGZF EOF marker is accepted with a warning.
 
 ### Output directory is not writable
 
