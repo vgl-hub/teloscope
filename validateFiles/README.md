@@ -7,7 +7,7 @@
 Run one file:
 
 ```sh
-build/bin/teloscope-validate validateFiles/balanced.fa.0.tst
+build/bin/teloscope-validate validateFiles/gfa_pathless_small.tst
 ```
 
 Run the full directory:
@@ -16,7 +16,7 @@ Run the full directory:
 build/bin/teloscope-validate validateFiles
 ```
 
-Use `-c` to print the exact Teloscope command for each test and `-v` to print output differences.
+Use `-c` to print the exact Teloscope command for each test; a failing test always prints the expected/actual difference.
 
 ## Legacy `.tst` format
 

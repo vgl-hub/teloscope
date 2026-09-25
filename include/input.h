@@ -1,12 +1,14 @@
 #ifndef INPUT_H
 #define INPUT_H
 
+#include <algorithm>
 #include <stdint.h>
 #include <string>
 #include <vector>
 #include <unordered_map>
 #include <memory>
 
+#include "global.h"
 #include "log.h"
 #include "struct.h"
 
@@ -69,6 +71,33 @@ struct UserInputTeloscope : UserInput {
 };
 
 bool isGfaAssemblyPath(const std::string &path);
+
+constexpr size_t READ_BATCH_BYTES = 32ULL << 20; // batch byte cap shared by the BAM and FASTQ readers
+
+// enough records to occupy every worker thread while keeping batches small
+inline size_t defaultRecordsPerBatch(uint32_t threads) {
+    return std::min<size_t>(2048, std::max<size_t>(256, static_cast<size_t>(threads) * 32));
+}
+
+// batch N+1 is read and batch N-1 written while the workers scan batch N
+template <typename Batch, typename Read, typename Scan, typename Write>
+void scanBatchesDoubleBuffered(Batch (&batches)[2], Read readBatch, Scan scanBatch, Write writeBatch) {
+    Batch *scanning = nullptr;
+    try {
+        for (size_t fill = 0; ; fill ^= 1) {
+            Batch &next = batches[fill];
+            readBatch(next);
+            if (scanning != nullptr) jobWait(threadPool);
+            if (!next.records.empty()) scanBatch(next);
+            if (scanning != nullptr) writeBatch(*scanning);
+            if (next.records.empty()) break;
+            scanning = &next;
+        }
+    } catch (...) {
+        jobWait(threadPool); // the running jobs still use a batch on this frame
+        throw;
+    }
+}
 
 class Input {
 

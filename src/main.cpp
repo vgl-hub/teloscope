@@ -750,7 +750,6 @@ int main(int argc, char **argv) {
         }
     } else {
         char magic[4] = {0, 0, 0, 0}; // gzread inflates gzip/BGZF and passes plain files through
-        bool sniffed = false; // an unopenable file reaches the loader's own open error
         if (gzFile file = gzopen(userInput.inSequence.c_str(), "rb")) {
             const int got = gzread(file, magic, sizeof(magic));
             int status = Z_OK;
@@ -764,11 +763,13 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "Error: input '%s' is empty.\n", userInput.inSequence.c_str());
                 exit(EXIT_FAILURE);
             }
-            sniffed = true;
+        } else {
+            fprintf(stderr, "Error: cannot open input '%s'.\n", userInput.inSequence.c_str());
+            exit(EXIT_FAILURE);
         }
         if (memcmp(magic, "BAM\1", 4) == 0) userInput.readInput = ReadInput::bam;
         else if (magic[0] == '@') userInput.readInput = ReadInput::fastq;
-        else if (sniffed && !looksLikeAssembly(magic[0], magic[1])) {
+        else if (!looksLikeAssembly(magic[0], magic[1])) {
             fprintf(stderr, "Error: input '%s' is not FASTA, GFA, FASTQ or BAM.\n", userInput.inSequence.c_str());
             exit(EXIT_FAILURE);
         }

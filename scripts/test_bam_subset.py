@@ -653,7 +653,7 @@ def test_detection_boundary(tmp):
     require(b"is not FASTA, GFA, FASTQ or BAM" in result2.stderr, "mismatched magic bytes lacked the detection diagnostic")
     require(not list(out_dir2.iterdir()), "mismatched magic bytes left output behind")
 
-    # detection cannot even open an unreadable file to sniff it, so it also falls through
+    # detection cannot even open an unreadable file to sniff it, so it is refused outright
     if os.name != "nt" and os.geteuid() != 0:
         unreadable_path = tmp / "unreadable.bam"
         unreadable_path.write_bytes(bgzf(payload))
@@ -661,8 +661,9 @@ def test_detection_boundary(tmp):
         out_dir3 = tmp / "unreadable_out"
         try:
             result3 = run([str(unreadable_path), "-o", str(out_dir3)])
-            require(result3.returncode == 0, "an unreadable file should fall through to assembly mode")
-            require(not list(out_dir3.glob("*_telomeric.*")), "an unreadable file was treated as reads-mode input")
+            require(result3.returncode != 0, "an unreadable file should be refused, not run as an assembly")
+            require(b"cannot open input" in result3.stderr, "an unreadable file lacked the open-failure diagnostic")
+            require(not out_dir3.exists() or not any(out_dir3.iterdir()), "an unreadable file left output behind")
         finally:
             unreadable_path.chmod(0o600)
 

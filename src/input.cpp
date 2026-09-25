@@ -772,8 +772,7 @@ void Input::readFastqReads(std::ostream &subset, std::ostream &bed, ReadTlStats 
     }
 
     const uint32_t threads = std::max<uint32_t>(1, threadPool.totalThreads());
-    const size_t recordsPerBatch = std::min<size_t>(
-        2048, std::max<size_t>(256, static_cast<size_t>(threads) * 32));
+    const size_t recordsPerBatch = defaultRecordsPerBatch(threads);
 
     // two batches alternate: the reader fills one while the workers scan the other
     struct Batch {
@@ -784,14 +783,22 @@ void Input::readFastqReads(std::ostream &subset, std::ostream &bed, ReadTlStats 
     };
     Batch batches[2];
     uint64_t recordNumber = 0;
+    FastqRecord pendingRecord; // a record read ahead that did not fit the batch being filled
 
     auto readBatch = [&](Batch &batch) {
         batch.records.clear();
-        FastqRecord record;
-        while (batch.records.size() < recordsPerBatch &&
-               readFastqRecord(*stream, record, recordNumber + 1)) {
+        size_t bytes = 0;
+        while (!pendingRecord.header.empty() || readFastqRecord(*stream, pendingRecord, recordNumber + 1)) {
+            const size_t recordBytes = pendingRecord.sequence.size() + pendingRecord.quality.size();
+            if (!batch.records.empty() &&
+                (batch.records.size() >= recordsPerBatch ||
+                 recordBytes > READ_BATCH_BYTES - std::min(bytes, READ_BATCH_BYTES))) {
+                return;
+            }
             recordNumber++;
-            batch.records.push_back(std::move(record));
+            bytes += recordBytes;
+            batch.records.push_back(std::move(pendingRecord));
+            pendingRecord = FastqRecord{};
         }
     };
 
@@ -806,8 +813,9 @@ void Input::readFastqReads(std::ostream &subset, std::ostream &bed, ReadTlStats 
                 ReadTelomereScanner scanner(userInput);
                 ReadTelomereFilter filter(userInput);
                 for (size_t i = batch.next++; i < count; i = batch.next++) {
-                    batch.blocks[i] = scanner.scan(batch.records[i].sequence);
-                    if (!batch.blocks[i].empty() || filter.matches(batch.records[i].sequence)) {
+                    std::string sequence = batch.records[i].sequence; // scan/matches mutate; the record stays intact for output
+                    batch.blocks[i] = scanner.scan(sequence);
+                    if (!batch.blocks[i].empty() || filter.matches(sequence)) {
                         appendFastqRecord(batch.output[i], batch.records[i]);
                     }
                 }
@@ -819,7 +827,7 @@ void Input::readFastqReads(std::ostream &subset, std::ostream &bed, ReadTlStats 
     // written sequentially here, in input read order, regardless of -j
     auto writeBatch = [&](const Batch &batch) {
         for (const std::string &output : batch.output) {
-            subset.write(output.data(), static_cast<std::streamsize>(output.size()));
+            if (!output.empty()) subset.write(output.data(), static_cast<std::streamsize>(output.size()));
         }
         if (!subset.good()) {
             throw std::runtime_error("failed while writing the telomeric reads");
@@ -827,33 +835,20 @@ void Input::readFastqReads(std::ostream &subset, std::ostream &bed, ReadTlStats 
         for (size_t i = 0; i < batch.records.size(); ++i) {
             stats.readsMeasured++;
             stats.readsKept += !batch.output[i].empty();
-            const std::string &header = batch.records[i].header; // "@name description..."
-            size_t nameEnd = header.find_first_of(" \t\r", 1);
-            std::string name = (nameEnd == std::string::npos) ? header.substr(1)
-                                                               : header.substr(1, nameEnd - 1);
-            uint64_t readLen = logicalLineLength(batch.records[i].sequence);
-            for (const TelomereBlock &block : batch.blocks[i]) {
-                writeReadTelomereRow(bed, userInput, name, readLen, block, stats);
+            if (!batch.blocks[i].empty()) {
+                const std::string &header = batch.records[i].header; // "@name description..."
+                size_t nameEnd = header.find_first_of(" \t\r", 1);
+                std::string name = (nameEnd == std::string::npos) ? header.substr(1)
+                                                                   : header.substr(1, nameEnd - 1);
+                uint64_t readLen = logicalLineLength(batch.records[i].sequence);
+                for (const TelomereBlock &block : batch.blocks[i]) {
+                    writeReadTelomereRow(bed, userInput, name, readLen, block, stats);
+                }
             }
         }
     };
 
-    // batch N+1 is read and batch N-1 written while the workers scan batch N
-    Batch *scanning = nullptr;
-    try {
-        for (size_t fill = 0; ; fill ^= 1) {
-            Batch &next = batches[fill];
-            readBatch(next);
-            if (scanning != nullptr) jobWait(threadPool);
-            if (!next.records.empty()) scanBatch(next);
-            if (scanning != nullptr) writeBatch(*scanning);
-            if (next.records.empty()) break;
-            scanning = &next;
-        }
-    } catch (...) {
-        jobWait(threadPool); // the running jobs still use a batch on this frame
-        throw;
-    }
+    scanBatchesDoubleBuffered(batches, readBatch, scanBatch, writeBatch);
     if (!subset.flush().good()) throw std::runtime_error("failed while writing the telomeric reads");
 }
 

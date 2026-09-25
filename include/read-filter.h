@@ -18,7 +18,7 @@ class ReadTelomereFilter {
 public:
     explicit ReadTelomereFilter(const UserInputTeloscope &input);
     ~ReadTelomereFilter();
-    bool matches(std::string sequence);
+    bool matches(std::string &sequence);
 };
 
 // read TL mode: same engine as ReadTelomereFilter, but returns the terminal blocks themselves
@@ -28,7 +28,7 @@ class ReadTelomereScanner {
 public:
     explicit ReadTelomereScanner(const UserInputTeloscope &input);
     ~ReadTelomereScanner();
-    std::vector<TelomereBlock> scan(std::string sequence);
+    std::vector<TelomereBlock> scan(std::string &sequence);
 };
 
 #endif /* READ_FILTER_H */

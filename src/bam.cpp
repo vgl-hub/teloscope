@@ -29,7 +29,6 @@ constexpr size_t BAM_CORE_SIZE = 32;
 constexpr size_t BAM_MAX_HEADER_TEXT = 1ULL << 30;
 constexpr size_t BAM_MAX_REFERENCE_NAME = 1ULL << 20;
 constexpr size_t BAM_MAX_RECORD_SIZE = 256ULL << 20;
-constexpr size_t BAM_BATCH_BYTES = 32ULL << 20;
 
 uint16_t getU16(const uint8_t *data) {
     return static_cast<uint16_t>(data[0]) |
@@ -219,8 +218,7 @@ void readBamReads(const UserInputTeloscope &userInput, std::ostream &subset,
     BgzfWriter writer(subset);
     copyBamHeader(reader, writer);
 
-    const size_t recordsPerBatch = std::min<size_t>(
-        2048, std::max<size_t>(256, static_cast<size_t>(threads) * 32));
+    const size_t recordsPerBatch = defaultRecordsPerBatch(threads);
 
     // two batches alternate: the reader fills one while the workers scan the other
     struct Batch {
@@ -238,7 +236,7 @@ void readBamReads(const UserInputTeloscope &userInput, std::ostream &subset,
         while (!raw.empty() || readRawRecord(reader, raw)) {
             if (!batch.records.empty() &&
                 (batch.records.size() >= recordsPerBatch ||
-                 raw.size() > BAM_BATCH_BYTES - std::min(bytes, BAM_BATCH_BYTES))) {
+                 raw.size() > READ_BATCH_BYTES - std::min(bytes, READ_BATCH_BYTES))) {
                 return;
             }
             bytes += raw.size();
@@ -271,9 +269,10 @@ void readBamReads(const UserInputTeloscope &userInput, std::ostream &subset,
 
                     const uint16_t flag = recordFlag(record);
                     result.measured = !(flag & 0x900) && !hardClipped(record);
-                    if (result.measured) // reverse-strand records are measured in sequencing orientation
-                        result.blocks = scanner.scan((flag & 0x10) ? revCom(sequence) : sequence);
-                    result.kept = !result.blocks.empty() || filter.matches(std::move(sequence));
+                    // reverse-strand records are measured in sequencing orientation; the keep rule is strand-symmetric
+                    if (result.measured && (flag & 0x10)) sequence = revCom(sequence);
+                    if (result.measured) result.blocks = scanner.scan(sequence);
+                    result.kept = !result.blocks.empty() || filter.matches(sequence);
                 }
                 return true;
             });
@@ -301,30 +300,17 @@ void readBamReads(const UserInputTeloscope &userInput, std::ostream &subset,
                 continue;
             }
             stats.readsMeasured++;
-            const std::string name = recordName(record);
-            const uint64_t readLen = static_cast<uint64_t>(getI32(record.data() + 4 + 16));
-            for (const TelomereBlock &block : result.blocks) {
-                writeReadTelomereRow(bed, userInput, name, readLen, block, stats);
+            if (!result.blocks.empty()) {
+                const std::string name = recordName(record);
+                const uint64_t readLen = static_cast<uint64_t>(getI32(record.data() + 4 + 16));
+                for (const TelomereBlock &block : result.blocks) {
+                    writeReadTelomereRow(bed, userInput, name, readLen, block, stats);
+                }
             }
         }
     };
 
-    // batch N+1 is read and batch N-1 written while the workers scan batch N
-    Batch *scanning = nullptr;
-    try {
-        for (size_t fill = 0; ; fill ^= 1) {
-            Batch &next = batches[fill];
-            readBatch(next);
-            if (scanning != nullptr) jobWait(threadPool);
-            if (!next.records.empty()) scanBatch(next);
-            if (scanning != nullptr) writeBatch(*scanning);
-            if (next.records.empty()) break;
-            scanning = &next;
-        }
-    } catch (...) {
-        jobWait(threadPool); // the running jobs still use a batch on this frame
-        throw;
-    }
+    scanBatchesDoubleBuffered(batches, readBatch, scanBatch, writeBatch);
     writer.finish();
 
     if (reader.eofBlockMissing()) {
