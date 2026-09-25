@@ -2,13 +2,13 @@
 
 # Report generation
 
-Teloscope can generate a PDF report during a FASTA run:
+Teloscope can generate separate terminal and interstitial (ITS) PDF reports during a FASTA run:
 
 ```sh
 teloscope asm.fa -o results/ -r -e -g -i --plot-report
 ```
 
-This writes `results/asm.fa_plot_report.pdf`.
+This writes `results/asm.fa_plot_report_terminal.pdf` and `results/asm.fa_plot_report_its.pdf`. Without an ITS BED no ITS report is written.
 
 `-r` is recommended with `--plot-report` so the report includes repeat-density, canonical-ratio, and strand-bias tracks. GC and entropy tracks are added automatically when their files are present.
 
@@ -25,17 +25,15 @@ Prefix filters are also available, but database prefixes are not universal chrom
 - page 1: assembly overview, scaffold classes, and flagged scaffolds
 - page 2: telomere length summary and flagged telomere blocks
 - next pages: one terminal zoom figure per scaffold with called telomere blocks
-- last pages: three interstitial telomere (ITS) pages (when the interstitial BED has rows)
 
-The three ITS pages, in order:
-- **genome view**: an ideogram of every scaffold with a terminal telomere or ITS (split into
-  long/short panels in full-scan mode, unfolded distance-to-end in fast mode), row/bp counts
-  per junction class, and an ITS length distribution per strand
-- **composition and top hits**: a length-vs-canonical-bp scatter (hexbin above ~20k rows) with
-  the 100%-canonical diagonal and the engine's canonical-count floor, plus three ranked tables
-  (longest ITS by canonical bp, ITS clusters, candidate fusions)
-- **top loci**: terminal-zoom-style track columns for the top cluster, longest ITS row, and top
-  candidate fusion
+The ITS report has its own pages:
+
+- **Distributions:** canonical bp versus row length (hexbin above 500 rows), length ECDFs by orientation, and class counts.
+- **Atlas:** every scaffold with a terminal or ITS call, longest first, 20 per page; 100 bins per scaffold colored by ITS count on one shared log scale. Grey means no call; white means outside the initial end windows, not proven unscanned.
+- **Selected candidates:** the top five rows by canonical bp, clusters (>= 3 rows within 50 kb), and candidate fusion pairs.
+- **Selected loci:** one track page each for the top cluster, row, and fusion pair.
+
+Canonical bp is the canonical match count times the motif length. Its ratio to row length (`can_prop`) can exceed one when matches overlap. Candidate fusions are q→p pairs within the distance threshold with an engine fusion label and no N-gap between them; they are not confirmed fusions. Missing metadata falls back to a 6 bp motif and a 1,000 bp threshold, and the report says so.
 
 Each terminal zoom page can include:
 
@@ -53,10 +51,15 @@ The plotting script can be run on an existing Teloscope output directory:
 
 ```sh
 python3 scripts/teloscope_report.py results/ -o report.pdf
+python3 scripts/teloscope_report.py results/ --section terminal -o terminal.pdf
+python3 scripts/teloscope_report.py results/ --section its -o its.pdf
+python3 scripts/teloscope_report.py results/ --section all -o combined.pdf
 python3 scripts/teloscope_report.py results/ --png -o figures/
 ```
 
-The script auto-detects the Teloscope files in that directory.
+The script auto-detects the Teloscope files in that directory. By default `-o report.pdf` is a stem for `report_terminal.pdf` and `report_its.pdf`; `--section all` writes one combined PDF.
+
+ITS output also includes `*_its_rows.tsv` (every accepted row), `*_its_scaffolds.tsv` (per-scaffold counts and display labels), and `*_its_top_hits.tsv`. Malformed BED rows are skipped with a warning.
 
 For a single interstitial telomeric sequence locus, use `plot_its.py` on the same output directory:
 
@@ -71,7 +74,8 @@ Contig-terminal rows (written with `-n`) are excluded from telomere counts and l
 
 Minimum required input:
 
-- `*_terminal_telomeres.bed`
+- `*_terminal_telomeres.bed` for a terminal report, or
+- `*_interstitial_telomeres.bed` for an ITS report (terminal BED optional).
 
 Common optional inputs:
 
@@ -87,7 +91,8 @@ Common optional inputs:
 
 | Flag | Meaning | Default |
 | --- | --- | --- |
-| `-o` | output file for PDF mode or output directory for PNG mode | `<input_dir>/teloscope_report.pdf` |
+| `-o` | PDF stem in split mode; exact PDF path otherwise; PNG output directory | `<input_dir>/teloscope_report.pdf` stem |
+| `--section` | `split`, `all` (combined), `terminal`, or `its` | `split` |
 | `--png` | write one PNG per page instead of one PDF | `false` |
 | `--dpi` | raster DPI | `450` |
 | `--draft` | use 150 DPI for fast iteration | `false` |

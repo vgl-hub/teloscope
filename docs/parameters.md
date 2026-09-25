@@ -107,7 +107,7 @@ A piece or row exactly at a threshold â€” `-l`, `-y`, or `--min-block-counts` â€
 | `-u` | `--ultra-fast` | scan sequence ends only | `true` |
 | `-n` | `--manual-curation` | also report telomeres at contig ends | `false` |
 | `-a` | `--out-fasta` | write the terminal telomere sequences as FASTA | `false` |
-|  | `--plot-report` | write a PDF report after the run | `false` |
+|  | `--plot-report` | write separate terminal and ITS PDF reports after the run | `false` |
 
 Any of `-r`, `-g`, `-e`, `-m`, or `-i` forces the full scan. `-n` keeps the fast scan but reads both end windows of every contig and adds contig-terminal rows to the terminal BED.
 

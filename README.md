@@ -61,13 +61,15 @@ For `--plot-report`, install Python 3 with `matplotlib`, `numpy`, and `pandas`.
 | --- | --- |
 | Scan a vertebrate assembly with the default motif | `teloscope asm.fa` |
 | Read compressed FASTA directly | `teloscope asm.fa.gz` |
-| Write all optional FASTA outputs | `teloscope asm.fa -o results/ -r -g -e -m -i --plot-report` |
+| Write every optional output and the reports | `teloscope asm.fa -o results/ -r -g -e -m -a -i --plot-report` |
 | Switch to a plant canonical repeat | `teloscope asm.fa -c CCCTAAA` |
 | Search explicit motif variants | `teloscope asm.fa -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG` |
 | Annotate a graph for BandageNG | `teloscope asm.gfa -o results/` |
 | Subset telomeric HiFi reads before mapping | `teloscope --fastq-subset reads.fq.gz -j 32 \| minimap2 -ax map-hifi ref.fa -` |
 | Subset telomeric records from BAM | `teloscope --bam-subset reads.bam -j 32 > telomeric.bam` |
-| Read decompressed stdin | `zcat asm.fa.gz | teloscope -o results/` |
+| Also report telomeres at contig ends, e.g. before manual curation | `teloscope asm.fa -n` |
+| Keep only records named like the longest one | `teloscope asm.fa --chr-only` |
+| Read decompressed stdin | `zcat asm.fa.gz \| teloscope -o results/` |
 
 Notes:
 
@@ -119,7 +121,8 @@ results/
   asm.fa_window_entropy.bedgraph
   asm.fa_canonical_matches.bed
   asm.fa_noncanonical_matches.bed
-  asm.fa_plot_report.pdf
+  asm.fa_plot_report_terminal.pdf
+  asm.fa_plot_report_its.pdf
 ```
 
 GFA run:
