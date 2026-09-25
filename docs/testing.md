@@ -85,6 +85,7 @@ Directive mode is used for GFA and file-oriented checks. Supported directives ar
 - `expect_gfa_header`
 - `gfa_expect`
 - `gfa_preserve_input`
+- `expect_gfa_colors`
 
 Minimal directive-mode example:
 

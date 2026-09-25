@@ -601,7 +601,7 @@ int main(int argc, char **argv) {
                 printf("\t'-i'\t--out-its\tScan whole sequences for interstitial telomeres. [Default: false]\n");
                 printf("\t'-u'\t--ultra-fast\tUltra-fast mode. Only scans terminal telomeres at scaffold ends. [Default: true]\n");
                 printf("\t'-n'\t--manual-curation\tAlso report telomeres at contig ends. [Default: scaffold only]\n");
-                printf("\t\t--plot-report\tGenerate a PDF plot report after analysis (requires Python 3 + matplotlib). [Default: false]\n");
+                printf("\t\t--plot-report\tGenerate terminal and ITS PDF reports after analysis (requires Python 3 + matplotlib). [Default: false]\n");
                 printf("\t\t--fastq-subset\tStream FASTQ reads with Teloscope-valid telomeric blocks to stdout, or save to a file with -o. [Default: false]\n");
                 printf("\t\t--bam-subset\tStream BAM records with Teloscope-valid telomeric blocks to stdout, or save to a file with -o. [Default: false]\n");
 

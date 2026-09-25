@@ -273,7 +273,7 @@ Point it at a Teloscope output directory, not the repo root:
 python3 scripts/teloscope_report.py results/
 ```
 
-At minimum, that directory must contain `*_terminal_telomeres.bed`.
+At minimum, that directory must contain `*_terminal_telomeres.bed` or `*_interstitial_telomeres.bed`.
 
 ## Quick checklist
 
