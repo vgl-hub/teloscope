@@ -8,9 +8,7 @@ Teloscope can generate separate terminal and interstitial (ITS) PDF reports duri
 teloscope asm.fa -o results/ -r -e -g -i --plot-report
 ```
 
-This writes `results/asm.fa_plot_report_terminal.pdf` and
-`results/asm.fa_plot_report_its.pdf`. An empty ITS BED produces an explicit
-zero-observation report. A missing ITS BED means no ITS report is written.
+This writes `results/asm.fa_plot_report_terminal.pdf` and `results/asm.fa_plot_report_its.pdf`. Without an ITS BED no ITS report is written.
 
 `-r` is recommended with `--plot-report` so the report includes repeat-density, canonical-ratio, and strand-bias tracks. GC and entropy tracks are added automatically when their files are present.
 
@@ -28,48 +26,14 @@ Prefix filters are also available, but database prefixes are not universal chrom
 - page 2: telomere length summary and flagged telomere blocks
 - next pages: one terminal zoom figure per scaffold with called telomere blocks
 
-The ITS report has its own page sequence:
+The ITS report has its own pages:
 
-- **Distributions:** canonical match bp versus row length, exact cumulative length
-  distributions by orientation, and class counts and summed row lengths. Above 500
-  positive observations, the composition plot uses hexagons with a logarithmic count
-  scale. Every positive observation contributes; no random subsampling is used.
-  Zero canonical counts are counted explicitly and excluded from logarithmic axes.
-- **Atlas:** every scaffold represented by a terminal or ITS call, in decreasing
-  length order, paginated at 20 scaffolds per page. This is not an inventory of
-  scaffolds with no calls. Each row has 100 equal-width bins over its plotted extent;
-  color shows the number of ITS row midpoints in each bin, with one shared logarithmic
-  count scale across all atlas pages. The axis shows relative position and each row
-  states its extent in bp/kb/Mb. Thus short scaffolds remain visible. Grey means no
-  observed call; white marks positions outside the initial end windows. The engine
-  can extend those windows while building terminal arrays, so white does not prove
-  that a region was unscanned. Exact scanned extents are not recorded in the inputs.
-- **Selected candidates:** up to five canonical-bp-ranked rows, five clusters, and
-  five candidate fusion pairs. Rankings use deterministic scaffold/coordinate tie
-  breaks. Clusters join rows separated by at most 50 kb and require at least three
-  rows; these are spatial groups, not independent biological events.
-- **Selected loci:** one terminal-style track page each for the top cluster, top
-  canonical-bp-ranked row, and top candidate fusion pair, when present. These
-  selected views can refer to the same region.
+- **Distributions:** canonical bp versus row length (hexbin above 500 rows), length ECDFs by orientation, and class counts.
+- **Atlas:** every scaffold with a terminal or ITS call, longest first, 20 per page; 100 bins per scaffold colored by ITS count on one shared log scale. Grey means no call; white means outside the initial end windows, not proven unscanned.
+- **Selected candidates:** the top five rows by canonical bp, clusters (>= 3 rows within 50 kb), and candidate fusion pairs.
+- **Selected loci:** one track page each for the top cluster, row, and fusion pair.
 
-ITS pages use the terminal report's maximum-track geometry (7.20 × 3.70 inches),
-palette, editable PDF text, and a minimum text size of 5 pt. Balanced orientation
-uses the terminal yellow. Orientation ECDFs also use distinct line styles.
-
-Canonical match bp is the canonical match count multiplied by the motif length.
-The table's ratio (TSV field `can_prop`) divides this estimate by row length;
-it can exceed one for overlapping matches and is not a genomic coverage fraction.
-The diagonal indicates equal bp, not proven repeat purity. The configured count
-floor is shown only when both motif and threshold metadata are available. Missing
-motif metadata uses an explicitly disclosed six-base assumption. Missing scan
-metadata is labeled unknown. Missing or conflicting scaffold sizes leave relative
-coordinates undefined in the TSV, and plotted extents are labeled as inferred.
-
-Candidate fusion pairs require q→p order, the configured distance threshold, at
-least one engine fusion label, and no N-gap overlapping a positive spacer.
-Overlapping arrays retain the engine's zero-distance convention. If the threshold
-is missing, the report discloses the 1,000 bp default. Candidates are not confirmed
-chromosome fusions.
+Canonical bp is the canonical match count times the motif length. Its ratio to row length (`can_prop`) can exceed one when matches overlap. Candidate fusions are q→p pairs within the distance threshold with an engine fusion label and no N-gap between them; they are not confirmed fusions. Missing metadata falls back to a 6 bp motif and a 1,000 bp threshold, and the report says so.
 
 Each terminal zoom page can include:
 
@@ -93,18 +57,9 @@ python3 scripts/teloscope_report.py results/ --section all -o combined.pdf
 python3 scripts/teloscope_report.py results/ --png -o figures/
 ```
 
-The script auto-detects the Teloscope files in that directory. In the default split
-mode, `-o report.pdf` supplies the stem for `report_terminal.pdf` and
-`report_its.pdf`; `--section all` explicitly requests one combined PDF.
-Combined mode omits empty ITS pages when a terminal report is available.
-PNG mode writes one image per page, with distinct ITS atlas and locus filenames.
+The script auto-detects the Teloscope files in that directory. By default `-o report.pdf` is a stem for `report_terminal.pdf` and `report_its.pdf`; `--section all` writes one combined PDF.
 
-ITS output includes `*_its_rows.tsv` with every accepted row,
-`*_its_scaffolds.tsv` with complete scaffold counts and the display-label mapping,
-and `*_its_top_hits.tsv` with all candidate pairs, the top 25 rows, and all
-qualifying clusters. Long scaffold identifiers receive unique display aliases;
-full identifiers remain in the TSVs. Malformed BED rows are skipped individually
-with diagnostics, using the same parsing rules for statistics and locus tracks.
+ITS output also includes `*_its_rows.tsv` (every accepted row), `*_its_scaffolds.tsv` (per-scaffold counts and display labels), and `*_its_top_hits.tsv`. Malformed BED rows are skipped with a warning.
 
 For a single interstitial telomeric sequence locus, use `plot_its.py` on the same output directory:
 
@@ -157,9 +112,4 @@ The report layout regression script lives in `scripts/`:
 python3 scripts/test_teloscope_report.py
 ```
 
-It checks parsing, numerical accounting, section selection, geometry, PDF fonts,
-and sparse/dense rendering without a full Teloscope run. To save visual proofs:
-
-```sh
-TELOSCOPE_REPORT_PROOFS=results/report_proofs python3 scripts/test_teloscope_report.py
-```
+It checks the plotting code directly and does not need a full Teloscope run on disk.

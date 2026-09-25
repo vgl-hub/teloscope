@@ -47,8 +47,8 @@ Optional:
 | `*_terminal_telomeres.fa` | `-a` | terminal telomere sequences, header `>{chr}:{start}-{end}` with the BED row's coordinates |
 | `*_plot_report_terminal.pdf` | `--plot-report` | terminal PDF report |
 | `*_plot_report_its.pdf` | `--plot-report` | interstitial PDF report |
-| `*_its_rows.tsv` | ITS report | every accepted ITS row and derived metrics |
-| `*_its_scaffolds.tsv` | ITS report | complete scaffold counts and display-label mapping |
+| `*_its_rows.tsv` | ITS report | every accepted ITS row |
+| `*_its_scaffolds.tsv` | ITS report | per-scaffold ITS counts and display labels |
 | `*_its_top_hits.tsv` | `--plot-report` (when ITS present) | candidate fusion pairs, longest ITS rows by canonical bp, and ITS clusters |
 
 ## Run provenance
@@ -120,8 +120,7 @@ The output contains the three block fields, the three gap fields, and the block-
 
 ## `*_its_top_hits.tsv`
 
-Written with an ITS report, including an empty report when an ITS BED is present.
-Three sections:
+Written with every ITS report. Three sections:
 
 **Section 1: Candidate fusion pairs** (q→p), sorted by shorter arm bp descending, ties broken by combined bp descending. Columns:
 - `chr`, `start`, `end` (spanning both arrays)
@@ -137,12 +136,7 @@ A candidate fusion requires a q array followed by a p array on the same scaffold
 **Section 2: Longest interstitial telomere rows by canonical bp** (top 25), sorted by canonical bp descending, ties broken by `teloLen` descending. `canonical_bp` is `(fwdCan+revCan) x` the canonical motif length (6 for `CCCTAA`/`TTAGGG`, from the report's `#params canonical=` line). Columns:
 - `chr`, `start`, `end`, `teloLen`, `canonical_bp`, `can_prop` (`canonical_bp / teloLen`), `label`, `class`, `pos_frac` (`label` and `class` are the BED `teloLabel` and `teloType`)
 
-The canonical ratio is a match-bp estimate and can exceed one when matches overlap;
-it is not genomic coverage. Missing or inconsistent scaffold sizes yield an
-undefined `pos_frac`. Further ranking ties use scaffold and coordinates.
-The companion `*_its_rows.tsv` retains every accepted row; `*_its_scaffolds.tsv`
-contains row counts, summed lengths, plotted extents, size provenance, and unique
-display aliases. The top-hits file alone is not a complete ITS inventory.
+`can_prop` can exceed one when matches overlap. `pos_frac` is empty when the scaffold size is unknown. For every row, see `*_its_rows.tsv`.
 
 **Section 3: ITS clusters**. Same-scaffold rows are merged into one cluster while `start - <furthest end seen so far>` stays <= 50 kb, where "furthest end seen so far" is the running maximum of `end` over the rows already placed in that cluster (not just the previous row's `end`), so a row nested inside an earlier, longer row doesn't wrongly split the cluster. Kept when a cluster has >= 3 rows, sorted by summed ITS bp descending. Columns:
 - `chr`, `start`, `end`, `rows`, `span`, `its_bp`, `canonical_bp`
