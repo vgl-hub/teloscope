@@ -56,9 +56,6 @@ ReadTelomereFilter::ReadTelomereFilter(const UserInputTeloscope &input)
 ReadTelomereFilter::~ReadTelomereFilter() = default;
 
 bool ReadTelomereFilter::matches(std::string &sequence) {
-    if (!sequence.empty() && sequence.back() == '\r') {
-        sequence.pop_back();
-    }
     unmaskSequence(sequence);
 
     SegmentData segmentData = teloscope->scanSegment(sequence, 0, true, true, true, true);
@@ -71,9 +68,6 @@ ReadTelomereScanner::ReadTelomereScanner(const UserInputTeloscope &input)
 ReadTelomereScanner::~ReadTelomereScanner() = default;
 
 std::vector<TelomereBlock> ReadTelomereScanner::scan(std::string &sequence) {
-    if (!sequence.empty() && sequence.back() == '\r') {
-        sequence.pop_back();
-    }
     unmaskSequence(sequence);
 
     SegmentData segmentData = teloscope->scanSegment(sequence, 0, true, true, true, true);

@@ -814,6 +814,7 @@ void Input::readFastqReads(std::ostream &subset, std::ostream &bed, ReadTlStats 
                 ReadTelomereFilter filter(userInput);
                 for (size_t i = batch.next++; i < count; i = batch.next++) {
                     std::string sequence = batch.records[i].sequence; // scan/matches mutate; the record stays intact for output
+                    if (!sequence.empty() && sequence.back() == '\r') sequence.pop_back();
                     batch.blocks[i] = scanner.scan(sequence);
                     if (!batch.blocks[i].empty() || filter.matches(sequence)) {
                         appendFastqRecord(batch.output[i], batch.records[i]);
