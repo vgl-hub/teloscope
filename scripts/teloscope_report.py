@@ -93,15 +93,14 @@ BLOCK_GLYPHS = {
     "b": "<>",
 }
 
-# Orientation palette for interstitial blocks, shared with terminal telomeres. Used by the
-# ITS report pages and plot_its.py's single-locus figures (moved here so plot_its can import it
-# from teloscope_report without a circular import).
+# Orientation palette shared by terminal telomeres, ITS report pages and plot_its.py (moved here so plot_its can import it without a circular import).
 ITS_ORIENT_COLORS = {k: COLORS[k] for k in ("p", "q", "b")}
 ITS_ORIENT_COLORS["unknown"] = COLORS["its"]
 ITS_ORIENT_LABELS = (("p", "p (forward)"), ("q", "q (reverse)"),
                      ("b", "balanced"), ("unknown", "unknown"))
 ZOOM_COLOR = COLORS["Discordant"]  # red box/funnel marking a zoom region
 ITS_CLUSTER_MERGE_GAP = 50_000
+MAX_COORD = 2**53 - 1  # exact-integer limit for float64 BED coordinates
 ITS_CLUSTER_MIN_ROWS = 3
 
 OVERVIEW_DASH_STYLE = (0, (2.2, 2.2))
@@ -188,6 +187,11 @@ def _bed_header(line):
             fields[0] in ("track", "browser") and
             (len(fields) < 2 or not fields[1].lstrip("-").isdigit()))
 
+
+def _bad_interval(start, end):
+    """True when a BED start/end pair is negative, empty, or exceeds exact float64 precision."""
+    return start < 0 or end <= start or end > MAX_COORD
+
 # ---------------------------------------------------------------------------
 # Parsing helpers
 # ---------------------------------------------------------------------------
@@ -253,9 +257,9 @@ def parse_terminal_bed(path):
                 continue
 
             numeric = (start, end, telo_len, fwd_can, rev_can, fwd_noncan, rev_noncan, path_size)
-            if (start < 0 or end <= start or telo_len <= 0 or
+            if (_bad_interval(start, end) or telo_len <= 0 or
                     min(fwd_can, rev_can, fwd_noncan, rev_noncan, path_size) < 0 or
-                    max(numeric) > 2**53 - 1):
+                    max(numeric) > MAX_COORD):
                 malformed += 1
                 if malformed <= 3:
                     _warn(f"{path}:{lineno}: invalid interval start={start} end={end} teloLen={telo_len}; skipping.")
@@ -308,7 +312,7 @@ def parse_interval_bed(path):
                 if malformed <= 3:
                     _warn(f"{path}:{lineno}: invalid BED coordinate ({exc}); skipping.")
                 continue
-            if start < 0 or end <= start or end > 2**53 - 1:
+            if _bad_interval(start, end):
                 malformed += 1
                 if malformed <= 3:
                     _warn(f"{path}:{lineno}: invalid interval start={start} end={end}; skipping.")
@@ -352,7 +356,7 @@ def _parse_bedgraph_fallback(path):
                     _warn(f"{path}:{lineno}: invalid BEDgraph value ({exc}); skipping.")
                 continue
 
-            if start < 0 or end <= start or end > 2**53 - 1 or not np.isfinite(value):
+            if _bad_interval(start, end) or not np.isfinite(value):
                 malformed += 1
                 if malformed <= 3:
                     _warn(f"{path}:{lineno}: invalid interval/value start={start} end={end} value={value}; skipping.")
@@ -408,7 +412,7 @@ def parse_bedgraph(path):
         return _parse_bedgraph_fallback(path)
 
     valid = ((df["start"] >= 0) & (df["end"] > df["start"]) &
-             (df["end"] <= 2**53 - 1) & np.isfinite(df["value"]))
+             (df["end"] <= MAX_COORD) & np.isfinite(df["value"]))
     if not valid.all():
         _warn(f"Skipped {int((~valid).sum())} invalid BEDgraph row(s) from '{path}'.")
     df = df.loc[valid].sort_values(["chrom", "start"], kind="mergesort")
@@ -426,13 +430,7 @@ _ITS_DTYPES = {"chr": str, "start": np.int64, "end": np.int64, "teloLen": np.int
 
 
 def load_its_frame(path, motif_len=6, blocks=None):
-    """Read the 12-column interstitial BED into a vectorised DataFrame with derived columns.
-
-    canonical_bp is (fwdCan+revCan) canonical repeat matches x the motif length (from the
-    report's #params canonical=.../...; 6 for the CCCTAA/TTAGGG vertebrate motif), and
-    can_prop = canonical_bp / teloLen is a match-bp ratio, not covered genomic
-    fraction; overlaps can make it exceed one. It is shown in tables/TSV only.
-    """
+    """Read the 12-column interstitial BED into a vectorised DataFrame with derived columns."""
     if not isinstance(motif_len, int) or motif_len <= 0:
         raise ValueError("motif_len must be a positive integer")
     parsed = parse_terminal_bed(path) if blocks is None else blocks
@@ -443,8 +441,7 @@ def load_its_frame(path, motif_len=6, blocks=None):
 
     df["canonical_bp"] = (df["fwdCan"] + df["revCan"]) * motif_len
     df["can_prop"] = np.where(df["teloLen"] > 0, df["canonical_bp"] / df["teloLen"], np.nan)
-    # Missing/inconsistent scaffold sizes are not evidence of a q end. Keep the
-    # rows, but leave relative coordinates undefined; atlas labels disclose extents.
+    # Missing/inconsistent scaffold sizes are not evidence of a q end; leave relative coordinates undefined instead.
     sizes = df.groupby("chr")["chrSize"].transform("max")
     ends = df.groupby("chr")["end"].transform("max")
     distinct = df["chrSize"].where(df["chrSize"] > 0).groupby(df["chr"]).transform("nunique")
@@ -1901,11 +1898,7 @@ def _its_atlas_chroms(df, arm_blocks, chrom_sizes):
 
 
 def _split_long_short_chroms(atlas_chroms, chrom_sizes):
-    """Split scaffolds into >=20%-of-longest and shorter, preserving length-descending order.
-
-    Shared by plot_its_overview_page (row-count-driven ideogram height) and
-    _draw_its_genome_ideogram (the actual long/short panel split) so they never disagree.
-    """
+    """Split scaffolds into >=20%-of-longest and shorter, preserving length-descending order."""
     if not atlas_chroms:
         return [], []
     cutoff = chrom_sizes.get(atlas_chroms[0], 0) * 0.20
@@ -2084,8 +2077,8 @@ def _its_header(fig, title, subtitle):
              fontsize=FIGURE_SUMMARY_SIZE, color="black")
 
 
-def _its_labels(df, chrom_sizes, arm_blocks=None):
-    names = _its_atlas_chroms(df, arm_blocks or {}, chrom_sizes)
+def _its_labels(df, chrom_sizes, arm_blocks=None, names=None):
+    names = _its_atlas_chroms(df, arm_blocks or {}, chrom_sizes) if names is None else names
     # Stable aliases preserve identity even when a long suffix is also shared.
     labels = {}
     reserved = set(names)
@@ -2102,14 +2095,13 @@ def _its_labels(df, chrom_sizes, arm_blocks=None):
 def its_scaffold_summary(df, arm_blocks, chrom_sizes):
     """Complete observed-row accounting, including zero-ITS terminal scaffolds."""
     names = _its_atlas_chroms(df, arm_blocks, chrom_sizes)
-    labels = _its_labels(df, chrom_sizes, arm_blocks)
+    labels = _its_labels(df, chrom_sizes, arm_blocks, names=names)
     grouped = df.groupby("chr").agg(rows=("chr", "size"), its_bp=("teloLen", "sum"),
-                                    canonical_bp=("canonical_bp", "sum"))
+                                    canonical_bp=("canonical_bp", "sum"), _size=("chrSize", "max"))
     out = grouped.reindex(names, fill_value=0).rename_axis("chr").reset_index()
     out.insert(1, "display_label", [labels[c] for c in names])
     out.insert(2, "plot_extent_bp", [chrom_sizes.get(c, 0) for c in names])
-    known = df.groupby("chr")["chrSize"].max().to_dict()
-    out.insert(3, "its_size_known", [known.get(c, 0) > 0 for c in names])
+    out.insert(3, "its_size_known", out.pop("_size") > 0)
     return out
 
 
@@ -2125,10 +2117,20 @@ def _its_position_counts(df, chrom_sizes):
     return out
 
 
+def _its_top_hits(df, pairs, clusters):
+    """Scaffold -> which top-ranked ITS list(s) (L1/C1/F1) it heads, for atlas star labels."""
+    top = {}
+    for prefix, frame in (("L1", rank_long_its(df, 1)), ("C1", clusters.head(1)), ("F1", pairs.head(1))):
+        if not frame.empty:
+            top.setdefault(frame.iloc[0]["chr"], []).append(prefix)
+    return top
+
+
 def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
-                           chroms=None, page_number=1, page_count=1, position_counts=None):
+                           chroms=None, page_number=1, page_count=1, position_counts=None,
+                           all_chroms=None, top_hits=None, known_sizes=None):
     """Fixed-size atlas page; count bins include every observed midpoint once."""
-    all_chroms = _its_atlas_chroms(df, arm_blocks, chrom_sizes)
+    all_chroms = _its_atlas_chroms(df, arm_blocks, chrom_sizes) if all_chroms is None else all_chroms
     chroms = all_chroms[:ITS_ATLAS_ROWS] if chroms is None else list(chroms)
     counts = _its_position_counts(df, chrom_sizes) if position_counts is None else position_counts
     labels = df.attrs.get("display_labels") or _its_labels(df, chrom_sizes, arm_blocks)
@@ -2137,19 +2139,15 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
     cmap = LinearSegmentedColormap.from_list("its_counts", ["#DCECF5", COLORS["p"]])
     fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, REPORT_PAGE_HEIGHT))
     gs = fig.add_gridspec(1, 2, left=0.18, right=0.96, bottom=0.22, top=0.78, wspace=0.85)
-    top = {}
-    for prefix, frame in (("L1", rank_long_its(df, 1)), ("C1", clusters.head(1)), ("F1", pairs.head(1))):
-        if not frame.empty:
-            top.setdefault(frame.iloc[0]["chr"], []).append(prefix)
-    known = df.groupby("chr")["chrSize"].max().to_dict()
+    top = _its_top_hits(df, pairs, clusters) if top_hits is None else top_hits
+    known = (df.groupby("chr")["chrSize"].max().to_dict() if known_sizes is None else known_sizes)
     chunks = [chroms[:10], chroms[10:]]
     for col, names in enumerate(chunks):
         ax = fig.add_subplot(gs[0, col])
         if not names:
             ax.set_axis_off()
             continue
-        # Each row has its own physical coordinate scale; labels show the extent.
-        # A normalized axis prevents microchromosomes disappearing beside large scaffolds.
+        # Each row uses a normalized 0-1 axis (own physical scale, shown in the label) so microchromosomes don't disappear beside large scaffolds.
         for y, chrom in enumerate(names):
             extent = max(int(chrom_sizes.get(chrom, 0)), 1)
             ax.plot([0, 1], [y, y], color=COLORS["gap"], lw=7, solid_capstyle="butt", zorder=0)
@@ -3162,8 +3160,11 @@ def main():
             lambda: plot_its_statistics_page(its_frame, pairs, clusters, params),
             "ITS distributions", "Failed to render ITS distributions.",
         ))
+        # Atlas geometry and rankings are dataset-wide; compute once here rather than per page.
         atlas = _its_atlas_chroms(its_frame, arm_blocks, chrom_sizes)
         position_counts = _its_position_counts(its_frame, chrom_sizes)
+        top_hits = _its_top_hits(its_frame, pairs, clusters)
+        known_sizes = its_frame.groupby("chr")["chrSize"].max().to_dict()
         atlas_count = max(1, (len(atlas) + ITS_ATLAS_ROWS - 1) // ITS_ATLAS_ROWS)
         for page_idx in range(atlas_count):
             chroms = atlas[page_idx * ITS_ATLAS_ROWS:(page_idx + 1) * ITS_ATLAS_ROWS]
@@ -3171,7 +3172,7 @@ def main():
                 f"its-atlas-{page_idx + 1}", f"teloscope_its_atlas_{page_idx + 1:03d}.png",
                 lambda chroms=chroms, page_idx=page_idx: plot_its_overview_page(
                     its_frame, pairs, clusters, arm_blocks, chrom_sizes, params,
-                    chroms, page_idx + 1, atlas_count, position_counts),
+                    chroms, page_idx + 1, atlas_count, position_counts, atlas, top_hits, known_sizes),
                 f"ITS atlas {page_idx + 1}/{atlas_count}", "Failed to render ITS atlas.",
             ))
         pages.append((
@@ -3191,6 +3192,13 @@ def main():
 
     n_figures = len(pages)
 
+    def emit_page(save_fig, builder, title, message, name, index):
+        """Build, save via save_fig, and report progress/fallback for one page."""
+        ok, error_text = _save_figure_with_fallback(save_fig, builder, title, message)
+        if not ok:
+            fallback_pages.append((name, error_text))
+        print(f"[{index}/{n_figures}] {title}{' [warning]' if not ok else ''}", file=sys.stderr)
+
     # --- Write-and-close pattern: one figure in memory at a time ---
     if args.png:
         os.makedirs(out_dir, exist_ok=True)
@@ -3200,11 +3208,7 @@ def main():
                 png_name = f"{i:04d}_{png_name}"
             used_names.add(png_name)
             path = os.path.join(out_dir, png_name)
-            ok, error_text = _save_figure_with_fallback(
-                lambda fig, path=path: fig.savefig(path, dpi=args.dpi), builder, title, message)
-            if not ok:
-                fallback_pages.append((name, error_text))
-            print(f"[{i}/{n_figures}] {title}{' [warning]' if not ok else ''}", file=sys.stderr)
+            emit_page(lambda fig, path=path: fig.savefig(path, dpi=args.dpi), builder, title, message, name, i)
         print(f"Figures saved to {out_dir}/", file=sys.stderr)
     else:
         if args.section == "split":
@@ -3220,11 +3224,7 @@ def main():
             with PdfPages(pdf_path) as pdf:
                 for name, png_name, builder, title, message in section_pages:
                     i += 1
-                    ok, error_text = _save_figure_with_fallback(
-                        lambda fig: pdf.savefig(fig, dpi=args.dpi), builder, title, message)
-                    if not ok:
-                        fallback_pages.append((name, error_text))
-                    print(f"[{i}/{n_figures}] {title}{' [warning]' if not ok else ''}", file=sys.stderr)
+                    emit_page(lambda fig: pdf.savefig(fig, dpi=args.dpi), builder, title, message, name, i)
             print(f"Report saved to {pdf_path}", file=sys.stderr)
 
     if fallback_pages:

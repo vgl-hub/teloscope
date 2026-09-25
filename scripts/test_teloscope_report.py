@@ -692,12 +692,6 @@ class ResilientITSReportTests(unittest.TestCase):
                     text_box = cell.get_text().get_window_extent(renderer)
                     self.assertLessEqual(text_box.width, cell.get_window_extent(renderer).width,
                                          cell.get_text().get_text())
-        proof_dir = os.environ.get("TELOSCOPE_REPORT_PROOFS")
-        if proof_dir:
-            out = Path(proof_dir)
-            out.mkdir(parents=True, exist_ok=True)
-            fig.savefig(out / (name + ".png"), dpi=150)
-            fig.savefig(out / (name + ".pdf"), dpi=450)
 
     def test_bad_its_rows_are_rejected_individually(self):
         good = _its_row("chrA", 100, 200, "p", "single", fwd_can=4)
