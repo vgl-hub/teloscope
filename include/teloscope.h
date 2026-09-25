@@ -4,6 +4,7 @@
 #include "input.h"
 #include "tools.h"
 #include <iostream>
+#include <fstream>
 #include <map>
 #include <stdint.h>
 #include <vector>
@@ -157,6 +158,33 @@ struct SegmentData {
     uint64_t revCounts = 0;
     std::vector<MatchInfo> allMatches;
 };
+
+
+// chr start end teloLen teloLabel closestEnd fwdCan revCan fwdNonCan revNonCan chrSize teloType
+void writeBlockRow(std::ostream& file, std::string_view pathName,
+                   const TelomereBlock& block, uint64_t pathSize, std::string_view teloType);
+
+void writeProvenanceHeader(std::ofstream& file, const UserInputTeloscope& input, std::string_view columns);
+
+// read TL mode counts, plus the concordant-and-complete lengths for the report's mean and percentiles
+struct ReadTlStats {
+    uint64_t readsMeasured = 0;
+    uint64_t readsKept = 0;
+    uint64_t telomeresTotal = 0;
+    uint64_t telomeresComplete = 0;
+    uint64_t telomeresReachingEnd = 0;
+    uint64_t telomeresDiscordant = 0;
+    std::vector<uint64_t> completeLengths;
+    uint64_t completeLengthSum = 0;
+};
+
+// classify one read's telomere block, write its BED row, and fold it into stats
+void writeReadTelomereRow(std::ostream& bedFile, const UserInputTeloscope& userInput,
+                          std::string_view readName, uint64_t readLen,
+                          const TelomereBlock& block, ReadTlStats& stats);
+
+void writeReadTlReport(std::ofstream& reportFile, const UserInputTeloscope& userInput,
+                       const ReadTlStats& stats);
 
 
 struct PathData {

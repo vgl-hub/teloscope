@@ -99,6 +99,10 @@ test-n50: head
 test-bam: head
 	python3 scripts/test_bam_subset.py
 
+.PHONY: test-read-tl
+test-read-tl: head
+	TELOSCOPE="$(BUILD)/$(TARGET)" python3 scripts/test_read_tl.py
+
 .PHONY: test-filters
 test-filters: head
 	TELOSCOPE="$(BUILD)/$(TARGET)" python3 scripts/test_sequence_filters.py

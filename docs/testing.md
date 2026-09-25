@@ -140,13 +140,14 @@ make test-filters
 
 This builds temporary FASTA and GFA fixtures and checks exact-ID and prefix selection, include/exclude precedence, selector validation, compressed input, line endings, unsupported modes, and output isolation. The CI workflow runs the same script on Linux, macOS, and Windows.
 
-## BAM subset regression script
+## Reads mode regression scripts
 
 ```sh
-python3 scripts/test_bam_subset.py
+make test-bam       # scripts/test_bam_subset.py
+make test-read-tl   # scripts/test_read_tl.py
 ```
 
-The script uses only the Python standard library. It generates BAM/BGZF fixtures in a temporary directory and checks record preservation, scoring parity, malformed input handling, batching, thread determinism, and deterministic mutations.
+Both use only the Python standard library: `test-bam` checks the kept records and malformed BAM, `test-read-tl` the BED rows and report.
 
 ## BAM hardening
 

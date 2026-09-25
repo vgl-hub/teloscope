@@ -15,8 +15,8 @@ teloscope input.fa [options]
 teloscope input.fa.gz [options]
 teloscope input.gfa [options]
 teloscope -f input.fa [options]
-teloscope --fastq-subset input.fq.gz [options] > telomeric.fq
-teloscope --bam-subset input.bam [options] > telomeric.bam
+teloscope input.fq.gz [options]
+teloscope input.bam [options]
 ```
 
 ## Input and output
@@ -24,10 +24,8 @@ teloscope --bam-subset input.bam [options] > telomeric.bam
 | Flag | Long form | Meaning | Default |
 | --- | --- | --- | --- |
 | `-f` | `--input-sequence` | input FASTA, FASTA.gz, GFA, FASTQ, or BAM file | required unless passed positionally |
-| `-o` | `--output` | output directory | input file directory |
+| `-o` | `--output` | output directory | input file directory (`.` for stdin) |
 | `-j` | `--threads` | maximum worker threads | all available |
-|  | `--fastq-subset` | stream FASTQ reads with Teloscope-valid telomeric blocks to stdout, or to a file with `-o` | `false` |
-|  | `--bam-subset` | stream BAM records with Teloscope-valid telomeric blocks to stdout, or to a file with `-o` | `false` |
 
 ## Assembly record filters
 
@@ -49,7 +47,7 @@ Selector files accept one-ID rows or BED3+ rows and skip blank, `#`, `track`, an
 
 Every exact ID and prefix must match at least one input name. Teloscope rejects unmatched selectors, duplicate FASTA IDs, invalid or empty selector files, invalid BED coordinates, and empty final selections. It reports selected and input counts to stderr and in the FASTA summary.
 
-Filters require FASTA or supported GFA1 input. GFA filtering preserves supported graph records and only limits scanned terminal ends. Filtered GFA accepts `H`, `S`, `L`, `J`, and `P` records; it rejects GFA2, `C`, `W`, and unknown records. Filtered stdin is parsed as FASTA, so GFA input needs a `.gfa` or `.gfa.gz` filename. FASTQ, BAM, and both read-subset modes reject filters.
+Filters require FASTA or supported GFA1 input. GFA filtering preserves supported graph records and only limits scanned terminal ends. Filtered GFA accepts `H`, `S`, `L`, `J`, and `P` records; it rejects GFA2, `C`, `W`, and unknown records. Filtered stdin is parsed as FASTA, so GFA input needs a `.gfa` or `.gfa.gz` filename. FASTQ and BAM input reject filters.
 
 Filtering occurs after input loading. It reduces scanning and output size, including `--plot-report`, but not parsing or peak memory. FASTA BED, BEDgraph, TSV, and report outputs contain selected records only.
 
@@ -84,7 +82,7 @@ When `-s` equals `-w`, window outputs are non-overlapping BEDgraph bins.
 | --- | --- | --- | --- |
 | `-k` | `--max-match-distance` | matches this close chain into one interstitial seed | `50` |
 | `-d` | `--max-block-distance` | maximum non-telomeric stretch inside a telomere | `1000` |
-| `-l` | `--min-block-length` | minimum piece length to keep | `300` for assembly, `42` for read subsets |
+| `-l` | `--min-block-length` | minimum piece length to keep | `300` |
 | `-y` | `--min-block-density` | minimum repeat-covered fraction for a piece, in `(0,1]` | `0.5` |
 | `-t` | `--terminal-limit` | how far in from each end to look | `50000` |
 |  | `--terminal-tolerance` | how far from an end a telomere may start | `3000` |
@@ -109,7 +107,7 @@ A piece or row exactly at a threshold â€” `-l`, `-y`, or `--min-block-counts` â€
 | `-a` | `--out-fasta` | write the terminal telomere sequences as FASTA | `false` |
 |  | `--plot-report` | write separate terminal and ITS PDF reports after the run | `false` |
 
-Any of `-r`, `-g`, `-e`, `-m`, or `-i` forces the full scan. `-n` keeps the fast scan but reads both end windows of every contig and adds contig-terminal rows to the terminal BED.
+Any of `-r`, `-g`, `-e`, `-m`, or `-i` forces the full scan. `-n` keeps the fast scan but reads both end windows of every contig and adds contig-terminal rows to the terminal BED. These are assembly-only outputs: with FASTQ or BAM input they are ignored, with a warning.
 
 ## Informational flags
 
@@ -159,31 +157,26 @@ Graph annotation:
 teloscope asm.gfa -o results/
 ```
 
-FASTQ read subset before mapping:
+Reads mode:
 
 ```sh
-teloscope --fastq-subset reads.fq.gz -j 32 | minimap2 -ax map-hifi ref.fa -
+teloscope reads.fq.gz -j 32 -o results/
+teloscope reads.bam -j 32 -o results/
 ```
 
-BAM record subset:
+## Reads mode
 
-```sh
-teloscope --bam-subset reads.bam -j 32 > telomeric.bam
-```
+FASTQ or BAM input is detected from its first bytes; there is no flag, and `--fastq-subset`/`--bam-subset` were removed. `-l` sets the measured rows; reads are kept with a fixed 42 bp floor, so `-l` below 42 also keeps more reads. See [Outputs](outputs.md#reads-mode-outputs).
 
-In read subset modes, the default `-l` is `42` bp. This is intended to retain reads with at least about seven telomeric repeat units after Teloscope's block and density filters. Assembly annotation keeps the stricter `300` bp default.
+## Stdin and pipes
 
-Read subset modes also ignore `-t/--terminal-limit` and `--terminal-tolerance`: both are internally overridden so the whole read counts as terminal, regardless of the values passed on the command line.
-
-## Stdin
-
-Teloscope reads from stdin when no input file is given:
+Teloscope reads from stdin when no input file is given. A path that is not a regular file (a named pipe, `<(...)`, `/dev/stdin`) is read the same way, and its outputs default to `.`.
 
 ```sh
 cat asm.fa | teloscope -o results/
 zcat asm.fa.gz | teloscope -o results/
-zcat reads.fq.gz | teloscope --fastq-subset > telomeric.fq
-cat reads.bam | teloscope --bam-subset > telomeric.bam
+zcat reads.fq.gz | teloscope -o results/
+cat reads.bam | teloscope -o results/
 ```
 
-Compressed FASTA or FASTQ stdin is not supported. BAM stdin is supported because BAM mode handles BGZF directly.
+Compressed FASTA or FASTQ on stdin or a pipe is not supported; BAM is.

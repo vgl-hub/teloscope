@@ -64,12 +64,13 @@ Common cases:
 - `-y`
 - `-x`
 
-### Compressed stdin is not supported
+### Compressed stdin or a pipe is not supported
 
-This does not work:
+This does not work, whether piped or through a FIFO or process substitution:
 
 ```sh
 cat asm.fa.gz | teloscope -o results/
+teloscope <(cat asm.fa.gz) -o results/
 ```
 
 Use one of these:
@@ -79,15 +80,21 @@ teloscope asm.fa.gz
 zcat asm.fa.gz | teloscope -o results/
 ```
 
-BAM is the exception because `--bam-subset` reads BGZF directly:
+BAM is the exception because BAM mode reads BGZF directly:
 
 ```sh
-cat reads.bam | teloscope --bam-subset > telomeric.bam
+cat reads.bam | teloscope -o results/
 ```
 
-### BAM subset rejects the input
+Gzipped FASTQ on a pipe is read as BAM and fails with a hint; pass the file instead.
 
-`--bam-subset` requires BGZF-compressed BAM, not SAM, CRAM, plain gzip, or an uncompressed BAM payload. Teloscope rejects invalid block sizes, checksums, headers, and record boundaries. A missing BGZF EOF marker is accepted with a warning.
+### "is not FASTA, GFA, FASTQ or BAM"
+
+The input does not start like FASTA, GFA, FASTQ or BAM. Only the first bytes are checked, so a GFA with missing columns further in can still stop the GFA reader.
+
+### Reads mode rejects the BAM input
+
+BAM input requires BGZF compression, not SAM, CRAM, plain gzip, or an uncompressed BAM payload. Teloscope rejects invalid block sizes, checksums, headers, and record boundaries. A missing BGZF EOF marker is accepted with a warning.
 
 ### Output directory is not writable
 

@@ -1,8 +1,12 @@
 #ifndef BAM_H
 #define BAM_H
 
-struct UserInputTeloscope;
+#include <iosfwd>
 
-void runBamSubsetMode(const UserInputTeloscope &userInput);
+struct UserInputTeloscope;
+struct ReadTlStats;
+
+void readBamReads(const UserInputTeloscope &userInput, std::ostream &subset,
+                  std::ostream &bed, ReadTlStats &stats);
 
 #endif /* BAM_H */

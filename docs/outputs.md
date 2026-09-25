@@ -2,7 +2,7 @@
 
 # Outputs
 
-Teloscope writes different outputs in assembly and read subset modes.
+Teloscope writes different outputs in assembly mode and reads mode (FASTQ or BAM input).
 
 ## File naming
 
@@ -16,9 +16,10 @@ GFA mode writes one graph file:
 
 - `asm.gfa.telo.annotated.gfa`
 
-BAM subset mode with `-o results/` writes:
+Reads mode (BAM drops its extension):
 
-- `results/reads_telomeric.bam`
+- `reads.fq_telomeric.fastq`, `reads.fq_terminal_telomeres.bed`, `reads.fq_report.tsv`
+- `reads_telomeric.bam`, `reads.bam_terminal_telomeres.bed`, `reads.bam_report.tsv`
 
 ## FASTA mode outputs
 
@@ -190,6 +191,18 @@ Each telomere link points from the synthetic node (`+`) to the assembly segment,
 
 No BED, BEDgraph, or TSV files are written in GFA mode. Record filters do not delete supported original graph records; they limit which terminal segment ends Teloscope scans for new annotations.
 
-## BAM subset output
+## Reads mode outputs
 
-BAM subset output contains the original BAM header and unchanged passing records in input order. Records without `SEQ` are omitted. The output has a standard BGZF EOF marker but no `.bai` or `.csi` index.
+- `*_telomeric.fastq` or `*_telomeric.bam`: the kept reads, unchanged, in input order.
+- `*_terminal_telomeres.bed`: one row per measured read telomere, in the [terminal BED layout](#telomere-block-bed-files). `chr` is the read name, `chrSize` the read length, and `teloType` is `read`. A read can have both a `p` and a `q` row, or none.
+- `*_report.tsv`: the provenance header, then `label<TAB>value` lines, also printed to stdout:
+
+- `Reads measured`: FASTQ counts every read; BAM counts primary records that have a sequence and are not hard-clipped at either CIGAR end
+- `Reads kept`: records written to the subset; can exceed `Reads measured` on an aligned BAM
+- `Read telomeres`: BED rows written
+- `Complete`: strand matches the end (C-rich at a read start, G-rich at a read end), and the read continues at least `-d` past the telomere
+- `Reaching read end`: strand matches, but the read ends within `-d` of the telomere
+- `Discordant`: strand does not match the end
+- `Mean length`, `Median length`, `25th percentile length`, `75th percentile length`, `90th percentile length` (linear interpolation, two decimals), `Min length`, `Max length` (integers) — over `Complete` rows only; omitted with none
+
+The estimate is alignment-free: a read broken inside a telomere looks complete and pulls it down.

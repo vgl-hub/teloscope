@@ -2,12 +2,11 @@
 
 # Teloscope algorithm
 
-Teloscope has four input modes:
+Teloscope has three input modes:
 
 - FASTA mode scans sequence ends, groups telomeric matches into blocks, and classifies each path or scaffold.
 - GFA mode scans graph segments and writes an annotated graph with synthetic telomere nodes.
-- FASTQ subset mode streams reads and writes only records with Teloscope-valid telomeric blocks.
-- BAM subset mode streams alignments and writes only records whose stored `SEQ` has a valid block.
+- Reads mode (FASTQ or BAM input) measures and subsets reads in one pass.
 
 ## FASTA mode
 
@@ -47,17 +46,9 @@ When paths are present, Teloscope annotates only path-terminal segment ends. Thi
 
 Synthetic telomere nodes are placeholders. They carry tags that preserve the detected telomere length while keeping the graph easier to display in BandageNG.
 
-## FASTQ subset mode
+## Reads mode
 
-`--fastq-subset` reads FASTQ records in bounded batches, scans each read as a whole sequence with the same pattern expansion and block filters used by FASTA mode, and writes unchanged passing FASTQ records to stdout. Read order is preserved. By default records stream to stdout so the output can be piped straight into a mapper; pass `-o` to save them to `<output>/<input>_telomeric.fastq` instead. Diagnostics and final counts are written to stderr. FASTQ subset mode defaults to a 42 bp minimum block length, while assembly annotation keeps the 300 bp default.
-
-## BAM subset mode
-
-`--bam-subset` reads BGZF-compressed BAM directly through `zlib`, without HTSlib or command-line converters. It preserves the BAM header, scans each record's stored `SEQ`, and writes passing records unchanged. Primary, secondary, supplementary, mapped, and unmapped records are evaluated independently. Records without `SEQ` are dropped and counted separately.
-
-Records are processed in bounded byte and record batches. Worker threads score sequences while the main thread writes passing records in input order. The output is valid BGZF with an EOF marker; no index is copied or generated. Missing input EOF markers produce a warning, while malformed BGZF or BAM data is rejected.
-
-FASTQ and BAM use the same read-scoring wrapper and 42 bp default. BAM I/O is isolated from scoring so a future SAM parser or optional CRAM backend can reuse the same filter.
+Each read is scanned twice with the FASTA-mode patterns: the assembly block rule (`-l`) gives its BED rows, and a whole-read scan with a fixed 42 bp floor decides whether it is kept. A read with a BED row is always kept. BAM reverse-strand records are measured in read orientation; secondary, supplementary and hard-clipped records are not measured but can be kept.
 
 ## Pattern handling
 
