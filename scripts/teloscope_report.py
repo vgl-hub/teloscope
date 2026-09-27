@@ -1345,112 +1345,46 @@ def _draw_centered_legend_pair(ax, left_handles, right_handles, gap=0.016,
 
 
 def _draw_ranked_bar_panel(ax, rows, x_label, xticks, title=None):
-    """Draw a ranked horizontal bar panel with a shared Nature-style axis treatment."""
-    label_space = 1.42
+    """Ranked horizontal bars in ten fixed slots, so thickness and pitch never depend on n."""
+    label_in = 0.80
+    n_slots = max(len(rows), 10)
     y_pos = np.arange(len(rows), dtype=np.float64)
     values = [row["value"] for row in rows]
     colors = [row["color"] for row in rows]
 
-    ax.barh(
-        y_pos,
-        values,
-        height=0.20,
-        color=colors,
-        edgecolor="white",
-        linewidth=0.45,
-        zorder=2,
-    )
+    ax.barh(y_pos, values, height=0.6, color=colors, edgecolor="none", zorder=2)
     for y_pos_i, row in zip(y_pos, rows):
-        ax.text(
-            -0.08,
-            y_pos_i,
-            row["label"],
-            ha="right",
-            multialignment="right",
-            va="center",
-            fontsize=MIN_TEXT_SIZE,
-            color="#222222",
-            linespacing=1.0,
-        )
+        lines = row["label"].split("\n")
+        if len(lines) > 2:
+            lines = [lines[0], lines[1].rstrip("._-") + "…"]
+        ax.annotate("\n".join(lines), (0.0, y_pos_i), xytext=(-3, 0), textcoords="offset points",
+                    ha="right", multialignment="right", va="center",
+                    fontsize=MIN_TEXT_SIZE, color="#222222", linespacing=0.95)
 
     x_max = max(max(xticks), max(values) + 0.12) if values else max(xticks)
-    ax.set_ylim(len(rows) - 0.45, -0.55)
+    # Fixed physical label gutter inside the axes, whatever the panel width.
+    width_in = ax.get_position().width * ax.figure.get_size_inches()[0]
+    ax.set_xlim(-x_max * label_in / max(width_in - label_in, 0.1), x_max)
+    ax.set_ylim(n_slots - 0.5, -0.5)
     ax.set_yticks([])
-    ax.set_xlim(-label_space, x_max)
-    ax.set_xlabel(x_label, fontsize=AXIS_LABEL_SIZE)
+    ax.set_xlabel(x_label, fontsize=AXIS_LABEL_SIZE, labelpad=2.5)
     ax.set_xticks([tick for tick in xticks if tick <= x_max + 0.1])
-    ax.tick_params(axis="x", length=2.0, width=0.35, pad=0.6, labelsize=AXIS_TICK_SIZE)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_visible(False)
+    ax.tick_params(axis="x", length=2.3, width=0.45, pad=1.5, labelsize=AXIS_TICK_SIZE)
+    for side in ("top", "right", "left"):
+        ax.spines[side].set_visible(False)
     ax.spines["bottom"].set_visible(True)
-    ax.spines["bottom"].set_linewidth(0.35)
-    ax.spines["bottom"].set_color("black")
-    ax.axvline(0.0, color="black", linewidth=0.35, zorder=1)
-    ax.minorticks_off()
-    if title:
-        ax.set_title(title, loc="left", fontsize=PANEL_TITLE_SIZE, pad=0.0, y=0.985)
-
-
-def _draw_summary_bar(ax, segments, title, x_label, fmt_value, x_formatter=None):
-    """Draw a thin stacked summary bar for overview panel a."""
-    total = sum(segment[1] for segment in segments)
-    if title:
-        ax.set_title(title, loc="left", fontsize=6.8, pad=0.0, y=0.995)
-
-    if total <= 0:
-        ax.text(0.5, 0.5, "No classification data",
-                transform=ax.transAxes, ha="center", va="center",
-                fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999")
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.spines["left"].set_visible(False)
-        ax.spines["bottom"].set_visible(False)
-        return
-
-    left = 0.0
-    bar_center = 0.103
-    for segment in segments:
-        label, value, color = segment[:3]
-        label_value = segment[3] if len(segment) > 3 else value
-        if value <= 0:
-            continue
-        ax.barh(
-            bar_center, value, left=left, height=0.034,
-            color=color, edgecolor="white", linewidth=0.6,
-            zorder=2,
-        )
-        if value / total >= 0.08:
-            ax.text(
-                left + value / 2.0, bar_center, fmt_value(label_value),
-                ha="center", va="center",
-                fontsize=ANNOTATION_TEXT_SIZE, color="#222222", zorder=3,
-            )
-        left += value
-
-    ax.set_xlim(0, total)
-    ax.set_ylim(0.055, 0.142)
-    ax.set_yticks([])
-    ax.tick_params(axis="x", length=2.0, width=0.45, pad=0.6, labelsize=AXIS_TICK_SIZE)
-    ax.spines["left"].set_visible(False)
-    ax.spines["bottom"].set_visible(True)
-    ax.spines["bottom"].set_color("#c7c7c7")
     ax.spines["bottom"].set_linewidth(0.45)
+    ax.spines["bottom"].set_color("#bcbcbc")
+    ax.spines["bottom"].set_bounds(0.0, x_max)
+    ax.axvline(0.0, color="#bcbcbc", linewidth=0.45, zorder=1)
     ax.minorticks_off()
-    if x_formatter is not None:
-        ax.xaxis.set_major_formatter(x_formatter)
-    ax.set_xlabel(x_label, fontsize=AXIS_LABEL_SIZE, labelpad=0.15)
+    if title:
+        _panel_title(ax, title)
 
 
 def _draw_dual_summary_panel(ax, all_segments, telo_segments, title=None):
-    """Draw a single two-row stacked summary panel with a shared percentage axis."""
-    if title:
-        ax.set_title(title, loc="left", fontsize=PANEL_TITLE_SIZE, pad=0.0, y=0.985)
-
-    plot_rows = [
-        (0.70, "All", all_segments),
-        (0.54, "With telomeres", telo_segments),
-    ]
+    """Two adjacent stacked percentage bars sharing one axis, pitched like the ranked bars."""
+    plot_rows = [(0, "All", all_segments), (1, "With telomeres", telo_segments)]
     for y_pos, _, segments in plot_rows:
         left = 0.0
         for segment in segments:
@@ -1458,35 +1392,32 @@ def _draw_dual_summary_panel(ax, all_segments, telo_segments, title=None):
             cnt = segment[3] if len(segment) > 3 else None
             if value <= 0:
                 continue
-            ax.barh(
-                y_pos, value, left=left, height=0.060,
-                color=color, edgecolor="white", linewidth=0.6,
-                zorder=2,
-            )
+            ax.barh(y_pos, value, left=left, height=0.6, color=color,
+                    edgecolor="white", linewidth=0.6, zorder=2)
             if cnt is not None and value >= 5.0:
-                ax.text(
-                    left + value / 2.0, y_pos, str(cnt),
-                    ha="center", va="center",
-                    fontsize=ANNOTATION_TEXT_SIZE, color="#222222", zorder=3,
-                )
+                r, g, b = matplotlib.colors.to_rgb(color)
+                ink = "white" if 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.45 else "#222222"
+                ax.text(left + value / 2.0, y_pos, str(cnt), ha="center", va="center",
+                        fontsize=ANNOTATION_TEXT_SIZE, color=ink, zorder=3)
             left += value
 
     ax.set_xlim(0.0, 100.0)
-    ax.set_ylim(0.43, 0.81)
+    ax.set_ylim(2.0, -1.0)
     ax.set_yticks([row[0] for row in plot_rows])
     ax.set_yticklabels([row[1] for row in plot_rows], fontsize=AXIS_TICK_SIZE)
-    ax.tick_params(axis="y", length=0, pad=3.2)
-    ax.tick_params(axis="x", length=2.0, width=0.45, pad=0.55, labelsize=AXIS_TICK_SIZE)
+    ax.tick_params(axis="y", length=0, pad=3.0)
+    ax.tick_params(axis="x", length=2.3, width=0.45, pad=1.5, labelsize=AXIS_TICK_SIZE)
     ax.xaxis.set_major_locator(ticker.MultipleLocator(25))
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:.0f}%"))
-    ax.set_xlabel("Sequences (%)", fontsize=AXIS_LABEL_SIZE, labelpad=0.45)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_visible(False)
+    ax.set_xlabel("Sequences (%)", fontsize=AXIS_LABEL_SIZE, labelpad=2.5)
+    for side in ("top", "right", "left"):
+        ax.spines[side].set_visible(False)
     ax.spines["bottom"].set_visible(True)
-    ax.spines["bottom"].set_color("black")
-    ax.spines["bottom"].set_linewidth(0.35)
+    ax.spines["bottom"].set_color("#bcbcbc")
+    ax.spines["bottom"].set_linewidth(0.45)
     ax.minorticks_off()
+    if title:
+        _panel_title(ax, title)
 
 
 def _wrap_scaffold_name(name, width=18):
@@ -1578,33 +1509,18 @@ def _draw_flagged_scaffolds_panel(ax, classifications, chrom_sizes, top_n=10, ti
     flagged_top = flagged[:top_n]
 
     if not flagged_top:
-        ax.text(0.5, 0.5, "No flagged scaffolds\n(fragmented / discordant)",
-                transform=ax.transAxes, ha="center", va="center",
-                fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999", linespacing=1.4)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        for spine in ax.spines.values():
-            spine.set_visible(False)
+        _draw_empty_state(ax, "No flagged scaffolds\n(fragmented / discordant)")
         if title:
-            ax.set_title(title, loc="left", fontsize=PANEL_TITLE_SIZE, pad=0.0, y=0.985)
+            _panel_title(ax, title)
         return
 
-    rows = []
-    for entry in flagged_top:
-        wrapped = _wrap_scaffold_name(entry["chrom"], width=14)
-        rows.append({
-            "label": wrapped,
-            "value": np.log10(entry["size"] + 1.0),
-            "color": COLORS.get(entry["category"], "#aaaaaa"),
-        })
-
-    _draw_ranked_bar_panel(
-        ax,
-        rows,
-        x_label="Scaffold size (log10 bp)",
-        xticks=[0, 2, 4, 6, 8],
-        title=title,
-    )
+    rows = [{
+        "label": _wrap_scaffold_name(entry["chrom"], width=14),
+        "value": np.log10(entry["size"] + 1.0),
+        "color": COLORS.get(entry["category"], "#aaaaaa"),
+    } for entry in flagged_top]
+    _draw_ranked_bar_panel(ax, rows, x_label="Scaffold size (log10 bp)",
+                           xticks=[0, 2, 4, 6, 8], title=title)
 
 
 def _compute_block_rows(blocks, chrom_sizes):
@@ -1628,8 +1544,41 @@ def _compute_block_rows(blocks, chrom_sizes):
     return rows
 
 
+def _add_axes_in(fig, left, top, width, height):
+    """Add axes placed in inches from the figure's top-left corner."""
+    fig_w, fig_h = fig.get_size_inches()
+    return fig.add_axes([left / fig_w, 1 - (top + height) / fig_h, width / fig_w, height / fig_h])
+
+
+def _draw_empty_state(ax, message):
+    """Blank the axes and centre a muted message in it."""
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.text(0.5, 0.5, message, transform=ax.transAxes, ha="center", va="center",
+            fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999", linespacing=1.4)
+
+
+def _draw_stat_tiles(ax, tiles):
+    """Row of headline numbers over muted labels, split by hairlines."""
+    ax.axis("off")
+    ax.set_xlim(0, len(tiles))
+    ax.set_ylim(0, 1)
+    for i, (value, label) in enumerate(tiles):
+        ax.text(i + 0.5, 0.46, value, ha="center", va="bottom",
+                fontsize=9.0, color="#222222")
+        ax.text(i + 0.5, 0.36, label, ha="center", va="top",
+                fontsize=MIN_TEXT_SIZE + 0.5, color="#666666")
+        if i:
+            ax.plot([i, i], [0.08, 0.92], color="#d0d0d0", linewidth=0.4,
+                    solid_capstyle="butt")
+
+
 def plot_overview_page1(classifications, blocks, chrom_sizes):
-    """Page 1: Scaffold classification bars + legend + flagged scaffolds panel."""
+    """Page 1: headline tiles, scaffold classification (a) and flagged scaffolds (b)."""
     FLAGGED_DISTANCE_BP = 1000
 
     cat_labels = list(classifications.keys())
@@ -1638,29 +1587,31 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
     total = sum(cat_counts)
 
     block_rows = _compute_block_rows(blocks, chrom_sizes)
-    distance_flagged_blocks = [r for r in block_rows if r["distance"] > FLAGGED_DISTANCE_BP]
     flagged_scaffolds = {
         chrom
         for category in FLAGGED_SCAFFOLD_CATEGORIES
         for chrom in classifications.get(category, [])
     }
-    flagged_total_scaffolds = len(flagged_scaffolds)
-    distance_flagged_block_total = len(distance_flagged_blocks)
-
     all_len = [r["length"] for r in block_rows if r["label"] in ("p", "q", "b")]
-    total_blocks = len(block_rows)
     total_paths = total if total > 0 else max(len(chrom_sizes), len(blocks))
-    median_bp = int(round(_median(all_len))) if all_len else None
 
-    # ---- Figure layout: aligned top-row panels with legends below ----
-    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 3.55))
-    gs = fig.add_gridspec(2, 2, height_ratios=[1.0, 0.22],
-                          width_ratios=[1.0, 0.85], hspace=0.18, wspace=0.28)
+    # Inch layout: panel a is short (two bars) with the legends under it; b holds ten bar slots.
+    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 3.05))
+    left, right = 0.145 * FIG_WIDTH_DOUBLE, 0.97 * FIG_WIDTH_DOUBLE
+    b_left, top = 3.95, 1.08
+    ax_tiles = _add_axes_in(fig, left, 0.40, right - left, 0.36)
+    ax_summary = _add_axes_in(fig, left, top, 3.55 - left, 0.48)
+    ax_flagged_scaffolds = _add_axes_in(fig, b_left, top, right - b_left, 1.60)
+    ax_legends = _add_axes_in(fig, left, 1.70, 3.55 - left, 1.02)
 
-    ax_summary = fig.add_subplot(gs[0, 0])
-    ax_flagged_scaffolds = fig.add_subplot(gs[0, 1])
-    ax_legends = fig.add_subplot(gs[1, :])
-    fig.subplots_adjust(left=0.096, right=0.962, top=0.81, bottom=0.08)
+    _draw_stat_tiles(ax_tiles, [
+        (f"{total_paths:,}", "Scaffolds"),
+        (f"{len(flagged_scaffolds):,}", "Flagged scaffolds"),
+        (f"{len(block_rows):,}", "Telomere blocks"),
+        (f"{sum(r['distance'] > FLAGGED_DISTANCE_BP for r in block_rows):,}",
+         "Distance-flagged blocks"),
+        (_fmt_bp(int(round(_median(all_len)))) if all_len else "NA", "Median block length"),
+    ])
 
     # ---- Panel a: Classification bars ----
     absolute_segments = [
@@ -1683,9 +1634,14 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
         (lab, (100.0 * cnt / total) if total else 0.0, color, cnt)
         for lab, cnt, color in absolute_segments
     ]
-    _draw_dual_summary_panel(ax_summary, absolute_pct_segments, relative_segments, title=None)
+    _draw_dual_summary_panel(ax_summary, absolute_pct_segments, relative_segments)
+    _panel_title(ax_summary, "Scaffold classification", "a", dx_in=left - 0.24)
 
-    # ---- Quality legend (5 categories) ----
+    # ---- Panel b: Flagged scaffolds (discordant / fragmented by size) ----
+    _draw_flagged_scaffolds_panel(ax_flagged_scaffolds, classifications, chrom_sizes)
+    _panel_title(ax_flagged_scaffolds, "Flagged scaffolds", "b", dx_in=b_left - 3.84)
+
+    # ---- Shared legend strip: gap key + quality legend ----
     quality_handles = [
         Patch(facecolor=COLORS["T2T"],         label="T2T"),
         Patch(facecolor=COLORS["Incomplete"],   label="Incomplete"),
@@ -1693,59 +1649,17 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
         Patch(facecolor=COLORS["Discordant"],   label="Discordant"),
         Patch(facecolor=COLORS["No telomeres"], label="No telomeres"),
     ]
-
-    # ---- Shared legend strip: gap key + quality legend ----
     gap_handles = [
         Patch(facecolor="#555555", label="Gapless"),
         Patch(facecolor="#cccccc", label="Gapped"),
     ]
     _draw_centered_legend_pair(
-        ax_legends,
-        gap_handles,
-        quality_handles,
-        gap=0.016,
-        left_legend_kwargs={
-            "ncol": 1,
-            "fontsize": LEGEND_TEXT_SIZE,
-        },
-        right_legend_kwargs={
-            "ncol": 3,
-            "fontsize": LEGEND_TEXT_SIZE,
-        },
+        ax_legends, gap_handles, quality_handles, gap=0.016,
+        left_legend_kwargs={"ncol": 1, "fontsize": LEGEND_TEXT_SIZE},
+        right_legend_kwargs={"ncol": 3, "fontsize": LEGEND_TEXT_SIZE},
     )
 
-    # ---- Panel b: Flagged scaffolds (discordant / fragmented by size) ----
-    _draw_flagged_scaffolds_panel(ax_flagged_scaffolds, classifications, chrom_sizes, title=None)
-
-    # ---- Titles and panel labels ----
-    fig.canvas.draw()
-    label_style = dict(fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="bottom", ha="left")
-    title_style = dict(fontsize=PANEL_TITLE_SIZE, va="bottom", ha="center")
-
-    panel_label_y = 0.825
-    panel_title_y = 0.827
-
-    bbox_a = ax_summary.get_position()
-    fig.text(max(0.005, bbox_a.x0 - 0.032), panel_label_y, "a", **label_style)
-    fig.text((bbox_a.x0 + bbox_a.x1) / 2.0, panel_title_y, "Scaffold classification", **title_style)
-    bbox_b = ax_flagged_scaffolds.get_position()
-    fig.text(max(0.005, bbox_b.x0 - 0.032), panel_label_y, "b", **label_style)
-    fig.text((bbox_b.x0 + bbox_b.x1) / 2.0, panel_title_y, "Flagged scaffolds", **title_style)
-
-    fig.suptitle("Assembly summary", fontsize=FIGURE_TITLE_SIZE, fontweight="bold",
-                 x=0.5, y=0.968, ha="center")
-    summary_line = (
-        f"Scaffolds (n={total_paths:,}, flagged={flagged_total_scaffolds:,}), "
-        f"telomere blocks (n={total_blocks:,}, distance-flagged={distance_flagged_block_total:,}), "
-        f"median {median_bp:,} bp"
-        if median_bp is not None else
-        f"Scaffolds (n={total_paths:,}, flagged={flagged_total_scaffolds:,}), "
-        f"telomere blocks (n={total_blocks:,}, distance-flagged={distance_flagged_block_total:,}), "
-        "median NA"
-    )
-    fig.text(0.5, 0.918, summary_line,
-             ha="center", va="top", fontsize=FIGURE_SUMMARY_SIZE, color="#444444")
-
+    _page_title(fig, "Assembly summary")
     return fig
 
 
@@ -1771,13 +1685,19 @@ def plot_overview_page2(blocks, chrom_sizes):
     b_len = [row["length"] for row in block_rows if row["label"] == "b"]
     all_len = p_len + q_len + b_len
 
-    # ---- Figure layout ----
-    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 3.15))
-    gs = fig.add_gridspec(1, 3, wspace=0.30, width_ratios=[1.0, 1.0, 0.80])
-    ax_rain = fig.add_subplot(gs[0, 0])
-    ax_scatter = fig.add_subplot(gs[0, 1])
-    ax_flagged = fig.add_subplot(gs[0, 2])
-    fig.subplots_adjust(left=0.096, right=0.962, top=0.81, bottom=0.14)
+    # Inch layout: three equal-height axes sharing one top edge, so titles share a baseline.
+    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 2.80))
+    top, side = 0.62, 1.60
+    right = 0.97 * FIG_WIDTH_DOUBLE
+    ax_rain = _add_axes_in(fig, 0.66, top, side, side)
+    ax_scatter = _add_axes_in(fig, 2.98, top, side, side)
+    ax_flagged = _add_axes_in(fig, 4.95, top, right - 4.95, side)
+    tick_style = dict(length=2.3, width=0.45, pad=1.5, labelsize=AXIS_TICK_SIZE)
+    for ax in (ax_rain, ax_scatter):
+        for spine in ("left", "bottom"):
+            ax.spines[spine].set_linewidth(0.45)
+            ax.spines[spine].set_color("#bcbcbc")
+        ax.tick_params(axis="both", **tick_style)
 
     # ---- Panel c: Vertical raincloud ----
     groups = [
@@ -1786,6 +1706,7 @@ def plot_overview_page2(blocks, chrom_sizes):
         ("balanced", b_len, COLORS["b"]),
     ]
     groups = [(lbl, vals, col) for lbl, vals, col in groups if vals]
+    ax_rain.set_ylabel("Telomere length (log10 bp)", fontsize=AXIS_LABEL_SIZE)
 
     if groups:
         rng = np.random.default_rng(0)
@@ -1800,29 +1721,18 @@ def plot_overview_page2(blocks, chrom_sizes):
         x_labels = [f"{lbl}\n(n={len(vals)})" for lbl, vals, _ in groups]
         ax_rain.set_xticks(positions)
         ax_rain.set_xticklabels(x_labels, fontsize=AXIS_TICK_SIZE)
-        ax_rain.tick_params(axis="x", length=2, pad=2.5)
-        ax_rain.tick_params(axis="y", length=2, labelsize=AXIS_TICK_SIZE)
         ax_rain.set_xlim(positions.min() - 0.34, positions.max() + 0.30)
-        ax_rain.set_box_aspect(1.0)
-        ax_rain.set_anchor("S")
         ax_rain.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
 
         median_log = np.log10(_median(all_len) + 1.0)
-        ax_rain.axhline(median_log, color="black",
+        ax_rain.axhline(median_log, color="#555555",
                         linestyle=OVERVIEW_DASH_STYLE, linewidth=OVERVIEW_DASH_WIDTH)
         median_trans = transforms.blended_transform_factory(ax_rain.transAxes, ax_rain.transData)
         ax_rain.text(1.01, median_log, "median",
                      transform=median_trans, ha="left", va="center",
                      rotation=90, fontsize=LEGEND_TEXT_SIZE, color="#555555")
-        ax_rain.set_ylabel("Telomere length (log10bp)", fontsize=AXIS_LABEL_SIZE)
     else:
-        lbl_text = "No labeled telomere blocks" if block_rows else "No telomere blocks"
-        ax_rain.text(0.5, 0.5, lbl_text, ha="center", va="center",
-                     transform=ax_rain.transAxes, fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999")
-        ax_rain.set_ylabel("Telomere length (log10bp)", fontsize=AXIS_LABEL_SIZE)
-        ax_rain.set_xticks([])
-        ax_rain.set_box_aspect(1.0)
-        ax_rain.set_anchor("S")
+        _draw_empty_state(ax_rain, "No labeled telomere blocks" if block_rows else "No telomere blocks")
 
     # ---- Panel d: Scatter (terminal offset vs length) ----
     scatter_groups = [
@@ -1831,6 +1741,8 @@ def plot_overview_page2(blocks, chrom_sizes):
         ("balanced", "b", COLORS["b"]),
     ]
     scatter_rows = [row for row in block_rows if row["label"] in {"p", "q", "b"}]
+    ax_scatter.set_xlabel("Distance to end (log10 bp)", fontsize=AXIS_LABEL_SIZE, labelpad=2.5)
+    ax_scatter.set_ylabel("Telomere length (kbp)", fontsize=AXIS_LABEL_SIZE)
     if scatter_rows:
         max_log_x = 0.0
         for leg_lbl, arm_key, col in scatter_groups:
@@ -1841,12 +1753,10 @@ def plot_overview_page2(blocks, chrom_sizes):
             x = np.log10(np.asarray([row["distance"] for row in arm_rows], dtype=np.float64) + 1.0)
             y = np.asarray([row["length"] / 1e3 for row in arm_rows], dtype=np.float64)
             max_log_x = max(max_log_x, float(np.max(x)))
-            ax_scatter.scatter(x, y, s=13, color=col, alpha=0.55,
+            ax_scatter.scatter(x, y, s=11, color=col, alpha=0.55,
                                edgecolors="white", linewidths=0.28,
                                rasterized=True, label=leg_lbl)
 
-        ax_scatter.set_xlabel("Distance to end (log10bp)", fontsize=AXIS_LABEL_SIZE)
-        ax_scatter.set_ylabel("Telomere length (kbp)", fontsize=AXIS_LABEL_SIZE)
         ax_scatter.set_xticks([0, 1, 2, 3, 4])
         x_right = max(4.12, max_log_x + 0.18)
         ax_scatter.axvspan(3.0, x_right, facecolor="#ededed", linewidth=0, zorder=0)
@@ -1855,81 +1765,37 @@ def plot_overview_page2(blocks, chrom_sizes):
                                                 dtype=np.float64))), 0.0)
         ax_scatter.set_ylim(-0.45, max(1.2, y_max_sc * 1.10))
         ax_scatter.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
-        ax_scatter.tick_params(axis="both", labelsize=AXIS_TICK_SIZE)
-        ax_scatter.set_box_aspect(1.0)
-        ax_scatter.set_anchor("S")
         leg_d = ax_scatter.legend(loc="upper right", fontsize=LEGEND_TEXT_SIZE,
                                   frameon=True, facecolor="white", edgecolor="black",
-                                  framealpha=1.0, fancybox=False,
-                                  handletextpad=0.35, borderaxespad=0.2)
+                                  framealpha=1.0, fancybox=False, handletextpad=0.35,
+                                  borderaxespad=0.3, markerscale=0.8)
         leg_d.get_frame().set_linewidth(0.4)
-        ax_scatter.axvline(3.0, color="black", linewidth=OVERVIEW_DASH_WIDTH,
+        ax_scatter.axvline(3.0, color="#555555", linewidth=OVERVIEW_DASH_WIDTH,
                            linestyle=OVERVIEW_DASH_STYLE, zorder=1)
     else:
-        ax_scatter.text(0.5, 0.5, "No telomere blocks",
-                        transform=ax_scatter.transAxes,
-                        ha="center", va="center", fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999")
-        ax_scatter.set_xlabel("Distance to end (log10bp)", fontsize=AXIS_LABEL_SIZE)
-        ax_scatter.set_ylabel("Telomere length (kbp)", fontsize=AXIS_LABEL_SIZE)
-        ax_scatter.set_box_aspect(1.0)
-        ax_scatter.set_anchor("S")
+        _draw_empty_state(ax_scatter, "No telomere blocks")
 
-    # ---- Panel e: Flagged telomeres lollipop ----
+    # ---- Panel e: Flagged telomeres ----
     if not block_rows:
-        ax_flagged.text(0.5, 0.5, "No telomere blocks",
-                        transform=ax_flagged.transAxes,
-                        ha="center", va="center", fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999")
-        ax_flagged.set_xticks([])
-        ax_flagged.set_yticks([])
-        for spine in ax_flagged.spines.values():
-            spine.set_visible(False)
+        _draw_empty_state(ax_flagged, "No telomere blocks")
     elif not flagged_top:
-        ax_flagged.text(
-            0.5, 0.5,
-            f"No flagged blocks\n(distance > {FLAGGED_DISTANCE_BP // 1000} kbp)",
-            transform=ax_flagged.transAxes,
-            ha="center", va="center", fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999", linespacing=1.4,
-        )
-        ax_flagged.set_xticks([])
-        ax_flagged.set_yticks([])
-        for spine in ax_flagged.spines.values():
-            spine.set_visible(False)
+        _draw_empty_state(ax_flagged, f"No flagged blocks\n(distance > {FLAGGED_DISTANCE_BP // 1000} kbp)")
     else:
         rows = []
         for scaffold, info in flagged_top:
-            wrapped = _wrap_scaffold_name(scaffold, width=14)
             dominant_arm = info["arms"].most_common(1)[0][0]
             rows.append({
-                "label": f"{wrapped}\n(n={info['count']})",
+                "label": f"{_wrap_scaffold_name(scaffold, width=14)} (n={info['count']})",
                 "value": np.log10(info["length"] + 1.0),
                 "color": COLORS.get(dominant_arm, "#aaaaaa"),
             })
+        _draw_ranked_bar_panel(ax_flagged, rows, x_label="Flagged length (log10 bp)",
+                               xticks=[0, 1, 2, 3, 4])
 
-        _draw_ranked_bar_panel(
-            ax_flagged,
-            rows,
-            x_label="Flagged length (log10 bp)",
-            xticks=[0, 1, 2, 3, 4],
-        )
-
-    ax_flagged.set_anchor("S")
-
-    # ---- Panel labels and titles ----
-    fig.canvas.draw()
-    label_style = dict(fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="bottom", ha="left")
-    title_style = dict(fontsize=PANEL_TITLE_SIZE, ha="center", va="bottom")
-
-    panel_meta = [
-        (ax_rain,    "c", "Length by arm"),
-        (ax_scatter, "d", "Telomere positioning"),
-        (ax_flagged, "e", "Flagged telomeres"),
-    ]
-    title_y = 0.845
-    for ax, lbl, title in panel_meta:
-        bbox = ax.get_position()
-        fig.text(max(0.005, bbox.x0 - 0.032), title_y, lbl, **label_style)
-        fig.text((bbox.x0 + bbox.x1) / 2.0, title_y + 0.002, title, **title_style)
-
+    _panel_title(ax_rain, "Length by arm", "c", dx_in=0.66 - 0.24)
+    _panel_title(ax_scatter, "Telomere positioning", "d", dx_in=2.98 - 2.62)
+    _panel_title(ax_flagged, "Flagged telomeres", "e", dx_in=4.95 - 4.85)
+    _page_title(fig, "Telomere blocks")
     return fig
 
 

@@ -341,10 +341,30 @@ class TeloscopeReportTests(unittest.TestCase):
         fig = REPORT.plot_overview_page1(classifications, blocks, chrom_sizes)
         self.addCleanup(REPORT.plt.close, fig)
 
-        summary_text = next(text.get_text() for text in fig.texts if text.get_text().startswith("Scaffolds ("))
-        self.assertIn("Scaffolds (n=4, flagged=3)", summary_text)
-        self.assertIn("telomere blocks (n=2, distance-flagged=1)", summary_text)
-        self.assertNotIn("Scaffolds (n=4, distance-flagged=", summary_text)
+        tile_ax = next(ax for ax in fig.axes if "Telomere blocks" in [t.get_text() for t in ax.texts])
+        texts = [t.get_text() for t in tile_ax.texts]
+        tiles = dict(zip(texts[1::2], texts[0::2]))
+        self.assertEqual(tiles["Scaffolds"], "4")
+        self.assertEqual(tiles["Flagged scaffolds"], "3")
+        self.assertEqual(tiles["Telomere blocks"], "2")
+        self.assertEqual(tiles["Distance-flagged blocks"], "1")
+        self.assertIn("Median block length", tiles)
+
+    def test_ranked_bars_keep_one_thickness_and_pitch_for_any_count(self):
+        heights, pitches = set(), set()
+        for n in (1, 2, 10):
+            fig = REPORT.plt.figure(figsize=(3.0, 1.6))
+            self.addCleanup(REPORT.plt.close, fig)
+            ax = fig.add_axes([0.2, 0.2, 0.7, 0.7])
+            rows = [{"label": f"chr{i}", "value": 5.0, "color": "#888888"} for i in range(n)]
+            REPORT._draw_ranked_bar_panel(ax, rows, "x", [0, 2, 4, 6])
+            fig.canvas.draw()
+            boxes = [p.get_window_extent() for p in ax.patches]
+            heights.add(round(boxes[0].height, 3))
+            if n > 1:
+                pitches.add(round(boxes[0].y0 - boxes[1].y0, 3))
+        self.assertEqual(len(heights), 1)
+        self.assertEqual(len(pitches), 1)
 
     def test_text_floor_and_block_glyphs_are_nature_compliant(self):
         chrom, blocks, chrom_sizes, bedgraph = _synthetic_terminal_dataset()
@@ -394,7 +414,7 @@ class TeloscopeReportTests(unittest.TestCase):
         fig.canvas.draw()
 
         flagged_panel = next(ax for ax in fig.axes if ax.get_xlabel() == "Scaffold size (log10 bp)")
-        labels = flagged_panel.texts
+        labels = [text for text in flagged_panel.texts if text.get_text() != "b"]
         self.assertTrue(any("\n" in text.get_text() for text in labels))
 
         renderer = fig.canvas.get_renderer()
