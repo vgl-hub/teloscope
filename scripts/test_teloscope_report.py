@@ -617,12 +617,13 @@ class TeloscopeReportTests(unittest.TestCase):
             params = REPORT.read_params(str(report_path))
 
         self.assertEqual(params, {"max_block_dist": 500, "terminal_limit": 20000, "ultra_fast": False,
-                                  "motif_len": 6, "min_canonical_count": 4,
-                                  "known_params": {"max_block_dist", "terminal_limit", "motif_len", "min_canonical_count"}})
+                                  "motif_len": 6, "min_canonical_count": 4, "label_threshold": 0.667,
+                                  "known_params": {"max_block_dist", "terminal_limit", "motif_len",
+                                                   "min_canonical_count", "label_threshold"}})
 
     def test_read_params_defaults_when_the_report_is_missing(self):
         defaults = {"max_block_dist": 1000, "terminal_limit": None, "ultra_fast": None,
-                   "motif_len": 6, "min_canonical_count": 4, "known_params": set()}
+                   "motif_len": 6, "min_canonical_count": 4, "label_threshold": 0.667, "known_params": set()}
         self.assertEqual(REPORT.read_params(None), defaults)
         self.assertEqual(REPORT.read_params("/no/such/report.tsv"), defaults)
 
@@ -637,7 +638,17 @@ class TeloscopeReportTests(unittest.TestCase):
             params = REPORT.read_params(str(report_path))
 
         self.assertEqual(params, {"max_block_dist": 500, "terminal_limit": None, "ultra_fast": False,
-                                  "motif_len": 6, "min_canonical_count": 4, "known_params": {"max_block_dist"}})
+                                  "motif_len": 6, "min_canonical_count": 4, "label_threshold": 0.667,
+                                  "known_params": {"max_block_dist"}})
+
+    def test_composition_class_matches_the_engine_thirds_rule(self):
+        # fwdCan, revCan, fwdNonCan, revNonCan -> (strand, canonicity)
+        cases = [((3, 0, 0, 0), (2, 2)), ((0, 3, 0, 0), (0, 2)), ((0, 0, 3, 0), (2, 0)),
+                 ((0, 0, 0, 3), (0, 0)), ((1, 1, 1, 1), (1, 1)), ((2, 0, 0, 1), (1, 1)),
+                 ((1, 0, 0, 2), (1, 1)), ((0, 0, 0, 0), (1, 1))]
+        for counts, expected in cases:
+            strand, canon = REPORT.composition_class(*[[v] for v in counts])
+            self.assertEqual((int(strand[0]), int(canon[0])), expected, counts)
 
     def test_read_params_derives_motif_length_from_the_canonical_pattern(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -99,6 +99,15 @@ ITS_ORIENT_COLORS["unknown"] = COLORS["its"]
 ITS_ORIENT_LABELS = (("p", "p (forward)"), ("q", "q (reverse)"),
                      ("b", "balanced"), ("unknown", "unknown"))
 ZOOM_COLOR = COLORS["Discordant"]  # red box/funnel marking a zoom region
+# Double key: [canonicity][strand], canonicity nonCan/mixed/can darkens, strand rev/both/fwd shifts hue.
+DOUBLE_KEY_COLORS = (
+    ("#F0A35E", "#B7A1C6", "#56B4E9"),
+    ("#D55E00", "#7B5A93", "#2B8CC4"),
+    ("#8C2D04", "#3B2344", "#08467A"),
+)
+DOUBLE_KEY_STRAND = ("rev", "both", "fwd")
+DOUBLE_KEY_CANON = ("nonCan", "mixed", "can")
+LABEL_THRESHOLD = 0.667  # engine default for symmetric thirds
 ITS_CLUSTER_MERGE_GAP = 50_000
 MAX_COORD = 2**53 - 1  # exact-integer limit for float64 BED coordinates
 ITS_CLUSTER_MIN_ROWS = 3
@@ -472,7 +481,8 @@ def read_params(report_tsv):
     line and silently leave the later keys at their defaults.
     """
     result = {"max_block_dist": 1000, "terminal_limit": None, "ultra_fast": None,
-              "motif_len": 6, "min_canonical_count": 4, "known_params": set()}
+              "motif_len": 6, "min_canonical_count": 4, "label_threshold": LABEL_THRESHOLD,
+              "known_params": set()}
     if not report_tsv:
         return result
     try:
@@ -504,6 +514,14 @@ def read_params(report_tsv):
                     if fwd_motif:
                         result["motif_len"] = len(fwd_motif)
                         result["known_params"].add("motif_len")
+                if "label_threshold" in tokens:
+                    try:
+                        value = float(tokens["label_threshold"])
+                        if 0.5 <= value <= 1.0:
+                            result["label_threshold"] = value
+                            result["known_params"].add("label_threshold")
+                    except ValueError:
+                        pass
                 if "min_canonical_count" in tokens:
                     try:
                         value = int(tokens["min_canonical_count"])
@@ -871,10 +889,77 @@ def _bedgraph_to_step(starts, ends, values):
     return xs, ys
 
 
-def _panel_label(ax, label, x=-0.05, y=1.15):
-    """Add Nature-style panel label (bold lowercase letter, top-left)."""
-    ax.text(x, y, label, transform=ax.transAxes,
-            fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="top", ha="left")
+def _panel_label(ax, label, dx_in=0.30):
+    """Bold panel letter left of the axes, sharing the baseline of a pad=3 panel title."""
+    offset = transforms.ScaledTranslation(-dx_in, 3 / 72, ax.figure.dpi_scale_trans)
+    ax.text(0, 1, label, transform=ax.transAxes + offset,
+            fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="bottom", ha="left")
+
+
+def _panel_title(ax, title, label=None, dx_in=0.30):
+    """Axis-attached panel title with an optional panel letter, as on the terminal page."""
+    ax.set_title(title, fontsize=PANEL_TITLE_SIZE, pad=3)
+    if label:
+        _panel_label(ax, label, dx_in=dx_in)
+
+
+def _page_title(fig, title):
+    """One bold page title at a fixed physical distance from the top edge; no subtitle."""
+    fig.suptitle(title, fontsize=PANEL_LABEL_SIZE, fontweight="bold",
+                 y=1 - 0.155 / fig.get_size_inches()[1])
+
+
+def _thirds(num, den, threshold=LABEL_THRESHOLD):
+    """Engine symmetric-thirds rule (computeStrandLabel): 2 above t, 0 below 1-t, else 1."""
+    num = np.asarray(num, dtype=np.int64)
+    den = np.asarray(den, dtype=np.int64)
+    scale = 1_000_000
+    t = int(round(threshold * scale))
+    out = np.ones(np.broadcast(num, den).shape, dtype=np.int64)
+    out = np.where(num * scale > den * t, 2, out)
+    out = np.where(num * scale < den * (scale - t), 0, out)
+    return np.where(den == 0, 1, out)
+
+
+def composition_class(fwd_can, rev_can, fwd_noncan, rev_noncan, threshold=LABEL_THRESHOLD):
+    """Double-key class per ITS: (strand 0 rev/1 both/2 fwd, canonicity 0 nonCan/1 mixed/2 can)."""
+    fwd_can, rev_can, fwd_noncan, rev_noncan = (np.asarray(v, dtype=np.int64)
+                                                for v in (fwd_can, rev_can, fwd_noncan, rev_noncan))
+    total = fwd_can + rev_can + fwd_noncan + rev_noncan
+    return (_thirds(fwd_can + fwd_noncan, total, threshold),
+            _thirds(fwd_can + rev_can, total, threshold))
+
+
+def double_key_colors(df, threshold=LABEL_THRESHOLD):
+    """Hex colour per ITS row from its four match counts."""
+    strand, canon = composition_class(df["fwdCan"], df["revCan"], df["fwdNonCan"], df["revNonCan"], threshold)
+    return [DOUBLE_KEY_COLORS[c][s] for s, c in zip(strand, canon)]
+
+
+def _draw_double_key(ax, counts=None, bp=None, fontsize=MIN_TEXT_SIZE):
+    """3x3 composition key; with counts[c][s] (and bp) each cell carries n and % of ITS bp."""
+    total_bp = float(np.sum(bp)) if bp is not None else 0.0
+    for c in range(3):
+        for s in range(3):
+            color = DOUBLE_KEY_COLORS[c][s]
+            ax.add_patch(Rectangle((s, c), 1, 1, facecolor=color, edgecolor="white", linewidth=0.8))
+            if counts is None:
+                continue
+            n = int(counts[c][s])
+            text = f"{n:,}" if total_bp <= 0 else f"{n:,}\n{100 * bp[c][s] / total_bp:.0f}%"
+            ink = "white" if c >= 1 else "#222222"
+            ax.text(s + 0.5, c + 0.5, text, ha="center", va="center", fontsize=fontsize,
+                    color=ink if n else "#777777", linespacing=0.95)
+    ax.set_xlim(0, 3)
+    ax.set_ylim(0, 3)
+    ax.set_aspect("equal")
+    ax.set_xticks([0.5, 1.5, 2.5], DOUBLE_KEY_STRAND)
+    ax.set_yticks([0.5, 1.5, 2.5], DOUBLE_KEY_CANON)
+    ax.tick_params(length=0, labelsize=fontsize, pad=1.5)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.set_xlabel("Forward share →", fontsize=fontsize, labelpad=1.5)
+    ax.set_ylabel("Canonical share →", fontsize=fontsize, labelpad=1.5)
 
 
 def _sanitize_filename(name):
@@ -2063,12 +2148,12 @@ def _its_orientation(df):
 def _scan_note(params):
     mode = params.get("ultra_fast")
     if mode is False:
-        return "Full scan; observed ITS rows"
+        return "Full scan"
     if mode is True:
         limit = params.get("terminal_limit")
-        return ("End scan (initial " + _fmt_bp(limit) + " per end); observed ITS rows"
-                if limit else "End scan; scan limit unknown; observed ITS rows")
-    return "Scan scope unknown; observed ITS rows"
+        return ("End scan (initial " + _fmt_bp(limit) + " per end)"
+                if limit else "End scan; scan limit unknown")
+    return "Scan scope unknown"
 
 
 def _its_header(fig, title, subtitle):
