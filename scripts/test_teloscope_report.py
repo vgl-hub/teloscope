@@ -319,6 +319,13 @@ class TeloscopeReportTests(unittest.TestCase):
         legend_axis = min(fig.axes, key=lambda ax: ax.get_position().y0)
         legend_axis_center = (legend_axis.get_position().x0 + legend_axis.get_position().x1) / 2.0
         self.assertAlmostEqual(legend_group_center, legend_axis_center, delta=0.02)
+        # Docked right under panel a's x-label rather than floating lower down.
+        summary = next(ax for ax in fig.axes if ax.get_title() == "Scaffold classification")
+        renderer = fig.canvas.get_renderer()
+        label_bottom = summary.xaxis.label.get_window_extent(renderer).y0
+        legend_top = max(legend.get_window_extent(renderer).y1 for legend in legends)
+        self.assertLess(label_bottom - legend_top, 0.15 * fig.dpi)
+        self.assertGreaterEqual(label_bottom - legend_top, 0)
 
     def test_overview_summary_separates_scaffold_and_block_flag_counts(self):
         blocks = {
@@ -979,15 +986,18 @@ class ResilientITSReportTests(unittest.TestCase):
 
     def test_homolog_grouping_keeps_haplotypes_adjacent(self):
         names = ["chr1_mat", "chr33_mat", "chr2_pat", "chr33_pat", "chr1_pat", "hap1_chr5", "chr5_hap2",
-                 "chr7_h1", "chr7_h2", "chr9.1", "chr9.2", "s#1#chr4", "s#2#chr4", "chrZ_PAT"]
+                 "chr7_h1", "chr7_h2", "chr9.1", "chr9.2", "s#1#chr4", "s#2#chr4", "chrZ_PAT",
+                 "ptg000001l.1", "ptg000001l.2"]
         sizes = {n: 1_000_000 - 1_000 * i for i, n in enumerate(names)}
         self.assertEqual(REPORT._homolog_key("chr33_mat"), REPORT._homolog_key("chr33_pat"))
         self.assertEqual(REPORT._homolog_key("chrZ_PAT"), "chrZ")
         groups = REPORT._homolog_groups(names, sizes)
         self.assertIn(["chr33_mat", "chr33_pat"], groups)
-        for pair in (["hap1_chr5", "chr5_hap2"], ["chr7_h1", "chr7_h2"], ["chr9.1", "chr9.2"],
-                     ["s#1#chr4", "s#2#chr4"]):
+        for pair in (["hap1_chr5", "chr5_hap2"], ["chr7_h1", "chr7_h2"], ["s#1#chr4", "s#2#chr4"]):
             self.assertIn(sorted(pair), groups)
+        # Version or piece suffixes are not haplotypes.
+        for name in ("chr9.1", "chr9.2", "ptg000001l.1", "ptg000001l.2"):
+            self.assertIn([name], groups)
         order = [c for g in groups for c in g]
         self.assertEqual(abs(order.index("chr33_mat") - order.index("chr33_pat")), 1)
         many = [f"chr{i}_{h}" for i in range(1, 16) for h in ("mat", "pat")]
@@ -995,6 +1005,78 @@ class ResilientITSReportTests(unittest.TestCase):
         for page in pages:
             self.assertLessEqual(len(page), REPORT.ITS_ATLAS_ROWS)
             self.assertEqual(len({REPORT._homolog_key(c) for c in page}) * 2, len(page))
+
+    def test_candidates_colours_follow_composition_class(self):
+        df = self.frame([_its_row("chrA", 1000, 1600, "q", "fusion", rev_can=90),
+                         _its_row("chrA", 1700, 2300, "p", "fusion", fwd_can=90),
+                         _its_row("chrB", 500, 900, "p", "single")])
+        pairs, clusters, _ = self.parts(df)
+        self.assertEqual(len(pairs), 1)
+        fig = REPORT.plot_its_composition_page(df, pairs, clusters, REPORT.read_params(None))
+        self.draw(fig, "candidates_colours")
+        self.assertFalse(fig.legends)  # the 3x3 key replaces the swatch legend
+        texts = [t.get_text() for t in fig.findobj(mtext.Text)]
+        self.assertIn("Canonical share →", texts)
+        # Zero-count ITS takes the (both, mixed) cell, as on the composition page.
+        long_ax = fig.axes[0]
+        faces = {REPORT.matplotlib.colors.to_hex(p.get_facecolor()) for p in long_ax.patches}
+        self.assertIn(REPORT.DOUBLE_KEY_COLORS[1][1].lower(), faces)
+        self.assertIn("0% canonical", " ".join(texts))
+        fusion = {REPORT.matplotlib.colors.to_hex(p.get_facecolor()) for p in fig.axes[2].patches}
+        self.assertEqual(fusion, {REPORT.DOUBLE_KEY_COLORS[2][0].lower(), REPORT.DOUBLE_KEY_COLORS[2][2].lower()})
+        # A pair whose arms match no ITS falls back to the neutral grey, never a canonical colour.
+        fig, ax = REPORT.plt.subplots()
+        self.addCleanup(REPORT.plt.close, fig)
+        REPORT._draw_its_fusion_glyphs(ax, df[df["chr"] == "chrB"], pairs, REPORT.LABEL_THRESHOLD)
+        faces = {REPORT.matplotlib.colors.to_hex(p.get_facecolor()) for p in ax.patches}
+        self.assertEqual(faces, {REPORT.COLORS["its"].lower()})
+
+    def test_long_its_canonical_share_is_count_based(self):
+        df = self.frame([_its_row("chrA", 100, 160, "p", "single", fwd_can=30, fwd_noncan=10)])
+        df["canonical_bp"] = 180  # overlapping matches push the bp ratio past one
+        fig, ax = REPORT.plt.subplots()
+        self.addCleanup(REPORT.plt.close, fig)
+        REPORT._draw_its_long_glyphs(ax, df)
+        self.assertIn("60 bp  ·  75% canonical", [t.get_text() for t in ax.texts])
+
+    def test_panel_letters_share_the_terminal_left_margin(self):
+        df = self.frame([_its_row("chrA", 100, 200, "p", "single", fwd_can=4)])
+        pairs, clusters, _ = self.parts(df)
+        params = REPORT.read_params(None)
+        figs = [REPORT.plot_its_statistics_page(df, pairs, clusters, params),
+                REPORT.plot_its_composition_page(df, pairs, clusters, params),
+                REPORT.plot_overview_page1(OrderedDict([("T2T", ["chrA"])]), {}, {"chrA": 1000}),
+                REPORT.plot_overview_page2({}, {"chrA": 1000})]
+        for fig in figs:
+            self.addCleanup(REPORT.plt.close, fig)
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+            letters = [t for ax in fig.axes for t in ax.texts
+                       if len(t.get_text()) == 1 and t.get_fontweight() == "bold"]
+            self.assertTrue(letters)
+            x0 = min(t.get_window_extent(renderer).x0 for t in letters) / fig.dpi
+            self.assertAlmostEqual(x0, REPORT.PANEL_LETTER_X_IN, delta=0.03)
+
+    def test_size_key_centres_its_references(self):
+        for lengths in (np.array([50.0]), np.array([50.0, 900.0]), np.array([50.0, 9000.0])):
+            fig, ax = REPORT.plt.subplots()
+            self.addCleanup(REPORT.plt.close, fig)
+            REPORT._draw_its_size_key(ax, lengths, False)
+            xs = ax.collections[0].get_offsets()[:, 0]
+            self.assertAlmostEqual(float(np.mean(xs)), 0.0)
+            self.assertAlmostEqual(sum(ax.get_xlim()), 0.0)
+
+    def test_atlas_labels_keep_one_precision_and_explain_tags(self):
+        df = self.frame([_its_row("chr1_mat", 1000, 1500, "p", "single", fwd_can=40, chrom_size=116_000_000),
+                         _its_row("chr1_pat", 1000, 1500, "p", "single", fwd_can=40, chrom_size=115_910_000)])
+        pairs, clusters, sizes = self.parts(df)
+        fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, REPORT.read_params(None))
+        self.draw(fig, "atlas_precision", False)
+        ticks = [t.get_text() for t in fig.axes[0].get_yticklabels()]
+        self.assertEqual([t.split("  ")[-1] for t in ticks], ["116.00 Mb", "115.91 Mb"])
+        labels = [t.get_text() for leg in fig.legends for t in leg.get_texts()]
+        self.assertIn("Scaffold", labels)
+        self.assertIn("L1/C1/F1: top long ITS, cluster, fusion", labels)
 
     def test_atlas_height_follows_scaffold_count(self):
         def atlas(n):
@@ -1028,6 +1110,28 @@ class ResilientITSReportTests(unittest.TestCase):
         faces = {REPORT.matplotlib.colors.to_hex(c) for ax in fig.axes for coll in ax.collections
                  if isinstance(coll, REPORT.PatchCollection) for c in coll.get_facecolors()}
         self.assertIn(REPORT.DOUBLE_KEY_COLORS[0][2].lower(), faces)
+
+    def test_locus_entropy_and_key_are_legible(self):
+        chrom, size = "chr33_mat", 1_000_000
+        its = {chrom: [_block(400_000, 400_600, "p", size)]}
+        track = {chrom: (np.array([390_000, 400_000]), np.array([400_000, 410_000]), np.array([1.2, 1.9]))}
+        fig = REPORT.plot_its_loci_page([("C1", chrom, 390_000, 410_000)], {chrom: size}, {}, its, {},
+                                        None, None, None, None, track)
+        self.draw(fig, "locus_entropy")
+        ranges = [tuple(float(t) for t in ax.get_yticks()) for ax in fig.axes if ax.get_visible()]
+        self.assertIn((1.0, 1.5, 2.0), ranges)  # the full 1-2 bit range, so dips are not clipped
+        renderer = fig.canvas.get_renderer()
+        key = next(ax for ax in fig.axes if ax.get_xlabel() == "Forward share →")
+        self.assertAlmostEqual(key.get_position().width * 7.2, REPORT.LOCUS_KEY_SIDE, places=3)
+        ticks = [t.get_window_extent(renderer) for t in key.get_xticklabels()]
+        for left, right in zip(ticks, ticks[1:]):
+            self.assertLess(left.x1, right.x0)
+        key_box = key.get_tightbbox(renderer)
+        self.assertLessEqual(key_box.y1, fig.bbox.height)
+        tracks_top = max(ax.get_position().y1 for ax in fig.axes if ax is not key) * fig.bbox.height
+        self.assertGreater(key_box.y0, tracks_top)
+        for text in (fig._suptitle, *[ax.title for ax in fig.axes if ax.get_title()]):
+            self.assertFalse(key_box.overlaps(text.get_window_extent(renderer)), text.get_text())
 
     def test_shared_locus_tracks_keep_orientation_colours_by_default(self):
         size = 1_000_000

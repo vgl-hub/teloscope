@@ -129,6 +129,8 @@ BLOCK_GLYPH_MIN_FRACTION = {
     "b": 0.030,
 }
 TRACK_LABEL_X = -0.10
+PANEL_LETTER_X_IN = 0.24  # leftmost panel letter, as on the terminal page
+PANEL_LETTER_DX_IN = 0.36  # other letters sit this far left of their axes
 
 def _apply_nature_style():
     """Apply Nature journal rcParams globally."""
@@ -750,7 +752,7 @@ def its_top_hits(out_path, df, pairs, clusters, top_longest=25):
         fh.write("#" + "\t".join(_PAIR_COLUMNS) + "\n")
         pairs[_PAIR_COLUMNS].to_csv(fh, sep="\t", header=False, index=False, float_format="%.4f")
 
-        fh.write(f"# section 2: {top_longest} longest interstitial telomere rows by canonical bp "
+        fh.write(f"# section 2: {top_longest} longest ITS by canonical bp "
                 "descending, ties broken by teloLen descending\n")
         fh.write("#chr\tstart\tend\tteloLen\tcanonical_bp\tcan_prop\tlabel\tclass\tpos_frac\n")
         rank_long_its(df, top_longest).to_csv(fh, sep="\t", header=False, index=False, float_format="%.4f")
@@ -848,6 +850,15 @@ def _fmt_bp(bp, _pos=None):
     return f"{text} {unit}"
 
 
+def _fmt_bp_fixed(bp):
+    """Format a bp value in its own unit with fixed decimals per unit, so labels line up."""
+    if bp <= 0:
+        return "0"
+    divisor, unit = _pick_bp_unit(bp)
+    decimals = {"Mb": 2, "kb": 1}.get(unit, 0)
+    return f"{bp / divisor:,.{decimals}f} {unit}"
+
+
 def _fmt_kbp(bp):
     """Format a base-pair distance as compact kbp text."""
     kbp = bp / 1e3
@@ -877,18 +888,22 @@ def _bedgraph_to_step(starts, ends, values):
     return xs, ys
 
 
-def _panel_label(ax, label, dx_in=0.30):
-    """Bold panel letter left of the axes, sharing the baseline of a pad=3 panel title."""
-    offset = transforms.ScaledTranslation(-dx_in, 3 / 72, ax.figure.dpi_scale_trans)
-    ax.text(0, 1, label, transform=ax.transAxes + offset,
-            fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="baseline", ha="left")
+def _panel_label(ax, label, x_in=None):
+    """Bold panel letter at a page x in inches (default: a fixed gap left of the axes), on the title baseline."""
+    fig = ax.figure
+    if x_in is None:
+        x_in = ax.get_position().x0 * fig.get_size_inches()[0] - PANEL_LETTER_DX_IN
+    trans = (transforms.blended_transform_factory(fig.dpi_scale_trans, ax.transAxes)
+             + transforms.ScaledTranslation(0, 3 / 72, fig.dpi_scale_trans))
+    ax.text(x_in, 1, label, transform=trans, fontsize=PANEL_LABEL_SIZE, fontweight="bold",
+            va="baseline", ha="left")
 
 
-def _panel_title(ax, title, label=None, dx_in=0.30):
+def _panel_title(ax, title, label=None, x_in=None):
     """Axis-attached panel title with an optional panel letter, as on the terminal page."""
     ax.set_title(title, fontsize=PANEL_TITLE_SIZE, pad=3)
     if label:
-        _panel_label(ax, label, dx_in=dx_in)
+        _panel_label(ax, label, x_in=x_in)
 
 
 def _page_title(fig, title):
@@ -1327,8 +1342,8 @@ def _draw_centered_legend_pair(ax, left_handles, right_handles, gap=0.016,
 
     left_anchor = (left_center - axis_box.x0) / axis_box.width
     right_anchor = (right_center - axis_box.x0) / axis_box.width
-    left_legend.set_bbox_to_anchor((left_anchor, 0.50), transform=ax.transAxes)
-    right_legend.set_bbox_to_anchor((right_anchor, 0.50), transform=ax.transAxes)
+    left_legend.set_bbox_to_anchor((left_anchor, left_legend_kwargs["bbox_to_anchor"][1]), transform=ax.transAxes)
+    right_legend.set_bbox_to_anchor((right_anchor, right_legend_kwargs["bbox_to_anchor"][1]), transform=ax.transAxes)
     return left_legend, right_legend
 
 
@@ -1583,14 +1598,16 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
     all_len = [r["length"] for r in block_rows if r["label"] in ("p", "q", "b")]
     total_paths = total if total > 0 else max(len(chrom_sizes), len(blocks))
 
-    # Inch layout: panel a is short (two bars) with the legends under it; b holds ten bar slots.
-    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 3.05))
+    # Inch layout: panel a is short (two bars) with the legend strip docked under its x-label;
+    # b holds ten bar slots and ends level with the strip, so no band is left empty.
+    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 2.78))
     left, right = 0.145 * FIG_WIDTH_DOUBLE, 0.97 * FIG_WIDTH_DOUBLE
-    b_left, top = 3.95, 1.08
+    top = 1.08
+    b_left = 3.84 + PANEL_LETTER_DX_IN  # letter b where the terminal page puts it
     ax_tiles = _add_axes_in(fig, left, 0.40, right - left, 0.36)
     ax_summary = _add_axes_in(fig, left, top, 3.55 - left, 0.48)
-    ax_flagged_scaffolds = _add_axes_in(fig, b_left, top, right - b_left, 1.60)
-    ax_legends = _add_axes_in(fig, left, 1.70, 3.55 - left, 1.02)
+    ax_flagged_scaffolds = _add_axes_in(fig, b_left, top, right - b_left, 1.30)
+    ax_legends = _add_axes_in(fig, left, 1.90, 3.55 - left, 0.56)  # legends hang from its top
 
     _draw_stat_tiles(ax_tiles, [
         (f"{total_paths:,}", "Scaffolds"),
@@ -1623,11 +1640,11 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
         for lab, cnt, color in absolute_segments
     ]
     _draw_dual_summary_panel(ax_summary, absolute_pct_segments, relative_segments)
-    _panel_title(ax_summary, "Scaffold classification", "a", dx_in=left - 0.24)
+    _panel_title(ax_summary, "Scaffold classification", "a", x_in=PANEL_LETTER_X_IN)
 
     # ---- Panel b: Flagged scaffolds (discordant / fragmented by size) ----
     _draw_flagged_scaffolds_panel(ax_flagged_scaffolds, classifications, chrom_sizes)
-    _panel_title(ax_flagged_scaffolds, "Flagged scaffolds", "b", dx_in=b_left - 3.84)
+    _panel_title(ax_flagged_scaffolds, "Flagged scaffolds", "b")
 
     # ---- Shared legend strip: gap key + quality legend ----
     quality_handles = [
@@ -1643,8 +1660,10 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
     ]
     _draw_centered_legend_pair(
         ax_legends, gap_handles, quality_handles, gap=0.016,
-        left_legend_kwargs={"ncol": 1, "fontsize": LEGEND_TEXT_SIZE},
-        right_legend_kwargs={"ncol": 3, "fontsize": LEGEND_TEXT_SIZE},
+        left_legend_kwargs={"ncol": 1, "fontsize": LEGEND_TEXT_SIZE, "loc": "upper center",
+                            "bbox_to_anchor": (0.5, 1.0)},
+        right_legend_kwargs={"ncol": 3, "fontsize": LEGEND_TEXT_SIZE, "loc": "upper center",
+                             "bbox_to_anchor": (0.5, 1.0)},
     )
 
     _page_title(fig, "Assembly summary")
@@ -1679,7 +1698,7 @@ def plot_overview_page2(blocks, chrom_sizes):
     right = 0.97 * FIG_WIDTH_DOUBLE
     ax_rain = _add_axes_in(fig, 0.66, top, side, side)
     ax_scatter = _add_axes_in(fig, 2.98, top, side, side)
-    ax_flagged = _add_axes_in(fig, 4.95, top, right - 4.95, side)
+    ax_flagged = _add_axes_in(fig, 5.21, top, right - 5.21, side)
     tick_style = dict(length=2.3, width=0.45, pad=1.5, labelsize=AXIS_TICK_SIZE)
     for ax in (ax_rain, ax_scatter):
         for spine in ("left", "bottom"):
@@ -1780,9 +1799,9 @@ def plot_overview_page2(blocks, chrom_sizes):
         _draw_ranked_bar_panel(ax_flagged, rows, x_label="Flagged length (log10 bp)",
                                xticks=[0, 1, 2, 3, 4])
 
-    _panel_title(ax_rain, "Length by arm", "c", dx_in=0.66 - 0.24)
-    _panel_title(ax_scatter, "Telomere positioning", "d", dx_in=2.98 - 2.62)
-    _panel_title(ax_flagged, "Flagged telomeres", "e", dx_in=4.95 - 4.85)
+    _panel_title(ax_rain, "Length by arm", "c", x_in=PANEL_LETTER_X_IN)
+    _panel_title(ax_scatter, "Telomere positioning", "d")
+    _panel_title(ax_flagged, "Flagged telomeres", "e")
     _page_title(fig, "Telomere blocks")
     return fig
 
@@ -2030,9 +2049,8 @@ _HAPLOTYPE_TOKEN = re.compile(
 
 
 def _homolog_key(name):
-    """Scaffold name without its haplotype token (mat/pat, hap1/hap2, h1/h2, .1/.2, PanSN #1#/#2#)."""
-    key = _HAPLOTYPE_TOKEN.sub("", re.sub(r"#[12]#", "#", name))
-    return re.sub(r"\.[12]$", "", key).strip("_.-|") or name
+    """Scaffold name without its haplotype token (mat/pat, hap1/hap2, h1/h2, PanSN #1#/#2#)."""
+    return _HAPLOTYPE_TOKEN.sub("", re.sub(r"#[12]#", "#", name)).strip("_.-|") or name
 
 
 def _homolog_groups(chroms, chrom_sizes):
@@ -2158,7 +2176,7 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
                         lw=0.6, transform=bracket, clip_on=False, solid_capstyle="butt")
             i = j + 1
         ax.set_yticks(ys)
-        ax.set_yticklabels([f"{labels.get(c, c)}  {'≥' if known.get(c) == 0 else ''}{_fmt_bp(extent[c])}"
+        ax.set_yticklabels([f"{labels.get(c, c)}  {'≥' if known.get(c) == 0 else ''}{_fmt_bp_fixed(extent[c])}"
                             for c in names], fontsize=AXIS_LABEL_SIZE)
         ax.tick_params(axis="y", length=0, pad=6)
         ax.set_ylim(ys[-1] + 0.5, -0.5)
@@ -2180,12 +2198,14 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
     key_ax = fig.add_axes([(right_in - key_side) / width, key_bottom / height,
                            key_side / width, key_side / height])
     _draw_double_key(key_ax)
-    handles = [Patch(facecolor=ATLAS_BACKBONE, edgecolor="none", label="Scaffold without ITS")]
+    handles = [Patch(facecolor=ATLAS_BACKBONE, edgecolor="none", label="Scaffold")]
     if drew_caps:
         handles.append(Patch(facecolor=COLORS["terminal"], edgecolor="none", label="Terminal telomere"))
     if end_scan:
         handles.append(Patch(facecolor="white", edgecolor=COLORS["gap"], linewidth=0.4,
                              label=f"Not scanned (end scan, {_fmt_bp(limit)} per end)"))
+    if any(c in top for c in chroms):
+        handles.append(Line2D([], [], linestyle="none", label="L1/C1/F1: top long ITS, cluster, fusion"))
     fig.legend(handles=handles, loc="center right", frameon=False, fontsize=LEGEND_TEXT_SIZE,
                bbox_to_anchor=((right_in - key_side - 0.62) / width, (key_bottom + key_side / 2) / height),
                handlelength=1.4, handleheight=0.8, borderaxespad=0, labelspacing=0.5)
@@ -2244,8 +2264,8 @@ def _draw_its_length_panel(ax, lengths):
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(_fmt_bp))
     ax.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4, integer=True))
     _its_axis_style(ax)
-    ax.set_xlabel("ITS length", fontsize=AXIS_LABEL_SIZE, labelpad=2)
-    ax.set_ylabel("ITS", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+    ax.set_xlabel("ITS length (bp)", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+    ax.set_ylabel("Count", fontsize=AXIS_LABEL_SIZE, labelpad=2)
 
 
 def _draw_its_joint_panel(ax, ax_top, ax_right, df, threshold):
@@ -2298,13 +2318,14 @@ def _draw_its_size_key(ax, lengths, dense):
     longest = lengths.max()
     top = 10 ** np.floor(np.log10(max(longest, 1)))
     refs = [v for v in (top / 100, top / 10, top) if v >= max(lengths.min(), 1)] or [longest]
-    ax.scatter(np.arange(len(refs)), np.zeros(len(refs)), s=_its_marker_area(np.array(refs), longest, dense),
+    xs = np.arange(len(refs)) - (len(refs) - 1) / 2.0  # centred on the axes whatever the count
+    ax.scatter(xs, np.zeros(len(refs)), s=_its_marker_area(np.array(refs), longest, dense),
                facecolors="none", edgecolors="#555555", linewidths=0.5)
-    for i, ref in enumerate(refs):
-        ax.text(i, -0.9, _fmt_bp(ref), ha="center", va="top", fontsize=LEGEND_TEXT_SIZE, color="#222222")
-    ax.text(len(refs) / 2 - 0.5, 1.0, "Marker area scales with length", ha="center", va="bottom",
+    for x, ref in zip(xs, refs):
+        ax.text(x, -0.9, _fmt_bp(ref), ha="center", va="top", fontsize=LEGEND_TEXT_SIZE, color="#222222")
+    ax.text(0, 1.0, "Marker area scales with length", ha="center", va="bottom",
             fontsize=LEGEND_TEXT_SIZE, color="#222222")
-    ax.set_xlim(-0.6, 2.6)
+    ax.set_xlim(-1.6, 1.6)
     ax.set_ylim(-2.2, 1.6)
     ax.axis("off")
 
@@ -2319,20 +2340,20 @@ def plot_its_statistics_page(df, pairs, clusters, params):
         return fig
     threshold = params.get("label_threshold", LABEL_THRESHOLD)
     lengths = df["teloLen"].to_numpy(dtype=float)
-    hist = _inch_axes(fig, 0.55, 0.55, 1.75, 2.52)
-    joint = _inch_axes(fig, 2.90, 0.55, 2.00, 2.00)
-    top = _inch_axes(fig, 2.90, 2.62, 2.00, 0.45)
-    right = _inch_axes(fig, 4.95, 0.55, 0.45, 2.00)
-    key = _inch_axes(fig, 5.95, 1.97, 1.10, 1.10)
-    size_key = _inch_axes(fig, 5.60, 0.55, 1.45, 0.75)
+    hist = _inch_axes(fig, 0.55, 0.55, 1.70, 2.52)
+    joint = _inch_axes(fig, 2.75, 0.55, 1.85, 1.85)
+    top = _inch_axes(fig, 2.75, 2.47, 1.85, 0.60)
+    right = _inch_axes(fig, 4.65, 0.55, 0.45, 1.85)
+    key = _inch_axes(fig, 5.72, 1.77, 1.30, 1.30)
+    size_key = _inch_axes(fig, 5.72, 0.55, 1.30, 0.80)
 
     if (lengths > 0).any():
         _draw_its_length_panel(hist, lengths)
     else:
         _hide_panel(hist, "No ITS length")
-    _panel_title(hist, f"ITS length (n = {len(df):,})", "a", dx_in=0.45)
+    _panel_title(hist, f"ITS length (n = {len(df):,})", "a", x_in=PANEL_LETTER_X_IN)
     _draw_its_joint_panel(joint, top, right, df, threshold)
-    _panel_title(top, "Composition per ITS", "b", dx_in=0.45)
+    _panel_title(top, "Composition per ITS", "b")
     _draw_its_size_key(size_key, lengths[lengths > 0] if (lengths > 0).any() else np.ones(1), len(df) > 500)
 
     strand, canon = composition_class(df["fwdCan"], df["revCan"], df["fwdNonCan"], df["revNonCan"], threshold)
@@ -2341,7 +2362,7 @@ def plot_its_statistics_page(df, pairs, clusters, params):
     np.add.at(counts, (canon, strand), 1)
     np.add.at(bp, (canon, strand), lengths)
     _draw_double_key(key, counts, bp, fontsize=LEGEND_TEXT_SIZE)
-    _panel_title(key, "ITS per class (n, % of bp)", "c", dx_in=0.55)
+    _panel_title(key, "ITS per class (n, % of bp)", "c")
     return fig
 
 
@@ -2374,12 +2395,6 @@ def _its_locus_name(df, chrom, pos):
     return f"{name}:{_fmt_bp(pos)}"
 
 
-def _its_class_color(df, threshold):
-    """Double-key colour per ITS, or the gap grey when it carries no repeat counts."""
-    total = df["fwdCan"] + df["revCan"] + df["fwdNonCan"] + df["revNonCan"]
-    return [COLORS["gap"] if t == 0 else c for t, c in zip(total, double_key_colors(df, threshold))]
-
-
 def _draw_its_long_glyphs(ax, df):
     """Panel a: long ITS as to-scale bars split into their four strand/canonical segments."""
     top = rank_long_its(df, 5)
@@ -2401,8 +2416,10 @@ def _draw_its_long_glyphs(ax, df):
             ax.barh(np.full(keep.sum(), i), widths[keep], left=lefts[keep], height=0.62,
                     color=np.array(colors)[keep], edgecolor="white", linewidth=0.5)
         else:
-            ax.barh(i, row.teloLen, height=0.62, color=COLORS["gap"], linewidth=0)
-        can = f"{100 * row.can_prop:.0f}% canonical" if np.isfinite(row.can_prop) else "canonical NA"
+            ax.barh(i, row.teloLen, height=0.62, color=DOUBLE_KEY_COLORS[1][1], linewidth=0)
+        # Count-based share, the composition page's y axis: canonical over all matches.
+        can = (f"{100 * (row.fwdCan + row.revCan) / total:.0f}% canonical" if total > 0
+               else "canonical NA")
         _its_row_labels(ax, i, f"L{i + 1}  {_its_locus_name(df, row.chr, (row.start + row.end) / 2)}",
                         f"{_fmt_bp(row.teloLen)}  ·  {can}")
     return len(top)
@@ -2421,13 +2438,21 @@ def _draw_its_cluster_glyphs(ax, df, clusters, threshold):
     for i, row in enumerate(top.itertuples(index=False)):
         ax.add_patch(Rectangle((0, i - 0.08), row.span, 0.16, facecolor=COLORS["gap"], linewidth=0))
         members = df[(df["chr"] == row.chr) & (df["start"] >= row.start) & (df["end"] <= row.end)]
-        members = members.assign(dk_color=_its_class_color(members, threshold)).sort_values("teloLen", ascending=False)
+        members = members.assign(dk_color=double_key_colors(members, threshold)).sort_values("teloLen", ascending=False)
         for m in members.itertuples(index=False):
             ax.add_patch(Rectangle((m.start - row.start, i - 0.31), max(m.end - m.start, min_width), 0.62,
                                    facecolor=m.dk_color, linewidth=0))
         _its_row_labels(ax, i, f"C{i + 1}  {_its_locus_name(df, row.chr, row.start)}",
-                        f"{_fmt_bp(row.span)} span  ·  {row.rows:,} ITS  ·  {_fmt_bp(row.its_bp)}")
+                        f"{_fmt_bp(row.span)} span  ·  {row.rows:,} ITS  ·  {_fmt_bp(row.its_bp)} ITS")
     return len(top)
+
+
+def _overlap_color(frame, start, end):
+    """Class colour of the ITS overlapping [start, end) most, or the neutral ITS grey when none does."""
+    overlap = np.minimum(frame["end"].to_numpy(), end) - np.maximum(frame["start"].to_numpy(), start)
+    if not len(overlap) or overlap.max() <= 0:
+        return COLORS["its"]
+    return frame["dk_color"].iloc[int(np.argmax(overlap))]
 
 
 def _draw_its_fusion_glyphs(ax, df, pairs, threshold):
@@ -2440,20 +2465,17 @@ def _draw_its_fusion_glyphs(ax, df, pairs, threshold):
     _its_glyph_axes(ax, extent)
     width_in = ax.get_position().width * ax.figure.get_size_inches()[0]
     pt_per_bp = width_in * 72 / ax.get_xlim()[1]
-    colored = df.assign(dk_color=_its_class_color(df, threshold)) if len(df) else df.assign(dk_color=[])
+    colored = df.assign(dk_color=double_key_colors(df, threshold))
     for i, row in enumerate(top.itertuples(index=False)):
-        arms = (("q", colored[(colored["chr"] == row.chr) & (colored["start"] == row.start)
-                               & (colored["teloLabel"] == "q")], 0, row.q_bp, DOUBLE_KEY_COLORS[2][0]),
-                ("p", colored[(colored["chr"] == row.chr) & (colored["end"] == row.end)
-                               & (colored["teloLabel"] == "p")], row.q_bp + row.spacer_bp, row.p_bp,
-                 DOUBLE_KEY_COLORS[2][2]))
+        scaffold = colored[colored["chr"] == row.chr]
         ax.plot([row.q_bp, row.q_bp + row.spacer_bp], [i, i], color="#555555", lw=0.6,
                 solid_capstyle="butt")
-        for arm, match, x0, width, fallback in arms:
-            color = match["dk_color"].iloc[0] if len(match) else fallback
+        for arm, lo, x0, width in (("q", row.start, 0, row.q_bp),
+                                   ("p", row.end - row.p_bp, row.q_bp + row.spacer_bp, row.p_bp)):
+            color = _overlap_color(scaffold, lo, lo + width)
             ax.add_patch(Rectangle((x0, i - 0.31), width, 0.62, facecolor=color, linewidth=0))
             if width * pt_per_bp >= 7:
-                light = color in DOUBLE_KEY_COLORS[0] or color == COLORS["gap"]
+                light = color in DOUBLE_KEY_COLORS[0] or color == COLORS["its"]
                 ax.text(x0 + width / 2, i, BLOCK_GLYPHS[arm], ha="center", va="center",
                         fontsize=BLOCK_GLYPH_SIZE, color="#222222" if light else "white")
         _its_row_labels(ax, i, f"F{i + 1}  {_its_locus_name(df, row.chr, (row.start + row.end) / 2)}",
@@ -2466,7 +2488,8 @@ def plot_its_composition_page(df, pairs, clusters, params):
     fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, REPORT_PAGE_HEIGHT))
     _page_title(fig, "ITS candidates")
     threshold = params.get("label_threshold", LABEL_THRESHOLD)
-    axes = [_inch_axes(fig, 1.60, y, 4.20, 0.65) for y in (2.50, 1.50, 0.50)]
+    # Compact rows leave a bottom band for the composition key under panel c's value labels.
+    axes = [_inch_axes(fig, 1.60, y, 4.00, 0.52) for y in (2.70, 1.84, 0.98)]
     distance = params.get("max_block_dist", 1000)
     panels = (("Long ITS by canonical bp", len(df), _draw_its_long_glyphs, (df,)),
               (f"ITS clusters by ITS bp (≥{ITS_CLUSTER_MIN_ROWS} ITS within {_fmt_bp(ITS_CLUSTER_MERGE_GAP)})",
@@ -2475,14 +2498,10 @@ def plot_its_composition_page(df, pairs, clusters, params):
                len(pairs), _draw_its_fusion_glyphs, (df, pairs, threshold)))
     for ax, letter, (title, total, draw, args) in zip(axes, "abc", panels):
         shown = draw(ax, *args)
-        _panel_title(ax, title + (f", top {shown} of {total:,}" if total > shown else ""), letter, dx_in=1.50)
-    handles = [Patch(facecolor=DOUBLE_KEY_COLORS[c][s], edgecolor="none",
-                     label=f"{DOUBLE_KEY_STRAND[s]} {DOUBLE_KEY_CANON[c]}")
-               for key, c, s in _ITS_SEGMENT_KEYS]
-    handles.append(Patch(facecolor=DOUBLE_KEY_COLORS[1][1], edgecolor="none", label="both / mixed"))
-    fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, 0.0), ncol=len(handles),
-               fontsize=LEGEND_TEXT_SIZE, handlelength=1.0, handleheight=0.8, columnspacing=1.2,
-               handletextpad=0.4, frameon=False)
+        _panel_title(ax, title + (f", top {shown} of {total:,}" if total > shown else ""), letter,
+                     x_in=PANEL_LETTER_X_IN)
+    side = 0.50
+    _draw_double_key(_inch_axes(fig, 0.97 * FIG_WIDTH_DOUBLE - side, 0.32, side, side))
     return fig
 
 # ---------------------------------------------------------------------------
@@ -2516,7 +2535,10 @@ def _fmt_region(start, end):
     return f"{start / divisor:,.{dec}f}–{end / divisor:,.{dec}f} {unit}"
 
 
-def _place_locus_key(fig, key_ax, side=0.45, top=0.14):
+LOCUS_KEY_SIDE, LOCUS_KEY_TOP = 0.62, 0.12  # inches; the header is sized to hold the key
+
+
+def _place_locus_key(fig, key_ax, side=LOCUS_KEY_SIDE, top=LOCUS_KEY_TOP):
     """Park the 3x3 key in the header's top-right corner, right-aligned with the tracks."""
     w, h = fig.get_size_inches()
     key_ax.set_position([0.97 - side / w, 1 - (top + side) / h, side / w, side / h])
@@ -2551,7 +2573,9 @@ def plot_its_loci_page(loci, chrom_sizes, arm_blocks, its_blocks, gap_blocks,
         gridspec_kw={"height_ratios": height_ratios, "hspace": 0.35,
                     "wspace": 0.30 if n_cols > 1 else 0.0},
         squeeze=False)
-    fig.subplots_adjust(left=0.145, right=0.97, top=0.775, bottom=0.16)
+    # Header holds the key cells plus its tick labels and axis label (~0.26 in) above the tracks.
+    fig.subplots_adjust(left=0.145, right=0.97, top=1 - (LOCUS_KEY_TOP + LOCUS_KEY_SIDE + 0.30) / fig_h,
+                        bottom=0.16)
 
     for col, (label, chrom, start, end) in enumerate(loci):
         size = int(chrom_sizes.get(chrom, end))
@@ -2605,7 +2629,7 @@ def plot_its_loci_page(loci, chrom_sizes, arm_blocks, its_blocks, gap_blocks,
                 visible = _draw_fraction_track(ax, entropy_data.get(chrom), start, end, size,
                                                "full", COLORS["entropy"],
                                                label="Shannon\nentropy" if show_label else None,
-                                               y_max=2.0, y_min=1.5)
+                                               y_max=2.0, y_min=1.0)
             else:
                 visible = _draw_strand_track(ax, strand_data.get(chrom), start, end, size,
                                              "full", label="Strand\nbias" if show_label else None)
@@ -2619,7 +2643,7 @@ def plot_its_loci_page(loci, chrom_sizes, arm_blocks, its_blocks, gap_blocks,
             _apply_terminal_x_axis(axes[visible_rows[-1]][col], axis_spec, "full")
 
         _panel_title(ideo_ax, f"{label}  {_fmt_region(start, end)}",
-                     "abc"[col] if n_cols > 1 else None)
+                     "abc"[col] if n_cols > 1 else None, x_in=PANEL_LETTER_X_IN if col == 0 else None)
 
     chroms = {chrom for _, chrom, _, _ in loci}
     if len(chroms) == 1:
@@ -3165,7 +3189,7 @@ def main():
             gaps_frame = load_gaps_frame(files["gaps"]) if "gaps" in files else pd.DataFrame(columns=["chr", "start", "end"])
             pairs = pair_fusions(its_frame, gaps_frame, params["max_block_dist"])
             clusters = summarize_its_clusters(its_frame)
-            print(f"ITS rows: {len(its_frame)}  |  Candidate fusions: {len(pairs)}  |  "
+            print(f"ITS: {len(its_frame)}  |  Candidate fusions: {len(pairs)}  |  "
                   f"Clusters: {len(clusters)}", file=sys.stderr)
             its_page = (its_frame, pairs, clusters, params)
             its_frame.attrs["display_labels"] = _its_labels(its_frame, chrom_sizes, arm_blocks)
