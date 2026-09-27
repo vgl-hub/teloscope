@@ -946,10 +946,10 @@ def _draw_double_key(ax, counts=None, bp=None, fontsize=MIN_TEXT_SIZE):
             if counts is None:
                 continue
             n = int(counts[c][s])
-            text = f"{n:,}" if total_bp <= 0 else f"{n:,}\n{100 * bp[c][s] / total_bp:.0f}%"
-            ink = "white" if c >= 1 else "#222222"
+            share = 100 * bp[c][s] / total_bp if total_bp > 0 else 0
+            text = f"{n:,}" if total_bp <= 0 or not n else f"{n:,}\n{share:.0f}%" if share >= 1 else f"{n:,}\n<1%"
             ax.text(s + 0.5, c + 0.5, text, ha="center", va="center", fontsize=fontsize,
-                    color=ink if n else "#777777", linespacing=0.95)
+                    color="white" if c >= 1 else "#222222", linespacing=0.95)
     ax.set_xlim(0, 3)
     ax.set_ylim(0, 3)
     ax.set_aspect("equal")
@@ -2286,223 +2286,297 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
     return fig
 
 
-def _draw_its_length_hist_panel(ax, df):
-    """Exact ECDFs, including ties, singleton groups and unknown orientations."""
-    styles = ["-", "--", ":", "-."]
-    orientation = _its_orientation(df)
-    for (key, name), style in zip(ITS_ORIENT_LABELS, styles):
-        values = df.loc[orientation == key, "teloLen"].to_numpy(dtype=float)
-        if not len(values):
-            continue
-        x, counts = np.unique(values, return_counts=True)
-        cumulative = counts.cumsum() / len(values)
-        ax.step(np.r_[x[0], x], np.r_[0, cumulative], where="post",
-                color=ITS_ORIENT_COLORS[key], linestyle=style, linewidth=1,
-                label=f"{name} (n={len(values):,})")
-        if len(x) == 1:
-            ax.plot(x, [1], marker="o", ms=2, color=ITS_ORIENT_COLORS[key])
+def _inch_axes(fig, x, y, w, h, **kwargs):
+    """Axes placed in inches from the lower-left corner, so panels keep a fixed physical size."""
+    width, height = fig.get_size_inches()
+    return fig.add_axes([x / width, y / height, w / width, h / height], **kwargs)
+
+
+def _its_axis_style(ax, left=True):
+    """Terminal-page chrome: light 0.45-pt bottom/left spines, short ticks, grey tick labels."""
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("bottom", "left"):
+        ax.spines[side].set_linewidth(0.45)
+        ax.spines[side].set_color("#bcbcbc")
+    ax.spines["left"].set_visible(left)
+    ax.tick_params(length=2.0, width=0.45, pad=1.5, labelsize=AXIS_TICK_SIZE,
+                   color="#bcbcbc", labelcolor="#555555")
+    ax.minorticks_off()
+
+
+def _its_shares(df):
+    """Forward and canonical share of each ITS's repeat counts (NaN when it has none)."""
+    total = (df["fwdCan"] + df["revCan"] + df["fwdNonCan"] + df["revNonCan"]).to_numpy(dtype=float)
+    total[total == 0] = np.nan
+    return ((df["fwdCan"] + df["fwdNonCan"]).to_numpy(dtype=float) / total,
+            (df["fwdCan"] + df["revCan"]).to_numpy(dtype=float) / total)
+
+
+def _its_marker_area(lengths, longest, dense):
+    """Marker area in pt^2 proportional to ITS length."""
+    return np.maximum((24.0 if dense else 60.0) * lengths / max(longest, 1), 1.0)
+
+
+def _draw_its_length_panel(ax, lengths):
+    """Log-binned ITS length histogram with a median tick."""
+    lengths = lengths[lengths > 0]
+    lo, hi = np.log10(lengths.min()), np.log10(lengths.max())
+    if hi - lo < 0.2:
+        lo, hi = lo - 0.1, hi + 0.1
+    n_bins = 1 if len(np.unique(lengths)) == 1 else int(np.clip(round((hi - lo) * 10), 2, 40))
+    counts, _, _ = ax.hist(lengths, bins=np.logspace(lo, hi, n_bins + 1), color="#9A9A9A",
+                           edgecolor="white", linewidth=0.3)
     ax.set_xscale("log")
-    ax.set_ylim(0, 1.05)
-    ax.set_xlabel("ITS row length (bp)")
-    ax.set_ylabel("Cumulative fraction")
-    if len(df):
-        ax.legend(loc="lower right", fontsize=MIN_TEXT_SIZE)
-    ax.xaxis.set_minor_locator(ticker.NullLocator())
+    ax.set_ylim(0, max(counts.max(), 1) * 1.18)
+    median = _median(lengths)
+    ax.axvline(median, color="#222222", lw=0.6)
+    right_half = np.log10(median) > (lo + hi) / 2
+    ax.text(median, 0.985, f" median {_fmt_bp(median)} ", transform=ax.get_xaxis_transform(),
+            ha="right" if right_half else "left", va="top", fontsize=LEGEND_TEXT_SIZE, color="#222222")
+    ax.xaxis.set_major_locator(ticker.LogLocator(base=10, numticks=6))
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(_fmt_bp))
+    ax.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4, integer=True))
+    _its_axis_style(ax)
+    ax.set_xlabel("ITS length", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+    ax.set_ylabel("ITS", fontsize=AXIS_LABEL_SIZE, labelpad=2)
 
 
-def _draw_its_class_totals_panel(ax_count, ax_mb, df):
-    classes = df["teloType"].where(df["teloType"].isin(CLASS_ORDER), "other")
-    order = CLASS_ORDER + (["other"] if (classes == "other").any() else [])
-    counts = df.groupby(classes)["teloLen"].size().reindex(order, fill_value=0)
-    totals = df.groupby(classes)["teloLen"].sum().reindex(order, fill_value=0)
-    for ax, series, label, fmt in ((ax_count, counts, "Rows", lambda x: f"{int(x):,}"),
-                                   (ax_mb, totals, "Summed row length (bp)", _fmt_bp)):
-        vals = series.to_numpy(dtype=float)
-        ax.set_xscale("log")
-        positive = vals[vals > 0]
-        low = min(positive.min() / 2, 0.5) if len(positive) else 0.5
-        high = max(vals.max(), 1) * 20
-        ax.set_xlim(low, high)
-        for i, (key, val) in enumerate(zip(order, vals)):
-            if val > 0:
-                ax.plot(val, i, marker="o", ms=3, color=CLASS_COLORS.get(key, COLORS["its"]))
-            ax.text(max(val, low) * 1.3, i, fmt(val), va="center", fontsize=MIN_TEXT_SIZE)
-        ax.set_yticks(range(len(order)))
-        ax.set_yticklabels(order if ax is ax_count else [])
-        ax.set_ylim(len(order) - 0.5, -0.5)
-        ax.set_xlabel(label)
-        ax.xaxis.set_major_locator(ticker.LogLocator(numticks=3))
-        ax.xaxis.set_minor_locator(ticker.NullLocator())
-        ax.tick_params(axis="y", length=0)
-        ax.spines["left"].set_visible(False)
+def _draw_its_joint_panel(ax, ax_top, ax_right, df, threshold):
+    """Forward share x canonical share per ITS, on the double-key class regions, with marginals."""
+    fwd, can = _its_shares(df)
+    ok = np.isfinite(fwd)
+    cuts = (-0.04, 1 - threshold, threshold, 1.04)
+    for c in range(3):
+        for s in range(3):
+            ax.add_patch(Rectangle((cuts[s], cuts[c]), cuts[s + 1] - cuts[s], cuts[c + 1] - cuts[c],
+                                   facecolor=DOUBLE_KEY_COLORS[c][s], alpha=0.10, linewidth=0, zorder=0))
+    for cut in cuts[1:3]:
+        ax.axvline(cut, color="#bcbcbc", lw=0.45, zorder=1)
+        ax.axhline(cut, color="#bcbcbc", lw=0.45, zorder=1)
+    lengths = df["teloLen"].to_numpy(dtype=float)
+    dense = len(df) > 500
+    order = np.argsort(-lengths[ok], kind="mergesort")
+    colors = np.asarray(double_key_colors(df, threshold), dtype=object)[ok][order]
+    ax.scatter(fwd[ok][order], can[ok][order],
+               s=_its_marker_area(lengths[ok][order], lengths.max(), dense), c=list(colors),
+               alpha=0.55 if dense else 0.9, edgecolors="white" if not dense else "none",
+               linewidths=0.3, rasterized=dense, zorder=2)
+    ticks = [0, 1 - threshold, threshold, 1]
+    labels = [f"{v:.2f}".rstrip("0").rstrip(".") for v in ticks]
+    for axis in (ax.xaxis, ax.yaxis):
+        axis.set_ticks(ticks, labels)
+    ax.set_xlim(cuts[0], cuts[-1])
+    ax.set_ylim(cuts[0], cuts[-1])
+    _its_axis_style(ax)
+    ax.set_xlabel("Forward share →", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+    ax.set_ylabel("Canonical share →", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+
+    bins = np.linspace(0, 1, 21)
+    ax_top.hist(fwd[ok], bins=bins, color="#9A9A9A", edgecolor="white", linewidth=0.3)
+    ax_right.hist(can[ok], bins=bins, color="#9A9A9A", edgecolor="white", linewidth=0.3,
+                  orientation="horizontal")
+    for marginal, line in ((ax_top, ax_top.axvline), (ax_right, ax_right.axhline)):
+        for cut in cuts[1:3]:
+            line(cut, color="#bcbcbc", lw=0.45)
+        _its_axis_style(marginal, left=False)
+        marginal.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+    ax_right.spines["bottom"].set_visible(False)
+    ax_right.spines["left"].set_visible(True)
+    ax_top.set_xlim(ax.get_xlim())
+    ax_right.set_ylim(ax.get_ylim())
 
 
-def _draw_its_composition_panel(ax, df, motif_len, min_canonical_count):
-    """Positive canonical estimates at their true coordinates; excluded zeros counted."""
-    valid = (df["teloLen"] > 0) & (df["canonical_bp"] > 0)
-    positive = df.loc[valid]
-    excluded = len(df) - len(positive)
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("ITS row length (bp)")
-    ax.set_ylabel("Canonical match bp")
-    if positive.empty:
-        ax.set_xlim(1, 10)
-        ax.set_ylim(1, 10)
-        ax.text(0.5, 0.5, "No positive canonical counts", transform=ax.transAxes,
-                ha="center", fontsize=PLACEHOLDER_TEXT_SIZE)
-    else:
-        x = positive["teloLen"].to_numpy(dtype=float)
-        y = positive["canonical_bp"].to_numpy(dtype=float)
-        lo, hi = min(x.min(), y.min()), max(x.max(), y.max())
-        ax.set_xlim(x.min() / 1.5, x.max() * 1.5)
-        ax.set_ylim(y.min() / 1.5, y.max() * 1.5)
-        if len(positive) > 500:
-            hb = ax.hexbin(x, y, xscale="log", yscale="log", gridsize=35, mincnt=1,
-                           cmap=LinearSegmentedColormap.from_list("composition", ["#DCECF5", COLORS["p"]]),
-                           norm=LogNorm(vmin=1, vmax=max(2, len(positive))), linewidths=0,
-                           rasterized=True)
-            # Normalize to actual occupied-bin counts (not the number of input rows).
-            hb.set_clim(1, max(2, float(hb.get_array().max())))
-            cb = ax.figure.colorbar(hb, ax=ax, fraction=0.045, pad=0.025)
-            cb.set_label("Rows per hexagon (log)", fontsize=MIN_TEXT_SIZE)
-            cb.ax.tick_params(labelsize=MIN_TEXT_SIZE)
-        else:
-            orientation = _its_orientation(positive)
-            for (key, name), marker in zip(ITS_ORIENT_LABELS, ("<", ">", "D", "o")):
-                mask = orientation == key
-                if mask.any():
-                    ax.scatter(x[mask], y[mask], s=9, color=ITS_ORIENT_COLORS[key],
-                               edgecolors="black", linewidths=0.2, marker=marker, label=name)
-            ax.legend(loc="upper left", fontsize=MIN_TEXT_SIZE, handletextpad=0.2)
-        ax.plot([lo / 2, hi * 2], [lo / 2, hi * 2], color="black", lw=0.5,
-                linestyle="--", zorder=0)
-        if min_canonical_count is not None and min_canonical_count > 0:
-            floor = min_canonical_count * motif_len
-            ax.axhline(floor, color="black", lw=0.5, linestyle=":", zorder=0)
-    ax.text(0.02, -0.29, f"Positive n={len(positive):,}; zero canonical n={excluded:,}",
-            transform=ax.transAxes, fontsize=MIN_TEXT_SIZE)
-    ax.xaxis.set_minor_locator(ticker.NullLocator())
-    ax.yaxis.set_minor_locator(ticker.NullLocator())
+def _draw_its_size_key(ax, lengths, dense):
+    """Three reference markers for the length-to-area scale of the joint panel."""
+    longest = lengths.max()
+    top = 10 ** np.floor(np.log10(max(longest, 1)))
+    refs = [v for v in (top / 100, top / 10, top) if v >= max(lengths.min(), 1)] or [longest]
+    ax.scatter(np.arange(len(refs)), np.zeros(len(refs)), s=_its_marker_area(np.array(refs), longest, dense),
+               facecolors="none", edgecolors="#555555", linewidths=0.5)
+    for i, ref in enumerate(refs):
+        ax.text(i, -0.9, _fmt_bp(ref), ha="center", va="top", fontsize=LEGEND_TEXT_SIZE, color="#222222")
+    ax.text(len(refs) / 2 - 0.5, 1.0, "Marker area scales with length", ha="center", va="bottom",
+            fontsize=LEGEND_TEXT_SIZE, color="#222222")
+    ax.set_xlim(-0.6, 2.6)
+    ax.set_ylim(-2.2, 1.6)
+    ax.axis("off")
 
 
 def plot_its_statistics_page(df, pairs, clusters, params):
+    """ITS composition: length distribution, per-ITS double-key composition and class totals."""
     fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, REPORT_PAGE_HEIGHT))
-    gs = fig.add_gridspec(2, 2, left=0.085, right=0.97, top=0.77, bottom=0.22,
-                         width_ratios=[1.05, 1], hspace=1.0, wspace=0.55)
-    comp = fig.add_subplot(gs[:, 0])
-    ecdf = fig.add_subplot(gs[0, 1])
-    sub = gs[1, 1].subgridspec(1, 2, wspace=0.55)
-    count, length = fig.add_subplot(sub[0, 0]), fig.add_subplot(sub[0, 1])
-    known = params.get("known_params", set())
-    floor = params.get("min_canonical_count") if {"motif_len", "min_canonical_count"} <= known else None
-    _draw_its_composition_panel(comp, df, params.get("motif_len", 6), floor)
-    _draw_its_length_hist_panel(ecdf, df)
-    _draw_its_class_totals_panel(count, length, df)
-    _its_header(fig, "Interstitial telomeres: distributions",
-                f"{_scan_note(params)}; n={len(df):,} rows; {len(pairs):,} candidate pairs; {len(clusters):,} clusters")
-    motif_note = "" if "motif_len" in known else " (assumed)"
-    note = f"Canonical match bp = count × {params.get('motif_len', 6)} bp{motif_note}; dashed: equal bp"
-    if floor is not None:
-        note += "; dotted: configured count floor"
-    fig.text(0.5, 0.027, note, ha="center", fontsize=MIN_TEXT_SIZE)
+    _page_title(fig, "ITS composition")
+    if df.empty:
+        fig.text(0.5, 0.5, "No ITS", ha="center", va="center",
+                 fontsize=PLACEHOLDER_TEXT_SIZE, color="#bbbbbb")
+        return fig
+    threshold = params.get("label_threshold", LABEL_THRESHOLD)
+    lengths = df["teloLen"].to_numpy(dtype=float)
+    hist = _inch_axes(fig, 0.55, 0.55, 1.75, 2.52)
+    joint = _inch_axes(fig, 2.90, 0.55, 2.00, 2.00)
+    top = _inch_axes(fig, 2.90, 2.62, 2.00, 0.45)
+    right = _inch_axes(fig, 4.95, 0.55, 0.45, 2.00)
+    key = _inch_axes(fig, 5.95, 1.97, 1.10, 1.10)
+    size_key = _inch_axes(fig, 5.60, 0.55, 1.45, 0.75)
+
+    if (lengths > 0).any():
+        _draw_its_length_panel(hist, lengths)
+    else:
+        _hide_panel(hist, "No ITS length")
+    _panel_title(hist, f"ITS length (n = {len(df):,})", "a", dx_in=0.45)
+    _draw_its_joint_panel(joint, top, right, df, threshold)
+    _panel_title(top, "Composition per ITS", "b", dx_in=0.45)
+    _draw_its_size_key(size_key, lengths[lengths > 0] if (lengths > 0).any() else np.ones(1), len(df) > 500)
+
+    strand, canon = composition_class(df["fwdCan"], df["revCan"], df["fwdNonCan"], df["revNonCan"], threshold)
+    counts = np.zeros((3, 3))
+    bp = np.zeros((3, 3))
+    np.add.at(counts, (canon, strand), 1)
+    np.add.at(bp, (canon, strand), lengths)
+    _draw_double_key(key, counts, bp, fontsize=LEGEND_TEXT_SIZE)
+    _panel_title(key, "ITS per class (n, % of bp)", "c", dx_in=0.55)
     return fig
 
 
-def _table_bbox(n_data_rows, ax_height_in):
-    """Top-aligned bbox giving every table row a fixed physical height instead of stretching."""
-    frac = min(1.0, (n_data_rows + 1) * TABLE_ROW_IN / ax_height_in)
-    return [0.0, 1.0 - frac, 1.0, frac]
+_ITS_SEGMENT_KEYS = (("fwdCan", 2, 2), ("fwdNonCan", 0, 2), ("revCan", 2, 0), ("revNonCan", 0, 0))
 
 
-def _style_table(tab):
-    """Compact table style: small text, thin horizontal-only rules, no vertical lines."""
-    tab.auto_set_font_size(False)
-    tab.set_fontsize(TABLE_TEXT_SIZE)
-    for cell in tab.get_celld().values():
-        cell.set_linewidth(0.3)
-        cell.set_edgecolor("#cccccc")
-        cell.visible_edges = "horizontal"
+def _its_glyph_axes(ax, xmax, n_rows=5):
+    """Fixed five-slot glyph rows on a shared bp axis with unit-bearing ticks."""
+    ax.set_xlim(0, max(xmax, 1) * 1.02)
+    ax.set_ylim(n_rows - 0.5, -0.5)
+    ax.set_yticks([])
+    ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=6))
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(_fmt_bp))
+    _its_axis_style(ax, left=False)
 
 
-def _draw_its_summary_tables(ax_long, ax_cluster, ax_fusion, df, clusters, pairs, ax_height_in):
-    """Panels b-d: Long ITS / Clusters / Candidate fusions, compact ax.table renders."""
-    for ax in (ax_long, ax_cluster, ax_fusion):
-        ax.axis("off")
+def _its_row_labels(ax, i, left, right):
+    """Left identity label and right direct value label for one glyph row."""
+    row_y = transforms.blended_transform_factory(ax.transAxes, ax.transData)
+    ax.text(-0.015, i, left, transform=row_y, ha="right", va="center",
+            fontsize=AXIS_TICK_SIZE, color="#222222")
+    ax.text(1.015, i, right, transform=row_y, ha="left", va="center",
+            fontsize=AXIS_TICK_SIZE, color="#222222")
 
-    ax_long.set_title("Long ITS, ranked by canonical bp", loc="left", fontsize=PANEL_TITLE_SIZE, pad=2)
-    top_long = rank_long_its(df, 5)
-    if top_long.empty:
-        ax_long.text(0.02, 0.9, "none", fontsize=TABLE_TEXT_SIZE, va="top", color="black")
-    else:
-        short_names = [df.attrs.get("display_labels", {}).get(c, c) for c in top_long["chr"]]
-        rows = [[f"L{i + 1}", name, f"{(row.start + row.end) / 2e6:.3f}", _fmt_bp(int(row.teloLen)),
-                f"{int(row.canonical_bp):,}", _fmt_frac(row.can_prop),
-                row.teloLabel if row.teloLabel in ("p", "q", "b") else "other",
-                CLASS_SHORT.get(row.teloType, "other")]
-               for i, (row, name) in enumerate(zip(top_long.itertuples(index=False), short_names))]
-        tab = ax_long.table(
-            cellText=rows,
-            colLabels=["#", "scaffold", "pos (Mb)", "length", "can. bp", "ratio", "strand", "class"],
-            colWidths=[0.08, 0.23, 0.13, 0.13, 0.12, 0.11, 0.10, 0.10],
-            loc="upper left", cellLoc="left", colLoc="left",
-            bbox=_table_bbox(len(rows), ax_height_in),
-        )
-        _style_table(tab)
 
-    ax_cluster.set_title("ITS clusters (≥3 rows within 50 kb)", loc="left",
-                         fontsize=PANEL_TITLE_SIZE, pad=2)
-    top_clusters = clusters.head(5)
-    if top_clusters.empty:
-        ax_cluster.text(0.02, 0.9, "none", fontsize=TABLE_TEXT_SIZE, va="top", color="black")
-    else:
-        short_names = [df.attrs.get("display_labels", {}).get(c, c) for c in top_clusters["chr"]]
-        rows = [[f"C{i + 1}", name, f"{row.start / 1e6:.3f}-{row.end / 1e6:.3f}", f"{row.rows}",
-                _fmt_bp(int(row.span)), _fmt_bp(int(row.its_bp)), _fmt_bp(int(row.canonical_bp))]
-               for i, (row, name) in enumerate(zip(top_clusters.itertuples(index=False), short_names))]
-        tab = ax_cluster.table(
-            cellText=rows,
-            colLabels=["#", "scaffold", "start-end (Mb)", "rows", "span", "ITS bp", "can. bp"],
-            colWidths=[0.07, 0.19, 0.25, 0.09, 0.14, 0.13, 0.13],
-            loc="upper left", cellLoc="left", colLoc="left",
-            bbox=_table_bbox(len(rows), ax_height_in),
-        )
-        _style_table(tab)
+def _its_locus_name(df, chrom, pos):
+    """Short scaffold:position label, e.g. 'chr5:1.41 Mb'."""
+    name = df.attrs.get("display_labels", {}).get(chrom, chrom)
+    name = name if len(name) <= 18 else name[:17] + "…"
+    return f"{name}:{_fmt_bp(pos)}"
 
-    ax_fusion.set_title("Candidate fusions (q→p), ranked by shorter arm", loc="left",
-                        fontsize=PANEL_TITLE_SIZE, pad=2)
-    top_pairs = pairs.head(5)
-    if top_pairs.empty:
-        ax_fusion.text(0.02, 0.9, "none", fontsize=TABLE_TEXT_SIZE, va="top", color="black")
-    else:
-        short_names = [df.attrs.get("display_labels", {}).get(c, c) for c in top_pairs["chr"]]
-        rows = [[f"F{i + 1}", name, f"{(row.start + row.end) / 2e6:.3f}",
-                f"{row.q_bp:,}", f"{row.p_bp:,}", f"{row.spacer_bp:,}",
-                f"{_fmt_frac(row.q_can_prop)}/{_fmt_frac(row.p_can_prop)}"]
-               for i, (row, name) in enumerate(zip(top_pairs.itertuples(index=False), short_names))]
-        tab = ax_fusion.table(
-            cellText=rows,
-            colLabels=["#", "scaffold", "pos (Mb)", "q bp", "p bp", "spacer", "ratio q/p"],
-            colWidths=[0.06, 0.25, 0.13, 0.13, 0.13, 0.11, 0.19],
-            loc="upper left", cellLoc="left", colLoc="left",
-            bbox=_table_bbox(len(rows), ax_height_in),
-        )
-        _style_table(tab)
+
+def _its_class_color(df, threshold):
+    """Double-key colour per ITS, or the gap grey when it carries no repeat counts."""
+    total = df["fwdCan"] + df["revCan"] + df["fwdNonCan"] + df["revNonCan"]
+    return [COLORS["gap"] if t == 0 else c for t, c in zip(total, double_key_colors(df, threshold))]
+
+
+def _draw_its_long_glyphs(ax, df):
+    """Panel a: long ITS as to-scale bars split into their four strand/canonical segments."""
+    top = rank_long_its(df, 5)
+    if top.empty:
+        _hide_panel(ax, "none")
+        return 0
+    keys = ["chr", "start", "end", "teloLen", "teloLabel", "teloType"]
+    counts = [k for k, _, _ in _ITS_SEGMENT_KEYS]
+    top = top.merge(df.drop_duplicates(keys)[keys + counts], on=keys, how="left")
+    _its_glyph_axes(ax, top["teloLen"].max())
+    for i, row in enumerate(top.itertuples(index=False)):
+        values = np.array([getattr(row, k) for k in counts], dtype=float)
+        total = values.sum()
+        if total > 0:
+            widths = row.teloLen * values / total
+            lefts = np.r_[0, np.cumsum(widths)[:-1]]
+            colors = [DOUBLE_KEY_COLORS[c][s] for _, c, s in _ITS_SEGMENT_KEYS]
+            keep = widths > 0
+            ax.barh(np.full(keep.sum(), i), widths[keep], left=lefts[keep], height=0.62,
+                    color=np.array(colors)[keep], edgecolor="white", linewidth=0.5)
+        else:
+            ax.barh(i, row.teloLen, height=0.62, color=COLORS["gap"], linewidth=0)
+        can = f"{100 * row.can_prop:.0f}% canonical" if np.isfinite(row.can_prop) else "canonical NA"
+        _its_row_labels(ax, i, f"L{i + 1}  {_its_locus_name(df, row.chr, (row.start + row.end) / 2)}",
+                        f"{_fmt_bp(row.teloLen)}  ·  {can}")
+    return len(top)
+
+
+def _draw_its_cluster_glyphs(ax, df, clusters, threshold):
+    """Panel b: each cluster as a to-scale track of its span with ITS cells in class colours."""
+    top = clusters.head(5)
+    if top.empty:
+        _hide_panel(ax, "none")
+        return 0
+    span_max = float(top["span"].max())
+    _its_glyph_axes(ax, span_max)
+    width_in = ax.get_position().width * ax.figure.get_size_inches()[0]
+    min_width = ax.get_xlim()[1] * (1.2 / 72) / width_in
+    for i, row in enumerate(top.itertuples(index=False)):
+        ax.add_patch(Rectangle((0, i - 0.08), row.span, 0.16, facecolor=COLORS["gap"], linewidth=0))
+        members = df[(df["chr"] == row.chr) & (df["start"] >= row.start) & (df["end"] <= row.end)]
+        members = members.assign(dk_color=_its_class_color(members, threshold)).sort_values("teloLen", ascending=False)
+        for m in members.itertuples(index=False):
+            ax.add_patch(Rectangle((m.start - row.start, i - 0.31), max(m.end - m.start, min_width), 0.62,
+                                   facecolor=m.dk_color, linewidth=0))
+        _its_row_labels(ax, i, f"C{i + 1}  {_its_locus_name(df, row.chr, row.start)}",
+                        f"{_fmt_bp(row.span)} span  ·  {row.rows:,} ITS  ·  {_fmt_bp(row.its_bp)}")
+    return len(top)
+
+
+def _draw_its_fusion_glyphs(ax, df, pairs, threshold):
+    """Panel c: q block, spacer and p block to scale, with facing direction glyphs."""
+    top = pairs.head(5)
+    if top.empty:
+        _hide_panel(ax, "none")
+        return 0
+    extent = (top["q_bp"] + top["spacer_bp"] + top["p_bp"]).max()
+    _its_glyph_axes(ax, extent)
+    width_in = ax.get_position().width * ax.figure.get_size_inches()[0]
+    pt_per_bp = width_in * 72 / ax.get_xlim()[1]
+    colored = df.assign(dk_color=_its_class_color(df, threshold)) if len(df) else df.assign(dk_color=[])
+    for i, row in enumerate(top.itertuples(index=False)):
+        arms = (("q", colored[(colored["chr"] == row.chr) & (colored["start"] == row.start)
+                               & (colored["teloLabel"] == "q")], 0, row.q_bp, DOUBLE_KEY_COLORS[2][0]),
+                ("p", colored[(colored["chr"] == row.chr) & (colored["end"] == row.end)
+                               & (colored["teloLabel"] == "p")], row.q_bp + row.spacer_bp, row.p_bp,
+                 DOUBLE_KEY_COLORS[2][2]))
+        ax.plot([row.q_bp, row.q_bp + row.spacer_bp], [i, i], color="#555555", lw=0.6,
+                solid_capstyle="butt")
+        for arm, match, x0, width, fallback in arms:
+            color = match["dk_color"].iloc[0] if len(match) else fallback
+            ax.add_patch(Rectangle((x0, i - 0.31), width, 0.62, facecolor=color, linewidth=0))
+            if width * pt_per_bp >= 7:
+                light = color in DOUBLE_KEY_COLORS[0] or color == COLORS["gap"]
+                ax.text(x0 + width / 2, i, BLOCK_GLYPHS[arm], ha="center", va="center",
+                        fontsize=BLOCK_GLYPH_SIZE, color="#222222" if light else "white")
+        _its_row_labels(ax, i, f"F{i + 1}  {_its_locus_name(df, row.chr, (row.start + row.end) / 2)}",
+                        f"q {_fmt_bp(row.q_bp)}  ·  {row.spacer_bp:,} bp  ·  p {_fmt_bp(row.p_bp)}")
+    return len(top)
 
 
 def plot_its_composition_page(df, pairs, clusters, params):
-    """Compact ranked tables; population statistics live on their own page."""
+    """ITS candidates: long ITS, clusters and candidate fusions as to-scale glyph rows."""
     fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, REPORT_PAGE_HEIGHT))
-    gs = fig.add_gridspec(3, 1, left=0.06, right=0.98, top=0.77, bottom=0.13, hspace=0.42)
-    axes = [fig.add_subplot(gs[i, 0]) for i in range(3)]
-    height = axes[0].get_position().height * REPORT_PAGE_HEIGHT
-    _draw_its_summary_tables(*axes, df, clusters, pairs, height)
-    _its_header(fig, "Interstitial telomeres: selected candidates",
-                f"Top 5 per table; {len(df):,} observed rows; {len(clusters):,} clusters; {len(pairs):,} candidate pairs")
+    _page_title(fig, "ITS candidates")
+    threshold = params.get("label_threshold", LABEL_THRESHOLD)
+    axes = [_inch_axes(fig, 1.60, y, 4.20, 0.65) for y in (2.50, 1.50, 0.50)]
     distance = params.get("max_block_dist", 1000)
-    assumed = "" if "max_block_dist" in params.get("known_params", set()) else " (assumed)"
-    fig.text(0.5, 0.028, f"Pairs: q→p, distance ≤{distance:,} bp{assumed}, engine fusion label; candidates are not confirmed fusions.",
-             ha="center", fontsize=MIN_TEXT_SIZE)
+    panels = (("Long ITS by canonical bp", len(df), _draw_its_long_glyphs, (df,)),
+              (f"ITS clusters by ITS bp (≥{ITS_CLUSTER_MIN_ROWS} ITS within {_fmt_bp(ITS_CLUSTER_MERGE_GAP)})",
+               len(clusters), _draw_its_cluster_glyphs, (df, clusters, threshold)),
+              (f"Candidate fusions by shorter arm (q→p within {distance:,} bp)",
+               len(pairs), _draw_its_fusion_glyphs, (df, pairs, threshold)))
+    for ax, letter, (title, total, draw, args) in zip(axes, "abc", panels):
+        shown = draw(ax, *args)
+        _panel_title(ax, title + (f", top {shown} of {total:,}" if total > shown else ""), letter, dx_in=1.50)
+    handles = [Patch(facecolor=DOUBLE_KEY_COLORS[c][s], edgecolor="none",
+                     label=f"{DOUBLE_KEY_STRAND[s]} {DOUBLE_KEY_CANON[c]}")
+               for key, c, s in _ITS_SEGMENT_KEYS]
+    handles.append(Patch(facecolor=DOUBLE_KEY_COLORS[1][1], edgecolor="none", label="both / mixed"))
+    fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, 0.0), ncol=len(handles),
+               fontsize=LEGEND_TEXT_SIZE, handlelength=1.0, handleheight=0.8, columnspacing=1.2,
+               handletextpad=0.4, frameon=False)
     return fig
 
 # ---------------------------------------------------------------------------
@@ -3243,7 +3317,7 @@ def main():
         pages.append((
             "its-statistics", "teloscope_its_statistics.png",
             lambda: plot_its_statistics_page(its_frame, pairs, clusters, params),
-            "ITS distributions", "Failed to render ITS distributions.",
+            "ITS composition", "Failed to render ITS composition.",
         ))
         # Atlas geometry and rankings are dataset-wide; compute once here rather than per page.
         atlas = _its_atlas_chroms(its_frame, arm_blocks, chrom_sizes)
@@ -3263,7 +3337,7 @@ def main():
         pages.append((
             "its-candidates", "teloscope_its_candidates.png",
             lambda: plot_its_composition_page(its_frame, pairs, clusters, params),
-            "ITS selected candidates", "Failed to render ITS candidates.",
+            "ITS candidates", "Failed to render ITS candidates.",
         ))
         for locus in loci:
             pages.append((
