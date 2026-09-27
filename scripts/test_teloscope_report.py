@@ -685,10 +685,13 @@ class ResilientITSReportTests(unittest.TestCase):
         df.attrs["display_labels"] = REPORT._its_labels(df, sizes)
         return pairs, clusters, sizes
 
-    def draw(self, fig, name):
+    def draw(self, fig, name, fixed_height=True):
         self.addCleanup(REPORT.plt.close, fig)
         fig.canvas.draw()
-        np.testing.assert_allclose(fig.get_size_inches(), [7.2, 3.7])
+        if fixed_height:
+            np.testing.assert_allclose(fig.get_size_inches(), [7.2, 3.7])
+        else:
+            self.assertEqual(fig.get_size_inches()[0], 7.2)
         renderer = fig.canvas.get_renderer()
         for text in fig.findobj(mtext.Text):
             if text.get_text().strip() and text.get_visible():
@@ -724,7 +727,7 @@ class ResilientITSReportTests(unittest.TestCase):
         self.assertTrue(df["end_dist"].isna().all())
         pairs, clusters, sizes = self.parts(df)
         self.draw(REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes,
-                                               REPORT.read_params(None)), "unknown_extent")
+                                               REPORT.read_params(None)), "unknown_extent", False)
 
     def test_header_like_scaffold_names_and_conflicting_sizes(self):
         df = self.frame([_its_row(c, 100, 200, "p", "single") for c in
@@ -759,7 +762,7 @@ class ResilientITSReportTests(unittest.TestCase):
                   "min_canonical_count": 4, "max_block_dist": 1000,
                   "known_params": {"motif_len", "min_canonical_count", "max_block_dist"}}
         self.draw(REPORT.plot_its_composition_page(df, pairs, clusters, params), "full_candidates")
-        self.draw(REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, params), "partial_atlas")
+        self.draw(REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, params), "partial_atlas", False)
         self.draw(REPORT.plot_its_statistics_page(df, pairs, clusters, params), "partial_statistics")
 
     def test_unknown_extent_is_disclosed_on_selected_locus(self):
@@ -767,7 +770,8 @@ class ResilientITSReportTests(unittest.TestCase):
                     {"chrA": [_block(1000, 1100, "p", 0)]}, {}, None, None, None, None, None,
                     unknown_extents={"chrA"})
         self.draw(fig, "unknown_locus")
-        self.assertTrue(any("scaffold length unknown" in ax.get_xlabel() for ax in fig.axes))
+        self.assertEqual(fig._suptitle.get_text(), "chrA  (≥1.1 kb)")
+        self.assertTrue(any("Observed" in ax.get_ylabel() for ax in fig.axes))
 
     def test_sub_kilobase_region_ticks_are_distinguishable(self):
         for start, end in ((0, 1100), (100, 200), (0, 1), (100_000_000, 100_000_010)):
@@ -827,7 +831,7 @@ class ResilientITSReportTests(unittest.TestCase):
                 self.draw(REPORT.plot_its_composition_page(df, pairs, clusters, params),
                           label + "_candidates")
                 self.draw(REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, params),
-                          label + "_atlas")
+                          label + "_atlas", False)
                 if label == "zero":
                     texts = [t.get_text() for t in stats.findobj(mtext.Text)]
                     self.assertIn("Positive n=0; zero canonical n=1", texts)
@@ -849,6 +853,7 @@ class ResilientITSReportTests(unittest.TestCase):
             "start": i * 1000, "end": i * 1000 + 100 + i % 300,
             "teloLen": 100 + i % 300, "teloLabel": np.array(["p", "q", "b"])[i % 3],
             "teloType": np.array(REPORT.CLASS_ORDER)[i % 4], "chrSize": 100_000_000,
+            "fwdCan": i % 7, "revCan": i % 5, "fwdNonCan": i % 11, "revNonCan": i % 13,
             "canonical_bp": (i % 31) * 6, "can_prop": (i % 31) * 6 / (100 + i % 300),
             "pos_frac": i * 1000 / 100_000_000,
         })
@@ -856,20 +861,21 @@ class ResilientITSReportTests(unittest.TestCase):
         clusters = REPORT.summarize_its_clusters(df)
         sizes = {c: 100_000_000 for c in df["chr"].unique()}
         df.attrs["display_labels"] = REPORT._its_labels(df, sizes)
-        counts = REPORT._its_position_counts(df, sizes)
-        self.assertEqual(sum(v.sum() for _, v in counts.values()), n)
+        cells = REPORT._its_atlas_cells(df)
+        self.assertEqual(sum(len(starts) for starts, _, _ in cells.values()), n)
         summary = REPORT.its_scaffold_summary(df, {}, sizes)
         self.assertEqual(summary["rows"].sum(), n)
         self.assertEqual(summary["display_label"].nunique(), 83)
         chroms = REPORT._its_atlas_chroms(df, {}, sizes)
         seen = []
-        for page_idx, start in enumerate(range(0, len(chroms), REPORT.ITS_ATLAS_ROWS)):
-            chunk = chroms[start:start + REPORT.ITS_ATLAS_ROWS]
+        pages = REPORT._paginate_atlas(chroms, sizes)
+        for page_idx, chunk in enumerate(pages):
+            self.assertLessEqual(len(chunk), REPORT.ITS_ATLAS_ROWS)
             seen.extend(chunk)
             fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes,
-                    {"ultra_fast": False}, chunk, page_idx + 1, 5, counts)
-            self.draw(fig, f"dense_atlas_{page_idx + 1}")
-        self.assertEqual(seen, chroms)
+                    {"ultra_fast": False}, chunk, page_idx + 1, len(pages), cells)
+            self.draw(fig, f"dense_atlas_{page_idx + 1}", False)
+        self.assertEqual(sorted(seen), sorted(chroms))
         stats = REPORT.plot_its_statistics_page(df, pairs, clusters, REPORT.read_params(None))
         self.draw(stats, "dense_statistics")
         hexagons = stats.axes[0].collections[0]
@@ -898,6 +904,74 @@ class ResilientITSReportTests(unittest.TestCase):
         fig = REPORT.plot_its_loci_page([("L1", chrom, 390_000, 410_000)], {chrom: size},
                                         {}, its, {}, track, track, track, track, track)
         self.draw(fig, "locus_all_tracks")
+
+    def test_homolog_grouping_keeps_haplotypes_adjacent(self):
+        names = ["chr1_mat", "chr33_mat", "chr2_pat", "chr33_pat", "chr1_pat", "hap1_chr5", "chr5_hap2",
+                 "chr7_h1", "chr7_h2", "chr9.1", "chr9.2", "s#1#chr4", "s#2#chr4", "chrZ_PAT"]
+        sizes = {n: 1_000_000 - 1_000 * i for i, n in enumerate(names)}
+        self.assertEqual(REPORT._homolog_key("chr33_mat"), REPORT._homolog_key("chr33_pat"))
+        self.assertEqual(REPORT._homolog_key("chrZ_PAT"), "chrZ")
+        groups = REPORT._homolog_groups(names, sizes)
+        self.assertIn(["chr33_mat", "chr33_pat"], groups)
+        for pair in (["hap1_chr5", "chr5_hap2"], ["chr7_h1", "chr7_h2"], ["chr9.1", "chr9.2"],
+                     ["s#1#chr4", "s#2#chr4"]):
+            self.assertIn(sorted(pair), groups)
+        order = [c for g in groups for c in g]
+        self.assertEqual(abs(order.index("chr33_mat") - order.index("chr33_pat")), 1)
+        many = [f"chr{i}_{h}" for i in range(1, 16) for h in ("mat", "pat")]
+        pages = REPORT._paginate_atlas(many, {c: 100 - int(c[3:].split("_")[0]) for c in many})
+        for page in pages:
+            self.assertLessEqual(len(page), REPORT.ITS_ATLAS_ROWS)
+            self.assertEqual(len({REPORT._homolog_key(c) for c in page}) * 2, len(page))
+
+    def test_atlas_height_follows_scaffold_count(self):
+        def atlas(n):
+            rows = [_its_row(f"chr{i}_{h}", 1000, 1500, "p", "single", fwd_can=40, chrom_size=5_000_000)
+                    for i in range(n // 2) for h in ("mat", "pat")]
+            df = self.frame(rows)
+            pairs, clusters, sizes = self.parts(df)
+            fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, REPORT.read_params(None))
+            self.draw(fig, f"atlas_{n}", False)
+            return fig
+        two, twenty = atlas(2), atlas(20)
+        self.assertLess(two.get_size_inches()[1], twenty.get_size_inches()[1])
+        self.assertLess(two.get_size_inches()[1], 3.0)
+        for fig in (two, twenty):
+            texts = [t.get_text() for t in fig.findobj(mtext.Text)]
+            self.assertFalse([t for t in texts if "row" in t.lower()], texts)
+            self.assertEqual(fig._suptitle.get_text(), "ITS atlas")
+            self.assertEqual([t.get_text() for t in fig.texts], ["ITS atlas"])  # no footer
+
+    def test_locus_page_marks_the_zoom_with_a_box_only(self):
+        chrom, size = "chr33_mat", 1_000_000
+        its = {chrom: [dict(_block(400_000, 400_600, "p", size), fwdCan=0, revCan=0, fwdNonCan=90, revNonCan=0)]}
+        fig = REPORT.plot_its_loci_page([("C1", chrom, 390_000, 410_000)], {chrom: size}, {}, its, {},
+                                        None, None, None, None, None)
+        self.draw(fig, "locus_box")
+        self.assertFalse(fig.findobj(REPORT.ConnectionPatch))
+        self.assertEqual(fig._suptitle.get_text(), "chr33_mat  (1 Mb)")
+        texts = [t.get_text() for t in fig.findobj(mtext.Text)]
+        self.assertIn("C1  390–410 kb", texts)
+        self.assertFalse([t for t in texts if "row" in t.lower()], texts)
+        faces = {REPORT.matplotlib.colors.to_hex(c) for ax in fig.axes for coll in ax.collections
+                 if isinstance(coll, REPORT.PatchCollection) for c in coll.get_facecolors()}
+        self.assertIn(REPORT.DOUBLE_KEY_COLORS[0][2].lower(), faces)
+
+    def test_shared_locus_tracks_keep_orientation_colours_by_default(self):
+        size = 1_000_000
+        its = [dict(_block(400_000, 400_600, k, size), fwdCan=0, revCan=0, fwdNonCan=90, revNonCan=0)
+               for k in ("p", "q", "b")]
+        fig, (ax_ideo, ax_blocks) = REPORT.plt.subplots(2, 1)
+        self.addCleanup(REPORT.plt.close, fig)
+        REPORT._draw_locus_ideogram(ax_ideo, size, 390_000, 410_000, [], its)
+        REPORT._draw_its_blocks_track(ax_blocks, 390_000, 410_000, [], its, [])
+        lines = {REPORT.matplotlib.colors.to_hex(c) for coll in ax_ideo.collections
+                 for c in coll.get_colors()}
+        faces = [REPORT.matplotlib.colors.to_hex(c) for coll in ax_blocks.collections
+                 for c in coll.get_facecolors()]
+        expected = {REPORT.ITS_ORIENT_COLORS[k] for k in ("p", "q", "b")}
+        self.assertEqual(lines, {c.lower() for c in expected})
+        self.assertEqual(set(faces), {c.lower() for c in expected})
 
     def test_its_only_cli_and_terminal_selection(self):
         with tempfile.TemporaryDirectory() as tmpdir:
