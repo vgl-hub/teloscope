@@ -36,7 +36,6 @@ from matplotlib.collections import LineCollection, PatchCollection
 import matplotlib.ticker as ticker
 import matplotlib.patheffects as patheffects
 from matplotlib import transforms
-from matplotlib.colors import LinearSegmentedColormap, LogNorm
 
 # ---------------------------------------------------------------------------
 # Nature-style configuration
@@ -76,15 +75,8 @@ COLORS = {
     "no_data":      "#e0e0e0",
 }
 
-# ITS junction classes, fixed order; fusion is the one accent hue, the rest recede to greys picked for >=3:1 contrast on white.
+# ITS junction classes, fixed order.
 CLASS_ORDER = ["fusion", "tail_to_tail", "fragmentation", "single"]
-CLASS_SHORT = {"fusion": "fusion", "tail_to_tail": "t2t", "fragmentation": "frag", "single": "single"}
-CLASS_COLORS = {
-    "fusion":        COLORS["q"],
-    "tail_to_tail":  COLORS["terminal"],  # #4A4A4A, contrast 8.9:1
-    "fragmentation": "#6E6E6E",           # contrast 5.1:1
-    "single":        COLORS["its"],       # #8C8C8C, contrast 3.4:1
-}
 
 # Text glyphs keep the directional symbols light while remaining editable in PDF export.
 BLOCK_GLYPHS = {
@@ -121,16 +113,12 @@ FLAGGED_SCAFFOLD_CATEGORIES = (
     "Gapped Discordant",
 )
 
-FIGURE_TITLE_SIZE = 9.3
 FIGURE_SUMMARY_SIZE = 6.0
 PANEL_LABEL_SIZE = 8.0
 PANEL_TITLE_SIZE = 6.9
 AXIS_LABEL_SIZE = 6.2
 AXIS_TICK_SIZE = 5.5
-PANEL_D_TICK_SIZE = 5.0  # panel d's two narrow log-x sub-panels need smaller decade ticks
 LEGEND_TEXT_SIZE = 5.4
-TABLE_TEXT_SIZE = 6.5
-TABLE_ROW_IN = 0.135  # fixed physical row height (header + data rows alike) for ITS tables
 MIN_TEXT_SIZE = 5.0
 ANNOTATION_TEXT_SIZE = MIN_TEXT_SIZE
 PLACEHOLDER_TEXT_SIZE = 6.2
@@ -893,7 +881,7 @@ def _panel_label(ax, label, dx_in=0.30):
     """Bold panel letter left of the axes, sharing the baseline of a pad=3 panel title."""
     offset = transforms.ScaledTranslation(-dx_in, 3 / 72, ax.figure.dpi_scale_trans)
     ax.text(0, 1, label, transform=ax.transAxes + offset,
-            fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="bottom", ha="left")
+            fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="baseline", ha="left")
 
 
 def _panel_title(ax, title, label=None, dx_in=0.30):
@@ -1803,44 +1791,6 @@ def plot_overview_page2(blocks, chrom_sizes):
 # ITS report pages (rendered last, after every per-chromosome zoom; see main())
 # ---------------------------------------------------------------------------
 
-def _class_totals(df):
-    """Per-class row count and total bp, reindexed to the fixed CLASS_ORDER."""
-    counts = df.groupby("teloType")["teloLen"].size().reindex(CLASS_ORDER, fill_value=0)
-    totals_bp = df.groupby("teloType")["teloLen"].sum().reindex(CLASS_ORDER, fill_value=0)
-    return counts, totals_bp
-
-
-def _fmt_frac(value):
-    """Format a fraction, or 'NA' when it is undefined."""
-    return f"{value:.2f}" if np.isfinite(value) else "NA"
-
-
-def _fmt_log_bp_tick(value):
-    """Format a signed log10(bp) decade tick (value=0 at the scaffold end) as clean bp/kb/Mb text."""
-    if value == 0:
-        return "0"
-    bp = 10 ** abs(value)
-    divisor, unit = _pick_bp_unit(bp)
-    return f"{bp / divisor:g} {unit}"
-
-
-def _short_scaffold_labels(names, width=18):
-    """Strip a shared prefix (common in PanSN-style names) then clip for display.
-
-    Rows need the *distinguishing* suffix, not a sample/haplotype tag every row
-    shares, so this trims to the last separator inside the common prefix.
-    """
-    if len(set(names)) > 1:
-        common = os.path.commonprefix(names)
-        cut = 0
-        for i in range(len(common), 0, -1):
-            if common[i - 1] in "#_./:|-":
-                cut = i
-                break
-        names = [n[cut:] or n for n in names]
-    return [n if len(n) <= width else n[:width - 1] + "…" for n in names]
-
-
 def _its_atlas_chroms(df, arm_blocks, chrom_sizes):
     """Scaffolds carrying a telomere or ITS row, longest first (ideogram row order)."""
     telomere_chroms = {c for c, blist in arm_blocks.items() if blist}
@@ -2024,27 +1974,6 @@ def _draw_its_blocks_track(ax, view_start, view_end, blocks_list, its_blocks_lis
 # ---------------------------------------------------------------------------
 # ITS-1 "Interstitial telomeres: genome view"
 # ---------------------------------------------------------------------------
-
-def _its_orientation(df):
-    return df["teloLabel"].where(df["teloLabel"].isin(("p", "q", "b")), "unknown")
-
-
-def _scan_note(params):
-    mode = params.get("ultra_fast")
-    if mode is False:
-        return "Full scan"
-    if mode is True:
-        limit = params.get("terminal_limit")
-        return ("End scan (initial " + _fmt_bp(limit) + " per end)"
-                if limit else "End scan; scan limit unknown")
-    return "Scan scope unknown"
-
-
-def _its_header(fig, title, subtitle):
-    fig.suptitle(title, fontsize=PANEL_LABEL_SIZE, fontweight="bold", y=0.96)
-    fig.text(0.5, 0.895, subtitle, ha="center", va="top",
-             fontsize=FIGURE_SUMMARY_SIZE, color="black")
-
 
 def _its_labels(df, chrom_sizes, arm_blocks=None, names=None):
     names = _its_atlas_chroms(df, arm_blocks or {}, chrom_sizes) if names is None else names
@@ -2637,6 +2566,12 @@ def plot_its_loci_page(loci, chrom_sizes, arm_blocks, its_blocks, gap_blocks,
             label=("Observed\nextent (Mbp)" if chrom in unknown_extents else "Scaffold\n(Mbp)")
             if show_label else None, threshold=threshold)
         ideo_ax.set_xlabel("")  # the blocks row would hide it; the unit sits in the track label
+        # Trim the empty band under the bar so its tick labels clear the blocks row.
+        cut = box_bottom - 0.04
+        pos = ideo_ax.get_position()
+        ideo_ax.set_position([pos.x0, pos.y0 + cut * pos.height, pos.width, (1 - cut) * pos.height])
+        ideo_ax.set_ylim(cut, 1)
+        ideo_ax.tick_params(axis="x", pad=2.0)
 
         axis_spec = _region_axis_spec(start, end)
         visible_rows = []
