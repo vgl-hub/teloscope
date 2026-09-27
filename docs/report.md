@@ -29,11 +29,11 @@ Prefix filters are also available, but database prefixes are not universal chrom
 The ITS report has its own pages:
 
 - **Composition:** ITS length distribution, forward share versus canonical share per ITS with marginal histograms, and a 3x3 double key with ITS counts and % of ITS bp per class. Both shares use the same thirds rule as `--label-threshold`, so the strand column matches the p/q/b label.
-- **Atlas:** every scaffold with a terminal or ITS call, drawn to scale, homologs (mat/pat, hap1/hap2) side by side, up to 20 per page. Each ITS is one cell colored by its double-key class. Scaffolds under 20% of the page's longest get their own panel. White means outside the initial end windows, not proven unscanned.
-- **Selected candidates:** to-scale glyphs for the top five ITS by canonical bp (split into fwd/rev can/nonCan), clusters (>= 3 ITS within 50 kb), and candidate fusion pairs (q block, spacer, p block).
+- **Atlas:** every scaffold with a terminal or ITS call, drawn to scale, homologs (mat/pat, hap1/hap2) side by side, up to 20 per page. Each ITS is one cell colored by its double-key class. Scaffolds under 20% of the page's longest get their own panel. L1/C1/F1 tags mark the scaffolds holding the top long ITS, cluster, and fusion pair. White means outside the initial end windows, not proven unscanned.
+- **Selected candidates:** to-scale glyphs for the top five ITS by canonical bp (split into fwd/rev can/nonCan, % canonical from match counts as on the composition page), clusters (>= 3 ITS within 50 kb), and candidate fusion pairs (q block, spacer, p block).
 - **Selected loci:** one track page each for the top cluster, ITS, and fusion pair.
 
-Canonical bp is the canonical match count times the motif length. Its ratio to row length (`can_prop`) can exceed one when matches overlap. Candidate fusions are q→p pairs within the distance threshold with an engine fusion label and no N-gap between them; they are not confirmed fusions. Missing metadata falls back to a 6 bp motif and a 1,000 bp threshold, and the report says so.
+Canonical bp is the canonical match count times the motif length. Its ratio to ITS length (`can_prop`) can exceed one when matches overlap. Candidate fusions are q→p pairs within the distance threshold with an engine fusion label and no N-gap between them; they are not confirmed fusions. Missing metadata falls back to a 6 bp motif and a 1,000 bp threshold, and the report says so.
 
 Each terminal zoom page can include:
 
