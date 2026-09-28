@@ -3405,14 +3405,14 @@ def main():
             ))
 
     n_figures = len(pages)
-    print(f"\nPlot report: {n_figures} pages", file=sys.stderr)
+    print("\n+++ Plot Report +++", file=sys.stderr)
 
     def emit_page(save_fig, builder, title, message, name, index):
         """Build, save via save_fig, and report progress/fallback for one page."""
         ok, error_text = _save_figure_with_fallback(save_fig, builder, title, message)
         if not ok:
             fallback_pages.append((name, error_text))
-        print(f"  [{index}/{n_figures}] {title}{' [warning]' if not ok else ''}", file=sys.stderr)
+        print(f"[{index}/{n_figures}] {title}{' [warning]' if not ok else ''}", file=sys.stderr)
 
     # --- Write-and-close pattern: one figure in memory at a time ---
     if args.png:
@@ -3424,7 +3424,7 @@ def main():
             used_names.add(png_name)
             path = os.path.join(out_dir, png_name)
             emit_page(lambda fig, path=path: fig.savefig(path, dpi=args.dpi), builder, title, message, name, i)
-        print(f"\nSaved figures: {out_dir}/", file=sys.stderr)
+        print(f"Saved: {out_dir}/", file=sys.stderr)
     else:
         if args.section == "split":
             stem = os.path.splitext(out_path)[0]
@@ -3440,7 +3440,7 @@ def main():
                 for name, png_name, builder, title, message in section_pages:
                     i += 1
                     emit_page(lambda fig: pdf.savefig(fig, dpi=args.dpi), builder, title, message, name, i)
-            print(f"\nSaved: {pdf_path}\n", file=sys.stderr)
+            print(f"Saved: {pdf_path}", file=sys.stderr)
 
     if fallback_pages:
         preview = ", ".join(f"{name} ({err})" for name, err in fallback_pages[:5])
