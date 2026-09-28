@@ -1003,9 +1003,10 @@ class ResilientITSReportTests(unittest.TestCase):
         self.assertEqual(summary["rows"].sum(), n)
         self.assertEqual(summary["display_label"].nunique(), 83)
         chroms = REPORT._its_atlas_chroms(df, {}, sizes)
-        height, columns, pitch = REPORT._atlas_layout(chroms, sizes)
+        height, columns, pitch, tiers = REPORT._atlas_layout(chroms, sizes)
         self.assertEqual(height, REPORT.ATLAS_HEIGHTS[-1])  # too many rows to label: one condensed page
         self.assertLess(pitch, REPORT.ATLAS_PITCH_IN)
+        self.assertEqual(len(tiers), REPORT.ATLAS_TIERS[-1])
         self.assertLessEqual(len(columns), REPORT.ATLAS_COLUMNS)
         self.assertEqual(sorted(c for column in columns for _, names in column for c in names), sorted(chroms))
         fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, {"ultra_fast": False}, chroms, cells)
@@ -1264,20 +1265,24 @@ class ResilientITSReportTests(unittest.TestCase):
                 self.assertLessEqual(start, midpoint)
                 self.assertGreaterEqual(end, midpoint)
 
-    def test_atlas_tiers_are_quartiles_on_rounded_axes(self):
+    def test_atlas_tiers_are_halves_or_quartiles_on_rounded_axes(self):
         sizes = {f"chr{i}_{h}": int(s) for i, s in enumerate(np.geomspace(7.2e9, 4.2e6, 30), 1) for h in ("hap1", "hap2")}
         sizes.update({f"scaffold_{i}": 20_000 + 1_000 * i for i in range(5)})  # unplaced
         tiers = REPORT._atlas_tiers(sorted(sizes, key=lambda c: -sizes[c]), sizes)
         self.assertEqual([c for t in tiers for c in t], [c for g in REPORT._homolog_groups(list(sizes), sizes) for c in g])
-        self.assertEqual(len(tiers), REPORT.ATLAS_TIERS)
-        self.assertLessEqual(max(map(len, tiers)), -(-len(sizes) // REPORT.ATLAS_TIERS) + 1)  # a quarter, pairs whole
+        self.assertEqual(len(tiers), 4)
+        self.assertLessEqual(max(map(len, tiers)), -(-len(sizes) // 4) + 1)  # a quarter, pairs whole
+        self.assertEqual([len(t) for t in REPORT._atlas_tiers(list(sizes), sizes, 2)], [34, 31])  # halves, pairs whole
         keys = [{REPORT._homolog_key(c) for c in tier} for tier in tiers]
         self.assertEqual(sum(map(len, keys)), len(set().union(*keys)))  # homologs never split across tiers
         self.assertEqual(REPORT._atlas_tiers(["chrA", "chrB"], {"chrA": 10, "chrB": 9}), [["chrA"], ["chrB"]])
         self.assertEqual(REPORT._atlas_tiers([], {}), [])
-        for bp, span in ((7.2e9, 7.2e9), (152.56e6, 160e6), (33.78e6, 35e6), (8.2e6, 10e6), (4.25e6, 4.5e6),
-                         (1.05e6, 1.5e6), (112e3, 150e3)):
-            self.assertAlmostEqual(REPORT._atlas_span(bp), span)
+        for bp, span in ((7.2e9, (7e9, 1e9)), (248e6, (240e6, 40e6)), (152.56e6, (140e6, 20e6)), (26e6, (25e6, 5e6)),
+                         (11.2e6, (10e6, 2e6)), (9.9e6, (9e6, 1e6)), (4.25e6, (4e6, 5e5)), (112e3, (100e3, 20e3))):
+            self.assertEqual(REPORT._atlas_span(bp), span)  # the last tick on a 1-2-5 step; longer bars run past it
+        few = {f"chr{i}_{h}": 100_000_000 // i for i in range(1, 5) for h in ("mat", "pat")}
+        height, columns, _, tiers = REPORT._atlas_layout(list(few), few)
+        self.assertEqual((height, len(columns), len(tiers)), (REPORT.ATLAS_HEIGHTS[0], 1, 2))  # full-width halves
 
     def test_atlas_labels_keep_one_precision_and_mark_loci(self):
         df = self.frame([_its_row("chr1_mat", 1000, 1500, "p", "single", fwd_can=40, chrom_size=116_000_000),
@@ -1287,7 +1292,7 @@ class ResilientITSReportTests(unittest.TestCase):
         self.draw(fig, "atlas_precision", False)
         ticks = [t.get_text() for t in fig.axes[0].get_yticklabels()]
         self.assertEqual(ticks, ["chr1_mat", "chr1_pat"])  # names only
-        self.assertEqual([t.get_text() for t in fig.axes[0].get_xticklabels()], ["0", "20", "40", "60", "80", "100", "120"])
+        self.assertEqual([t.get_text() for t in fig.axes[0].get_xticklabels()], ["0", "20", "40", "60", "80", "100"])
         self.assertEqual(fig.axes[0].get_xlabel(), "Position (Mbp)")
         labels = [t.get_text() for leg in fig.legends for t in leg.get_texts()]
         self.assertIn("Scaffold", labels)
