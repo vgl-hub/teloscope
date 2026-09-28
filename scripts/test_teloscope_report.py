@@ -807,6 +807,19 @@ class ResilientITSReportTests(unittest.TestCase):
         np.testing.assert_array_equal(data["track_001"][0], [0, 10])
         np.testing.assert_allclose(data["track_001"][2], [0.2, 0.5])
 
+    def test_bedgraph_interleaved_scaffolds_group_in_name_order(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "track.bedgraph"
+            path.write_text("track type=bedGraph\nchrB\t200\t300\t0.5\nchrA\t100\t200\t0.1\nchrB\t0\t100\t0.3\n"
+                            "chrA\t0\t100\t0.2\nchrB\t100\t200\t0.7\nchrA\t50\t40\t0.9\nchrC\t0\t10\t1\n")
+            with contextlib.redirect_stderr(io.StringIO()):
+                data = REPORT.parse_bedgraph(str(path))
+        self.assertEqual(list(data), ["chrA", "chrB", "chrC"])
+        np.testing.assert_array_equal(data["chrA"][0], [0, 100])
+        np.testing.assert_array_equal(data["chrB"][0], [0, 100, 200])
+        np.testing.assert_allclose(data["chrB"][2], [0.3, 0.7, 0.5])
+        np.testing.assert_array_equal(data["chrB"][1], [100, 200, 300])
+
     def test_populated_rank_tables_and_partial_scan_geometry(self):
         rows = []
         for i in range(8):
@@ -993,15 +1006,16 @@ class ResilientITSReportTests(unittest.TestCase):
         seen = []
         pages = REPORT._paginate_atlas(chroms, sizes)
         for page_idx, chunk in enumerate(pages):
-            self.assertGreaterEqual(REPORT._atlas_row_in(REPORT._atlas_panels(chunk, sizes)),
-                                    REPORT.ATLAS_ROW_IN[0])
+            height, columns, _ = REPORT._atlas_layout(chunk, sizes)
+            self.assertIn(height, REPORT.ATLAS_HEIGHTS)
+            self.assertLessEqual(len(columns), REPORT.ATLAS_COLUMNS)
             seen.extend(chunk)
             fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes,
                     {"ultra_fast": False}, chunk, page_idx + 1, len(pages), cells)
             self.draw(fig, f"dense_atlas_{page_idx + 1}", False)
             renderer = fig.canvas.get_renderer()
             for ax in fig.axes:
-                boxes = [t.get_window_extent(renderer) for t in ax.get_yticklabels() if "\n" in t.get_text()]
+                boxes = [t.get_window_extent(renderer) for t in ax.get_yticklabels() if "Mb" in t.get_text()]
                 for i, box in enumerate(boxes):
                     self.assertFalse(any(box.overlaps(other) for other in boxes[:i]))
 
@@ -1051,7 +1065,7 @@ class ResilientITSReportTests(unittest.TestCase):
             self.assertIn([name], groups)
         order = [c for g in groups for c in g]
         self.assertEqual(abs(order.index("chr33_mat") - order.index("chr33_pat")), 1)
-        many = [f"chr{i}_{h}" for i in range(1, 16) for h in ("mat", "pat")]
+        many = [f"chr{i}_{h}" for i in range(1, 100) for h in ("mat", "pat")]
         pages = REPORT._paginate_atlas(many, {c: 100 - int(c[3:].split("_")[0]) for c in many})
         self.assertGreater(len(pages), 1)
         for page in pages:
@@ -1068,11 +1082,11 @@ class ResilientITSReportTests(unittest.TestCase):
         self.assertFalse(fig.legends)  # the segment legend lives on its own axes under the title
         texts = [t.get_text() for t in fig.findobj(mtext.Text)]
         # Zero-count ITS takes the (both, mixed) cell, as on the composition page.
-        long_ax = fig.axes[0]
+        long_ax = fig.axes[2]  # clusters, fusions, then long ITS
         faces = {REPORT.matplotlib.colors.to_hex(p.get_facecolor()) for p in long_ax.patches}
         self.assertIn(REPORT.DOUBLE_KEY_COLORS[1][1].lower(), faces)
         self.assertIn("NA", texts)
-        fusion = {REPORT.matplotlib.colors.to_hex(p.get_facecolor()) for p in fig.axes[2].patches}
+        fusion = {REPORT.matplotlib.colors.to_hex(p.get_facecolor()) for p in fig.axes[1].patches}
         self.assertEqual(fusion, {REPORT.DOUBLE_KEY_COLORS[2][0].lower(), REPORT.DOUBLE_KEY_COLORS[2][2].lower()})
         # A pair whose arms match no ITS falls back to the neutral grey, never a canonical colour.
         fig, ax = REPORT.plt.subplots()
@@ -1263,7 +1277,7 @@ class ResilientITSReportTests(unittest.TestCase):
         fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, REPORT.read_params(None))
         self.draw(fig, "atlas_precision", False)
         ticks = [t.get_text() for t in fig.axes[0].get_yticklabels()]
-        self.assertEqual([t.split("\n")[-1] for t in ticks], ["116.00 Mb", "115.91 Mb"])
+        self.assertEqual(ticks, ["chr1_mat  116.00 Mb", "chr1_pat  115.91 Mb"])  # one line per scaffold
         self.assertEqual([t.get_text() for t in fig.axes[0].get_xticklabels()][:3], ["0", "20", "40"])
         self.assertEqual(fig.axes[0].get_xlabel(), "Position (Mbp)")
         labels = [t.get_text() for leg in fig.legends for t in leg.get_texts()]
@@ -1276,7 +1290,7 @@ class ResilientITSReportTests(unittest.TestCase):
         self.assertEqual(len(triangles), 2)
         self.assertEqual(float(triangles[0].get_xdata()[0]), 1250.0)  # at the locus, not the scaffold end
 
-    def test_atlas_page_is_one_slide_and_centred(self):
+    def test_atlas_page_grows_to_a_double_slide_at_a_fixed_pitch(self):
         def atlas(n):
             rows = [_its_row(f"chr{i}_{h}", 1000, 1500, "p", "single", fwd_can=40, chrom_size=5_000_000)
                     for i in range(n // 2) for h in ("mat", "pat")]
@@ -1285,21 +1299,22 @@ class ResilientITSReportTests(unittest.TestCase):
             fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, REPORT.read_params(None))
             self.draw(fig, f"atlas_{n}", False)
             return fig
-        two, twenty = atlas(2), atlas(20)
-        pitch = []
-        for fig in (two, twenty):
-            self.assertEqual(tuple(fig.get_size_inches()), REPORT.SLIDE_SIZE)
+        two, twenty, eighty = atlas(2), atlas(20), atlas(80)
+        for fig, size, columns in ((two, REPORT.SLIDE_SIZE, 1), (twenty, REPORT.SLIDE_SIZE, 2),
+                                   (eighty, (REPORT.FIG_WIDTH_DOUBLE, REPORT.ATLAS_HEIGHTS[1]), 2)):
+            self.assertEqual(tuple(fig.get_size_inches()), size)  # one slide, else a double slide
             texts = [t.get_text() for t in fig.findobj(mtext.Text)]
             self.assertFalse([t for t in texts if "row" in t.lower()], texts)
             self.assertEqual(fig._suptitle.get_text(), "ITS atlas")
             self.assertEqual([t.get_text() for t in fig.texts], ["ITS atlas"])  # no footer
             box = fig.get_tightbbox(fig.canvas.get_renderer())
             self.assertAlmostEqual(box.x0, fig.get_size_inches()[0] - box.x1, delta=0.05)
-            ax = fig.axes[0]
-            pitch.append(ax.get_position().height * 3.7 / (ax.get_ylim()[0] - ax.get_ylim()[1]))
-        self.assertAlmostEqual(pitch[0], REPORT.ATLAS_ROW_IN[1])  # few scaffolds: thick but capped
-        self.assertGreaterEqual(pitch[1], REPORT.ATLAS_ROW_IN[0])
-        self.assertLess(pitch[1], pitch[0])
+            rows = [ax for ax in fig.axes if ax.get_xlabel() == "Position (Mbp)"]
+            self.assertEqual(len({round(ax.get_position().x0, 3) for ax in rows}), columns)
+            for ax in rows:  # the row pitch is fixed, never stretched to fill the page
+                ys = ax.get_yticks()
+                inch = ax.get_position().height * fig.get_size_inches()[1] / (ax.get_ylim()[0] - ax.get_ylim()[1])
+                self.assertAlmostEqual(min(np.diff(ys), default=REPORT.ATLAS_PITCH_IN) * inch, REPORT.ATLAS_PITCH_IN)
 
     def test_locus_page_marks_the_zoom_with_a_box_only(self):
         chrom, size = "chr33_mat", 1_000_000

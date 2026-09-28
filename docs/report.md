@@ -28,11 +28,11 @@ Prefix filters are also available, but database prefixes are not universal chrom
 
 The ITS report has its own pages. Colors follow one 3x3 key: hue is the strand (fwd blue, both purple, rev vermillion) and opacity is the canonical share. Forward (CCCTAA, the 5' end) is always drawn first, on the left.
 
-- **Summary:** headline tiles, the ITS length distribution, ITS count against ITS density per scaffold with homologs joined, and composition per ITS.
+- **Summary:** headline tiles, the ITS length distribution, ITS count against ITS density per scaffold (dot size follows log10 scaffold size, so dot chromosomes stand out), and composition per ITS.
   Panel c combines forward share (mirrored) versus canonical share with marginal histograms and ITS counts and % of ITS bp inside each of the nine classes. Both shares use the same thirds rule as `--label-threshold`, so the strand column matches the p/q/b label.
-- **Atlas:** every scaffold with a terminal or ITS call, drawn to scale, homologs (mat/pat, hap1/hap2) side by side, as many per page as stay readable. Each ITS is one cell colored by its class. Scaffolds under 20% of the page's longest get their own panel. A ▼ marks the locus of each locus page (L longest canonical ITS, C cluster, F fusion; ranks 1–5 match the candidate and locus pages). White means outside the initial end windows, not proven unscanned.
-- **Candidates:** the top five ITS by canonical bp split into fwd/rev canonical and non-canonical, the clusters with most ITS bp (>= 3 ITS within 50 kbp), and candidate fusion pairs drawn around their junction (q block left, p block right).
-- **Loci:** one track page for each of the top five ITS, clusters, and fusion pairs (or all available when fewer than five), with the same tracks as the terminal zoom pages.
+- **Atlas:** every scaffold with a terminal or ITS call, drawn to scale, homologs (mat/pat, hap1/hap2) side by side, in two columns at a fixed row height. The page grows to a double slide when one slide is not enough, and only then splits into more pages. Each ITS is one cell colored by its class. Scaffolds under 20% of the page's longest get their own panel and scale. A ▼ marks the locus of each locus page (C cluster, F fusion, L longest canonical ITS; ranks 1–5 match the candidate and locus pages). White means outside the initial end windows, not proven unscanned.
+- **Candidates:** the clusters with most ITS bp (>= 3 ITS within 50 kbp), candidate fusion pairs drawn around their junction (q block left, p block right), and the top five ITS by canonical bp split into fwd/rev canonical and non-canonical.
+- **Loci:** one track page for each of the top five clusters, fusion pairs, and ITS (or all available when fewer than five), with the same tracks as the terminal zoom pages.
 
 Canonical bp is the canonical match count times the motif length. Its ratio to ITS length (`can_prop`) can exceed one when matches overlap. Candidate fusions are q→p pairs within the distance threshold with an engine fusion label and no N-gap between them; they are not confirmed fusions. Missing metadata falls back to a 6 bp motif and a 1,000 bp threshold, and the report says so.
 

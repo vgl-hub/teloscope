@@ -22,6 +22,7 @@ import argparse
 import textwrap
 import inspect
 from collections import Counter, defaultdict, OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
@@ -32,11 +33,13 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Rectangle, Patch, ConnectionPatch
 from matplotlib.lines import Line2D
-from matplotlib.collections import LineCollection, PatchCollection
+from matplotlib.collections import LineCollection, PatchCollection, PolyCollection
 import matplotlib.colors as mcolors
 import matplotlib.ticker as ticker
 import matplotlib.patheffects as patheffects
-from matplotlib import transforms
+from matplotlib import cbook, transforms
+from matplotlib.font_manager import FontProperties
+from matplotlib.textpath import TextToPath
 
 # ---------------------------------------------------------------------------
 # Nature-style configuration
@@ -47,9 +50,10 @@ FIG_WIDTH_SINGLE = 3.50    # inches (89 mm)
 FIG_WIDTH_DOUBLE = 7.20    # inches (183 mm)
 REPORT_PAGE_HEIGHT = 2.2 + 0.25 * 6  # terminal page with all six tracks
 SLIDE_SIZE = (FIG_WIDTH_DOUBLE, REPORT_PAGE_HEIGHT)  # one page size for every report page
-ATLAS_ROW_IN = (0.22, 0.30)  # atlas row pitch in inches: legible floor, ideogram-like cap
-ATLAS_BAR, ATLAS_GROUP_GAP = 0.45, 0.45  # bar height and extra gap between homolog groups, in rows
-ATLAS_HEADER_IN, ATLAS_FOOT_IN, ATLAS_AXIS_IN, ATLAS_TITLE_IN, ATLAS_GAP_IN = 0.42, 0.10, 0.34, 0.20, 0.12
+ATLAS_PITCH_IN, ATLAS_GROUP_GAP_IN, ATLAS_BAR_IN = 0.10, 0.05, 0.04  # fixed row pitch, extra gap between homolog groups, bar
+ATLAS_HEADER_IN, ATLAS_KEY_IN, ATLAS_FOOT_IN, ATLAS_AXIS_IN, ATLAS_TITLE_IN = 0.36, 0.74, 0.06, 0.30, 0.20
+ATLAS_COLUMNS, ATLAS_COL_GAP_IN = 2, 0.30
+ATLAS_HEIGHTS = (SLIDE_SIZE[1], 2 * SLIDE_SIZE[1])  # one slide, else a double slide within Nature's 247 mm page
 ITS_LENGTH_COLOR = "#91C9C1"  # teal, outside the double-key hues
 ATLAS_BACKBONE = "#E8E8E8"  # light scaffold backbone behind atlas ITS cells
 
@@ -405,7 +409,7 @@ def parse_bedgraph(path):
     try:
         df = pd.read_csv(path, sep="\t", header=None, skiprows=skip,
                          names=["chrom", "start", "end", "value"],
-                         dtype={"chrom": str, "start": np.int64,
+                         dtype={"chrom": "category", "start": np.int64,
                                 "end": np.int64, "value": np.float64},
                          engine="c", on_bad_lines="skip")
     except pd.errors.EmptyDataError:
@@ -416,14 +420,28 @@ def parse_bedgraph(path):
         return _parse_bedgraph_fallback(path)
 
     valid = ((df["start"] >= 0) & (df["end"] > df["start"]) &
-             (df["end"] <= MAX_COORD) & np.isfinite(df["value"]))
+             (df["end"] <= MAX_COORD) & np.isfinite(df["value"])).to_numpy()
     if not valid.all():
         _warn(f"Skipped {int((~valid).sum())} invalid BEDgraph row(s) from '{path}'.")
-    df = df.loc[valid].sort_values(["chrom", "start"], kind="mergesort")
-    data = OrderedDict()
-    for chrom, grp in df.groupby("chrom", sort=False):
-        data[chrom] = (grp["start"].values, grp["end"].values, grp["value"].values)
-    return data
+    # Plain arrays, filtered only when needed; each scaffold becomes a slice (a view) of them.
+    codes, names = df["chrom"].cat.codes.to_numpy(), df["chrom"].cat.categories
+    starts, ends, values = (df[c].to_numpy() for c in ("start", "end", "value"))
+    if not valid.all():
+        codes, starts, ends, values = codes[valid], starts[valid], ends[valid], values[valid]
+    del df
+    cuts = np.flatnonzero(codes[1:] != codes[:-1]) + 1
+    if len(cuts) + 1 > len(np.unique(codes)):  # a scaffold's windows are split up: group them, keeping file order
+        order = np.argsort(codes, kind="stable")
+        codes, starts, ends, values = codes[order], starts[order], ends[order], values[order]
+        cuts = np.flatnonzero(codes[1:] != codes[:-1]) + 1
+    data = {}
+    for lo, hi in zip(np.r_[0, cuts], np.r_[cuts, len(codes)]):
+        s, e, v = starts[lo:hi], ends[lo:hi], values[lo:hi]
+        if np.any(s[1:] < s[:-1]):  # engine output is already ordered; sort only when it is not
+            order = np.argsort(s, kind="stable")
+            s, e, v = s[order], e[order], v[order]
+        data[str(names[codes[lo]])] = (s, e, v)
+    return OrderedDict(sorted(data.items()))
 
 
 _ITS_COLUMNS = ["chr", "start", "end", "teloLen", "teloLabel", "closestEnd",
@@ -2073,7 +2091,7 @@ def _its_atlas_cells(df, threshold=LABEL_THRESHOLD):
 def _its_top_hits(df, pairs, clusters):
     """Scaffold -> [(ranked tag, midpoint)] for up to five loci per category."""
     top = {}
-    for prefix, frame in (("L", rank_long_its(df, 5)), ("C", clusters.head(5)), ("F", pairs.head(5))):
+    for prefix, frame in (("C", clusters.head(5)), ("F", pairs.head(5)), ("L", rank_long_its(df, 5))):
         for rank, row in enumerate(frame.itertuples(index=False), 1):
             top.setdefault(row.chr, []).append((f"{prefix}{rank}", (row.start + row.end) / 2.0))
     return top
@@ -2104,31 +2122,57 @@ def _set_mb_ticks(ax, longest):
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: _plain_number(x / 1e6)))
 
 
-def _atlas_panels(chroms, sizes):
-    """Long/short atlas panels as (names, row centres, height in rows), homolog groups spaced apart."""
-    panels = []
-    for names in (p for p in _split_long_short_chroms(chroms, sizes) if p):
-        ys, y = [], -1.0
-        for i, c in enumerate(names):
-            y += 1.0 + (ATLAS_GROUP_GAP if i and _homolog_key(c) != _homolog_key(names[i - 1]) else 0.0)
-            ys.append(y)
-        panels.append((names, ys, ys[-1] + 1.0))
-    return panels
+def _atlas_rows(names):
+    """Row centres in inches below a segment top, homolog groups spaced apart, and the segment height."""
+    ys, y = [], -ATLAS_PITCH_IN / 2.0
+    for i, c in enumerate(names):
+        y += ATLAS_PITCH_IN + (ATLAS_GROUP_GAP_IN if i and _homolog_key(c) != _homolog_key(names[i - 1]) else 0.0)
+        ys.append(y)
+    return ys, y + ATLAS_PITCH_IN / 2.0
 
 
-def _atlas_row_in(panels):
-    """Row pitch that fills the slide height, capped so a few scaffolds still read as ideogram bars."""
-    fixed = len(panels) * (ATLAS_AXIS_IN + (ATLAS_TITLE_IN if len(panels) > 1 else 0.0)) \
-        + ATLAS_GAP_IN * max(len(panels) - 1, 0)
-    free = SLIDE_SIZE[1] - ATLAS_HEADER_IN - ATLAS_FOOT_IN - fixed
-    return min(ATLAS_ROW_IN[1], free / max(sum(h for _, _, h in panels), 1.0))
+def _atlas_columns(chroms, sizes, col_h):
+    """Flow homolog groups down columns of col_h inches; each column holds one axis segment per panel it touches."""
+    panels = [p for p in _split_long_short_chroms(chroms, sizes) if p]
+    head = ATLAS_AXIS_IN + (ATLAS_TITLE_IN if len(panels) > 1 else 0.0)
+    columns, used = [[]], 0.0
+    for k, names in enumerate(panels):
+        for group in _homolog_groups(names, sizes):
+            same = bool(columns[-1]) and columns[-1][-1][0] == k
+            cost = len(group) * ATLAS_PITCH_IN + (ATLAS_GROUP_GAP_IN if same else head)
+            if columns[-1] and used + cost > col_h + 1e-9:
+                columns.append([])
+                used, same = 0.0, False
+                cost = len(group) * ATLAS_PITCH_IN + head
+            if not same:
+                columns[-1].append((k, []))
+            columns[-1][-1][1].extend(group)
+            used += cost
+    return columns, len(panels) > 1
+
+
+def _atlas_layout(chroms, sizes):
+    """Page height, balanced columns and split flag: one full-width column, else two, on one slide, else a double slide."""
+    for page_h in ATLAS_HEIGHTS:
+        col_h = page_h - ATLAS_HEADER_IN - ATLAS_KEY_IN - ATLAS_FOOT_IN
+        for n in range(1, ATLAS_COLUMNS + 1):
+            columns, split = _atlas_columns(chroms, sizes, col_h)
+            if len(columns) > n:
+                continue
+            lo, hi = 0.0, col_h  # shortest column height that still needs only n columns
+            for _ in range(24):
+                mid = (lo + hi) / 2.0
+                lo, hi = (lo, mid) if len(_atlas_columns(chroms, sizes, mid)[0]) <= n else (mid, hi)
+            return page_h, _atlas_columns(chroms, sizes, hi)[0], split
+    return page_h, columns, split
 
 
 def _paginate_atlas(atlas_chroms, chrom_sizes):
-    """Atlas pages holding as many scaffolds as fit at the minimum row pitch; homolog groups stay whole."""
+    """Atlas pages holding as many scaffolds as fit a double slide at the fixed row pitch; homolog groups stay whole."""
+    col_h = ATLAS_HEIGHTS[-1] - ATLAS_HEADER_IN - ATLAS_KEY_IN - ATLAS_FOOT_IN
     pages, page = [], []
     for group in _homolog_groups(atlas_chroms, chrom_sizes):
-        if page and _atlas_row_in(_atlas_panels(page + group, chrom_sizes)) < ATLAS_ROW_IN[0]:
+        if page and len(_atlas_columns(page + group, chrom_sizes, col_h)[0]) > ATLAS_COLUMNS:
             pages.append(page)
             page = []
         page.extend(group)
@@ -2150,134 +2194,145 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
     end_scan = params.get("ultra_fast") is True and limit > 0
     extent = {c: max(int(chrom_sizes.get(c, 0)), int(cells[c][1].max()) if c in cells else 0, 1)
               for c in chroms}
-
-    width, height = SLIDE_SIZE
-    layouts = _atlas_panels(chroms, extent)
-    split = len(layouts) > 1
-    fig = plt.figure(figsize=SLIDE_SIZE)
+    height, columns, split = _atlas_layout(chroms, extent)
+    width = FIG_WIDTH_DOUBLE
+    fig = plt.figure(figsize=(width, height))
     page_suffix = f" ({page_number}/{page_count})" if page_count > 1 else ""
     _page_title(fig, "ITS atlas" + page_suffix)
-    if not layouts:
+    if not chroms:
         fig.text(0.5, 0.45, "No ITS", ha="center", va="center",
                  fontsize=PLACEHOLDER_TEXT_SIZE, color="#bbbbbb")
         return fig
 
-    # Right-hand column holds the key and legend, so the rows get the full page height.
-    col_w, col_gap = 1.30, 0.25
-    left_in, col_x = 0.12 * width, 0.97 * width - col_w
-    axes_w = col_x - col_gap - left_in
-    row_h = _atlas_row_in(layouts)
-    used = sum(h * row_h + ATLAS_AXIS_IN + (ATLAS_TITLE_IN if split else 0.0) for _, _, h in layouts) \
-        + ATLAS_GAP_IN * (len(layouts) - 1)
-    free = height - ATLAS_HEADER_IN - ATLAS_FOOT_IN
-    top_in = height - ATLAS_HEADER_IN - (free - used) / 2.0
-    mid_in = top_in - used / 2.0
-    drew_caps, drew_marks = False, set()
+    # One-line row labels; the widest sets the label column so every bar starts at the same x.
+    row_label = {c: f"{labels.get(c, c)}  {'≥' if known.get(c) == 0 else ''}{_fmt_bp_fixed(extent[c])}"
+                 for c in chroms}
+    font = FontProperties(size=AXIS_TICK_SIZE)
+    label_w = max(TextToPath().get_text_width_height_descent(t, font, ismath=False)[0]
+                  for t in row_label.values()) / 72 + 0.10
+    margin = 0.15
+    col_w = (width - 2 * margin - ATLAS_COL_GAP_IN * (len(columns) - 1)) / len(columns)
+    axes_w = col_w - label_w
+    longest = {}  # one scale per panel, shared by its segments across columns
+    for column in columns:
+        for k, names in column:
+            longest[k] = max(longest.get(k, 1), *(extent[c] for c in names))
     cutoff = _fmt_bp(0.2 * max(extent.values()))
-    for names, ys, rows in layouts:
-        if split:
-            top_in -= ATLAS_TITLE_IN
-        panel_h = rows * row_h
-        ax = fig.add_axes([left_in / width, (top_in - panel_h) / height,
-                           axes_w / width, panel_h / height])
-        top_in -= panel_h + ATLAS_AXIS_IN + ATLAS_GAP_IN
-        longest = max(extent[c] for c in names)
-        min_w = longest * (1.2 / 72) / axes_w  # 1.2 pt floor keeps single ITS visible
-        backbone, masks, caps, its_rects, its_colors = [], [], [], [], []
-        # Leave a 0.8 pt gap between the triangle tip and the chromosome bar.
-        lift = transforms.ScaledTranslation(0, 2.8 / 72, fig.dpi_scale_trans)
-        for y, c in zip(ys, names):
-            size = extent[c]
-            y0 = y - ATLAS_BAR / 2.0
-            backbone.append(Rectangle((0, y0), size, ATLAS_BAR))
-            if end_scan and known.get(c, size) > 0 and size > 2 * limit:
-                masks.append(Rectangle((limit, y0), size - 2 * limit, ATLAS_BAR))
-            if c in cells:
-                for s, e, color in zip(*cells[c]):
-                    w = max(e - s, min_w)
-                    its_rects.append(Rectangle((min(s, size - w), y0), w, ATLAS_BAR))
-                    its_colors.append(color)
-            for block in arm_blocks.get(c, []):
-                w = max(block["end"] - block["start"], min_w)
-                x = min(block["start"], size - w) if block["start"] > size / 2.0 else block["start"]
-                caps.append(Rectangle((max(x, 0), y0), w, ATLAS_BAR))
-            marks = []
-            for tag, x in sorted(top.get(c, []), key=lambda m: m[1]):
-                if marks and (x - marks[-1][1]) / longest * axes_w < max(0.22, 0.05 * len(marks[-1][0]) + 0.08):
-                    marks[-1] = (marks[-1][0] + "/" + tag, marks[-1][1])
-                else:
-                    marks.append((tag, x))
-            for tag, x in marks:
-                drew_marks.update(tag.split("/"))
-                ax.plot([x], [y0], marker="v", markersize=4, color="#222222", markeredgewidth=0,
-                        linestyle="none", transform=ax.transData + lift, clip_on=False, zorder=6)
-                ax.annotate(tag, (x, y0), xytext=(2.6, 3.0), textcoords="offset points", ha="left",
-                            va="center", fontsize=MIN_TEXT_SIZE, fontweight="bold", color="#222222",
-                            annotation_clip=False, zorder=6,
-                            path_effects=[patheffects.withStroke(linewidth=1.5, foreground="white")])
-        ax.add_collection(PatchCollection(backbone, facecolor=ATLAS_BACKBONE, edgecolor="none", zorder=1))
-        if masks:
-            ax.add_collection(PatchCollection(masks, facecolor="white", edgecolor=COLORS["gap"],
-                                              linewidth=0.4, zorder=2))
-        if its_rects:
-            ax.add_collection(PatchCollection(its_rects, facecolor=its_colors, edgecolor="none",
-                                              zorder=3, rasterized=len(its_rects) > 2000))
-        if caps:
-            drew_caps = True
-            ax.add_collection(PatchCollection(caps, facecolor=COLORS["terminal"], edgecolor="none",
-                                              zorder=4))
-        # Thin left bracket joins the members of a homolog group.
-        bracket = transforms.blended_transform_factory(ax.transAxes, ax.transData)
-        i = 0
-        while i < len(names):
-            j = i
-            while j + 1 < len(names) and _homolog_key(names[j + 1]) == _homolog_key(names[i]):
-                j += 1
-            if j > i:
-                ax.plot([-0.006, -0.006], [ys[i] - ATLAS_BAR / 2, ys[j] + ATLAS_BAR / 2], color="#8C8C8C",
-                        lw=0.6, transform=bracket, clip_on=False, solid_capstyle="butt")
-            i = j + 1
-        ax.set_yticks(ys)
-        ax.set_yticklabels([f"{labels.get(c, c)}\n{'≥' if known.get(c) == 0 else ''}{_fmt_bp_fixed(extent[c])}"
-                            for c in names], fontsize=AXIS_LABEL_SIZE, linespacing=1.05)
-        ax.tick_params(axis="y", length=0, pad=6)
-        ax.set_ylim(ys[-1] + 0.5, -0.5)
-        ax.set_xlim(0, longest)
-        _set_mb_ticks(ax, longest)
-        ax.tick_params(axis="x", length=2, width=0.4, pad=1.0, labelsize=AXIS_TICK_SIZE)
-        ax.set_xlabel("Position (Mbp)", fontsize=AXIS_TICK_SIZE, labelpad=1.5)
-        for side in ("left", "right", "top"):
-            ax.spines[side].set_visible(False)
-        ax.spines["bottom"].set_linewidth(0.45)
-        if split:
-            _panel_title(ax, f"Scaffolds ≥ {cutoff}" if names is layouts[0][0] else f"Scaffolds < {cutoff}")
+    lift = transforms.ScaledTranslation(0, 0.6 / 72, fig.dpi_scale_trans)  # triangle tip just clears the bar
+    drew_caps, drew_marks = False, set()
+    used = max(sum(_atlas_rows(names)[1] + ATLAS_AXIS_IN + (ATLAS_TITLE_IN if split else 0.0) for _, names in column)
+               for column in columns)
+    drop = max(height - ATLAS_HEADER_IN - ATLAS_KEY_IN - ATLAS_FOOT_IN - used, 0.0) / 2.0  # key and rows centred as one block
+    for n, column in enumerate(columns):
+        x_in = margin + n * (col_w + ATLAS_COL_GAP_IN) + label_w
+        top_in = height - ATLAS_HEADER_IN - ATLAS_KEY_IN - drop
+        for k, names in column:
+            top_in -= ATLAS_TITLE_IN if split else 0.0
+            ys, seg_h = _atlas_rows(names)
+            ax = _inch_axes(fig, x_in, top_in - seg_h, axes_w, seg_h)
+            top_in -= seg_h + ATLAS_AXIS_IN
+            span = longest[k]
+            min_w = span * (1.2 / 72) / axes_w  # 1.2 pt floor keeps single ITS visible
+            backbone, masks, caps, its_rects, its_colors = [], [], [], [], []
+            for y, c in zip(ys, names):
+                size = extent[c]
+                y0 = y - ATLAS_BAR_IN / 2.0
+                backbone.append(Rectangle((0, y0), size, ATLAS_BAR_IN))
+                if end_scan and known.get(c, size) > 0 and size > 2 * limit:
+                    masks.append(Rectangle((limit, y0), size - 2 * limit, ATLAS_BAR_IN))
+                if c in cells:
+                    for s, e, color in zip(*cells[c]):
+                        w = max(e - s, min_w)
+                        its_rects.append(Rectangle((min(s, size - w), y0), w, ATLAS_BAR_IN))
+                        its_colors.append(color)
+                for block in arm_blocks.get(c, []):
+                    w = max(block["end"] - block["start"], min_w)
+                    x = min(block["start"], size - w) if block["start"] > size / 2.0 else block["start"]
+                    caps.append(Rectangle((max(x, 0), y0), w, ATLAS_BAR_IN))
+                marks = []
+                for tag, x in sorted(top.get(c, []), key=lambda m: m[1]):
+                    if marks and (x - marks[-1][1]) / span * axes_w < max(0.22, 0.05 * len(marks[-1][0]) + 0.08):
+                        marks[-1] = (marks[-1][0] + "/" + tag, marks[-1][1])
+                    else:
+                        marks.append((tag, x))
+                for tag, x in marks:
+                    tag = "/".join(sorted(tag.split("/"), key=lambda t: ("CFL".find(t[0]), int(t[1:]))))
+                    drew_marks.update(tag.split("/"))
+                    ax.plot([x], [y0], marker="v", markersize=3, color="#222222", markeredgewidth=0,
+                            linestyle="none", transform=ax.transData + lift, clip_on=False, zorder=6)
+                    ax.annotate(tag, (x, y0), xytext=(2.0, 1.6), textcoords="offset points", ha="left",
+                                va="center", fontsize=MIN_TEXT_SIZE, fontweight="bold", color="#222222",
+                                annotation_clip=False, zorder=6,
+                                path_effects=[patheffects.withStroke(linewidth=1.2, foreground="white")])
+            ax.add_collection(PatchCollection(backbone, facecolor=ATLAS_BACKBONE, edgecolor="none", zorder=1))
+            if masks:
+                ax.add_collection(PatchCollection(masks, facecolor="white", edgecolor=COLORS["gap"],
+                                                  linewidth=0.4, zorder=2))
+            if its_rects:
+                ax.add_collection(PatchCollection(its_rects, facecolor=its_colors, edgecolor="none",
+                                                  zorder=3, rasterized=len(its_rects) > 2000))
+            if caps:
+                drew_caps = True
+                ax.add_collection(PatchCollection(caps, facecolor=COLORS["terminal"], edgecolor="none",
+                                                  zorder=4))
+            # Thin left bracket joins the members of a homolog group.
+            bracket = transforms.blended_transform_factory(ax.transAxes, ax.transData)
+            i = 0
+            while i < len(names):
+                j = i
+                while j + 1 < len(names) and _homolog_key(names[j + 1]) == _homolog_key(names[i]):
+                    j += 1
+                if j > i:
+                    ax.plot([-0.008, -0.008], [ys[i] - ATLAS_BAR_IN / 2, ys[j] + ATLAS_BAR_IN / 2],
+                            color="#8C8C8C", lw=0.5, transform=bracket, clip_on=False, solid_capstyle="butt")
+                i = j + 1
+            ax.set_yticks(ys)
+            ax.set_yticklabels([row_label[c] for c in names], fontsize=AXIS_TICK_SIZE)
+            ax.tick_params(axis="y", length=0, pad=4)
+            ax.set_ylim(seg_h, 0)
+            ax.set_xlim(0, span)
+            _set_mb_ticks(ax, span)
+            ax.tick_params(axis="x", length=2, width=0.4, pad=1.0, labelsize=AXIS_TICK_SIZE)
+            ax.set_xlabel("Position (Mbp)", fontsize=AXIS_TICK_SIZE, labelpad=1.5)
+            for side in ("left", "right", "top"):
+                ax.spines[side].set_visible(False)
+            ax.spines["bottom"].set_linewidth(0.45)
+            if split:
+                _panel_title(ax, f"Scaffolds ≥ {cutoff}" if k == 0 else f"Scaffolds < {cutoff}")
+
+    # Centre the rows, from labels to the last tick, on the page.
+    renderer = fig.canvas.get_renderer()
+    boxes = [ax.get_tightbbox(renderer) for ax in fig.axes]
+    dx = (width - (max(b.x1 for b in boxes) + min(b.x0 for b in boxes)) / fig.dpi) / 2.0 / width
+    for ax in fig.axes:
+        pos = ax.get_position()
+        ax.set_position([pos.x0 + dx, pos.y0, pos.width, pos.height])
 
     handles = [Patch(facecolor=ATLAS_BACKBONE, edgecolor="none", label="Scaffold")]
     if drew_caps:
         handles.append(Patch(facecolor=COLORS["terminal"], edgecolor="none", label="Terminal telomere"))
     if end_scan:
         handles.append(Patch(facecolor="white", edgecolor=COLORS["gap"], linewidth=0.4,
-                             label=f"Not scanned\n(end scan, {_fmt_bp(limit)} per end)"))
-    handles += [Line2D([], [], marker="v", markersize=4, color="#222222", markeredgewidth=0, linestyle="none",
-                       label=f"({tag})  {name}") for tag, name in (("L", "Longest canonical ITS"), ("C", "Top clusters"),
-                                                                  ("F", "Top fusions"))
+                             label=f"Not scanned (end scan, {_fmt_bp(limit)} per end)"))
+    handles += [Line2D([], [], marker="v", markersize=3, color="#222222", markeredgewidth=0, linestyle="none",
+                       label=f"({tag})  {name}") for tag, name in (("C", "Top clusters"), ("F", "Top fusions"),
+                                                                  ("L", "Longest canonical ITS"))
                 if any(mark.startswith(tag) for mark in drew_marks)]
-    # Key (cells, then ~0.26 in of labels) above the legend; the pair is centred on the rows.
-    key_side, key_label_w = 0.46, 0.44
-    col_h = key_side + 0.26 + sum(0.13 + 0.09 * h.get_label().count("\n") for h in handles)
-    key_bottom = mid_in + col_h / 2.0 - key_side
-    _draw_double_key(fig.add_axes([(col_x + key_label_w) / width, key_bottom / height,
-                                   key_side / width, key_side / height]))
-    legend = fig.legend(handles=handles, loc="upper left", frameon=False, fontsize=LEGEND_TEXT_SIZE,
-                        bbox_to_anchor=(col_x / width, (key_bottom - 0.26) / height),
-                        handlelength=1.4, handleheight=0.8, borderaxespad=0, labelspacing=0.5)
-    # Centre the whole block (row labels to legend text) on the page.
-    box = fig.get_tightbbox(fig.canvas.get_renderer())
-    dx = (width - box.x1 - box.x0) / 2.0 / width
-    for ax in fig.axes:
-        pos = ax.get_position()
-        ax.set_position([pos.x0 + dx, pos.y0, pos.width, pos.height])
-    legend.set_bbox_to_anchor((col_x / width + dx, legend.get_bbox_to_anchor().y0 / fig.bbox.height), fig.transFigure)
+    # Key and legend share one strip under the title, centred as a pair.
+    key_side = LOCUS_KEY_SIDE
+    key_y = height - ATLAS_HEADER_IN - key_side - 0.04 - drop
+    key = _inch_axes(fig, 0, key_y, key_side, key_side)
+    _draw_double_key(key)
+    legend = fig.legend(handles=handles, loc="center left", frameon=False, fontsize=LEGEND_TEXT_SIZE,
+                        ncol=(len(handles) + 1) // 2, bbox_to_anchor=(0, (key_y + key_side / 2) / height),
+                        handlelength=1.4, handleheight=0.8, borderaxespad=0, labelspacing=0.6, columnspacing=1.6)
+    key_box = key.get_tightbbox(renderer)
+    key_w = (key_box.x1 - key_box.x0) / fig.dpi
+    legend_w = legend.get_window_extent(renderer).width / fig.dpi
+    x0 = (width - key_w - 0.35 - legend_w) / 2.0
+    key.set_position([(x0 + key.get_position().x0 * width - key_box.x0 / fig.dpi) / width,
+                      key_y / height, key_side / width, key_side / height])
+    legend.set_bbox_to_anchor(((x0 + key_w + 0.35) / width, (key_y + key_side / 2) / height), fig.transFigure)
     return fig
 
 
@@ -2364,8 +2419,19 @@ def _draw_its_scaffold_panel(ax, df, chrom_sizes):
         slope, intercept = np.polyfit(np.log10(x), np.log10(y), 1)
         ends = np.array([x.min(), x.max()])
         ax.plot(ends, 10 ** (intercept + slope * np.log10(ends)), color="#777777", lw=0.6, zorder=1)
-    ax.scatter(x, y, s=12, facecolor="#9ECAE1", edgecolor="white",
-               linewidths=0.3, zorder=2)
+    # Dot diameter is linear in log10 scaffold size, so dot chromosomes stand apart; largest drawn first.
+    lo, hi = np.log10(per["size"].min()), np.log10(per["size"].max())
+    diameter = lambda v: 2.5 + 5.0 * ((np.log10(v) - lo) / (hi - lo) if hi > lo else 0.5)
+    order = np.argsort(-per["size"].to_numpy(), kind="stable")
+    ax.scatter(x.iloc[order], y.iloc[order], s=diameter(per["size"].iloc[order].to_numpy(float)) ** 2,
+               facecolor="#9ECAE1", edgecolor="white", linewidths=0.3, zorder=2)
+    nice = [m * 10.0 ** k for k in range(int(np.floor(lo)), int(np.ceil(hi)) + 1) for m in (1, 2, 5)
+            if lo - 1e-9 <= np.log10(m) + k <= hi + 1e-9]
+    refs = sorted({nice[0], nice[len(nice) // 2], nice[-1]}) if nice else [10 ** hi]
+    ax.legend(handles=[Line2D([], [], marker="o", linestyle="none", markersize=diameter(v), markerfacecolor="#9ECAE1",
+                              markeredgecolor="white", markeredgewidth=0.3, label=_fmt_bp(v)) for v in refs],
+              title="Scaffold size", title_fontsize=LEGEND_TEXT_SIZE, fontsize=LEGEND_TEXT_SIZE, loc="best",
+              frameon=False, handletextpad=0.3, labelspacing=0.5, borderaxespad=0.2, borderpad=0.2)
     _plain_log_axis(ax, "x", x.min(), x.max())
     _plain_log_axis(ax, "y", y.min(), y.max(), margin=1.6)
     _its_axis_style(ax)
@@ -2516,7 +2582,7 @@ def _draw_its_composition(fig, df, params):
 
 
 _ITS_SEGMENT_KEYS = (("fwdCan", 2, 2), ("fwdNonCan", 0, 2), ("revNonCan", 0, 0), ("revCan", 2, 0))
-ITS_GLYPH_ROW_IN = 0.40  # row pitch of the candidate glyph panels: label line over a bar
+ITS_GLYPH_ROW_IN, ITS_GLYPH_BAR = 0.30, 0.19  # candidate glyph row pitch (in) and bar height (rows): label line over a thin bar
 
 
 def _its_glyph_axes(ax, lo, hi, n_rows, label):
@@ -2535,7 +2601,7 @@ def _its_row_labels(ax, i, left, right):
     """Identity label and one self-describing value on a line above a glyph row."""
     row_y = transforms.blended_transform_factory(ax.transAxes, ax.transData)
     for x, text, ha, color in ((0, left, "left", "#222222"), (1, right, "right", "#555555")):
-        ax.text(x, i - 0.26, text, transform=row_y, ha=ha, va="bottom", fontsize=AXIS_TICK_SIZE, color=color)
+        ax.text(x, i - ITS_GLYPH_BAR / 2 - 0.08, text, transform=row_y, ha=ha, va="bottom", fontsize=AXIS_TICK_SIZE, color=color)
 
 
 def _its_locus_name(df, chrom):
@@ -2545,7 +2611,7 @@ def _its_locus_name(df, chrom):
 
 
 def _draw_its_long_glyphs(ax, df):
-    """Panel a: top ITS as to-scale bars split into their four strand/canonical segments, fwd first."""
+    """Panel c: top ITS as to-scale bars split into their four strand/canonical segments, fwd first."""
     top = rank_long_its(df, 5)
     keys = ["chr", "start", "end", "teloLen", "teloLabel", "teloType"]
     counts = [k for k, _, _ in _ITS_SEGMENT_KEYS]
@@ -2559,26 +2625,26 @@ def _draw_its_long_glyphs(ax, df):
             widths = row.teloLen * values / total
             keep = widths > 0
             ax.barh(np.full(keep.sum(), i), widths[keep], left=np.r_[0, np.cumsum(widths)[:-1]][keep],
-                    height=0.42, color=colors[keep], edgecolor="white", linewidth=0.4)
+                    height=ITS_GLYPH_BAR, color=colors[keep], linewidth=0)
         else:
-            ax.barh(i, row.teloLen, height=0.42, color=DOUBLE_KEY_COLORS[1][1], linewidth=0)
+            ax.barh(i, row.teloLen, height=ITS_GLYPH_BAR, color=DOUBLE_KEY_COLORS[1][1], linewidth=0)
         # Count-based share, the composition page's y axis: canonical over all matches.
         _its_row_labels(ax, i, f"L{i + 1}  {_its_locus_name(df, row.chr)}",
                         f"{100 * (row.fwdCan + row.revCan) / total:.0f}% canonical" if total > 0 else "NA")
 
 
 def _draw_its_cluster_glyphs(ax, df, clusters, threshold):
-    """Panel b: each cluster as a to-scale track of its span with ITS cells in class colours."""
+    """Panel a: each cluster as a to-scale track of its span with ITS cells in class colours."""
     top = clusters.head(5)
     _its_glyph_axes(ax, 0, float(top["span"].max()), len(top), "Position in cluster ({})")
     width_in = ax.get_position().width * ax.figure.get_size_inches()[0]
     min_width = ax.get_xlim()[1] * (1.2 / 72) / width_in
     for i, row in enumerate(top.itertuples(index=False)):
-        ax.add_patch(Rectangle((0, i - 0.04), row.span, 0.08, facecolor=COLORS["gap"], linewidth=0))
+        ax.add_patch(Rectangle((0, i - 0.02), row.span, 0.04, facecolor=COLORS["gap"], linewidth=0))
         members = df[(df["chr"] == row.chr) & (df["start"] >= row.start) & (df["end"] <= row.end)]
         members = members.assign(dk_color=double_key_colors(members, threshold)).sort_values("teloLen", ascending=False)
         for m in members.itertuples(index=False):
-            ax.add_patch(Rectangle((m.start - row.start, i - 0.21), max(m.end - m.start, min_width), 0.42,
+            ax.add_patch(Rectangle((m.start - row.start, i - ITS_GLYPH_BAR / 2), max(m.end - m.start, min_width), ITS_GLYPH_BAR,
                                    facecolor=m.dk_color, linewidth=0))
         _its_row_labels(ax, i, f"C{i + 1}  {_its_locus_name(df, row.chr)}", f"{row.rows:,} ITS")
 
@@ -2592,7 +2658,7 @@ def _overlap_color(frame, start, end):
 
 
 def _draw_its_fusion_glyphs(ax, df, pairs, threshold):
-    """Panel c: q block left and p block right of their junction, to scale."""
+    """Panel b: q block left and p block right of their junction, to scale."""
     top = pairs.head(5)
     half = top["spacer_bp"] / 2
     reach = float(np.maximum(top["q_bp"] + half, top["p_bp"] + half).max())
@@ -2603,7 +2669,7 @@ def _draw_its_fusion_glyphs(ax, df, pairs, threshold):
         scaffold = colored[colored["chr"] == row.chr]
         ax.plot([-h, h], [i, i], color="#555555", lw=0.6, solid_capstyle="butt")
         for lo, x0, width in ((row.start, -h - row.q_bp, row.q_bp), (row.end - row.p_bp, h, row.p_bp)):
-            ax.add_patch(Rectangle((x0, i - 0.21), width, 0.42, facecolor=_overlap_color(scaffold, lo, lo + width),
+            ax.add_patch(Rectangle((x0, i - ITS_GLYPH_BAR / 2), width, ITS_GLYPH_BAR, facecolor=_overlap_color(scaffold, lo, lo + width),
                                    linewidth=0))
         _its_row_labels(ax, i, f"F{i + 1}  {_its_locus_name(df, row.chr)}", f"{row.spacer_bp:,} bp spacer")
 
@@ -2619,13 +2685,13 @@ def _its_segment_legend(ax):
 
 
 def plot_its_composition_page(df, pairs, clusters, params):
-    """ITS candidates: long ITS, clusters and candidate fusions as to-scale glyph rows, in three columns."""
+    """ITS candidates: clusters, candidate fusions and long ITS as to-scale glyph rows, in three columns."""
     fig = plt.figure(figsize=SLIDE_SIZE)
     _page_title(fig, "ITS candidates")
     threshold = params.get("label_threshold", LABEL_THRESHOLD)
-    panels = (("Longest canonical ITS", df, _draw_its_long_glyphs, (df,)),
-              ("Top ITS clusters", clusters, _draw_its_cluster_glyphs, (df, clusters, threshold)),
-              ("Candidate fusions", pairs, _draw_its_fusion_glyphs, (df, pairs, threshold)))
+    panels = (("Top ITS clusters", clusters, _draw_its_cluster_glyphs, (df, clusters, threshold)),
+              ("Candidate fusions", pairs, _draw_its_fusion_glyphs, (df, pairs, threshold)),
+              ("Longest canonical ITS", df, _draw_its_long_glyphs, (df,)))
     width, gap, x = 1.86, 0.44, 0.60
     for letter, (title, frame, draw, args) in zip("abc", panels):
         h = ITS_GLYPH_ROW_IN * max(1, min(5, len(frame)))
@@ -2647,7 +2713,7 @@ def plot_its_composition_page(df, pairs, clusters, params):
 def resolve_its_loci(clusters, df, pairs, chrom_sizes):
     """Resolve up to five padded locus windows per category, preserving candidate ranks."""
     loci = []
-    for prefix, frame in (("C", clusters.head(5)), ("L", rank_long_its(df, 5)), ("F", pairs.head(5))):
+    for prefix, frame in (("C", clusters.head(5)), ("F", pairs.head(5)), ("L", rank_long_its(df, 5))):
         for rank, row in enumerate(frame.itertuples(index=False), 1):
             s, e = pad_window(int(row.start), int(row.end), chrom_sizes.get(row.chr, row.end))
             loci.append((f"{prefix}{rank}", row.chr, s, e))
@@ -2980,21 +3046,20 @@ def _draw_fraction_track(ax, track_data, view_start, view_end, chrom_size, arm, 
     no_data = ~valid
 
     if np.any(no_data):
-        for start, end in zip(starts[no_data], ends[no_data]):
-            ax.axvspan(start, end, ymin=0, ymax=1,
-                       facecolor=COLORS["no_data"], alpha=0.22,
-                       linewidth=0, zorder=0)
+        # One collection for all no-data spans, full axes height like axvspan.
+        spans = [((a, 0), (b, 0), (b, 1), (a, 1)) for a, b in zip(starts[no_data], ends[no_data])]
+        ax.add_collection(PolyCollection(spans, facecolor=COLORS["no_data"], alpha=0.22, linewidth=0, zorder=0,
+                                         transform=ax.get_xaxis_transform()), autolim=False)
 
-    for run_start, run_end in _iter_true_runs(valid):
-        xs, ys = _bedgraph_to_step(
-            starts[run_start:run_end],
-            ends[run_start:run_end],
-            values[run_start:run_end],
-        )
-        ax.fill_between(xs, ys, step="post", color=color,
-                        alpha=0.16, linewidth=0)
-        ax.plot(xs, ys, drawstyle="steps-post", color=color,
-                linewidth=0.6)
+    # One fill (runs split by NaN) and one line collection per track, however fragmented the data.
+    pieces = [_bedgraph_to_step(starts[a:b], ends[a:b], values[a:b]) for a, b in _iter_true_runs(valid)]
+    if pieces:
+        ax.fill_between(np.concatenate([np.append(xs, xs[-1]) for xs, _ in pieces]),
+                        np.concatenate([np.append(ys, np.nan) for _, ys in pieces]),
+                        step="post", color=color, alpha=0.16, linewidth=0)
+        ax.add_collection(LineCollection([np.column_stack(cbook.pts_to_poststep(xs, ys)) for xs, ys in pieces],
+                                         colors=color, linewidths=0.6, capstyle=plt.rcParams["lines.solid_capstyle"],
+                                         joinstyle=plt.rcParams["lines.solid_joinstyle"]), autolim=False)
 
     _style_fraction_axis(ax, label, y_max=y_max, y_min=y_min)
     return True
@@ -3274,13 +3339,14 @@ def main():
         if contig_blist:
             contig_blocks[chrom] = contig_blist
 
-    density_data = parse_bedgraph(files["density"]) if "density" in files else None
-    canonical_data = parse_bedgraph(files["canonical_ratio"]) if "canonical_ratio" in files else None
-    strand_data  = parse_bedgraph(files["strand_ratio"]) if "strand_ratio" in files else None
-    its_blocks = parse_terminal_bed(files["interstitial"]) if "interstitial" in files else None
-    gap_blocks = parse_interval_bed(files["gaps"]) if "gaps" in files else None
-    gc_data = parse_bedgraph(files["gc"]) if "gc" in files else None
-    entropy_data = parse_bedgraph(files["entropy"]) if "entropy" in files else None
+    # The C parser releases the GIL while tokenising, so the five BEDgraph tracks load concurrently.
+    tracks = ("density", "canonical_ratio", "strand_ratio", "gc", "entropy")
+    with ThreadPoolExecutor(max_workers=len(tracks)) as pool:
+        loading = {k: pool.submit(parse_bedgraph, files[k]) for k in tracks if k in files}
+        its_blocks = parse_terminal_bed(files["interstitial"]) if "interstitial" in files else None
+        gap_blocks = parse_interval_bed(files["gaps"]) if "gaps" in files else None
+    density_data, canonical_data, strand_data, gc_data, entropy_data = (
+        loading[k].result() if k in loading else None for k in tracks)
 
     chrom_sizes = get_chrom_sizes(blocks, density_data, canonical_data, strand_data)
 
