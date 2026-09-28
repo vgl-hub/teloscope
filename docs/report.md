@@ -2,91 +2,65 @@
 
 # Report generation
 
-Teloscope can generate separate terminal and interstitial (ITS) PDF reports during a FASTA run:
+Teloscope can write terminal and interstitial (ITS) PDF reports during a FASTA run:
 
 ```sh
 teloscope asm.fa -o results/ -r -e -g -i --plot-report
 ```
 
-This writes `results/asm.fa_plot_report_terminal.pdf` and `results/asm.fa_plot_report_its.pdf`. Without an ITS BED no ITS report is written.
+This writes `results/asm.fa_plot_report_terminal.pdf` and `results/asm.fa_plot_report_its.pdf`. The ITS report needs an ITS BED.
 
-`-r` is recommended with `--plot-report` so the report includes repeat-density, canonical-ratio, and strand-bias tracks. GC and entropy tracks are added automatically when their files are present.
+Use `-r` with `--plot-report` to get the repeat-density, canonical-ratio, and strand-bias tracks. GC and entropy tracks are added when their files exist.
 
-Assembly record filters apply before these files are written. This example uses exact chromosome accession.version IDs derived from assembly metadata and omits every other record from the TSV, BED/BEDgraph files, and PDF:
+Record filters apply before anything is written. For example, to keep only chromosomes listed by accession.version:
 
 ```sh
 teloscope asm.fa -o results/ --include-bed chromosomes.ids -r --plot-report
 ```
 
-Prefix filters are also available, but database prefixes are not universal chromosome labels. Inspect the FASTA primary IDs before using `--include-prefix`.
+`--include-prefix` also works, but check the FASTA IDs first, since prefixes differ between databases.
 
 ## What the report contains
 
-- page 1: assembly telomere summary tiles (median assembled array first), scaffold classes, and flagged scaffolds
-- page 2: terminal telomere length by arm and positioning on one kbp scale, and flagged telomeres
-- next pages: one terminal zoom figure per scaffold with called telomere blocks
+Terminal report:
 
-The ITS report has its own pages. Colors follow one 3x3 key: hue is the strand (fwd blue, both purple, rev vermillion) and opacity is the canonical share. Forward (CCCTAA, the 5' end) is always drawn first, on the left.
+- page 1: assembly telomere summary, scaffold classes, and flagged scaffolds
+- page 2: terminal telomere length and position by arm, and flagged telomeres
+- next pages: one zoom per scaffold with its telomere blocks
 
-- **Summary:** headline tiles, the ITS length distribution, ITS count against ITS density per scaffold (dot size follows log10 scaffold size, so dot chromosomes stand out), and composition per ITS.
-  Panel c combines forward share (mirrored) versus canonical share with marginal histograms and ITS counts and % of ITS bp inside each of the nine classes. Both shares use the same thirds rule as `--label-threshold`, so the strand column matches the p/q/b label.
-- **Atlas:** every scaffold with a terminal or ITS call, drawn to scale, homologs bundled side by side (mat/pat, hap1/hap2 up to any ploidy, Z/W and X/Y), at a fixed row height. Few scaffolds fit one slide in two size groups (halves), as full-width tracks or two columns. Otherwise the page grows to a double slide with four size groups (quartiles). Each group has its own axis, so micro and dot chromosomes are not squished. The axis ends on a round step (20, 10, 5, 2, 1, 0.5 Mb) and the longest bars may run past it. Each ITS is one cell colored by its class. When even a double slide cannot fit every row, the atlas becomes one unlabelled, to-scale heatmap. A ▼ marks the locus of each locus page (C cluster, F fusion, L longest canonical ITS; ranks 1–5 match the candidate and locus pages), in black, gray and light gray. On a double slide the triangles go without their tags. White means outside the initial end windows, not proven unscanned.
-- **Candidates:** the clusters with most ITS bp (>= 3 ITS within 50 kbp), candidate fusion pairs drawn around their junction (q block left, p block right), and the top five ITS by canonical bp split into fwd/rev canonical and non-canonical.
-- **Loci:** one track page for each of the top five clusters, fusion pairs, and ITS (or all available when fewer than five), with the same tracks as the terminal zoom pages.
+Contig-terminal rows (`-n`) are drawn outline-only and left out of the counts.
 
-Canonical bp is the canonical match count times the motif length. Its ratio to ITS length (`can_prop`) can exceed one when matches overlap. Candidate fusions are q→p pairs within the distance threshold with an engine fusion label and no N-gap between them; they are not confirmed fusions. Missing metadata falls back to a 6 bp motif and a 1,000 bp threshold, and the report says so.
+ITS report. Colors follow a 3x3 key: hue is the strand (fwd blue, both purple, rev vermillion) and opacity is the canonical share.
 
-Each terminal zoom page can include:
+- **Summary:** headline numbers, ITS length distribution, ITS count vs. density per scaffold (dot size is scaffold size), and ITS composition by strand and canonical share.
+- **Atlas:** every scaffold with a terminal telomere or ITS, drawn to scale, homologs side by side. Up to one slide in two size groups, else a double slide in four, each group on its own axis. Rows spread to fill the page. ▼ marks the top (F) fusion candidates, (L) longest canonical ITS and (C) clusters of ITS. If rows do not fit even a double slide, the atlas becomes an unlabelled heatmap.
+- **Candidates:** top clusters (>= 3 ITS within 50 kbp), candidate fusions around their junction, and the top ITS by canonical bp.
+- **Loci:** one track page per top cluster, fusion, and ITS.
 
-- telomere block positions
-- gap intervals
-- repeat density
-- canonical ratio
-- strand bias
-- GC content
-- entropy
+Candidate fusions are q→p pairs within the distance threshold with no gap between them. They are not confirmed fusions.
 
 ## Standalone plotting
 
-The plotting script can be run on an existing Teloscope output directory:
+The plotting script also runs on an existing output directory:
 
 ```sh
 python3 scripts/teloscope_report.py results/ -o report.pdf
-python3 scripts/teloscope_report.py results/ --section terminal -o terminal.pdf
 python3 scripts/teloscope_report.py results/ --section its -o its.pdf
-python3 scripts/teloscope_report.py results/ --section all -o combined.pdf
 python3 scripts/teloscope_report.py results/ --png -o figures/
 ```
 
-The script auto-detects the Teloscope files in that directory. By default `-o report.pdf` is a stem for `report_terminal.pdf` and `report_its.pdf`; `--section all` writes one combined PDF.
+By default `-o report.pdf` writes `report_terminal.pdf` and `report_its.pdf`. It also writes `*_its_rows.tsv`, `*_its_scaffolds.tsv`, and `*_its_top_hits.tsv`.
 
-ITS output also includes `*_its_rows.tsv` (every accepted row), `*_its_scaffolds.tsv` (per-scaffold counts and display labels), and `*_its_top_hits.tsv`. Malformed BED rows are skipped with a warning.
-
-For a single interstitial telomeric sequence locus, use `plot_its.py` on the same output directory:
+To plot a single ITS locus:
 
 ```sh
 python3 scripts/plot_its.py results/ CHROM:START-END -o its.pdf
 python3 scripts/plot_its.py results/ CHROM --png -o its_figures/
 ```
 
-A bare `CHROM` auto-centers on the largest interstitial telomere cluster on that scaffold.
+A bare `CHROM` centers on its largest ITS cluster.
 
-Contig-terminal rows (written with `-n`) are excluded from telomere counts and length panels on the report, and are drawn outline-only on the terminal zoom pages.
-
-Minimum required input:
-
-- `*_terminal_telomeres.bed` for a terminal report, or
-- `*_interstitial_telomeres.bed` for an ITS report (terminal BED optional).
-
-Common optional inputs:
-
-- `*_gaps.bed`
-- `*_window_repeat_density.bedgraph`
-- `*_window_canonical_ratio.bedgraph`
-- `*_window_strand_ratio.bedgraph`
-- `*_window_gc.bedgraph`
-- `*_window_entropy.bedgraph`
-- `*_report.tsv`
+Required input is `*_terminal_telomeres.bed` for the terminal report or `*_interstitial_telomeres.bed` for the ITS report. Gaps, window bedgraphs, and `*_report.tsv` are used when present.
 
 ## Standalone script options
 
@@ -100,17 +74,10 @@ Common optional inputs:
 
 ## Requirements
 
-- Python 3
-- `matplotlib` 3.5 or newer
-- `numpy`
-- `pandas`
+Python 3 with `matplotlib` 3.5 or newer, `numpy`, and `pandas`.
 
 ## Regression check
-
-The report layout regression script lives in `scripts/`:
 
 ```sh
 python3 scripts/test_teloscope_report.py
 ```
-
-It checks the plotting code directly and does not need a full Teloscope run on disk.

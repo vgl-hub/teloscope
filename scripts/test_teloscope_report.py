@@ -1275,12 +1275,12 @@ class ResilientITSReportTests(unittest.TestCase):
         self.assertEqual([len(t) for t in REPORT._atlas_tiers(list(sizes), sizes, 2)], [34, 31])  # halves, pairs whole
         keys = [{REPORT._homolog_key(c) for c in tier} for tier in tiers]
         self.assertEqual(sum(map(len, keys)), len(set().union(*keys)))  # homologs never split across tiers
-        self.assertEqual(REPORT._atlas_tiers(["chrA", "chrB"], {"chrA": 10, "chrB": 9}), [["chrA"], ["chrB"]])
+        self.assertEqual(REPORT._atlas_tiers(["chrA", "chrB"], {"chrA": 10, "chrB": 9}), [["chrA", "chrB"]])  # one shared axis
         self.assertEqual(REPORT._atlas_tiers([], {}), [])
         for bp, span in ((7.2e9, (7e9, 1e9)), (248e6, (240e6, 40e6)), (152.56e6, (140e6, 20e6)), (26e6, (25e6, 5e6)),
                          (11.2e6, (10e6, 2e6)), (9.9e6, (9e6, 1e6)), (4.25e6, (4e6, 5e5)), (112e3, (100e3, 20e3))):
             self.assertEqual(REPORT._atlas_span(bp), span)  # the last tick on a 1-2-5 step; longer bars run past it
-        few = {f"chr{i}_{h}": 100_000_000 // i for i in range(1, 5) for h in ("mat", "pat")}
+        few = {f"chr{i}_{h}": 100_000_000 // i for i in range(1, 9) for h in ("mat", "pat")}
         height, columns, _, tiers = REPORT._atlas_layout(list(few), few)
         self.assertEqual((height, len(columns), len(tiers)), (REPORT.ATLAS_HEIGHTS[0], 1, 2))  # full-width halves
 
@@ -1305,7 +1305,7 @@ class ResilientITSReportTests(unittest.TestCase):
         self.assertEqual(len(triangles), 2)
         self.assertEqual(float(triangles[0].get_xdata()[0]), 1250.0)  # at the locus, not the scaffold end
 
-    def test_atlas_page_grows_to_a_double_slide_at_a_fixed_pitch(self):
+    def test_atlas_page_grows_to_a_double_slide_and_spreads_its_rows(self):
         def atlas(n):
             rows = [_its_row(f"chr{i}_{h}", 1000, 1500, "p", "single", fwd_can=40, chrom_size=5_000_000)
                     for i in range(n // 2) for h in ("mat", "pat")]
@@ -1326,10 +1326,12 @@ class ResilientITSReportTests(unittest.TestCase):
             self.assertAlmostEqual(box.x0, fig.get_size_inches()[0] - box.x1, delta=0.05)
             rows = [ax for ax in fig.axes if ax.get_xlabel() == "Position (Mbp)"]
             self.assertEqual(len({round(ax.get_position().x0, 3) for ax in rows}), columns)
-            for ax in rows:  # the row pitch is fixed, never stretched to fill the page
+            for ax in rows:  # rows spread from the fixed pitch up to a cap
                 ys = ax.get_yticks()
                 inch = ax.get_position().height * fig.get_size_inches()[1] / (ax.get_ylim()[0] - ax.get_ylim()[1])
-                self.assertAlmostEqual(min(np.diff(ys), default=REPORT.ATLAS_PITCH_IN) * inch, REPORT.ATLAS_PITCH_IN)
+                pitch = min(np.diff(ys), default=REPORT.ATLAS_PITCH_IN) * inch
+                self.assertGreaterEqual(pitch, REPORT.ATLAS_PITCH_IN - 1e-9)
+                self.assertLessEqual(pitch, REPORT.ATLAS_STRETCH * REPORT.ATLAS_PITCH_IN + 1e-9)
 
     def test_locus_page_marks_the_zoom_with_a_box_only(self):
         chrom, size = "chr33_mat", 1_000_000

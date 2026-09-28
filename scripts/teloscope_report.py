@@ -57,7 +57,8 @@ ATLAS_TIERS = (2, 4)  # size tiers of homolog groups per page height (halves, th
 ATLAS_HEIGHTS = (SLIDE_SIZE[1], 2 * SLIDE_SIZE[1])  # one slide, else a double slide within Nature's 247 mm page
 ITS_LENGTH_COLOR = "#91C9C1"  # teal, outside the double-key hues
 ATLAS_BACKBONE = "#E8E8E8"  # light scaffold backbone behind atlas ITS cells
-ATLAS_MARKS = ("#222222", "#8C8C8C", "#C4C4C4")  # C/F/L triangle shades, overlapping cleanly on crowded rows
+ATLAS_MARKS = ("#000000", "#5E5E5E", "#9A9A9A")  # F/L/C triangle shades, rarest darkest and on top
+ATLAS_STRETCH = 3.0  # rows may spread up to this many times the fixed pitch to fill the page
 
 COLORS = {
     # Classification palette (colorblind-friendly, quality-graduated)
@@ -1854,10 +1855,12 @@ def _its_atlas_chroms(df, arm_blocks, chrom_sizes):
 
 
 def _atlas_tiers(atlas_chroms, chrom_sizes, n=ATLAS_TIERS[-1]):
-    """Up to n size tiers of whole homolog groups, largest first, each holding about as many scaffolds."""
+    """Up to n size tiers of whole homolog groups (at least four per tier), largest first, each holding about as many scaffolds."""
     tiers = OrderedDict()
     done = 0
-    for group in _homolog_groups(atlas_chroms, chrom_sizes):
+    groups = _homolog_groups(atlas_chroms, chrom_sizes)
+    n = max(1, min(n, len(groups) // 4))
+    for group in groups:
         tiers.setdefault(done * n // len(atlas_chroms), []).extend(group)
         done += len(group)
     return list(tiers.values())
@@ -2131,8 +2134,9 @@ def _set_mb_ticks(ax, longest, unit=1e6):
 def _atlas_rows(names, pitch=ATLAS_PITCH_IN):
     """Row centres in inches below a segment top, homolog groups spaced apart, and the segment height; condensed rows abut."""
     ys, y = [], -pitch / 2.0
+    gap = ATLAS_GROUP_GAP_IN * pitch / ATLAS_PITCH_IN if pitch >= ATLAS_PITCH_IN else 0.0
     for i, c in enumerate(names):
-        y += pitch + (ATLAS_GROUP_GAP_IN if pitch == ATLAS_PITCH_IN and i and _homolog_key(c) != _homolog_key(names[i - 1]) else 0.0)
+        y += pitch + (gap if i and _homolog_key(c) != _homolog_key(names[i - 1]) else 0.0)
         ys.append(y)
     return ys, y + pitch / 2.0
 
@@ -2140,7 +2144,7 @@ def _atlas_rows(names, pitch=ATLAS_PITCH_IN):
 def _atlas_columns(chroms, sizes, col_h, tiers=None, pitch=ATLAS_PITCH_IN):
     """Flow homolog groups down columns of col_h inches; each column holds one axis segment per tier it touches."""
     tiers = _atlas_tiers(chroms, sizes) if tiers is None else tiers
-    gap = ATLAS_GROUP_GAP_IN if pitch == ATLAS_PITCH_IN else 0.0
+    gap = ATLAS_GROUP_GAP_IN * pitch / ATLAS_PITCH_IN if pitch >= ATLAS_PITCH_IN else 0.0
     columns, used = [[]], 0.0
     for k, tier in enumerate(tiers):
         for group in _homolog_groups(tier, sizes):
@@ -2158,18 +2162,23 @@ def _atlas_columns(chroms, sizes, col_h, tiers=None, pitch=ATLAS_PITCH_IN):
 
 
 def _atlas_layout(chroms, sizes):
-    """Page height, balanced columns, row pitch and tiers: one full-width column, else two, on one slide in halves, else a double slide in quartiles; else condensed."""
+    """Page height, balanced columns, row pitch and tiers: one full-width column, else two, on one slide in halves, else a double slide in quartiles; else condensed. Rows spread to fill the page."""
     for page_h, n_tiers in zip(ATLAS_HEIGHTS, ATLAS_TIERS):
         tiers = _atlas_tiers(chroms, sizes, n_tiers)
         col_h = page_h - ATLAS_HEADER_IN - ATLAS_KEY_IN - ATLAS_FOOT_IN
         for n in range(1, ATLAS_COLUMNS + 1):
             if len(_atlas_columns(chroms, sizes, col_h, tiers)) > n:
                 continue
+            lo, hi = ATLAS_PITCH_IN, ATLAS_STRETCH * ATLAS_PITCH_IN  # widest pitch that still needs only n columns
+            for _ in range(24):
+                mid = (lo + hi) / 2.0
+                lo, hi = (mid, hi) if len(_atlas_columns(chroms, sizes, col_h, tiers, mid)) <= n else (lo, mid)
+            pitch = hi if len(_atlas_columns(chroms, sizes, col_h, tiers, hi)) <= n else lo
             lo, hi = 0.0, col_h  # shortest column height that still needs only n columns
             for _ in range(24):
                 mid = (lo + hi) / 2.0
-                lo, hi = (lo, mid) if len(_atlas_columns(chroms, sizes, mid, tiers)) <= n else (mid, hi)
-            return page_h, _atlas_columns(chroms, sizes, hi, tiers), ATLAS_PITCH_IN, tiers
+                lo, hi = (lo, mid) if len(_atlas_columns(chroms, sizes, mid, tiers, pitch)) <= n else (mid, hi)
+            return page_h, _atlas_columns(chroms, sizes, hi, tiers, pitch), pitch, tiers
     lo, hi = 0.0, ATLAS_PITCH_IN  # largest pitch that fits every scaffold on the double slide, as an unlabelled heatmap
     for _ in range(30):
         mid = (lo + hi) / 2.0
@@ -2191,7 +2200,6 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
     extent = _atlas_extent(chroms, chrom_sizes, cells)
     height, columns, pitch, tiers = _atlas_layout(chroms, extent)
     dense = pitch < ATLAS_PITCH_IN  # too many rows to label: a proportional heatmap
-    tagged = height == ATLAS_HEIGHTS[0]  # few rows: C/F/L marks carry their tags, else shaded triangles only
     bar_h = pitch if dense else ATLAS_BAR_IN
     width = FIG_WIDTH_DOUBLE
     fig = plt.figure(figsize=(width, height))
@@ -2210,11 +2218,13 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
     col_w = (width - 2 * margin - ATLAS_COL_GAP_IN * (len(columns) - 1)) / len(columns)
     axes_w = col_w - label_w
     longest = [max(extent[c] for c in tier) for tier in tiers]  # one scale per tier, shared across columns
-    lift = transforms.ScaledTranslation(0, 0.6 / 72, fig.dpi_scale_trans)  # triangle tip just clears the bar
+    lift = transforms.ScaledTranslation(0, 1.6 / 72, fig.dpi_scale_trans)  # triangle tip sits on the bar top
     drew_caps, drew_marks = False, set()
+    used = max(sum(_atlas_rows(names, pitch)[1] + ATLAS_AXIS_IN for _, names in column) for column in columns)
+    drop = max(height - ATLAS_HEADER_IN - ATLAS_KEY_IN - ATLAS_FOOT_IN - used, 0.0) / 2.0  # room left after spreading is centred
     for n, column in enumerate(columns):
         x_in = margin + n * (col_w + ATLAS_COL_GAP_IN) + label_w
-        top_in = height - ATLAS_HEADER_IN - ATLAS_KEY_IN
+        top_in = height - ATLAS_HEADER_IN - ATLAS_KEY_IN - drop
         for k, names in column:
             ys, seg_h = _atlas_rows(names, pitch)
             ax = _inch_axes(fig, x_in, top_in - seg_h, axes_w, seg_h)
@@ -2239,21 +2249,20 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
                     caps.append(Rectangle((max(x, 0), y0), w, bar_h))
                 marks = []
                 for tag, x in sorted([] if dense else top.get(c, []), key=lambda m: m[1]):
-                    if tagged and marks and (x - marks[-1][1]) / span * axes_w < max(0.22, 0.05 * len(marks[-1][0]) + 0.08):
+                    if marks and (x - marks[-1][1]) / span * axes_w < max(0.22, 0.05 * len(marks[-1][0]) + 0.08):
                         marks[-1] = (marks[-1][0] + "/" + tag, marks[-1][1])
                     else:
                         marks.append((tag, x))
                 for tag, x in marks:
-                    tag = "/".join(sorted(tag.split("/"), key=lambda t: ("CFL".find(t[0]), int(t[1:]))))
+                    tag = "/".join(sorted(tag.split("/"), key=lambda t: ("FLC".find(t[0]), int(t[1:]))))
                     drew_marks.update(tag.split("/"))
-                    ax.plot([x], [y0], marker="v", markersize=3, color=ATLAS_MARKS["CFL".find(tag[0])],
+                    ax.plot([x], [y0], marker="v", markersize=3, color=ATLAS_MARKS["FLC".find(tag[0])],
                             markeredgewidth=0, linestyle="none", transform=ax.transData + lift, clip_on=False,
-                            zorder=6.2 - "CFL".find(tag[0]) / 10)
-                    if tagged:
-                        ax.annotate(tag, (x, y0), xytext=(2.0, 1.6), textcoords="offset points", ha="left",
-                                    va="center", fontsize=MIN_TEXT_SIZE, color="#222222",
-                                    annotation_clip=False, zorder=6,
-                                    path_effects=[patheffects.withStroke(linewidth=1.2, foreground="white")])
+                            zorder=6.2 - "FLC".find(tag[0]) / 10)
+                    ax.annotate(tag, (x, y0), xytext=(2.0, 1.6), textcoords="offset points", ha="left",
+                                va="center", fontsize=MIN_TEXT_SIZE, color="#222222",
+                                annotation_clip=False, zorder=6,
+                                path_effects=[patheffects.withStroke(linewidth=1.2, foreground="white")])
             ax.add_collection(PatchCollection(backbone, facecolor=ATLAS_BACKBONE, edgecolor="none", zorder=1,
                                               rasterized=len(backbone) > 2000))
             if masks:
@@ -2307,9 +2316,9 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
     if end_scan:
         handles.append(Patch(facecolor="white", edgecolor=COLORS["gap"], linewidth=0.4,
                              label=f"Not scanned (end scan, {_fmt_bp(limit)} per end)"))
-    handles += [Line2D([], [], marker="v", markersize=3, color=ATLAS_MARKS["CFL".find(tag)], markeredgewidth=0,
-                       linestyle="none", label=f"({tag})  {name}") for tag, name in (("C", "Top clusters"), ("F", "Top fusions"),
-                                                                  ("L", "Longest canonical ITS"))
+    handles += [Line2D([], [], marker="v", markersize=3, color=ATLAS_MARKS["FLC".find(tag)], markeredgewidth=0,
+                       linestyle="none", label=f"({tag})  {name}") for tag, name in (("F", "Fusion candidates"),
+                                                                  ("L", "Longest canonical ITS"), ("C", "Clusters of ITS"))
                 if any(mark.startswith(tag) for mark in drew_marks)]
     # Key and legend share one strip under the title, centred as a pair.
     key_side = LOCUS_KEY_SIDE
@@ -2421,9 +2430,9 @@ def _draw_its_scaffold_panel(ax, df, chrom_sizes):
     nice = [m * 10.0 ** k for k in range(int(np.floor(lo)), int(np.ceil(hi)) + 1) for m in (1, 2, 5)
             if lo - 1e-9 <= np.log10(m) + k <= hi + 1e-9]
     refs = sorted({nice[0], nice[len(nice) // 2], nice[-1]}) if nice else [10 ** hi]
-    ax.legend(handles=[Line2D([], [], marker="o", linestyle="none", markersize=diameter(v), markerfacecolor="#9ECAE1",
-                              alpha=0.8, markeredgecolor="#333333", markeredgewidth=0.2, label=_fmt_bp(v)) for v in refs],
-              title="Scaffold size", title_fontsize=LEGEND_TEXT_SIZE, fontsize=LEGEND_TEXT_SIZE, loc="best",
+    ax.legend(handles=[Line2D([], [], marker="o", linestyle="none", markersize=diameter(v), markerfacecolor="none",
+                              markeredgecolor="#333333", markeredgewidth=0.4, label=_fmt_bp(v)) for v in refs],
+              title="Scaffold size", title_fontsize=LEGEND_TEXT_SIZE, fontsize=LEGEND_TEXT_SIZE, loc="lower right",
               frameon=False, handletextpad=0.3, labelspacing=0.5, borderaxespad=0.2, borderpad=0.2)
     _plain_log_axis(ax, "x", x.min(), x.max())
     _plain_log_axis(ax, "y", y.min(), y.max(), margin=1.6)
