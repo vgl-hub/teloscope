@@ -53,6 +53,7 @@ SLIDE_SIZE = (FIG_WIDTH_DOUBLE, REPORT_PAGE_HEIGHT)  # one page size for every r
 ATLAS_PITCH_IN, ATLAS_GROUP_GAP_IN, ATLAS_BAR_IN = 0.10, 0.05, 0.04  # fixed row pitch, extra gap between homolog groups, bar
 ATLAS_HEADER_IN, ATLAS_KEY_IN, ATLAS_FOOT_IN, ATLAS_AXIS_IN, ATLAS_TITLE_IN = 0.36, 0.74, 0.06, 0.30, 0.20
 ATLAS_COLUMNS, ATLAS_COL_GAP_IN = 2, 0.30
+ATLAS_TIER_RATIO = 4.0  # size range per atlas panel, so every scaffold spans at least a quarter of its axis
 ATLAS_HEIGHTS = (SLIDE_SIZE[1], 2 * SLIDE_SIZE[1])  # one slide, else a double slide within Nature's 247 mm page
 ITS_LENGTH_COLOR = "#91C9C1"  # teal, outside the double-key hues
 ATLAS_BACKBONE = "#E8E8E8"  # light scaffold backbone behind atlas ITS cells
@@ -848,7 +849,9 @@ def _format_bp_axis(ax, max_bp):
 
 
 def _pick_bp_unit(max_bp):
-    """Pick one bp/kb/Mb unit for a value or panel from its largest value."""
+    """Pick one bp/kb/Mb/Gb unit for a value or panel from its largest value."""
+    if max_bp >= 1_000_000_000:
+        return 1e9, "Gb"
     if max_bp >= 1_000_000:
         return 1e6, "Mb"
     if max_bp >= 1_000:
@@ -868,7 +871,7 @@ def _fmt_bp(bp, _pos=None):
     divisor, unit = _pick_bp_unit(bp)
     if unit == "bp":
         return f"{int(round(bp)):,} bp"
-    decimals = 2 if unit == "Mb" else 1
+    decimals = 2 if unit in ("Mb", "Gb") else 1
     text = f"{bp / divisor:.{decimals}f}".rstrip("0").rstrip(".")
     return f"{text} {unit}"
 
@@ -878,7 +881,7 @@ def _fmt_bp_fixed(bp):
     if bp <= 0:
         return "0"
     divisor, unit = _pick_bp_unit(bp)
-    decimals = {"Mb": 2, "kb": 1}.get(unit, 0)
+    decimals = {"Gb": 2, "Mb": 2, "kb": 1}.get(unit, 0)
     return f"{bp / divisor:,.{decimals}f} {unit}"
 
 
@@ -916,22 +919,22 @@ def _bedgraph_to_step(starts, ends, values):
     return xs, ys
 
 
-def _panel_label(ax, label, x_in=None):
+def _panel_label(ax, label, x_in=None, y=1):
     """Bold panel letter at a page x in inches (default: a fixed gap left of the axes), on the title baseline."""
     fig = ax.figure
     if x_in is None:
         x_in = ax.get_position().x0 * fig.get_size_inches()[0] - PANEL_LETTER_DX_IN
     trans = (transforms.blended_transform_factory(fig.dpi_scale_trans, ax.transAxes)
              + transforms.ScaledTranslation(0, 3 / 72, fig.dpi_scale_trans))
-    ax.text(x_in, 1, label, transform=trans, fontsize=PANEL_LABEL_SIZE, fontweight="bold",
+    ax.text(x_in, y, label, transform=trans, fontsize=PANEL_LABEL_SIZE, fontweight="bold",
             va="baseline", ha="left")
 
 
-def _panel_title(ax, title, label=None, x_in=None):
-    """Axis-attached panel title with an optional panel letter, as on the terminal page."""
-    ax.set_title(title, fontsize=PANEL_TITLE_SIZE, pad=3)
+def _panel_title(ax, title, label=None, x_in=None, y=None):
+    """Axis-attached panel title with an optional panel letter, as on the terminal page; y lifts both in axes units."""
+    ax.set_title(title, fontsize=PANEL_TITLE_SIZE, pad=3, y=y)
     if label:
-        _panel_label(ax, label, x_in=x_in)
+        _panel_label(ax, label, x_in=x_in, y=1 if y is None else y)
 
 
 def _page_title(fig, title):
@@ -1858,18 +1861,27 @@ def _its_atlas_chroms(df, arm_blocks, chrom_sizes):
     return sorted(telomere_chroms | its_chroms, key=lambda c: (-chrom_sizes.get(c, 0), c))
 
 
-def _split_long_short_chroms(atlas_chroms, chrom_sizes):
-    """Split scaffolds into >=20%-of-longest and shorter; homologs follow their longest member."""
-    if not atlas_chroms:
-        return [], []
-    group_max = {}
-    for c in atlas_chroms:
-        key = _homolog_key(c)
-        group_max[key] = max(group_max.get(key, 0), chrom_sizes.get(c, 0))
-    cutoff = max(group_max.values()) * 0.20
-    long_chroms = [c for c in atlas_chroms if group_max[_homolog_key(c)] >= cutoff]
-    short_chroms = [c for c in atlas_chroms if group_max[_homolog_key(c)] < cutoff]
-    return long_chroms, short_chroms
+def _atlas_tiers(atlas_chroms, chrom_sizes):
+    """Size tiers of whole homolog groups: the fewest spanning ATLAS_TIER_RATIO each, cut at the widest size gaps."""
+    groups = _homolog_groups(atlas_chroms, chrom_sizes)
+    tops = np.log([max(max(chrom_sizes.get(c, 0) for c in g), 1) for g in groups])
+    n = len(groups)
+    gap = np.append(tops[:-1] - tops[1:], 0.0)
+    count, score, cut = np.zeros(n + 1), np.zeros(n + 1), np.full(n + 1, n)
+    for i in range(n - 1, -1, -1):  # best split of groups[i:], built from the smallest groups up
+        ends = np.arange(i + 1, np.searchsorted(-tops, np.log(ATLAS_TIER_RATIO) - tops[i], side="right") + 1)
+        j = ends[np.argmin((count[ends] + 1) * 1e6 - score[ends] - gap[ends - 1])]
+        count[i], score[i], cut[i] = count[j] + 1, score[j] + gap[j - 1], j
+    tiers, i = [], 0
+    while i < n:
+        tiers.append([c for g in groups[i:cut[i]] for c in g])
+        i = cut[i]
+    return tiers
+
+
+def _atlas_extent(chroms, chrom_sizes, cells):
+    """Drawn length per scaffold: its size, or its last ITS end when the size is unknown."""
+    return {c: max(int(chrom_sizes.get(c, 0)), int(cells[c][1].max()) if c in cells else 0, 1) for c in chroms}
 
 
 def _nearest_end(pos, chrom_size):
@@ -2115,11 +2127,11 @@ def _homolog_groups(chroms, chrom_sizes):
                                       key=lambda g: (-max(chrom_sizes.get(c, 0) for c in g), min(g)))]
 
 
-def _set_mb_ticks(ax, longest):
-    """Plain Mbp ticks from 0 to a scaffold length, whole-Mb steps from 2 Mb up."""
-    ticks = ticker.MaxNLocator(nbins=8, steps=[1, 2, 2.5, 5, 10], integer=longest >= 2e6).tick_values(0, longest / 1e6)
-    ax.set_xticks([t * 1e6 for t in ticks if 0 <= t * 1e6 <= longest])
-    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: _plain_number(x / 1e6)))
+def _set_mb_ticks(ax, longest, unit=1e6):
+    """Plain ticks from 0 to a scaffold length in Mbp (or another unit), whole steps from 2 units up."""
+    ticks = ticker.MaxNLocator(nbins=8, steps=[1, 2, 2.5, 5, 10], integer=longest >= 2 * unit).tick_values(0, longest / unit)
+    ax.set_xticks([t * unit for t in ticks if 0 <= t * unit <= longest])
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: _plain_number(x / unit)))
 
 
 def _atlas_rows(names):
@@ -2131,13 +2143,14 @@ def _atlas_rows(names):
     return ys, y + ATLAS_PITCH_IN / 2.0
 
 
-def _atlas_columns(chroms, sizes, col_h):
-    """Flow homolog groups down columns of col_h inches; each column holds one axis segment per panel it touches."""
-    panels = [p for p in _split_long_short_chroms(chroms, sizes) if p]
-    head = ATLAS_AXIS_IN + (ATLAS_TITLE_IN if len(panels) > 1 else 0.0)
+def _atlas_columns(chroms, sizes, col_h, tiers=None):
+    """Flow homolog groups down columns of col_h inches; each column holds one axis segment per tier it touches."""
+    tiers = _atlas_tiers(chroms, sizes) if tiers is None else tiers
+    page = set(chroms)
+    head = ATLAS_AXIS_IN + (ATLAS_TITLE_IN if len(tiers) > 1 else 0.0)
     columns, used = [[]], 0.0
-    for k, names in enumerate(panels):
-        for group in _homolog_groups(names, sizes):
+    for k, tier in enumerate(tiers):
+        for group in _homolog_groups([c for c in tier if c in page], sizes):
             same = bool(columns[-1]) and columns[-1][-1][0] == k
             cost = len(group) * ATLAS_PITCH_IN + (ATLAS_GROUP_GAP_IN if same else head)
             if columns[-1] and used + cost > col_h + 1e-9:
@@ -2148,31 +2161,33 @@ def _atlas_columns(chroms, sizes, col_h):
                 columns[-1].append((k, []))
             columns[-1][-1][1].extend(group)
             used += cost
-    return columns, len(panels) > 1
+    return columns, len(tiers) > 1
 
 
-def _atlas_layout(chroms, sizes):
+def _atlas_layout(chroms, sizes, tiers=None):
     """Page height, balanced columns and split flag: one full-width column, else two, on one slide, else a double slide."""
+    tiers = _atlas_tiers(chroms, sizes) if tiers is None else tiers
     for page_h in ATLAS_HEIGHTS:
         col_h = page_h - ATLAS_HEADER_IN - ATLAS_KEY_IN - ATLAS_FOOT_IN
         for n in range(1, ATLAS_COLUMNS + 1):
-            columns, split = _atlas_columns(chroms, sizes, col_h)
+            columns, split = _atlas_columns(chroms, sizes, col_h, tiers)
             if len(columns) > n:
                 continue
             lo, hi = 0.0, col_h  # shortest column height that still needs only n columns
             for _ in range(24):
                 mid = (lo + hi) / 2.0
-                lo, hi = (lo, mid) if len(_atlas_columns(chroms, sizes, mid)[0]) <= n else (mid, hi)
-            return page_h, _atlas_columns(chroms, sizes, hi)[0], split
+                lo, hi = (lo, mid) if len(_atlas_columns(chroms, sizes, mid, tiers)[0]) <= n else (mid, hi)
+            return page_h, _atlas_columns(chroms, sizes, hi, tiers)[0], split
     return page_h, columns, split
 
 
 def _paginate_atlas(atlas_chroms, chrom_sizes):
     """Atlas pages holding as many scaffolds as fit a double slide at the fixed row pitch; homolog groups stay whole."""
     col_h = ATLAS_HEIGHTS[-1] - ATLAS_HEADER_IN - ATLAS_KEY_IN - ATLAS_FOOT_IN
+    tiers = _atlas_tiers(atlas_chroms, chrom_sizes)
     pages, page = [], []
     for group in _homolog_groups(atlas_chroms, chrom_sizes):
-        if page and len(_atlas_columns(page + group, chrom_sizes, col_h)[0]) > ATLAS_COLUMNS:
+        if page and len(_atlas_columns(page + group, chrom_sizes, col_h, tiers)[0]) > ATLAS_COLUMNS:
             pages.append(page)
             page = []
         page.extend(group)
@@ -2192,9 +2207,9 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
     known = (df.groupby("chr")["chrSize"].max().to_dict() if known_sizes is None else known_sizes)
     limit = params.get("terminal_limit") or 0
     end_scan = params.get("ultra_fast") is True and limit > 0
-    extent = {c: max(int(chrom_sizes.get(c, 0)), int(cells[c][1].max()) if c in cells else 0, 1)
-              for c in chroms}
-    height, columns, split = _atlas_layout(chroms, extent)
+    extent = _atlas_extent(list(dict.fromkeys([*all_chroms, *chroms])), chrom_sizes, cells)
+    tiers = _atlas_tiers(list(extent), extent)  # dataset-wide, so a tier keeps one scale on every page
+    height, columns, split = _atlas_layout(chroms, extent, tiers)
     width = FIG_WIDTH_DOUBLE
     fig = plt.figure(figsize=(width, height))
     page_suffix = f" ({page_number}/{page_count})" if page_count > 1 else ""
@@ -2213,11 +2228,7 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
     margin = 0.15
     col_w = (width - 2 * margin - ATLAS_COL_GAP_IN * (len(columns) - 1)) / len(columns)
     axes_w = col_w - label_w
-    longest = {}  # one scale per panel, shared by its segments across columns
-    for column in columns:
-        for k, names in column:
-            longest[k] = max(longest.get(k, 1), *(extent[c] for c in names))
-    cutoff = _fmt_bp(0.2 * max(extent.values()))
+    longest = [max(extent[c] for c in tier) for tier in tiers]  # one scale per tier, shared across columns and pages
     lift = transforms.ScaledTranslation(0, 0.6 / 72, fig.dpi_scale_trans)  # triangle tip just clears the bar
     drew_caps, drew_marks = False, set()
     used = max(sum(_atlas_rows(names)[1] + ATLAS_AXIS_IN + (ATLAS_TITLE_IN if split else 0.0) for _, names in column)
@@ -2291,14 +2302,16 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
             ax.tick_params(axis="y", length=0, pad=4)
             ax.set_ylim(seg_h, 0)
             ax.set_xlim(0, span)
-            _set_mb_ticks(ax, span)
+            unit, name = _pick_bp_unit(max(span, 1e3))
+            _set_mb_ticks(ax, span, unit)
             ax.tick_params(axis="x", length=2, width=0.4, pad=1.0, labelsize=AXIS_TICK_SIZE)
-            ax.set_xlabel("Position (Mbp)", fontsize=AXIS_TICK_SIZE, labelpad=1.5)
+            ax.set_xlabel(f"Position ({name}p)", fontsize=AXIS_TICK_SIZE, labelpad=1.5)
             for side in ("left", "right", "top"):
                 ax.spines[side].set_visible(False)
             ax.spines["bottom"].set_linewidth(0.45)
-            if split:
-                _panel_title(ax, f"Scaffolds ≥ {cutoff}" if k == 0 else f"Scaffolds < {cutoff}")
+            if split:  # tier range in the row-label format, the unit written once when both ends share it
+                lo, hi = _fmt_bp_fixed(min(extent[c] for c in tiers[k])), _fmt_bp_fixed(span)
+                _panel_title(ax, f"Scaffolds {lo.rsplit(' ', 1)[0] if lo[-2:] == hi[-2:] else lo}–{hi}")
 
     # Centre the rows, from labels to the last tick, on the page.
     renderer = fig.canvas.get_renderer()
@@ -2424,12 +2437,12 @@ def _draw_its_scaffold_panel(ax, df, chrom_sizes):
     diameter = lambda v: 2.5 + 5.0 * ((np.log10(v) - lo) / (hi - lo) if hi > lo else 0.5)
     order = np.argsort(-per["size"].to_numpy(), kind="stable")
     ax.scatter(x.iloc[order], y.iloc[order], s=diameter(per["size"].iloc[order].to_numpy(float)) ** 2,
-               facecolor="#9ECAE1", edgecolor="white", linewidths=0.3, zorder=2)
+               facecolor="#9ECAE1", alpha=0.8, edgecolor="#333333", linewidths=0.2, zorder=2)
     nice = [m * 10.0 ** k for k in range(int(np.floor(lo)), int(np.ceil(hi)) + 1) for m in (1, 2, 5)
             if lo - 1e-9 <= np.log10(m) + k <= hi + 1e-9]
     refs = sorted({nice[0], nice[len(nice) // 2], nice[-1]}) if nice else [10 ** hi]
     ax.legend(handles=[Line2D([], [], marker="o", linestyle="none", markersize=diameter(v), markerfacecolor="#9ECAE1",
-                              markeredgecolor="white", markeredgewidth=0.3, label=_fmt_bp(v)) for v in refs],
+                              alpha=0.8, markeredgecolor="#333333", markeredgewidth=0.2, label=_fmt_bp(v)) for v in refs],
               title="Scaffold size", title_fontsize=LEGEND_TEXT_SIZE, fontsize=LEGEND_TEXT_SIZE, loc="best",
               frameon=False, handletextpad=0.3, labelspacing=0.5, borderaxespad=0.2, borderpad=0.2)
     _plain_log_axis(ax, "x", x.min(), x.max())
@@ -2483,15 +2496,15 @@ def plot_its_summary_page(df, pairs, clusters, chrom_sizes, params):
         (f"{len(clusters):,}", "Clusters"),
         (f"{len(pairs):,}", "Candidate fusions"),
     ])
-    hist = _inch_axes(fig, 0.66, 0.95, 1.66, 1.66)
-    per = _inch_axes(fig, 2.98, 0.95, 1.66, 1.66)
+    hist = _inch_axes(fig, 0.66, 0.63, 1.66, 1.66)  # level with panel c's joint square
+    per = _inch_axes(fig, 2.98, 0.63, 1.66, 1.66)
     if (lengths > 0).any():
         _draw_its_length_panel(hist, lengths)
     else:
         _hide_panel(hist, "No ITS length")
-    _panel_title(hist, "ITS length distribution", "a", x_in=PANEL_LETTER_X_IN)
+    _panel_title(hist, "ITS length distribution", "a", x_in=PANEL_LETTER_X_IN, y=1 + 0.32 / 1.66)
     _draw_its_scaffold_panel(per, df, chrom_sizes)
-    _panel_title(per, "ITS scaffold distribution", "b")
+    _panel_title(per, "ITS scaffold distribution", "b", y=1 + 0.32 / 1.66)  # titles level with c's marginal
     _draw_its_composition(fig, df, params)
     return fig
 
@@ -2728,7 +2741,7 @@ def _fmt_region(start, end):
     return f"{start / divisor:.{dec}f}–{end / divisor:.{dec}f} {unit}"
 
 
-LOCUS_KEY_SIDE, LOCUS_KEY_TOP = 0.42, 0.14  # inches; a tiny key in the header's top-right corner
+LOCUS_KEY_SIDE, LOCUS_KEY_TOP = 0.45, 0.14  # inches; a tiny key in the header's top-right corner
 
 
 def _place_locus_key(fig, key_ax, side=LOCUS_KEY_SIDE, top=LOCUS_KEY_TOP):
@@ -3448,7 +3461,7 @@ def main():
         cells = _its_atlas_cells(its_frame, params["label_threshold"])
         top_hits = _its_top_hits(its_frame, pairs, clusters)
         known_sizes = its_frame.groupby("chr")["chrSize"].max().to_dict()
-        atlas_pages = _paginate_atlas(atlas, chrom_sizes)
+        atlas_pages = _paginate_atlas(atlas, _atlas_extent(atlas, chrom_sizes, cells))
         atlas_count = len(atlas_pages)
         for page_idx, chroms in enumerate(atlas_pages):
             pages.append((

@@ -1270,6 +1270,19 @@ class ResilientITSReportTests(unittest.TestCase):
                 self.assertLessEqual(start, midpoint)
                 self.assertGreaterEqual(end, midpoint)
 
+    def test_atlas_tiers_keep_every_scaffold_legible_across_extreme_sizes(self):
+        sizes = {f"chr{i}_{h}": int(s) for i, s in enumerate(np.geomspace(7.2e9, 4.2e6, 30), 1) for h in ("hap1", "hap2")}
+        sizes.update({f"scaffold_{i}": 20_000 + 1_000 * i for i in range(5)})  # unplaced
+        tiers = REPORT._atlas_tiers(sorted(sizes, key=lambda c: -sizes[c]), sizes)
+        self.assertEqual(sorted(c for t in tiers for c in t), sorted(sizes))
+        for tier in tiers:
+            self.assertLessEqual(max(sizes[c] for c in tier), REPORT.ATLAS_TIER_RATIO * min(sizes[c] for c in tier))
+        keys = [{REPORT._homolog_key(c) for c in tier} for tier in tiers]
+        self.assertEqual(sum(map(len, keys)), len(set().union(*keys)))  # homologs never split across tiers
+        self.assertEqual(len(tiers), 6)  # the fewest the ratio allows
+        self.assertEqual(REPORT._atlas_tiers(["chrA", "chrB"], {"chrA": 10, "chrB": 9}), [["chrA", "chrB"]])
+        self.assertEqual(REPORT._atlas_tiers([], {}), [])
+
     def test_atlas_labels_keep_one_precision_and_mark_loci(self):
         df = self.frame([_its_row("chr1_mat", 1000, 1500, "p", "single", fwd_can=40, chrom_size=116_000_000),
                          _its_row("chr1_pat", 1000, 1500, "p", "single", fwd_can=40, chrom_size=115_910_000)])
