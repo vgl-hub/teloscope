@@ -1709,7 +1709,7 @@ def plot_overview_page2(blocks, chrom_sizes):
 
     # Inch layout: three square axes sharing one top edge, so titles share a baseline.
     fig = plt.figure(figsize=SLIDE_SIZE)
-    top, side = 0.55, 1.66  # lift the square panels toward the page title
+    top, side = 1.05, 1.66  # plots sit below the independent panel headings
     right = 0.97 * FIG_WIDTH_DOUBLE
     ax_rain = _add_axes_in(fig, 0.66, top, side, side)
     ax_scatter = _add_axes_in(fig, 2.98, top, side, side)
@@ -1821,6 +1821,10 @@ def plot_overview_page2(blocks, chrom_sizes):
     _panel_title(ax_rain, "Length by arm", "c", x_in=PANEL_LETTER_X_IN)
     _panel_title(ax_scatter, "Telomere positioning", "d", x_in=2.48)
     _panel_title(ax_flagged, "Flagged telomeres", "e", x_in=4.71)
+    for ax in (ax_rain, ax_scatter, ax_flagged):
+        ax.set_title(ax.get_title(), pad=39)  # keep headings 0.5 in above the lowered plots
+        letter = ax.texts[-1]
+        letter.set_transform(letter.get_transform() + transforms.ScaledTranslation(0, 0.5, fig.dpi_scale_trans))
     _page_title(fig, "Terminal telomeres")
     return fig
 
@@ -2067,12 +2071,11 @@ def _its_atlas_cells(df, threshold=LABEL_THRESHOLD):
 
 
 def _its_top_hits(df, pairs, clusters):
-    """Scaffold -> [(tag, midpoint)] of the top-ranked ITS lists (L1/C1/F1) it heads, for atlas markers."""
+    """Scaffold -> [(ranked tag, midpoint)] for up to five loci per category."""
     top = {}
-    for prefix, frame in (("L1", rank_long_its(df, 1)), ("C1", clusters.head(1)), ("F1", pairs.head(1))):
-        if not frame.empty:
-            row = frame.iloc[0]
-            top.setdefault(row["chr"], []).append((prefix, (row["start"] + row["end"]) / 2.0))
+    for prefix, frame in (("L", rank_long_its(df, 5)), ("C", clusters.head(5)), ("F", pairs.head(5))):
+        for rank, row in enumerate(frame.itertuples(index=False), 1):
+            top.setdefault(row.chr, []).append((f"{prefix}{rank}", (row.start + row.end) / 2.0))
     return top
 
 
@@ -2200,7 +2203,7 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
                 caps.append(Rectangle((max(x, 0), y0), w, ATLAS_BAR))
             marks = []
             for tag, x in sorted(top.get(c, []), key=lambda m: m[1]):
-                if marks and (x - marks[-1][1]) / longest * axes_w < 0.22:  # merge markers closer than 0.22 in
+                if marks and (x - marks[-1][1]) / longest * axes_w < max(0.22, 0.05 * len(marks[-1][0]) + 0.08):
                     marks[-1] = (marks[-1][0] + "/" + tag, marks[-1][1])
                 else:
                     marks.append((tag, x))
@@ -2256,8 +2259,9 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
         handles.append(Patch(facecolor="white", edgecolor=COLORS["gap"], linewidth=0.4,
                              label=f"Not scanned\n(end scan, {_fmt_bp(limit)} per end)"))
     handles += [Line2D([], [], marker="v", markersize=4, color="#222222", markeredgewidth=0, linestyle="none",
-                       label=f"{tag}  {name}") for tag, name in (("L1", "Longest canonical ITS"), ("C1", "Top cluster"),
-                                                                  ("F1", "Top fusion")) if tag in drew_marks]
+                       label=f"({tag})  {name}") for tag, name in (("L", "Longest canonical ITS"), ("C", "Top clusters"),
+                                                                  ("F", "Top fusions"))
+                if any(mark.startswith(tag) for mark in drew_marks)]
     # Key (cells, then ~0.26 in of labels) above the legend; the pair is centred on the rows.
     key_side, key_label_w = 0.46, 0.44
     col_h = key_side + 0.26 + sum(0.13 + 0.09 * h.get_label().count("\n") for h in handles)
@@ -2337,14 +2341,14 @@ def _draw_its_length_panel(ax, lengths):
     median = _median(lengths)
     ax.axvline(median, color="#222222", lw=0.6, zorder=3)
     right_half = np.log10(median) > (lo + hi) / 2
-    ax.text(median, 1.0, f" median {_fmt_bp(median)} ", transform=ax.get_xaxis_transform(),
+    ax.text(median, 0.94, f" median {_fmt_bp(median)} ", transform=ax.get_xaxis_transform(),
             ha="right" if right_half else "left", va="top", fontsize=LEGEND_TEXT_SIZE, color="#222222")
     ax.set_ylim(0, max(1, counts.max()) * 1.15)
     _plain_log_axis(ax, "x", edges[0], edges[-1], margin=1.0)
     ax.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4, integer=True))
     _its_axis_style(ax)
     ax.set_xlabel("ITS length (bp)", fontsize=AXIS_LABEL_SIZE, labelpad=2)
-    ax.set_ylabel("ITS", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+    ax.set_ylabel("# ITSs", fontsize=AXIS_LABEL_SIZE, labelpad=2)
 
 
 def _draw_its_scaffold_panel(ax, df, chrom_sizes):
@@ -2390,7 +2394,7 @@ def _draw_its_scaffold_panel(ax, df, chrom_sizes):
         placed.append(box)
     _its_axis_style(ax)
     ax.set_xlabel("ITS per scaffold", fontsize=AXIS_LABEL_SIZE, labelpad=2)
-    ax.set_ylabel("ITS density (bp per Mbp)", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+    ax.set_ylabel("ITS density (bp/Mbp)", fontsize=AXIS_LABEL_SIZE, labelpad=2)
 
 
 def plot_its_summary_page(df, pairs, clusters, chrom_sizes, params):
@@ -2410,15 +2414,15 @@ def plot_its_summary_page(df, pairs, clusters, chrom_sizes, params):
         (f"{len(clusters):,}", "Clusters"),
         (f"{len(pairs):,}", "Candidate fusions"),
     ])
-    hist = _inch_axes(fig, 0.66, 0.63, 1.66, 1.98)
-    per = _inch_axes(fig, 2.98, 0.63, 1.66, 1.98)
+    hist = _inch_axes(fig, 0.66, 0.95, 1.66, 1.66)
+    per = _inch_axes(fig, 2.98, 0.95, 1.66, 1.66)
     if (lengths > 0).any():
         _draw_its_length_panel(hist, lengths)
     else:
         _hide_panel(hist, "No ITS length")
-    _panel_title(hist, "ITS length", "a", x_in=PANEL_LETTER_X_IN)
+    _panel_title(hist, "ITS length distribution", "a", x_in=PANEL_LETTER_X_IN)
     _draw_its_scaffold_panel(per, df, chrom_sizes)
-    _panel_title(per, "ITS per scaffold", "b")
+    _panel_title(per, "ITS scaffold distribution", "b")
     _draw_its_composition(fig, df, params)
     return fig
 
@@ -2431,7 +2435,7 @@ def _draw_its_joint_panel(ax, ax_top, ax_right, df, threshold):
     for c in range(3):
         for s in range(3):
             ax.add_patch(Rectangle((cuts[s], cuts[c]), cuts[s + 1] - cuts[s], cuts[c + 1] - cuts[c],
-                                   facecolor=DOUBLE_KEY_COLORS[c][s], alpha=0.10, linewidth=0, zorder=0))
+                                   facecolor=DOUBLE_KEY_COLORS[c][s], alpha=0.25, linewidth=0, zorder=0))
     for cut in cuts[1:3]:
         ax.axvline(cut, color="#bcbcbc", lw=0.45, zorder=1)
         ax.axhline(cut, color="#bcbcbc", lw=0.45, zorder=1)
@@ -2441,8 +2445,8 @@ def _draw_its_joint_panel(ax, ax_top, ax_right, df, threshold):
     colors = np.asarray(double_key_colors(df, threshold), dtype=object)[ok][order]
     ax.scatter(fwd[ok][order], can[ok][order],
                s=_its_marker_area(lengths[ok][order], lengths.max(), dense), c=list(colors),
-               alpha=0.55 if dense else 0.9, edgecolors="white" if not dense else "none",
-               linewidths=0.3, rasterized=dense, zorder=2)
+               alpha=0.8 if dense else 1.0, edgecolors="#333333",
+               linewidths=0.2, rasterized=dense, zorder=2)
     ticks = [0, 1 - threshold, threshold, 1]
     labels = [f"{v:.2f}".rstrip("0").rstrip(".") for v in ticks]
     for axis in (ax.xaxis, ax.yaxis):
@@ -2500,13 +2504,30 @@ def _draw_its_composition(fig, df, params):
     np.add.at(counts, (canon, strand), 1)
     np.add.at(bp, (canon, strand), lengths)
     cuts = (0, 1 - threshold, threshold, 1)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    points = joint.transData.transform(joint.collections[0].get_offsets())
+    radii = np.sqrt(joint.collections[0].get_sizes()) * fig.dpi / 144
     for c in range(3):
         for s in range(3):
             share = 100 * bp[c, s] / lengths.sum() if lengths.sum() > 0 else 0
-            joint.text((cuts[s] + cuts[s + 1]) / 2, (cuts[c] + cuts[c + 1]) / 2,
+            label = joint.text((cuts[s] + cuts[s + 1]) / 2, (cuts[c] + cuts[c + 1]) / 2,
                        f"{int(counts[c, s]):,}\n{share:.0f}%", ha="center", va="center",
-                       fontsize=MIN_TEXT_SIZE, color="black", zorder=4,
-                       bbox=dict(facecolor="white", alpha=0.85, edgecolor="none", pad=1))
+                       fontsize=MIN_TEXT_SIZE, color="black", zorder=4)
+            # Keep unboxed totals away from bubbles, within their own class cell.
+            best, score = label.get_position(), float("inf")
+            for fx, fy in ((0.5, 0.5), (0.5, 0.75), (0.5, 0.25), (0.25, 0.5), (0.75, 0.5),
+                           (0.25, 0.75), (0.75, 0.75), (0.25, 0.25), (0.75, 0.25)):
+                label.set_position((cuts[s] + fx * (cuts[s + 1] - cuts[s]),
+                                    cuts[c] + fy * (cuts[c + 1] - cuts[c])))
+                box = label.get_window_extent(renderer).expanded(1.15, 1.15)
+                overlap = np.count_nonzero((points[:, 0] + radii > box.x0) & (points[:, 0] - radii < box.x1)
+                                          & (points[:, 1] + radii > box.y0) & (points[:, 1] - radii < box.y1))
+                if overlap < score:
+                    best, score = label.get_position(), overlap
+                if not overlap:
+                    break
+            label.set_position(best)
     joint.text(0.5, -0.22, "Class: ITS count / % of ITS bp\nMarker area: ITS length",
                transform=joint.transAxes, ha="center", va="top", fontsize=MIN_TEXT_SIZE)
 
@@ -2619,24 +2640,18 @@ def plot_its_composition_page(df, pairs, clusters, params):
     fig = plt.figure(figsize=SLIDE_SIZE)
     _page_title(fig, "ITS candidates")
     threshold = params.get("label_threshold", LABEL_THRESHOLD)
-    distance = params.get("max_block_dist", 1000)
-    panels = (("Longest canonical ITS", "by canonical bp", df, _draw_its_long_glyphs, (df,)),
-              ("Top ITS clusters", f"≥{ITS_CLUSTER_MIN_ROWS} ITS within {ITS_CLUSTER_MERGE_GAP / 1e3:g} kbp",
-               clusters, _draw_its_cluster_glyphs, (df, clusters, threshold)),
-              ("Candidate fusions", f"q → p within {distance / 1e3:g} kbp",
-               pairs, _draw_its_fusion_glyphs, (df, pairs, threshold)))
+    panels = (("Longest canonical ITS", df, _draw_its_long_glyphs, (df,)),
+              ("Top ITS clusters", clusters, _draw_its_cluster_glyphs, (df, clusters, threshold)),
+              ("Candidate fusions", pairs, _draw_its_fusion_glyphs, (df, pairs, threshold)))
     width, gap, x = 1.86, 0.44, 0.60
-    note_dy = transforms.ScaledTranslation(0, -0.34, fig.dpi_scale_trans)  # under the x label
-    for letter, (title, rule, frame, draw, args) in zip("abc", panels):
+    for letter, (title, frame, draw, args) in zip("abc", panels):
         h = ITS_GLYPH_ROW_IN * max(1, min(5, len(frame)))
-        ax = _inch_axes(fig, x, 2.80 - h, width, h)
+        ax = _inch_axes(fig, x, 2.60 - h, width, h)
         x += width + gap
         if frame.empty:
             _hide_panel(ax, "None")
         else:
             draw(ax, *args)
-            ax.text(0.5, 0, (f"top 5 of {len(frame):,}, " if len(frame) > 5 else "") + rule,
-                    transform=ax.transAxes + note_dy, ha="center", va="top", fontsize=MIN_TEXT_SIZE, color="#999999")
         _panel_title(ax, title, letter, x_in=PANEL_LETTER_X_IN if letter == "a" else None)
     if not df.empty:
         _its_segment_legend(_inch_axes(fig, 0, 3.02, SLIDE_SIZE[0], 0.14))
@@ -2647,21 +2662,12 @@ def plot_its_composition_page(df, pairs, clusters, params):
 # ---------------------------------------------------------------------------
 
 def resolve_its_loci(clusters, df, pairs, chrom_sizes):
-    """Resolve up to 3 (label, chrom, start, end) windows for C1, L1, F1; skip missing ones."""
+    """Resolve up to five padded locus windows per category, preserving candidate ranks."""
     loci = []
-    if not clusters.empty:
-        c0 = clusters.iloc[0]
-        s, e = pad_window(int(c0["start"]), int(c0["end"]), chrom_sizes.get(c0["chr"], c0["end"]))
-        loci.append(("C1", c0["chr"], s, e))
-    long_its = rank_long_its(df, 1)
-    if not long_its.empty:
-        l0 = long_its.iloc[0]
-        s, e = pad_window(int(l0["start"]), int(l0["end"]), chrom_sizes.get(l0["chr"], l0["end"]))
-        loci.append(("L1", l0["chr"], s, e))
-    if not pairs.empty:
-        f0 = pairs.iloc[0]
-        s, e = pad_window(int(f0["start"]), int(f0["end"]), chrom_sizes.get(f0["chr"], f0["end"]))
-        loci.append(("F1", f0["chr"], s, e))
+    for prefix, frame in (("C", clusters.head(5)), ("L", rank_long_its(df, 5)), ("F", pairs.head(5))):
+        for rank, row in enumerate(frame.itertuples(index=False), 1):
+            s, e = pad_window(int(row.start), int(row.end), chrom_sizes.get(row.chr, row.end))
+            loci.append((f"{prefix}{rank}", row.chr, s, e))
     return loci
 
 
@@ -2687,7 +2693,7 @@ def _place_locus_key(fig, key_ax, side=LOCUS_KEY_SIDE, top=LOCUS_KEY_TOP):
 def plot_its_loci_page(loci, chrom_sizes, arm_blocks, its_blocks, gap_blocks,
                        density_data, canonical_data, strand_data, gc_data, entropy_data,
                        unknown_extents=(), display_labels=None, threshold=LABEL_THRESHOLD):
-    """Selected ITS locus: one terminal-style track-stack column per locus (C1, L1, F1)."""
+    """Selected ITS locus: one terminal-style track-stack column per ranked locus."""
     if not loci:
         return _placeholder_figure("ITS loci", "No ITS loci to show.")
 

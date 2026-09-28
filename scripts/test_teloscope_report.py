@@ -1148,6 +1148,12 @@ class ResilientITSReportTests(unittest.TestCase):
         pairs, clusters, sizes = self.parts(df)
         fig = REPORT.plot_its_summary_page(df, pairs, clusters, sizes, REPORT.read_params(None))
         self.draw(fig, "summary_tiles")
+        hist, per = fig.axes[1:3]
+        self.assertEqual(hist.get_title(), "ITS length distribution")
+        self.assertEqual(hist.get_ylabel(), "# ITSs")
+        self.assertAlmostEqual(hist.bbox.width, hist.bbox.height)
+        self.assertEqual(per.get_title(), "ITS scaffold distribution")
+        self.assertEqual(per.get_ylabel(), "ITS density (bp/Mbp)")
         tiles = [t.get_text() for t in fig.axes[0].texts]
         self.assertEqual(tiles[1::2], ["Median ITS length (bp)", "ITS", "ITS content (kbp)",
                                        "Scaffolds with ITS", "Clusters", "Candidate fusions"])
@@ -1184,6 +1190,7 @@ class ResilientITSReportTests(unittest.TestCase):
         self.assertIn("3\n100%", cells)
         self.assertEqual(sum(int(t.split("\n")[0].replace(",", "")) for t in cells), len(df))
         for text in joint.texts:
+            self.assertIsNone(text.get_bbox_patch())
             self.assertGreaterEqual(text.get_window_extent(renderer).y0, 0)
 
     def test_forward_share_axis_is_mirrored(self):
@@ -1212,6 +1219,27 @@ class ResilientITSReportTests(unittest.TestCase):
             self.assertAlmostEqual(float(np.mean(xs)), 0.0)
             self.assertAlmostEqual(sum(ax.get_xlim()), 0.0)
 
+    def test_top_five_loci_match_atlas_ranks(self):
+        for n in (0, 1, 3, 5, 8):
+            rows = []
+            for i in range(n):
+                rows.extend([_its_row(f"chr{i}", 1000, 2000, "q", "fusion", rev_can=100),
+                             _its_row(f"chr{i}", 2010, 4010, "p", "single", fwd_can=200),
+                             _its_row(f"chr{i}", 8000, 8500, "b", "tail_to_tail", fwd_can=40)])
+            df = self.frame(rows)
+            pairs, clusters, sizes = self.parts(df)
+            loci = REPORT.resolve_its_loci(clusters, df, pairs, sizes)
+            marks = REPORT._its_top_hits(df, pairs, clusters)
+            expected = {f"{prefix}{rank}" for prefix, count in
+                        (("L", len(df)), ("C", len(clusters)), ("F", len(pairs)))
+                        for rank in range(1, min(count, 5) + 1)}
+            self.assertEqual({tag for tag, _, _, _ in loci}, expected)
+            self.assertEqual({tag for entries in marks.values() for tag, _ in entries}, expected)
+            for tag, chrom, start, end in loci:
+                midpoint = next(mid for label, mid in marks[chrom] if label == tag)
+                self.assertLessEqual(start, midpoint)
+                self.assertGreaterEqual(end, midpoint)
+
     def test_atlas_labels_keep_one_precision_and_mark_loci(self):
         df = self.frame([_its_row("chr1_mat", 1000, 1500, "p", "single", fwd_can=40, chrom_size=116_000_000),
                          _its_row("chr1_pat", 1000, 1500, "p", "single", fwd_can=40, chrom_size=115_910_000)])
@@ -1224,12 +1252,12 @@ class ResilientITSReportTests(unittest.TestCase):
         self.assertEqual(fig.axes[0].get_xlabel(), "Position (Mbp)")
         labels = [t.get_text() for leg in fig.legends for t in leg.get_texts()]
         self.assertIn("Scaffold", labels)
-        self.assertIn("L1  Longest canonical ITS", labels)
+        self.assertIn("(L)  Longest canonical ITS", labels)
         texts = [t.get_text() for t in fig.findobj(mtext.Text)]
         self.assertFalse([t for t in texts if "top long ITS" in t or "—" in t], texts)
         self.assertIn("L1", texts)
         triangles = [l for l in fig.axes[0].get_lines() if l.get_marker() == "v"]
-        self.assertEqual(len(triangles), 1)
+        self.assertEqual(len(triangles), 2)
         self.assertEqual(float(triangles[0].get_xdata()[0]), 1250.0)  # at the locus, not the scaffold end
 
     def test_atlas_page_is_one_slide_and_centred(self):
