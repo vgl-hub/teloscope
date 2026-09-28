@@ -2341,7 +2341,7 @@ def _draw_its_length_panel(ax, lengths):
     median = _median(lengths)
     ax.axvline(median, color="#222222", lw=0.6, zorder=3)
     right_half = np.log10(median) > (lo + hi) / 2
-    ax.text(median, 0.94, f" median {_fmt_bp(median)} ", transform=ax.get_xaxis_transform(),
+    ax.text(median, 0.94, f" median\n {_fmt_bp(median)} ", transform=ax.get_xaxis_transform(),
             ha="right" if right_half else "left", va="top", fontsize=LEGEND_TEXT_SIZE, color="#222222")
     ax.set_ylim(0, max(1, counts.max()) * 1.15)
     _plain_log_axis(ax, "x", edges[0], edges[-1], margin=1.0)
@@ -2352,7 +2352,7 @@ def _draw_its_length_panel(ax, lengths):
 
 
 def _draw_its_scaffold_panel(ax, df, chrom_sizes):
-    """ITS count against ITS density, one dot per scaffold, homologs joined."""
+    """ITS count against density, with a descriptive log-space fit and sparse labels."""
     per = df.groupby("chr").agg(n=("teloLen", "size"), bp=("teloLen", "sum"), size=("chrSize", "max"))
     per["size"] = [max(chrom_sizes.get(c, 0), s) for c, s in zip(per.index, per["size"])]
     per = per[(per["size"] > 0) & (per["bp"] > 0)]
@@ -2360,25 +2360,28 @@ def _draw_its_scaffold_panel(ax, df, chrom_sizes):
         _hide_panel(ax, "No scaffold size")
         return
     x, y = per["n"].astype(float), per["bp"] / per["size"] * 1e6  # density already carries the size
-    groups = _homolog_groups(per.index, per["size"].to_dict())
-    for group in groups:
-        if len(group) > 1:
-            ax.plot(x[group], y[group], color="#bcbcbc", lw=0.6, zorder=1)
-    ax.scatter(x, y, s=12, facecolor=mcolors.to_rgba("#4A4A4A", 0.55), edgecolor="white",
+    if len(per) >= 3 and x.nunique() >= 2:
+        slope, intercept = np.polyfit(np.log10(x), np.log10(y), 1)
+        ends = np.array([x.min(), x.max()])
+        ax.plot(ends, 10 ** (intercept + slope * np.log10(ends)), color="#777777", lw=0.6, zorder=1)
+    ax.scatter(x, y, s=12, facecolor="#9ECAE1", edgecolor="white",
                linewidths=0.3, zorder=2)
     _plain_log_axis(ax, "x", x.min(), x.max())
     _plain_log_axis(ax, "y", y.min(), y.max(), margin=1.6)
+    _its_axis_style(ax)
+    ax.set_xlabel("ITS per scaffold", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+    ax.set_ylabel("ITS density (bp/Mbp)", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+    # Count all known scaffolds, including those without ITS, before allowing labels.
+    if len(set(chrom_sizes) | set(df["chr"])) > 10:
+        return
     # Place sparse labels in display coordinates, keeping them apart on log axes.
     ax.figure.canvas.draw()
     renderer = ax.figure.canvas.get_renderer()
     placed = []
-    for group in groups if len(groups) <= 3 else []:
-        anchor = y[group].idxmax()
-        label = _homolog_key(anchor) if len(group) > 1 else anchor
-        text = ax.annotate(label, (x[anchor], y[anchor]), xytext=(4, 0),
+    for chrom in per.index:
+        text = ax.annotate(chrom, (x[chrom], y[chrom]), xytext=(4, 0),
                            textcoords="offset points", ha="left", va="center",
-                           fontsize=ANNOTATION_TEXT_SIZE, color="#222222",
-                           arrowprops=dict(arrowstyle="-", color="#777777", lw=0.4))
+                           fontsize=ANNOTATION_TEXT_SIZE, color="#222222")
         for dy in (0, 9, -9, 18, -18, 27, -27):
             for dx, align in ((4, "left"), (-4, "right")):
                 text.set_position((dx, dy))
@@ -2391,10 +2394,10 @@ def _draw_its_scaffold_panel(ax, df, chrom_sizes):
             else:
                 continue
             break
+        else:
+            text.remove()
+            continue
         placed.append(box)
-    _its_axis_style(ax)
-    ax.set_xlabel("ITS per scaffold", fontsize=AXIS_LABEL_SIZE, labelpad=2)
-    ax.set_ylabel("ITS density (bp/Mbp)", fontsize=AXIS_LABEL_SIZE, labelpad=2)
 
 
 def plot_its_summary_page(df, pairs, clusters, chrom_sizes, params):

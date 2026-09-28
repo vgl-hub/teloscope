@@ -1151,6 +1151,7 @@ class ResilientITSReportTests(unittest.TestCase):
         hist, per = fig.axes[1:3]
         self.assertEqual(hist.get_title(), "ITS length distribution")
         self.assertEqual(hist.get_ylabel(), "# ITSs")
+        self.assertTrue(any("median\n" in t.get_text() for t in hist.texts))
         self.assertAlmostEqual(hist.bbox.width, hist.bbox.height)
         self.assertEqual(per.get_title(), "ITS scaffold distribution")
         self.assertEqual(per.get_ylabel(), "ITS density (bp/Mbp)")
@@ -1158,10 +1159,10 @@ class ResilientITSReportTests(unittest.TestCase):
         self.assertEqual(tiles[1::2], ["Median ITS length (bp)", "ITS", "ITS content (kbp)",
                                        "Scaffolds with ITS", "Clusters", "Candidate fusions"])
         self.assertEqual(tiles[0::2], ["200", "2", "0.4", "2", "0", "0"])
-        # One dot per scaffold, joined as homologs, on plain-number log axes.
+        # One dot per scaffold on plain-number log axes; no homolog connectors.
         per = fig.axes[2]
         self.assertEqual(len(per.collections[0].get_offsets()), 2)
-        self.assertEqual(len(per.lines), 1)
+        self.assertEqual(len(per.lines), 0)  # identical counts cannot support a trend
         for label in per.get_xticklabels() + per.get_yticklabels() + fig.axes[1].get_xticklabels():
             self.assertRegex(label.get_text(), r"^[0-9.]+$")
         empty = self.frame([])
@@ -1181,6 +1182,7 @@ class ResilientITSReportTests(unittest.TestCase):
         boxes = [mtext.Text.get_window_extent(t, renderer) for t in per.texts
                  if isinstance(t, mtext.Annotation)]
         self.assertEqual(len(boxes), 3)
+        self.assertTrue(all(t.arrow_patch is None for t in per.texts if isinstance(t, mtext.Annotation)))
         for i, box in enumerate(boxes):
             self.assertTrue(per.bbox.contains(box.x0, box.y0))
             self.assertTrue(per.bbox.contains(box.x1, box.y1))
@@ -1192,6 +1194,20 @@ class ResilientITSReportTests(unittest.TestCase):
         for text in joint.texts:
             self.assertIsNone(text.get_bbox_patch())
             self.assertGreaterEqual(text.get_window_extent(renderer).y0, 0)
+
+    def test_summary_scaffold_cutoff_counts_scaffolds_without_its(self):
+        df = self.frame([_its_row(f"chr{i}", 1000 * j, 1000 * j + 100, "p", "single",
+                                 fwd_can=10, chrom_size=1_000_000)
+                         for i, n in enumerate((1, 2, 4)) for j in range(n)])
+        for total in (10, 11):
+            fig, ax = REPORT.plt.subplots()
+            self.addCleanup(REPORT.plt.close, fig)
+            REPORT._draw_its_scaffold_panel(ax, df, {f"chr{i}": 1_000_000 for i in range(total)})
+            self.assertEqual(len(ax.collections[0].get_offsets()), 3)
+            self.assertEqual(len(ax.texts), 3 if total == 10 else 0)
+            self.assertEqual(len(ax.lines), 1)
+            x, y = ax.lines[0].get_data()
+            np.testing.assert_allclose(y, 100 * x)  # 100 bp per ITS on a 1 Mb scaffold
 
     def test_forward_share_axis_is_mirrored(self):
         df = self.frame([_its_row("chrA", 100, 200, "p", "single", fwd_can=40),
