@@ -1203,7 +1203,7 @@ class ResilientITSReportTests(unittest.TestCase):
         for ax in (joint, top):
             left, right = ax.get_xlim()
             self.assertGreater(left, right)
-        self.assertEqual(joint.get_xlabel(), "← Forward share")
+        self.assertEqual(joint.get_xlabel(), "← Forward proportion")
         # The fwd ITS sits left of the rev ITS in display space.
         xs = joint.transData.transform(joint.collections[0].get_offsets())[:, 0]
         colours = [REPORT.matplotlib.colors.to_hex(c) for c in joint.collections[0].get_facecolors()]

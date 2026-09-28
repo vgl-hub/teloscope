@@ -1822,9 +1822,9 @@ def plot_overview_page2(blocks, chrom_sizes):
     _panel_title(ax_scatter, "Telomere positioning", "d", x_in=2.48)
     _panel_title(ax_flagged, "Flagged telomeres", "e", x_in=4.71)
     for ax in (ax_rain, ax_scatter, ax_flagged):
-        ax.set_title(ax.get_title(), pad=39)  # keep headings 0.5 in above the lowered plots
+        ax.set_title(ax.get_title(), pad=24.6)  # keep headings 0.3 in above the plots
         letter = ax.texts[-1]
-        letter.set_transform(letter.get_transform() + transforms.ScaledTranslation(0, 0.5, fig.dpi_scale_trans))
+        letter.set_transform(letter.get_transform() + transforms.ScaledTranslation(0, 0.3, fig.dpi_scale_trans))
     _page_title(fig, "Terminal telomeres")
     return fig
 
@@ -2184,8 +2184,8 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
         longest = max(extent[c] for c in names)
         min_w = longest * (1.2 / 72) / axes_w  # 1.2 pt floor keeps single ITS visible
         backbone, masks, caps, its_rects, its_colors = [], [], [], [], []
-        # Locus markers sit on the bar's top edge; the triangle tip touches the bar.
-        lift = transforms.ScaledTranslation(0, 2.2 / 72, fig.dpi_scale_trans)
+        # Leave a 0.8 pt gap between the triangle tip and the chromosome bar.
+        lift = transforms.ScaledTranslation(0, 2.8 / 72, fig.dpi_scale_trans)
         for y, c in zip(ys, names):
             size = extent[c]
             y0 = y - ATLAS_BAR / 2.0
@@ -2211,7 +2211,7 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
                 drew_marks.update(tag.split("/"))
                 ax.plot([x], [y0], marker="v", markersize=4, color="#222222", markeredgewidth=0,
                         linestyle="none", transform=ax.transData + lift, clip_on=False, zorder=6)
-                ax.annotate(tag, (x, y0), xytext=(2.6, 2.4), textcoords="offset points", ha="left",
+                ax.annotate(tag, (x, y0), xytext=(2.6, 3.0), textcoords="offset points", ha="left",
                             va="center", fontsize=MIN_TEXT_SIZE, fontweight="bold", color="#222222",
                             annotation_clip=False, zorder=6,
                             path_effects=[patheffects.withStroke(linewidth=1.5, foreground="white")])
@@ -2428,7 +2428,7 @@ def plot_its_summary_page(df, pairs, clusters, chrom_sizes, params):
 
 
 def _draw_its_joint_panel(ax, ax_top, ax_right, df, threshold):
-    """Forward share x canonical share per ITS, on the double-key class regions, with marginals."""
+    """Forward proportion x canonical proportion per ITS, on the double-key class regions, with marginals."""
     fwd, can = _its_shares(df)
     ok = np.isfinite(fwd)
     cuts = (-0.04, 1 - threshold, threshold, 1.04)
@@ -2454,8 +2454,8 @@ def _draw_its_joint_panel(ax, ax_top, ax_right, df, threshold):
     ax.set_xlim(cuts[-1], cuts[0])  # mirrored: fwd (5' end) on the left, as in the key
     ax.set_ylim(cuts[0], cuts[-1])
     _its_axis_style(ax)
-    ax.set_xlabel("← Forward share", fontsize=AXIS_LABEL_SIZE, labelpad=2)
-    ax.set_ylabel("Canonical share →", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+    ax.set_xlabel("← Forward proportion", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+    ax.set_ylabel("Canonical proportion →", fontsize=AXIS_LABEL_SIZE, labelpad=2)
 
     bins = np.linspace(0, 1, 21)
     for marginal, values, orientation in ((ax_top, fwd[ok], "vertical"), (ax_right, can[ok], "horizontal")):
@@ -2503,33 +2503,13 @@ def _draw_its_composition(fig, df, params):
     counts, bp = np.zeros((3, 3)), np.zeros((3, 3))
     np.add.at(counts, (canon, strand), 1)
     np.add.at(bp, (canon, strand), lengths)
-    cuts = (0, 1 - threshold, threshold, 1)
-    fig.canvas.draw()
-    renderer = fig.canvas.get_renderer()
-    points = joint.transData.transform(joint.collections[0].get_offsets())
-    radii = np.sqrt(joint.collections[0].get_sizes()) * fig.dpi / 144
+    cuts = (-0.04, 1 - threshold, threshold, 1.04)
     for c in range(3):
         for s in range(3):
             share = 100 * bp[c, s] / lengths.sum() if lengths.sum() > 0 else 0
-            label = joint.text((cuts[s] + cuts[s + 1]) / 2, (cuts[c] + cuts[c + 1]) / 2,
+            joint.text((cuts[s] + cuts[s + 1]) / 2, (cuts[c] + cuts[c + 1]) / 2,
                        f"{int(counts[c, s]):,}\n{share:.0f}%", ha="center", va="center",
                        fontsize=MIN_TEXT_SIZE, color="black", zorder=4)
-            # Keep unboxed totals away from bubbles, within their own class cell.
-            best, score = label.get_position(), float("inf")
-            for fx, fy in ((0.5, 0.5), (0.5, 0.75), (0.5, 0.25), (0.25, 0.5), (0.75, 0.5),
-                           (0.25, 0.75), (0.75, 0.75), (0.25, 0.25), (0.75, 0.25)):
-                label.set_position((cuts[s] + fx * (cuts[s + 1] - cuts[s]),
-                                    cuts[c] + fy * (cuts[c + 1] - cuts[c])))
-                box = label.get_window_extent(renderer).expanded(1.15, 1.15)
-                overlap = np.count_nonzero((points[:, 0] + radii > box.x0) & (points[:, 0] - radii < box.x1)
-                                          & (points[:, 1] + radii > box.y0) & (points[:, 1] - radii < box.y1))
-                if overlap < score:
-                    best, score = label.get_position(), overlap
-                if not overlap:
-                    break
-            label.set_position(best)
-    joint.text(0.5, -0.22, "Class: ITS count / % of ITS bp\nMarker area: ITS length",
-               transform=joint.transAxes, ha="center", va="top", fontsize=MIN_TEXT_SIZE)
 
 
 _ITS_SEGMENT_KEYS = (("fwdCan", 2, 2), ("fwdNonCan", 0, 2), ("revNonCan", 0, 0), ("revCan", 2, 0))
