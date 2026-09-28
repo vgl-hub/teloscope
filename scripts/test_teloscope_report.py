@@ -1003,23 +1003,17 @@ class ResilientITSReportTests(unittest.TestCase):
         self.assertEqual(summary["rows"].sum(), n)
         self.assertEqual(summary["display_label"].nunique(), 83)
         chroms = REPORT._its_atlas_chroms(df, {}, sizes)
-        seen = []
-        pages = REPORT._paginate_atlas(chroms, sizes)
-        for page_idx, chunk in enumerate(pages):
-            height, columns, _ = REPORT._atlas_layout(chunk, sizes)
-            self.assertIn(height, REPORT.ATLAS_HEIGHTS)
-            self.assertLessEqual(len(columns), REPORT.ATLAS_COLUMNS)
-            seen.extend(chunk)
-            fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes,
-                    {"ultra_fast": False}, chunk, page_idx + 1, len(pages), cells)
-            self.draw(fig, f"dense_atlas_{page_idx + 1}", False)
-            renderer = fig.canvas.get_renderer()
-            for ax in fig.axes:
-                boxes = [t.get_window_extent(renderer) for t in ax.get_yticklabels() if "Mb" in t.get_text()]
-                for i, box in enumerate(boxes):
-                    self.assertFalse(any(box.overlaps(other) for other in boxes[:i]))
-
-        self.assertEqual(sorted(seen), sorted(chroms))
+        height, columns, pitch = REPORT._atlas_layout(chroms, sizes)
+        self.assertEqual(height, REPORT.ATLAS_HEIGHTS[-1])  # too many rows to label: one condensed page
+        self.assertLess(pitch, REPORT.ATLAS_PITCH_IN)
+        self.assertLessEqual(len(columns), REPORT.ATLAS_COLUMNS)
+        self.assertEqual(sorted(c for column in columns for _, names in column for c in names), sorted(chroms))
+        fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, {"ultra_fast": False}, chroms, cells)
+        self.draw(fig, "dense_atlas", False)
+        self.assertEqual(tuple(fig.get_size_inches()), (REPORT.FIG_WIDTH_DOUBLE, REPORT.ATLAS_HEIGHTS[-1]))
+        rows = [ax for ax in fig.axes if ax.get_xlabel().startswith("Position")]
+        self.assertTrue(rows)
+        self.assertFalse([t for ax in rows for t in ax.get_yticklabels() if t.get_text()])  # unlabelled heatmap
         stats = REPORT.plot_its_summary_page(df, pairs, clusters, {}, REPORT.read_params(None))
         self.draw(stats, "dense_statistics")
         points = sum(len(c.get_offsets()) for c in stats.axes[3].collections)
@@ -1052,24 +1046,24 @@ class ResilientITSReportTests(unittest.TestCase):
     def test_homolog_grouping_keeps_haplotypes_adjacent(self):
         names = ["chr1_mat", "chr33_mat", "chr2_pat", "chr33_pat", "chr1_pat", "hap1_chr5", "chr5_hap2",
                  "chr7_h1", "chr7_h2", "chr9.1", "chr9.2", "s#1#chr4", "s#2#chr4", "chrZ_PAT",
-                 "ptg000001l.1", "ptg000001l.2"]
+                 "ptg000001l.1", "ptg000001l.2", "chr6_hap1", "chr6_hap2", "chr6_hap3", "chr6_hap4", "chrW_mat"]
         sizes = {n: 1_000_000 - 1_000 * i for i, n in enumerate(names)}
         self.assertEqual(REPORT._homolog_key("chr33_mat"), REPORT._homolog_key("chr33_pat"))
-        self.assertEqual(REPORT._homolog_key("chrZ_PAT"), "chrZ")
+        self.assertEqual(REPORT._homolog_key("chrZ_PAT"), REPORT._homolog_key("chrW_mat"))
+        self.assertEqual(REPORT._homolog_key("chrX_hap1"), REPORT._homolog_key("chrY_hap2"))
+        self.assertNotEqual(REPORT._homolog_key("chr1A_mat"), REPORT._homolog_key("chr1_mat"))
         groups = REPORT._homolog_groups(names, sizes)
         self.assertIn(["chr33_mat", "chr33_pat"], groups)
-        for pair in (["hap1_chr5", "chr5_hap2"], ["chr7_h1", "chr7_h2"], ["s#1#chr4", "s#2#chr4"]):
-            self.assertIn(sorted(pair), groups)
+        for pair in (["hap1_chr5", "chr5_hap2"], ["chr7_h1", "chr7_h2"], ["s#1#chr4", "s#2#chr4"],
+                     ["chrW_mat", "chrZ_PAT"], ["chr6_hap1", "chr6_hap2", "chr6_hap3", "chr6_hap4"]):
+            self.assertIn(sorted(pair), groups)  # any ploidy bundles, sex chromosomes pair
         # Version or piece suffixes are not haplotypes.
         for name in ("chr9.1", "chr9.2", "ptg000001l.1", "ptg000001l.2"):
             self.assertIn([name], groups)
         order = [c for g in groups for c in g]
         self.assertEqual(abs(order.index("chr33_mat") - order.index("chr33_pat")), 1)
-        many = [f"chr{i}_{h}" for i in range(1, 100) for h in ("mat", "pat")]
-        pages = REPORT._paginate_atlas(many, {c: 100 - int(c[3:].split("_")[0]) for c in many})
-        self.assertGreater(len(pages), 1)
-        for page in pages:
-            self.assertEqual(len({REPORT._homolog_key(c) for c in page}) * 2, len(page))
+        mid = {"a_mat": 100, "a_pat": 10, "b_mat": 60, "b_pat": 60}
+        self.assertEqual(REPORT._homolog_groups(list(mid), mid), [["b_mat", "b_pat"], ["a_mat", "a_pat"]])  # by midpoint
 
     def test_candidates_colours_follow_composition_class(self):
         df = self.frame([_its_row("chrA", 1000, 1600, "q", "fusion", rev_can=90),
@@ -1270,18 +1264,20 @@ class ResilientITSReportTests(unittest.TestCase):
                 self.assertLessEqual(start, midpoint)
                 self.assertGreaterEqual(end, midpoint)
 
-    def test_atlas_tiers_keep_every_scaffold_legible_across_extreme_sizes(self):
+    def test_atlas_tiers_are_quartiles_on_rounded_axes(self):
         sizes = {f"chr{i}_{h}": int(s) for i, s in enumerate(np.geomspace(7.2e9, 4.2e6, 30), 1) for h in ("hap1", "hap2")}
         sizes.update({f"scaffold_{i}": 20_000 + 1_000 * i for i in range(5)})  # unplaced
         tiers = REPORT._atlas_tiers(sorted(sizes, key=lambda c: -sizes[c]), sizes)
-        self.assertEqual(sorted(c for t in tiers for c in t), sorted(sizes))
-        for tier in tiers:
-            self.assertLessEqual(max(sizes[c] for c in tier), REPORT.ATLAS_TIER_RATIO * min(sizes[c] for c in tier))
+        self.assertEqual([c for t in tiers for c in t], [c for g in REPORT._homolog_groups(list(sizes), sizes) for c in g])
+        self.assertEqual(len(tiers), REPORT.ATLAS_TIERS)
+        self.assertLessEqual(max(map(len, tiers)), -(-len(sizes) // REPORT.ATLAS_TIERS) + 1)  # a quarter, pairs whole
         keys = [{REPORT._homolog_key(c) for c in tier} for tier in tiers]
         self.assertEqual(sum(map(len, keys)), len(set().union(*keys)))  # homologs never split across tiers
-        self.assertEqual(len(tiers), 6)  # the fewest the ratio allows
-        self.assertEqual(REPORT._atlas_tiers(["chrA", "chrB"], {"chrA": 10, "chrB": 9}), [["chrA", "chrB"]])
+        self.assertEqual(REPORT._atlas_tiers(["chrA", "chrB"], {"chrA": 10, "chrB": 9}), [["chrA"], ["chrB"]])
         self.assertEqual(REPORT._atlas_tiers([], {}), [])
+        for bp, span in ((7.2e9, 7.2e9), (152.56e6, 160e6), (33.78e6, 35e6), (8.2e6, 10e6), (4.25e6, 4.5e6),
+                         (1.05e6, 1.5e6), (112e3, 150e3)):
+            self.assertAlmostEqual(REPORT._atlas_span(bp), span)
 
     def test_atlas_labels_keep_one_precision_and_mark_loci(self):
         df = self.frame([_its_row("chr1_mat", 1000, 1500, "p", "single", fwd_can=40, chrom_size=116_000_000),
@@ -1290,8 +1286,8 @@ class ResilientITSReportTests(unittest.TestCase):
         fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, REPORT.read_params(None))
         self.draw(fig, "atlas_precision", False)
         ticks = [t.get_text() for t in fig.axes[0].get_yticklabels()]
-        self.assertEqual(ticks, ["chr1_mat  116.00 Mb", "chr1_pat  115.91 Mb"])  # one line per scaffold
-        self.assertEqual([t.get_text() for t in fig.axes[0].get_xticklabels()][:3], ["0", "20", "40"])
+        self.assertEqual(ticks, ["chr1_mat", "chr1_pat"])  # names only
+        self.assertEqual([t.get_text() for t in fig.axes[0].get_xticklabels()], ["0", "20", "40", "60", "80", "100", "120"])
         self.assertEqual(fig.axes[0].get_xlabel(), "Position (Mbp)")
         labels = [t.get_text() for leg in fig.legends for t in leg.get_texts()]
         self.assertIn("Scaffold", labels)
@@ -1299,6 +1295,7 @@ class ResilientITSReportTests(unittest.TestCase):
         texts = [t.get_text() for t in fig.findobj(mtext.Text)]
         self.assertFalse([t for t in texts if "top long ITS" in t or "—" in t], texts)
         self.assertIn("L1", texts)
+        self.assertFalse([t for t in fig.findobj(mtext.Text) if t.get_text() == "L1" and t.get_fontweight() == "bold"])
         triangles = [l for l in fig.axes[0].get_lines() if l.get_marker() == "v"]
         self.assertEqual(len(triangles), 2)
         self.assertEqual(float(triangles[0].get_xdata()[0]), 1250.0)  # at the locus, not the scaffold end
