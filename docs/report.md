@@ -22,13 +22,13 @@ Prefix filters are also available, but database prefixes are not universal chrom
 
 ## What the report contains
 
-- page 1: assembly summary tiles (median assembled array first), scaffold classes, and flagged scaffolds
+- page 1: assembly telomere summary tiles (median assembled array first), scaffold classes, and flagged scaffolds
 - page 2: terminal telomere length by arm and positioning on one kbp scale, and flagged telomeres
 - next pages: one terminal zoom figure per scaffold with called telomere blocks
 
 The ITS report has its own pages. Colors follow one 3x3 key: hue is the strand (fwd blue, both purple, rev vermillion) and opacity is the canonical share. Forward (CCCTAA, the 5' end) is always drawn first, on the left.
 
-- **Summary:** headline tiles, ITS length for fwd and rev ITS with their overlap, and ITS density against scaffold size with homologs joined.
+- **Summary:** headline tiles, the ITS length distribution, and ITS count against ITS density per scaffold with homologs joined.
 - **Composition:** forward share (mirrored) versus canonical share per ITS with marginal histograms, and the 3x3 key with ITS counts and % of ITS bp per class. Both shares use the same thirds rule as `--label-threshold`, so the strand column matches the p/q/b label.
 - **Atlas:** every scaffold with a terminal or ITS call, drawn to scale, homologs (mat/pat, hap1/hap2) side by side, as many per page as stay readable. Each ITS is one cell colored by its class. Scaffolds under 20% of the page's longest get their own panel. A ▼ marks the locus of each locus page (L longest ITS, C cluster, F fusion). White means outside the initial end windows, not proven unscanned.
 - **Candidates:** the top five ITS by canonical bp split into fwd/rev canonical and non-canonical, the clusters with most ITS bp (>= 3 ITS within 50 kbp), and candidate fusion pairs drawn around their junction (q block left, p block right).

@@ -934,7 +934,7 @@ class ResilientITSReportTests(unittest.TestCase):
         pairs, clusters, _ = self.parts(df)
         params = REPORT.read_params(None)
         summary = lambda *a: REPORT.plot_its_summary_page(*a[:3], {}, a[3])
-        for build, title in ((summary, "ITS summary"), (REPORT.plot_its_statistics_page, "ITS composition"),
+        for build, title in ((summary, "Assembly ITS summary"), (REPORT.plot_its_statistics_page, "ITS composition"),
                              (REPORT.plot_its_composition_page, "ITS candidates")):
             fig = build(df, pairs, clusters, params)
             self.draw(fig, title)
@@ -1081,7 +1081,7 @@ class ResilientITSReportTests(unittest.TestCase):
         fig, ax = REPORT.plt.subplots()
         self.addCleanup(REPORT.plt.close, fig)
         REPORT._draw_its_long_glyphs(ax, df)
-        self.assertIn("75%", [t.get_text() for t in ax.texts])
+        self.assertIn("75% canonical", [t.get_text() for t in ax.texts])
 
     def test_long_its_segments_run_fwd_before_rev(self):
         df = self.frame([_its_row("chrA", 100, 500, "b", "single", fwd_can=10, rev_can=20,
@@ -1172,8 +1172,8 @@ class ResilientITSReportTests(unittest.TestCase):
         # The fwd ITS sits left of the rev ITS in display space.
         xs = joint.transData.transform(joint.collections[0].get_offsets())[:, 0]
         colours = [REPORT.matplotlib.colors.to_hex(c) for c in joint.collections[0].get_facecolors()]
-        self.assertLess(xs[colours.index(REPORT.DOUBLE_KEY_BASE[2].lower())],
-                        xs[colours.index(REPORT.DOUBLE_KEY_BASE[0].lower())])
+        self.assertLess(xs[colours.index(REPORT.DOUBLE_KEY_COLORS[2][2])],
+                        xs[colours.index(REPORT.DOUBLE_KEY_COLORS[0][0])])
 
     def test_size_key_centres_its_references(self):
         for lengths in (np.array([50.0]), np.array([50.0, 900.0]), np.array([50.0, 9000.0])):
@@ -1196,7 +1196,7 @@ class ResilientITSReportTests(unittest.TestCase):
         self.assertEqual(fig.axes[0].get_xlabel(), "Position (Mbp)")
         labels = [t.get_text() for leg in fig.legends for t in leg.get_texts()]
         self.assertIn("Scaffold", labels)
-        self.assertIn("Locus page (L longest ITS,\nC cluster, F fusion)", labels)
+        self.assertIn("L1  Longest canonical ITS", labels)
         texts = [t.get_text() for t in fig.findobj(mtext.Text)]
         self.assertFalse([t for t in texts if "top long ITS" in t or "—" in t], texts)
         self.assertIn("L1", texts)
