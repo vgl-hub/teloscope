@@ -355,7 +355,7 @@ class TeloscopeReportTests(unittest.TestCase):
         self.assertEqual(tiles["Flagged scaffolds"], "3")
         self.assertEqual(tiles["Terminal telomeres"], "2")
         self.assertEqual(tiles["Distance-flagged telomeres"], "1")
-        self.assertEqual(tiles["Median assembled array (kbp)"], "0.6")
+        self.assertEqual(tiles["Median assembled array (bp)"], "600")
 
     def test_overview_tiles_lead_with_median_array_and_centre_on_the_page(self):
         blocks = {"chrA": [_block(0, 9_800, "p", 50_000)]}
@@ -364,7 +364,7 @@ class TeloscopeReportTests(unittest.TestCase):
         self.assertEqual(tuple(fig.get_size_inches()), REPORT.SLIDE_SIZE)
         tile_ax = next(ax for ax in fig.axes if "Terminal telomeres" in [t.get_text() for t in ax.texts])
         self.assertEqual([t.get_text() for t in tile_ax.texts][:10],
-                         ["9.8", "Median assembled array (kbp)", "1", "Scaffolds", "0", "Flagged scaffolds",
+                         ["9,800", "Median assembled array (bp)", "1", "Scaffolds", "0", "Flagged scaffolds",
                           "1", "Terminal telomeres", "0", "Distance-flagged telomeres"])
         box = tile_ax.get_position()
         self.assertAlmostEqual(box.x0 + box.x1, 1.0, places=6)
@@ -821,7 +821,7 @@ class ResilientITSReportTests(unittest.TestCase):
                   "known_params": {"motif_len", "min_canonical_count", "max_block_dist"}}
         self.draw(REPORT.plot_its_composition_page(df, pairs, clusters, params), "full_candidates")
         self.draw(REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, params), "partial_atlas", False)
-        self.draw(REPORT.plot_its_statistics_page(df, pairs, clusters, params), "partial_statistics")
+        self.draw(REPORT.plot_its_summary_page(df, pairs, clusters, {}, params), "partial_statistics")
 
     def test_unknown_extent_is_disclosed_on_selected_locus(self):
         fig = REPORT.plot_its_loci_page([("L1", "chrA", 0, 1100)], {"chrA": 1100}, {},
@@ -894,7 +894,7 @@ class ResilientITSReportTests(unittest.TestCase):
                 df = self.frame(rows)
                 pairs, clusters, sizes = self.parts(df)
                 params = REPORT.read_params(None)
-                stats = REPORT.plot_its_statistics_page(df, pairs, clusters, params)
+                stats = REPORT.plot_its_summary_page(df, pairs, clusters, {}, params)
                 self.draw(stats, label + "_statistics")
                 self.draw(REPORT.plot_its_summary_page(df, pairs, clusters, sizes, params), label + "_summary")
                 self.draw(REPORT.plot_its_composition_page(df, pairs, clusters, params),
@@ -909,9 +909,9 @@ class ResilientITSReportTests(unittest.TestCase):
     def test_low_canonical_observation_keeps_its_true_coordinate(self):
         df = self.frame([_its_row("chrA", 100, 200, "p", "single", fwd_can=1, rev_noncan=3)])
         pairs, clusters, _ = self.parts(df)
-        fig = REPORT.plot_its_statistics_page(df, pairs, clusters, REPORT.read_params(None))
+        fig = REPORT.plot_its_summary_page(df, pairs, clusters, {}, REPORT.read_params(None))
         self.draw(fig, "low_canonical")
-        offsets = [c.get_offsets() for ax in fig.axes for c in ax.collections if len(c.get_offsets())]
+        offsets = [c.get_offsets() for ax in fig.axes[3:4] for c in ax.collections if len(c.get_offsets())]
         np.testing.assert_allclose(offsets[0][0], [0.25, 0.25])
 
     def test_its_pages_never_say_rows(self):
@@ -921,7 +921,7 @@ class ResilientITSReportTests(unittest.TestCase):
         pairs, clusters, _ = self.parts(df)
         params = REPORT.read_params(None)
         summary = lambda *a: REPORT.plot_its_summary_page(*a[:3], {"chrA": 100_000}, a[3])
-        for build in (summary, REPORT.plot_its_statistics_page, REPORT.plot_its_composition_page):
+        for build in (summary, REPORT.plot_its_composition_page):
             fig = build(df, pairs, clusters, params)
             self.draw(fig, "never_rows")
             for text in fig.findobj(mtext.Text):
@@ -934,7 +934,7 @@ class ResilientITSReportTests(unittest.TestCase):
         pairs, clusters, _ = self.parts(df)
         params = REPORT.read_params(None)
         summary = lambda *a: REPORT.plot_its_summary_page(*a[:3], {}, a[3])
-        for build, title in ((summary, "Assembly ITS summary"), (REPORT.plot_its_statistics_page, "ITS composition"),
+        for build, title in ((summary, "Assembly ITS summary"),
                              (REPORT.plot_its_composition_page, "ITS candidates")):
             fig = build(df, pairs, clusters, params)
             self.draw(fig, title)
@@ -952,10 +952,10 @@ class ResilientITSReportTests(unittest.TestCase):
                         for i in range(n)]
                 df = self.frame(rows)
                 pairs, clusters, _ = self.parts(df)
-                fig = REPORT.plot_its_statistics_page(df, pairs, clusters, REPORT.read_params(None))
+                fig = REPORT.plot_its_summary_page(df, pairs, clusters, {}, REPORT.read_params(None))
                 self.draw(fig, f"stats_{n}")
                 if n:
-                    points = sum(len(c.get_offsets()) for c in fig.axes[0].collections)
+                    points = sum(len(c.get_offsets()) for c in fig.axes[3].collections)
                     self.assertEqual(points, n)
 
     def test_candidates_page_renders_without_pairs_or_clusters(self):
@@ -999,10 +999,16 @@ class ResilientITSReportTests(unittest.TestCase):
             fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes,
                     {"ultra_fast": False}, chunk, page_idx + 1, len(pages), cells)
             self.draw(fig, f"dense_atlas_{page_idx + 1}", False)
+            renderer = fig.canvas.get_renderer()
+            for ax in fig.axes:
+                boxes = [t.get_window_extent(renderer) for t in ax.get_yticklabels() if "\n" in t.get_text()]
+                for i, box in enumerate(boxes):
+                    self.assertFalse(any(box.overlaps(other) for other in boxes[:i]))
+
         self.assertEqual(sorted(seen), sorted(chroms))
-        stats = REPORT.plot_its_statistics_page(df, pairs, clusters, REPORT.read_params(None))
+        stats = REPORT.plot_its_summary_page(df, pairs, clusters, {}, REPORT.read_params(None))
         self.draw(stats, "dense_statistics")
-        points = sum(len(c.get_offsets()) for c in stats.axes[0].collections)
+        points = sum(len(c.get_offsets()) for c in stats.axes[3].collections)
         self.assertEqual(points, int((df[["fwdCan", "revCan", "fwdNonCan", "revNonCan"]].sum(axis=1) > 0).sum()))
         self.draw(REPORT.plot_its_composition_page(df, pairs, clusters, REPORT.read_params(None)),
                   "dense_candidates")
@@ -1012,7 +1018,7 @@ class ResilientITSReportTests(unittest.TestCase):
             self.assertEqual(REPORT.ITS_ORIENT_COLORS[key], REPORT.COLORS[key])
         df = self.frame([_its_row("chrA", 100, 200, "p", "single", fwd_can=4)])
         pairs, clusters, _ = self.parts(df)
-        fig = REPORT.plot_its_statistics_page(df, pairs, clusters, REPORT.read_params(None))
+        fig = REPORT.plot_its_summary_page(df, pairs, clusters, {}, REPORT.read_params(None))
         self.addCleanup(REPORT.plt.close, fig)
         pdf = io.BytesIO()
         fig.savefig(pdf, format="pdf", dpi=450)
@@ -1122,7 +1128,7 @@ class ResilientITSReportTests(unittest.TestCase):
         pairs, clusters, _ = self.parts(df)
         params = REPORT.read_params(None)
         figs = [REPORT.plot_its_summary_page(df, pairs, clusters, {}, params),
-                REPORT.plot_its_statistics_page(df, pairs, clusters, params),
+                REPORT.plot_its_summary_page(df, pairs, clusters, {}, params),
                 REPORT.plot_its_composition_page(df, pairs, clusters, params),
                 REPORT.plot_overview_page1(OrderedDict([("T2T", ["chrA"])]), {}, {"chrA": 1000}),
                 REPORT.plot_overview_page2({}, {"chrA": 1000})]
@@ -1158,13 +1164,35 @@ class ResilientITSReportTests(unittest.TestCase):
         self.assertEqual(len(fig.axes), 0)
         self.assertIn("No ITS", [t.get_text() for t in fig.texts])
 
+    def test_summary_repel_and_composition_totals(self):
+        df = self.frame([_its_row(f"chr{i}", 100, 400, "p", "single", fwd_can=40,
+                                 chrom_size=5_000_000) for i in range(3)])
+        pairs, clusters, sizes = self.parts(df)
+        fig = REPORT.plot_its_summary_page(df, pairs, clusters, sizes, REPORT.read_params(None))
+        self.draw(fig, "summary_coincident_labels")
+        renderer = fig.canvas.get_renderer()
+        per, joint = fig.axes[2:4]
+        boxes = [mtext.Text.get_window_extent(t, renderer) for t in per.texts
+                 if isinstance(t, mtext.Annotation)]
+        self.assertEqual(len(boxes), 3)
+        for i, box in enumerate(boxes):
+            self.assertTrue(per.bbox.contains(box.x0, box.y0))
+            self.assertTrue(per.bbox.contains(box.x1, box.y1))
+            self.assertFalse(any(box.overlaps(other) for other in boxes[:i]))
+        cells = [t.get_text() for t in joint.texts if "%" in t.get_text() and "Class" not in t.get_text()]
+        self.assertEqual(len(cells), 9)
+        self.assertIn("3\n100%", cells)
+        self.assertEqual(sum(int(t.split("\n")[0].replace(",", "")) for t in cells), len(df))
+        for text in joint.texts:
+            self.assertGreaterEqual(text.get_window_extent(renderer).y0, 0)
+
     def test_forward_share_axis_is_mirrored(self):
         df = self.frame([_its_row("chrA", 100, 200, "p", "single", fwd_can=40),
                          _its_row("chrA", 900, 1000, "q", "single", rev_noncan=40)])
         pairs, clusters, _ = self.parts(df)
-        fig = REPORT.plot_its_statistics_page(df, pairs, clusters, REPORT.read_params(None))
+        fig = REPORT.plot_its_summary_page(df, pairs, clusters, {}, REPORT.read_params(None))
         self.draw(fig, "mirrored")
-        joint, top = fig.axes[0], fig.axes[1]
+        joint, top = fig.axes[3], fig.axes[4]
         for ax in (joint, top):
             left, right = ax.get_xlim()
             self.assertGreater(left, right)
@@ -1191,7 +1219,7 @@ class ResilientITSReportTests(unittest.TestCase):
         fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, REPORT.read_params(None))
         self.draw(fig, "atlas_precision", False)
         ticks = [t.get_text() for t in fig.axes[0].get_yticklabels()]
-        self.assertEqual([t.split("  ")[-1] for t in ticks], ["116.00 Mb", "115.91 Mb"])
+        self.assertEqual([t.split("\n")[-1] for t in ticks], ["116.00 Mb", "115.91 Mb"])
         self.assertEqual([t.get_text() for t in fig.axes[0].get_xticklabels()][:3], ["0", "20", "40"])
         self.assertEqual(fig.axes[0].get_xlabel(), "Position (Mbp)")
         labels = [t.get_text() for leg in fig.legends for t in leg.get_texts()]
@@ -1304,7 +1332,7 @@ class ResilientITSReportTests(unittest.TestCase):
                 with contextlib.redirect_stderr(io.StringIO()) as log:
                     REPORT.main()
             self.assertTrue((root / "png" / "teloscope_its_summary.png").is_file())
-            self.assertTrue((root / "png" / "teloscope_its_statistics.png").is_file())
+            self.assertFalse((root / "png" / "teloscope_its_statistics.png").exists())
             self.assertNotIn("placeholder", log.getvalue())
             self.assertNotIn("Assembly overview", stderr.getvalue())
             exported = REPORT.pd.read_csv(root / "sample_its_rows.tsv", sep="\t")
@@ -1340,7 +1368,7 @@ class ResilientITSReportTests(unittest.TestCase):
                 with contextlib.redirect_stderr(io.StringIO()) as log:
                     REPORT.main()
             self.assertTrue((root / "empty-its-only.pdf").is_file())
-            self.assertIn("ITS composition", log.getvalue())
+            self.assertIn("ITS summary", log.getvalue())
             self.assertNotIn("placeholder", log.getvalue())
 
 

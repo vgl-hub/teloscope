@@ -47,10 +47,10 @@ FIG_WIDTH_SINGLE = 3.50    # inches (89 mm)
 FIG_WIDTH_DOUBLE = 7.20    # inches (183 mm)
 REPORT_PAGE_HEIGHT = 2.2 + 0.25 * 6  # terminal page with all six tracks
 SLIDE_SIZE = (FIG_WIDTH_DOUBLE, REPORT_PAGE_HEIGHT)  # one page size for every report page
-ATLAS_ROW_IN = (0.135, 0.30)  # atlas row pitch in inches: legible floor, ideogram-like cap
+ATLAS_ROW_IN = (0.22, 0.30)  # atlas row pitch in inches: legible floor, ideogram-like cap
 ATLAS_BAR, ATLAS_GROUP_GAP = 0.45, 0.45  # bar height and extra gap between homolog groups, in rows
 ATLAS_HEADER_IN, ATLAS_FOOT_IN, ATLAS_AXIS_IN, ATLAS_TITLE_IN, ATLAS_GAP_IN = 0.42, 0.10, 0.34, 0.20, 0.12
-ITS_LENGTH_COLOR = "#2A8C82"  # teal, outside the double-key hues
+ITS_LENGTH_COLOR = "#91C9C1"  # teal, outside the double-key hues
 ATLAS_BACKBONE = "#E8E8E8"  # light scaffold backbone behind atlas ITS cells
 
 COLORS = {
@@ -1625,7 +1625,7 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
     ax_legends = _add_axes_in(fig, left, 2.72, 3.55 - left, 0.43)  # legends hang from its top
 
     _draw_stat_tiles(ax_tiles, [
-        (f"{_median(all_len) / 1e3:.1f}" if all_len else "NA", "Median assembled array (kbp)"),
+        (f"{_median(all_len):,.0f}" if all_len else "NA", "Median assembled array (bp)"),
         (f"{total_paths:,}", "Scaffolds"),
         (f"{len(flagged_scaffolds):,}", "Flagged scaffolds"),
         (f"{len(block_rows):,}", "Terminal telomeres"),
@@ -1709,7 +1709,7 @@ def plot_overview_page2(blocks, chrom_sizes):
 
     # Inch layout: three square axes sharing one top edge, so titles share a baseline.
     fig = plt.figure(figsize=SLIDE_SIZE)
-    top, side = 1.05, 1.66  # panel tops level with page 1
+    top, side = 0.55, 1.66  # lift the square panels toward the page title
     right = 0.97 * FIG_WIDTH_DOUBLE
     ax_rain = _add_axes_in(fig, 0.66, top, side, side)
     ax_scatter = _add_axes_in(fig, 2.98, top, side, side)
@@ -1819,8 +1819,8 @@ def plot_overview_page2(blocks, chrom_sizes):
                                xticks=list(ticker.MaxNLocator(nbins=4).tick_values(0, rows[0]["value"])))
 
     _panel_title(ax_rain, "Length by arm", "c", x_in=PANEL_LETTER_X_IN)
-    _panel_title(ax_scatter, "Telomere positioning", "d")
-    _panel_title(ax_flagged, "Flagged telomeres", "e")
+    _panel_title(ax_scatter, "Telomere positioning", "d", x_in=2.48)
+    _panel_title(ax_flagged, "Flagged telomeres", "e", x_in=4.71)
     _page_title(fig, "Terminal telomeres")
     return fig
 
@@ -2161,7 +2161,7 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
 
     # Right-hand column holds the key and legend, so the rows get the full page height.
     col_w, col_gap = 1.30, 0.25
-    left_in, col_x = 0.145 * width, 0.97 * width - col_w
+    left_in, col_x = 0.12 * width, 0.97 * width - col_w
     axes_w = col_x - col_gap - left_in
     row_h = _atlas_row_in(layouts)
     used = sum(h * row_h + ATLAS_AXIS_IN + (ATLAS_TITLE_IN if split else 0.0) for _, _, h in layouts) \
@@ -2235,8 +2235,8 @@ def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
                         lw=0.6, transform=bracket, clip_on=False, solid_capstyle="butt")
             i = j + 1
         ax.set_yticks(ys)
-        ax.set_yticklabels([f"{labels.get(c, c)}  {'≥' if known.get(c) == 0 else ''}{_fmt_bp_fixed(extent[c])}"
-                            for c in names], fontsize=AXIS_LABEL_SIZE)
+        ax.set_yticklabels([f"{labels.get(c, c)}\n{'≥' if known.get(c) == 0 else ''}{_fmt_bp_fixed(extent[c])}"
+                            for c in names], fontsize=AXIS_LABEL_SIZE, linespacing=1.05)
         ax.tick_params(axis="y", length=0, pad=6)
         ax.set_ylim(ys[-1] + 0.5, -0.5)
         ax.set_xlim(0, longest)
@@ -2364,18 +2364,37 @@ def _draw_its_scaffold_panel(ax, df, chrom_sizes):
                linewidths=0.3, zorder=2)
     _plain_log_axis(ax, "x", x.min(), x.max())
     _plain_log_axis(ax, "y", y.min(), y.max(), margin=1.6)
-    for group in groups if len(groups) <= 3 else []:  # name scaffolds only while the plot is sparse
-        top = y[group].idxmax()
-        ax.annotate(_homolog_key(top) if len(group) > 1 else top, (x[top], y[top]),
-                    xytext=(4, 0), textcoords="offset points", ha="left", va="center",
-                    fontsize=ANNOTATION_TEXT_SIZE, color="#444444")
+    # Place sparse labels in display coordinates, keeping them apart on log axes.
+    ax.figure.canvas.draw()
+    renderer = ax.figure.canvas.get_renderer()
+    placed = []
+    for group in groups if len(groups) <= 3 else []:
+        anchor = y[group].idxmax()
+        label = _homolog_key(anchor) if len(group) > 1 else anchor
+        text = ax.annotate(label, (x[anchor], y[anchor]), xytext=(4, 0),
+                           textcoords="offset points", ha="left", va="center",
+                           fontsize=ANNOTATION_TEXT_SIZE, color="#222222",
+                           arrowprops=dict(arrowstyle="-", color="#777777", lw=0.4))
+        for dy in (0, 9, -9, 18, -18, 27, -27):
+            for dx, align in ((4, "left"), (-4, "right")):
+                text.set_position((dx, dy))
+                text.set_ha(align)
+                text.update_positions(renderer)
+                box = matplotlib.text.Text.get_window_extent(text, renderer).expanded(1.04, 1.15)
+                if (ax.bbox.contains(box.x0, box.y0) and ax.bbox.contains(box.x1, box.y1)
+                        and not any(box.overlaps(other) for other in placed)):
+                    break
+            else:
+                continue
+            break
+        placed.append(box)
     _its_axis_style(ax)
     ax.set_xlabel("ITS per scaffold", fontsize=AXIS_LABEL_SIZE, labelpad=2)
     ax.set_ylabel("ITS density (bp per Mbp)", fontsize=AXIS_LABEL_SIZE, labelpad=2)
 
 
 def plot_its_summary_page(df, pairs, clusters, chrom_sizes, params):
-    """ITS summary: headline tiles, ITS length (a) and ITS count x density per scaffold (b)."""
+    """ITS summary: headline tiles, length (a), scaffold density (b), and composition (c)."""
     fig = plt.figure(figsize=SLIDE_SIZE)
     _page_title(fig, "Assembly ITS summary")
     if df.empty:
@@ -2391,8 +2410,8 @@ def plot_its_summary_page(df, pairs, clusters, chrom_sizes, params):
         (f"{len(clusters):,}", "Clusters"),
         (f"{len(pairs):,}", "Candidate fusions"),
     ])
-    hist = _inch_axes(fig, 0.78, 0.55, 2.62, 2.07)  # tops level with the assembly summary panels
-    per = _inch_axes(fig, 4.40, 0.55, 2.62, 2.07)
+    hist = _inch_axes(fig, 0.66, 0.63, 1.66, 1.98)
+    per = _inch_axes(fig, 2.98, 0.63, 1.66, 1.98)
     if (lengths > 0).any():
         _draw_its_length_panel(hist, lengths)
     else:
@@ -2400,6 +2419,7 @@ def plot_its_summary_page(df, pairs, clusters, chrom_sizes, params):
     _panel_title(hist, "ITS length", "a", x_in=PANEL_LETTER_X_IN)
     _draw_its_scaffold_panel(per, df, chrom_sizes)
     _panel_title(per, "ITS per scaffold", "b")
+    _draw_its_composition(fig, df, params)
     return fig
 
 
@@ -2466,34 +2486,29 @@ def _draw_its_size_key(ax, lengths, dense):
     ax.axis("off")
 
 
-def plot_its_statistics_page(df, pairs, clusters, params):
-    """ITS composition: per-ITS strand and canonical shares (a) and the double-key class totals (b)."""
-    fig = plt.figure(figsize=SLIDE_SIZE)
-    _page_title(fig, "ITS composition")
-    if df.empty:
-        fig.text(0.5, 0.5, "No ITS", ha="center", va="center",
-                 fontsize=PLACEHOLDER_TEXT_SIZE, color="#bbbbbb")
-        return fig
+def _draw_its_composition(fig, df, params):
+    """Summary panel c: joint composition and class totals in the same nine regions."""
     threshold = params.get("label_threshold", LABEL_THRESHOLD)
     lengths = df["teloLen"].to_numpy(dtype=float)
-    joint = _inch_axes(fig, 1.20, 0.55, 2.05, 2.05)
-    top = _inch_axes(fig, 1.20, 2.64, 2.05, 0.42)
-    right = _inch_axes(fig, 3.29, 0.55, 0.42, 2.05)
-    key = _inch_axes(fig, 4.75, 1.36, 1.70, 1.70)
-    size_key = _inch_axes(fig, 4.75, 0.40, 1.70, 0.62)
-
+    joint = _inch_axes(fig, 5.21, 0.63, 1.66, 1.66)
+    top = _inch_axes(fig, 5.21, 2.33, 1.66, 0.28)
+    right = _inch_axes(fig, 6.91, 0.63, 0.16, 1.66)
     _draw_its_joint_panel(joint, top, right, df, threshold)
-    _panel_title(top, "Composition per ITS", "a", x_in=PANEL_LETTER_X_IN)
-    _draw_its_size_key(size_key, lengths[lengths > 0] if (lengths > 0).any() else np.ones(1), len(df) > 500)
-
+    _panel_title(top, "ITS composition", "c")
     strand, canon = composition_class(df["fwdCan"], df["revCan"], df["fwdNonCan"], df["revNonCan"], threshold)
-    counts = np.zeros((3, 3))
-    bp = np.zeros((3, 3))
+    counts, bp = np.zeros((3, 3)), np.zeros((3, 3))
     np.add.at(counts, (canon, strand), 1)
     np.add.at(bp, (canon, strand), lengths)
-    _draw_double_key(key, counts, bp, fontsize=LEGEND_TEXT_SIZE)
-    _panel_title(key, "ITS per class (n, % of bp)", "b")
-    return fig
+    cuts = (0, 1 - threshold, threshold, 1)
+    for c in range(3):
+        for s in range(3):
+            share = 100 * bp[c, s] / lengths.sum() if lengths.sum() > 0 else 0
+            joint.text((cuts[s] + cuts[s + 1]) / 2, (cuts[c] + cuts[c + 1]) / 2,
+                       f"{int(counts[c, s]):,}\n{share:.0f}%", ha="center", va="center",
+                       fontsize=MIN_TEXT_SIZE, color="black", zorder=4,
+                       bbox=dict(facecolor="white", alpha=0.85, edgecolor="none", pad=1))
+    joint.text(0.5, -0.22, "Class: ITS count / % of ITS bp\nMarker area: ITS length",
+               transform=joint.transAxes, ha="center", va="top", fontsize=MIN_TEXT_SIZE)
 
 
 _ITS_SEGMENT_KEYS = (("fwdCan", 2, 2), ("fwdNonCan", 0, 2), ("revNonCan", 0, 0), ("revCan", 2, 0))
@@ -3256,8 +3271,6 @@ def main():
     if "report" not in files and args.section != "its":
         _warn(f"No '*_report.tsv' file found in '{args.directory}'; the overview classification panel will show no data.")
 
-    print(f"Found files: {', '.join(files.keys())}", file=sys.stderr)
-
     blocks = parse_terminal_bed(files["terminal"]) if "terminal" in files else {}
     include_terminal = args.section != "its" and "terminal" in files
 
@@ -3283,14 +3296,6 @@ def main():
     chrom_sizes = get_chrom_sizes(blocks, density_data, canonical_data, strand_data)
 
     classifications = parse_report(files["report"]) if "report" in files else OrderedDict()
-    # a flagged scaffold appears under its completeness class and its anomaly, so count it once
-    total_chroms = len({chrom for v in classifications.values() for chrom in v})
-    total_telo = sum(len(blist) for blist in arm_blocks.values())
-    cat_summary = ", ".join(f"{k}={len(v)}" for k, v in classifications.items()) or "none"
-    print(f"Chromosomes: {total_chroms}  |  Telomere blocks: {total_telo}  |  "
-          f"Categories: {cat_summary}",
-          file=sys.stderr)
-
     # Only generate figures for chromosomes that have telomere blocks
     profile_chroms = [chrom for chrom in sorted(arm_blocks.keys(),
                                                 key=lambda c: chrom_sizes.get(c, 0), reverse=True)
@@ -3312,8 +3317,6 @@ def main():
             gaps_frame = load_gaps_frame(files["gaps"]) if "gaps" in files else pd.DataFrame(columns=["chr", "start", "end"])
             pairs = pair_fusions(its_frame, gaps_frame, params["max_block_dist"])
             clusters = summarize_its_clusters(its_frame)
-            print(f"ITS: {len(its_frame)}  |  Candidate fusions: {len(pairs)}  |  "
-                  f"Clusters: {len(clusters)}", file=sys.stderr)
             its_page = (its_frame, pairs, clusters, params)
             its_frame.attrs["display_labels"] = _its_labels(its_frame, chrom_sizes, arm_blocks)
 
@@ -3385,11 +3388,6 @@ def main():
             lambda: plot_its_summary_page(its_frame, pairs, clusters, chrom_sizes, params),
             "ITS summary", "Failed to render ITS summary.",
         ))
-        pages.append((
-            "its-statistics", "teloscope_its_statistics.png",
-            lambda: plot_its_statistics_page(its_frame, pairs, clusters, params),
-            "ITS composition", "Failed to render ITS composition.",
-        ))
         # Atlas geometry and rankings are dataset-wide; compute once here rather than per page.
         atlas = _its_atlas_chroms(its_frame, arm_blocks, chrom_sizes)
         cells = _its_atlas_cells(its_frame, params["label_threshold"])
@@ -3421,13 +3419,14 @@ def main():
             ))
 
     n_figures = len(pages)
+    print(f"\nPlot report: {n_figures} pages", file=sys.stderr)
 
     def emit_page(save_fig, builder, title, message, name, index):
         """Build, save via save_fig, and report progress/fallback for one page."""
         ok, error_text = _save_figure_with_fallback(save_fig, builder, title, message)
         if not ok:
             fallback_pages.append((name, error_text))
-        print(f"[{index}/{n_figures}] {title}{' [warning]' if not ok else ''}", file=sys.stderr)
+        print(f"  [{index}/{n_figures}] {title}{' [warning]' if not ok else ''}", file=sys.stderr)
 
     # --- Write-and-close pattern: one figure in memory at a time ---
     if args.png:
@@ -3439,7 +3438,7 @@ def main():
             used_names.add(png_name)
             path = os.path.join(out_dir, png_name)
             emit_page(lambda fig, path=path: fig.savefig(path, dpi=args.dpi), builder, title, message, name, i)
-        print(f"Figures saved to {out_dir}/", file=sys.stderr)
+        print(f"\nSaved figures: {out_dir}/", file=sys.stderr)
     else:
         if args.section == "split":
             stem = os.path.splitext(out_path)[0]
@@ -3455,7 +3454,7 @@ def main():
                 for name, png_name, builder, title, message in section_pages:
                     i += 1
                     emit_page(lambda fig: pdf.savefig(fig, dpi=args.dpi), builder, title, message, name, i)
-            print(f"Report saved to {pdf_path}", file=sys.stderr)
+            print(f"\nSaved: {pdf_path}\n", file=sys.stderr)
 
     if fallback_pages:
         preview = ", ".join(f"{name} ({err})" for name, err in fallback_pages[:5])
