@@ -7,178 +7,70 @@
 [![Anaconda-Server Badge](https://anaconda.org/bioconda/teloscope/badges/license.svg)](https://anaconda.org/bioconda/teloscope)
 [![Anaconda-Server Badge](https://anaconda.org/bioconda/teloscope/badges/downloads.svg)](https://anaconda.org/bioconda/teloscope)
 
-Teloscope scans assembly ends for telomeric repeats. It reads `FASTA`, `FASTA.gz`, and `GFA` inputs, merges repeat matches into telomere blocks, classifies scaffolds in FASTA mode, and writes files that are easy to inspect in BED, TSV, BEDgraph, PDF, or GFA form. With FASTQ or BAM input, it writes the telomeric reads and a per-read telomere length estimate.
-
-In FASTA mode, Teloscope writes terminal telomere annotations, gap coordinates, and a summary table. In GFA mode, it writes an annotated graph for BandageNG. Synthetic telomere nodes attach to the assembly with `L` links at `0M` overlap, the direct adjacency a cap represents, so BandageNG draws them as caps. `J` jump records stay reserved for real assembly gaps.
-
-## What Teloscope writes
-
-- FASTA mode: `*_terminal_telomeres.bed`, `*_interstitial_telomeres.bed`, `*_gaps.bed`, `*_report.tsv`, plus optional window tracks, match BED files, an optional telomere FASTA (`-a`), and a PDF report.
-- GFA mode: `<input>.telo.annotated.gfa` with telomere placeholder segments linked to the original graph, plus `<input>.telo.annotated.colors.csv` that paints the caps green for BandageNG.
-- Reads mode (FASTQ or BAM input): the telomeric reads, a per-read `*_terminal_telomeres.bed`, and a `*_report.tsv`. See [Parameters](docs/parameters.md#reads-mode).
+Teloscope is a telomere annotation tool. It rapidly matches, counts, and reports telomeric repeats in genome assemblies (FASTA, GFA) and reads (FASTQ, BAM).
 
 ## Install
-
-From source:
-
-```sh
-git clone https://github.com/vgl-hub/teloscope.git --recursive
-cd teloscope
-make -j
-```
-
-To build the helper binaries as well:
-
-```sh
-make all -j
-```
-
-From Bioconda:
 
 ```sh
 conda install -c bioconda teloscope
 ```
 
-Build requirements:
-
-- C++17 compiler
-- `zlib`
-- `pthread`
-- the `gfalibs` submodule
-
-If the submodule is missing, run:
+Or download a Linux, macOS, or Windows binary from [Releases](https://github.com/vgl-hub/teloscope/releases), or build from source with a C++17 compiler and zlib:
 
 ```sh
-git submodule update --init --recursive
+git clone --recursive https://github.com/vgl-hub/teloscope.git
+cd teloscope
+make -j
 ```
 
-For `--plot-report`, install Python 3 with `matplotlib`, `numpy`, and `pandas`.
+`--plot-report` needs Python 3 with `matplotlib`, `numpy`, and `pandas`, and finds `scripts/teloscope_report.py` in a source checkout or next to the binary.
 
 ## Quick start
 
 | Task | Command |
 | --- | --- |
-| Scan a vertebrate assembly with the default motif | `teloscope asm.fa` |
-| Read compressed FASTA directly | `teloscope asm.fa.gz` |
-| Write every optional output and the reports | `teloscope asm.fa -o results/ -r -g -e -m -a -i --plot-report` |
+| Scan a vertebrate assembly (FASTA or FASTA.gz) | `teloscope asm.fa.gz` |
+| Write every output and the PDF reports | `teloscope asm.fa -o results/ -r -g -e -m -a -i --plot-report` |
 | Switch to a plant canonical repeat | `teloscope asm.fa -c CCCTAAA` |
 | Search explicit motif variants | `teloscope asm.fa -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG` |
-| Annotate a graph for BandageNG | `teloscope asm.gfa -o results/` |
-| Measure and subset telomeric reads, from FASTQ | `teloscope reads.fq.gz -j 32 -o results/` |
-| Measure and subset telomeric reads, from BAM | `teloscope reads.bam -j 32 -o results/` |
 | Also report telomeres at contig ends, e.g. before manual curation | `teloscope asm.fa -n` |
 | Keep only records named like the longest one | `teloscope asm.fa --chr-only` |
+| Keep only listed records | `teloscope asm.fa --include-bed ids.txt` |
+| Annotate a graph for BandageNG | `teloscope asm.gfa -o results/` |
+| Measure and subset telomeric reads (FASTQ or BAM) | `teloscope reads.fq.gz -j 32 -o results/` |
 | Read decompressed stdin | `zcat asm.fa.gz \| teloscope -o results/` |
 
-Notes:
+Each pattern is also searched as its reverse complement, and without `-p` the search set comes from `-c`. The default scan reads only sequence ends; `-r`, `-g`, `-e`, `-m`, or `-i` switch to a full scan. Compressed stdin must be BAM.
 
-- Teloscope always searches both each input pattern and its reverse complement.
-- If `-p` is omitted, Teloscope derives the search set from `-c`.
-- Any of `-r`, `-g`, `-e`, `-m`, or `-i` forces the full scan instead of the fast end-only scan. In fast mode `-n` reads both end windows of every contig and adds contig-terminal rows to the terminal BED.
-- GFA mode attaches telomere caps with `L` links at `0M` overlap; `J` records stay reserved for real assembly gaps.
-- Gzipped stdin is not supported, except BAM. Decompress before piping.
-- BAM support has no external bioinformatics runtime dependency: it uses `zlib` directly and does not require HTSlib, `samtools`, or another converter.
-
-## Filter assembly records
-
-Filtering is off by default. The include/exclude flags can be repeated, and matching is case-sensitive. `--chr-only` is a single on/off switch.
-
-| Flag | Effect | Default |
-| --- | --- | --- |
-| `--include-bed FILE` | keep IDs listed in column 1 | unset |
-| `--exclude-bed FILE` | remove IDs listed in column 1 | unset |
-| `--include-prefix LIST` | keep IDs with any comma-separated prefix | unset |
-| `--exclude-prefix LIST` | remove IDs with any comma-separated prefix | unset |
-| `--chr-only` | keep records named like the longest one | `false` |
-
-`--chr-only` combines with the other filters. See [Parameters](docs/parameters.md#assembly-record-filters) for the naming rule.
-
-Includes form a union and exclusions run last. Without an include flag, all records start selected. Prefixes are literal strings. Selector files accept one ID per line or BED3+ rows; column 1 selects a whole record, and BED coordinates never crop sequences.
-
-FASTA matching uses the first token after `>`. GFA1 matching uses `P` names or, in a pathless graph, `S` names. Filters reject FASTQ and BAM input. Every selector must match, and an empty selection fails. See [Parameters](docs/parameters.md#assembly-record-filters) for validation and GFA limits.
-
-For NCBI FASTA, prefer exact accession.version IDs from the [genome sequence report](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/reference-docs/data-reports/genome-sequence/) or [assembly report](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/data-processing/policies-annotation/genomeftp/). `GCA_` and `GCF_` name assemblies, not FASTA records, and prefixes such as `CM` or `NC_` are not universal chromosome tests.
-
-## Typical output layout
-
-FASTA run:
+## Outputs
 
 ```text
 results/
-  asm.fa_terminal_telomeres.bed
-  asm.fa_terminal_telomeres.fa
-  asm.fa_interstitial_telomeres.bed
-  asm.fa_gaps.bed
-  asm.fa_report.tsv
-  asm.fa_window_repeat_density.bedgraph
-  asm.fa_window_canonical_ratio.bedgraph
-  asm.fa_window_strand_ratio.bedgraph
-  asm.fa_window_gc.bedgraph
-  asm.fa_window_entropy.bedgraph
-  asm.fa_canonical_matches.bed
-  asm.fa_noncanonical_matches.bed
-  asm.fa_plot_report_terminal.pdf
-  asm.fa_plot_report_its.pdf
+  asm.fa_terminal_telomeres.bed       telomeres at sequence ends
+  asm.fa_interstitial_telomeres.bed   interstitial telomeres (ITS)
+  asm.fa_gaps.bed                     assembly gaps
+  asm.fa_report.tsv                   per-sequence classes and assembly summary, as on stdout
+  asm.fa_terminal_telomeres.fa        -a
+  asm.fa_window_*.bedgraph            -r, -g, -e
+  asm.fa_*canonical_matches.bed       -m
+  asm.fa_plot_report_*.pdf            --plot-report
 ```
 
-GFA run:
-
-```text
-results/
-  asm.gfa.telo.annotated.gfa
-  asm.gfa.telo.annotated.colors.csv
-```
+A GFA run writes `asm.gfa.telo.annotated.gfa` and a BandageNG color file. A reads run writes the telomeric reads, a per-read telomere BED, and a report.
 
 ## Documentation
 
 | Page | Covers |
 | --- | --- |
-| [Parameters](docs/parameters.md) | command-line flags, defaults, and flag interactions |
-| [Outputs](docs/outputs.md) | every output file, naming rules, and column layouts |
-| [Classification](docs/classification.md) | FASTA scaffold classes and the `granular` labels |
-| [Algorithm](docs/algorithm.md) | how FASTA mode and GFA mode are processed |
-| [Report generation](docs/report.md) | `--plot-report`, ITS plotting, standalone plotting, and report inputs |
-| [Simulation](docs/simulation.md) | the synthetic benchmark generator and evaluator |
-| [Testing](docs/testing.md) | invariant and intent checks, validator runs, and test regeneration |
-| [Troubleshooting](docs/troubleshooting.md) | common build, input, and runtime failures |
-| [Release checklist](docs/release.md) | GitHub, Bioconda, and Zenodo release steps |
-| [Validation format](https://github.com/vgl-hub/teloscope/blob/main/validateFiles/README.md) | the `.tst` harness, including directive-mode GFA cases |
-
-## Repo layout
-
-- `src/` and `include/`: main C++ implementation and headers
-- `scripts/`: Python and shell helpers, including `teloscope_report.py`, `plot_its.py`, and plotting regression checks
-- `docs/`: user-facing documentation
-- `testFiles/`: public FASTA and GFA fixtures plus expected outputs
-- `validateFiles/`: `.tst` manifests used by `teloscope-validate`
-- `gfalibs/`: graph I/O submodule used for GFA parsing and writing
-
-## Validation
-
-Run the fixture, intent and invariant checks:
-
-```sh
-make test-synthetic
-```
-
-Build the validator and run the checked-in `.tst` suite:
-
-```sh
-make validate
-build/bin/teloscope-validate validateFiles
-```
-
-Run the report layout regression script:
-
-```sh
-python3 scripts/test_teloscope_report.py
-```
-
-Run the gap BED regression script:
-
-```sh
-bash scripts/test_gaps_bed.sh
-```
+| [Parameters](docs/parameters.md) | flags, defaults, record filters, and reads mode |
+| [Outputs](docs/outputs.md) | every file and column |
+| [Classification](docs/classification.md) | scaffold classes, anomalies, and block labels |
+| [Algorithm](docs/algorithm.md) | how each mode works |
+| [Report generation](docs/report.md) | PDF reports and standalone plotting |
+| [Troubleshooting](docs/troubleshooting.md) | errors and surprising calls |
+| [Testing](docs/testing.md) | test suites, validation, and repo layout |
+| [Simulation](docs/simulation.md) | the synthetic benchmark |
+| [Release checklist](docs/release.md) | GitHub, Bioconda, and Zenodo steps |
 
 ## Citation
 
