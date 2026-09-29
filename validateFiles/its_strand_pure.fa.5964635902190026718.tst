@@ -2,8 +2,8 @@ testFiles/its_strand_pure.fa -f testFiles/its_strand_pure.fa -i -n -t 50 -x 1 -o
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	chr_its_strand_pure	0	none	0	none	.		1	13	0
+pos	header	telomeres	labels	gaps	type	anomaly	its
+1	chr_its_strand_pure	0	none	0	none	.	1
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -12,18 +12,16 @@ Scaffold N50:	320
 Contig N50:	320
 Total telomeres:	0
 Total ITS blocks:	1
-Total canonical matches:	13
-Total windows analyzed:	0
 
 +++ Telomere Statistics +++
 No telomeres found for statistics.
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	0
 One telomere:	0
 Zero telomeres:	1
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	0
 Gapped T2T:	0
 Incomplete:	0

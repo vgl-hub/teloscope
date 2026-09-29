@@ -103,7 +103,7 @@ def read_report(text_or_path, is_text=False):
 
 # ---------------------------------------------------------------- small re-derivations
 
-# closestEnd is the end a telomere belongs to, not the nearer one; arms, anomalies and granular key on it
+# closestEnd is the end a telomere belongs to, not the nearer one; arms, labels and anomalies key on it
 
 LABEL_SCALE = 1000
 DEFAULT_LABEL_THRESHOLD = 0.667
@@ -155,21 +155,8 @@ def anomalies(blocks):
     return ",".join(ordered) if ordered else "."
 
 
-def granular(blocks):
-    """One token per terminal row, ascending by start: upper scaffold, lower contig, * discordant."""
-    blocks = sorted(blocks, key=lambda b: b["start"])
-    out = []
-    for b in blocks:
-        ch = b["closestEnd"].upper() if b["teloType"] == "scaffold" else b["closestEnd"].lower()
-        if b["teloLabel"] != b["closestEnd"]:
-            ch += "*"
-        out.append(ch)
-    return "".join(out)
-
-
 def labels_column(blocks):
-    """closestEnd (side) of each scaffold arm, ascending by start -- the uppercase letters
-    of granular, lowercased, in order -- or 'none'."""
+    """closestEnd (side) of each scaffold arm, ascending by start, or 'none'."""
     scaffold = sorted((b for b in blocks if b["teloType"] == "scaffold"), key=lambda b: b["start"])
     out = "".join(b["closestEnd"] for b in scaffold)
     return out or "none"
@@ -316,12 +303,9 @@ def check_derivations(rec, subject, terminal, interstitial, gaps, rows, summary,
         rec.eq("DER-03-type-from-blocks", where, row.get("type"), scaffold_type(blocks))
         if "anomaly" in row:
             rec.eq("DER-04-anomaly-from-blocks", where, row["anomaly"], anomalies(blocks))
-        rec.eq("DER-05-granular-from-blocks", where, row.get("granular", ""), granular(blocks))
         rec.eq("DER-06-labels-from-blocks", where, row.get("labels"), labels_column(blocks))
-        # DER-03 tests the same predicate; this checks the granular string, built separately.
-        rec.eq("DER-07-telomere-count-matches-granular", where,
-               int(row.get("telomeres", -1)),
-               sum(1 for c in row.get("granular", "") if c in "PQ"))
+        rec.eq("DER-07-telomere-count-from-blocks", where, int(row.get("telomeres", -1)),
+               sum(1 for b in blocks if b["teloType"] == "scaffold"))
         rec.eq("DER-08-gap-count", where, int(row.get("gaps", -1)),
                len(gaps_by_chrom.get(chrom, [])))
         if "its" in row:
@@ -353,7 +337,7 @@ FULL_SCAN_FLAGS = {"-r", "-g", "-e", "-m", "-i", "--out-win-repeats", "--out-gc"
 
 
 def shared_report(rows):
-    keys = ["telomeres", "labels", "gaps", "type", "anomaly", "granular"]
+    keys = ["telomeres", "labels", "gaps", "type", "anomaly"]
     return {h: tuple(r.get(k) for k in keys) for h, r in rows.items()}
 
 
@@ -412,7 +396,7 @@ def check_metamorphic(rec, subject, fasta_path, base_flags, stem):
             dirs.append(d5)
             ultra_run, full_run, ultra_dir, full_dir = a, f, d1, d5
         if ultra_run and full_run:
-            keys = ["telomeres", "labels", "gaps", "type", "anomaly", "granular"]
+            keys = ["telomeres", "labels", "gaps", "type", "anomaly"]
             ultra = {h: tuple(r.get(k) for k in keys) for h, r in ultra_run[0].items()}
             full = {h: tuple(r.get(k) for k in keys) for h, r in full_run[0].items()}
             bad = [h for h in ultra if ultra.get(h) != full.get(h)]

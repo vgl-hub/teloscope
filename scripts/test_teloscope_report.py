@@ -184,10 +184,10 @@ class TeloscopeReportTests(unittest.TestCase):
             report_path = Path(tmpdir) / "synthetic_report.tsv"
             report_path.write_text(
                 "+++\n"
-                "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular\n"
-                "1\tchr_dis\t1\tq\t0\tincomplete\tdiscordant_q\tQ*\n"
-                "2\tchr_frag\t1\tp\t0\tincomplete\tfragmented_p\tPp\n"
-                "3\tchr_none\t0\tnone\t0\tnone\t.\t\n",
+                "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\n"
+                "1\tchr_dis\t1\tq\t0\tincomplete\tdiscordant_q\n"
+                "2\tchr_frag\t1\tp\t0\tincomplete\tfragmented_p\n"
+                "3\tchr_none\t0\tnone\t0\tnone\t.\n",
                 encoding="utf-8",
             )
 

@@ -2,8 +2,8 @@ testFiles/mirror_rev_start_long.fa
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	chr_mirror_rev_start_long	1	p	0	incomplete	discordant_p	P*
+pos	header	telomeres	labels	gaps	type	anomaly
+1	chr_mirror_rev_start_long	1	p	0	incomplete	discordant_p
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -18,12 +18,12 @@ Median length:	600
 Min length:	600
 Max length:	600
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	0
 One telomere:	1
 Zero telomeres:	0
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	0
 Gapped T2T:	0
 Incomplete:	1

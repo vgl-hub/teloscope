@@ -2,10 +2,10 @@ testFiles/multi.fa -f testFiles/multi.fa -n
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	contig_t2t	2	pq	0	t2t	.	PQ
-2	contig_none	0	none	0	none	.	
-3	contig_incomplete	1	q	0	incomplete	.	Q
+pos	header	telomeres	labels	gaps	type	anomaly
+1	contig_t2t	2	pq	0	t2t	.
+2	contig_none	0	none	0	none	.
+3	contig_incomplete	1	q	0	incomplete	.
 
 +++ Assembly Summary Report +++
 Total paths:	3
@@ -20,12 +20,12 @@ Median length:	600
 Min length:	600
 Max length:	600
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	1
 One telomere:	1
 Zero telomeres:	1
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	1
 Gapped T2T:	0
 Incomplete:	1

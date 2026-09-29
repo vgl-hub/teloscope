@@ -2,10 +2,10 @@ testFiles/multi.fa -f testFiles/multi.fa -r -o testFiles/tmp
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	contig_t2t	2	pq	0	t2t	.	PQ	0	200	4
-2	contig_none	0	none	0	none	.		0	0	2
-3	contig_incomplete	1	q	0	incomplete	.	Q	0	100	8
+pos	header	telomeres	labels	gaps	type	anomaly	its
+1	contig_t2t	2	pq	0	t2t	.	0
+2	contig_none	0	none	0	none	.	0
+3	contig_incomplete	1	q	0	incomplete	.	0
 
 +++ Assembly Summary Report +++
 Total paths:	3
@@ -14,8 +14,6 @@ Scaffold N50:	7200
 Contig N50:	7200
 Total telomeres:	3
 Total ITS blocks:	0
-Total canonical matches:	300
-Total windows analyzed:	14
 
 +++ Telomere Statistics +++
 Mean length:	600
@@ -23,12 +21,12 @@ Median length:	600
 Min length:	600
 Max length:	600
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	1
 One telomere:	1
 Zero telomeres:	1
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	1
 Gapped T2T:	0
 Incomplete:	1

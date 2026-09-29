@@ -2,8 +2,8 @@ testFiles/discordant_pp.fa -f testFiles/discordant_pp.fa -r -o testFiles/tmp
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	chr_discordant_pp	1	p	0	incomplete	.	P	0	184	5
+pos	header	telomeres	labels	gaps	type	anomaly	its
+1	chr_discordant_pp	1	p	0	incomplete	.	0
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -12,8 +12,6 @@ Scaffold N50:	5000
 Contig N50:	5000
 Total telomeres:	1
 Total ITS blocks:	0
-Total canonical matches:	184
-Total windows analyzed:	5
 
 +++ Telomere Statistics +++
 Mean length:	2004
@@ -21,12 +19,12 @@ Median length:	2004
 Min length:	2004
 Max length:	2004
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	0
 One telomere:	1
 Zero telomeres:	0
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	0
 Gapped T2T:	0
 Incomplete:	1

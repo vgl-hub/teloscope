@@ -2,8 +2,8 @@ testFiles/misassembly.fa -f testFiles/misassembly.fa -m -o testFiles/tmp
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	chr_misassembly	1	p	0	incomplete	fragmented_p	P	0	150	7
+pos	header	telomeres	labels	gaps	type	anomaly	its
+1	chr_misassembly	1	p	0	incomplete	fragmented_p	0
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -12,8 +12,6 @@ Scaffold N50:	6850
 Contig N50:	6850
 Total telomeres:	1
 Total ITS blocks:	0
-Total canonical matches:	150
-Total windows analyzed:	7
 
 +++ Telomere Statistics +++
 Mean length:	900
@@ -21,12 +19,12 @@ Median length:	900
 Min length:	900
 Max length:	900
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	0
 One telomere:	1
 Zero telomeres:	0
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	0
 Gapped T2T:	0
 Incomplete:	1

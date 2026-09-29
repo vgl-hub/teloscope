@@ -2,8 +2,8 @@ testFiles/boundary_no_terminal.fa -f testFiles/boundary_no_terminal.fa -t 500 -n
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	chr_boundary_no_term	0	none	0	none	.	
+pos	header	telomeres	labels	gaps	type	anomaly
+1	chr_boundary_no_term	0	none	0	none	.
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -15,12 +15,12 @@ Total telomeres:	0
 +++ Telomere Statistics +++
 No telomeres found for statistics.
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	0
 One telomere:	0
 Zero telomeres:	1
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	0
 Gapped T2T:	0
 Incomplete:	0

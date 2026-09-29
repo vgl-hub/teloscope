@@ -162,7 +162,7 @@ write_fasta() {
 
 source "$SCRIPT_DIR/synthetic_fixtures.sh"
 
-MANIFEST_COLUMNS="id	path	scaffold	flags	expect_type	expect_anomaly	expect_granular	expect_telomeres	expect_labels	expect_gaps	expect_its	expect_telolen	intent"
+MANIFEST_COLUMNS="id	path	scaffold	flags	expect_type	expect_anomaly	expect_telomeres	expect_labels	expect_gaps	expect_its	expect_telolen	intent"
 
 # Absent key = default; key present but empty means the field really is empty.
 field() { # expect_string key default
@@ -190,11 +190,10 @@ write_manifest() {
             for rec in "${records[@]}"; do
                 header=${rec%%=*}
                 if [ "${#expects[@]}" -eq 1 ]; then e=${expects[0]}; else e=${expects[$n]}; fi
-                printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
                     "${FX_ID[$i]}" "${FX_PATH[$i]}" "$header" "${FX_FLAGS[$i]}" \
                     "$(field "$e" type '?')" \
                     "$(field "$e" anom '?')" \
-                    "$(field "$e" gran '?')" \
                     "$(field "$e" telo '?')" \
                     "$(field "$e" labels '?')" \
                     "$(field "$e" gaps '?')" \
@@ -207,11 +206,10 @@ write_manifest() {
         local j e
         for j in "${!XFX_ID[@]}"; do
             e=${XFX_EXPECT[$j]}
-            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
                 "${XFX_ID[$j]}" "${XFX_PATH[$j]}" "${XFX_SCAFFOLD[$j]}" "${XFX_FLAGS[$j]}" \
                 "$(field "$e" type '?')" \
                 "$(field "$e" anom '?')" \
-                "$(field "$e" gran '?')" \
                 "$(field "$e" telo '?')" \
                 "$(field "$e" labels '?')" \
                 "$(field "$e" gaps '?')" \

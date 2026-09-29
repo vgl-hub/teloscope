@@ -2,8 +2,8 @@ testFiles/its_gap_split.fa -f testFiles/its_gap_split.fa -i -n -t 50 -k 200 -x 1
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	chr_its_gap_split	0	none	1	none	.	q*p*	0	200	0
+pos	header	telomeres	labels	gaps	type	anomaly	its
+1	chr_its_gap_split	0	none	1	none	.	0
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -12,18 +12,16 @@ Scaffold N50:	1500
 Contig N50:	700
 Total telomeres:	0
 Total ITS blocks:	0
-Total canonical matches:	200
-Total windows analyzed:	0
 
 +++ Telomere Statistics +++
 No telomeres found for statistics.
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	0
 One telomere:	0
 Zero telomeres:	1
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	0
 Gapped T2T:	0
 Incomplete:	0

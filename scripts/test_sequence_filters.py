@@ -753,7 +753,7 @@ def test_output_metadata_and_bed_compatibility(tmp):
         f"report has an invalid version/commit header: {report_lines[0]!r}",
     )
     require(report_lines[1] == expected_params, f"report has incorrect parameters: {report_lines[1]!r}")
-    report_schema = "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular\tits\tcanonical\twindows"
+    report_schema = "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tits"
     require(report_lines[2] == f"#columns\t{report_schema}",
             f"report has incorrect columns: {report_lines[2]!r}")
 

@@ -2,8 +2,8 @@ testFiles/t2t.fa -f testFiles/t2t.fa -t 3000
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	chr_t2t	2	pq	0	t2t	.	PQ
+pos	header	telomeres	labels	gaps	type	anomaly
+1	chr_t2t	2	pq	0	t2t	.
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -18,12 +18,12 @@ Median length:	600
 Min length:	600
 Max length:	600
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	1
 One telomere:	0
 Zero telomeres:	0
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	1
 Gapped T2T:	0
 Incomplete:	0

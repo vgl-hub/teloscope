@@ -2,8 +2,8 @@ testFiles/mirror_no_merge.fa -f testFiles/mirror_no_merge.fa -n
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	chr_mirror_no_merge	1	p	0	incomplete	.	P
+pos	header	telomeres	labels	gaps	type	anomaly
+1	chr_mirror_no_merge	1	p	0	incomplete	.
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -18,12 +18,12 @@ Median length:	780
 Min length:	780
 Max length:	780
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	0
 One telomere:	1
 Zero telomeres:	0
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	0
 Gapped T2T:	0
 Incomplete:	1

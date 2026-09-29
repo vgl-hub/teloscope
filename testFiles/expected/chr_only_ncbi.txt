@@ -1,9 +1,9 @@
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	CM000001.1	2	pq	0	t2t	.	PQ
-2	CM000002.1	2	pq	0	t2t	.	PQ
-3	CM000003.1	0	none	0	none	.	
+pos	header	telomeres	labels	gaps	type	anomaly
+1	CM000001.1	2	pq	0	t2t	.
+2	CM000002.1	2	pq	0	t2t	.
+3	CM000003.1	0	none	0	none	.
 
 +++ Assembly Summary Report +++
 Total paths:	3
@@ -20,12 +20,12 @@ Median length:	600
 Min length:	600
 Max length:	600
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	2
 One telomere:	0
 Zero telomeres:	1
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	2
 Gapped T2T:	0
 Incomplete:	0
