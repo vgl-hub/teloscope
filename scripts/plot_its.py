@@ -87,7 +87,7 @@ def _auto_region_window(its_blocks_list, chrom_size, pad=None, merge_gap=50_000)
     """Window around the ITS cluster with the most ITS bp on this scaffold; None if no ITS blocks.
 
     Delegates to teloscope_report.summarize_its_clusters, the same vectorised clustering
-    used by the ITS-1 ideogram and ITS-2/TSV cluster tables.
+    used by the ITS-1 ideogram and ITS-2 cluster tables.
     """
     if not its_blocks_list:
         return None

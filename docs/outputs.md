@@ -48,9 +48,6 @@ Optional:
 | `*_terminal_telomeres.fa` | `-a` | terminal telomere sequences, header `>{chr}:{start}-{end}` with the BED row's coordinates |
 | `*_plot_report_terminal.pdf` | `--plot-report` | terminal PDF report |
 | `*_plot_report_its.pdf` | `--plot-report` | interstitial PDF report |
-| `*_its_rows.tsv` | ITS report | every accepted ITS row |
-| `*_its_scaffolds.tsv` | ITS report | per-scaffold ITS counts and display labels |
-| `*_its_top_hits.tsv` | `--plot-report` (when ITS present) | candidate fusion pairs, longest ITS rows by canonical bp, and ITS clusters |
 
 ## Run provenance
 
@@ -118,29 +115,6 @@ bedtools closest -a blocks.bed -b asm.fa_gaps.bed -d > blocks_with_nearest_gap.t
 ```
 
 The output contains the three block fields, the three gap fields, and the block-to-gap distance.
-
-## `*_its_top_hits.tsv`
-
-Written with every ITS report. Three sections:
-
-**Section 1: Candidate fusion pairs** (q→p), sorted by shorter arm bp descending, ties broken by combined bp descending. Columns:
-- `chr`, `start`, `end` (spanning both arrays)
-- `q_bp`, `p_bp` (bp per arm)
-- `min_arm` (minimum of q_bp and p_bp)
-- `combined_bp` (sum of both arms)
-- `spacer_bp` (gap between the two arrays)
-- `q_can_prop`, `p_can_prop` (canonical bp / array bp, per array)
-- `pos_frac` (midpoint position as fraction of scaffold length)
-
-A candidate fusion requires a q array followed by a p array on the same scaffold, at most `-d` apart, with no N-gap between them, where at least one row is classed as fusion. The shorter array's bp is the longest length cutoff at which the pair still has both arms.
-
-**Section 2: Longest interstitial telomere rows by canonical bp** (top 25), sorted by canonical bp descending, ties broken by `teloLen` descending. `canonical_bp` is `(fwdCan+revCan) x` the canonical motif length (6 for `CCCTAA`/`TTAGGG`, from the report's `#params canonical=` line). Columns:
-- `chr`, `start`, `end`, `teloLen`, `canonical_bp`, `can_prop` (`canonical_bp / teloLen`), `label`, `class`, `pos_frac` (`label` and `class` are the BED `teloLabel` and `teloType`)
-
-`can_prop` can exceed one when matches overlap. `pos_frac` is empty when the scaffold size is unknown. For every row, see `*_its_rows.tsv`.
-
-**Section 3: ITS clusters**. Same-scaffold rows are merged into one cluster while `start - <furthest end seen so far>` stays <= 50 kb, where "furthest end seen so far" is the running maximum of `end` over the rows already placed in that cluster (not just the previous row's `end`), so a row nested inside an earlier, longer row doesn't wrongly split the cluster. Kept when a cluster has >= 3 rows, sorted by summed ITS bp descending. Columns:
-- `chr`, `start`, `end`, `rows`, `span`, `its_bp`, `canonical_bp`
 
 ## `*_report.tsv`
 

@@ -525,9 +525,6 @@ class TeloscopeReportTests(unittest.TestCase):
         self.assertEqual((row["chr"], row["start"], row["end"]), ("chrA", 1000, 1180))
         self.assertEqual((row["q_bp"], row["p_bp"], row["min_arm"]), (100, 70, 70))
         self.assertEqual((row["combined_bp"], row["spacer_bp"]), (170, 10))
-        # canonical_bp = matches x motif length (6); can_prop = canonical_bp / teloLen
-        self.assertAlmostEqual(row["q_can_prop"], 30 / 100)
-        self.assertAlmostEqual(row["p_can_prop"], 24 / 70)
 
     def test_pair_fusions_rejects_spacer_greater_than_d(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -585,7 +582,7 @@ class TeloscopeReportTests(unittest.TestCase):
         self.assertEqual(list(pairs["chr"]), ["chrC", "chrB", "chrA"])
         self.assertEqual(list(pairs["min_arm"]), [90, 90, 50])
 
-    def test_load_its_frame_computes_canonical_bp_and_can_prop(self):
+    def test_load_its_frame_computes_canonical_bp(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             df = _its_frame([
                 _its_row("chrA", 0, 100, "p", "single", fwd_can=4),   # engine floor: 4 matches
@@ -594,9 +591,7 @@ class TeloscopeReportTests(unittest.TestCase):
 
         floor_row, long_row = df.iloc[0], df.iloc[1]
         self.assertEqual(floor_row["canonical_bp"], 4 * 6)
-        self.assertAlmostEqual(floor_row["can_prop"], 24 / 100)
         self.assertEqual(long_row["canonical_bp"], 10 * 6)
-        self.assertAlmostEqual(long_row["can_prop"], 60 / 200)
 
     def test_load_its_frame_respects_a_non_default_motif_length(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -781,8 +776,6 @@ class ResilientITSReportTests(unittest.TestCase):
 
     def test_unknown_extent_is_not_a_q_end(self):
         df = self.frame([_its_row("chrA", 1000, 1100, "p", "single", chrom_size=0)])
-        self.assertTrue(df["pos_frac"].isna().all())
-        self.assertTrue(df["end_dist"].isna().all())
         pairs, clusters, sizes = self.parts(df)
         self.draw(REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes,
                                                REPORT.read_params(None)), "unknown_extent", False)
@@ -795,7 +788,6 @@ class ResilientITSReportTests(unittest.TestCase):
             df = self.frame([_its_row("chrA", 100, 200, "p", "single", chrom_size=size)
                              for size in (1000, 2000)])
         self.assertTrue((df["chrSize"] == 0).all())
-        self.assertTrue(df["pos_frac"].isna().all())
 
     def test_bedgraph_invalid_values_do_not_reach_plots(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -989,8 +981,7 @@ class ResilientITSReportTests(unittest.TestCase):
             "teloLen": 100 + i % 300, "teloLabel": np.array(["p", "q", "b"])[i % 3],
             "teloType": np.array(REPORT.CLASS_ORDER)[i % 4], "chrSize": 100_000_000,
             "fwdCan": i % 7, "revCan": i % 5, "fwdNonCan": i % 11, "revNonCan": i % 13,
-            "canonical_bp": (i % 31) * 6, "can_prop": (i % 31) * 6 / (100 + i % 300),
-            "pos_frac": i * 1000 / 100_000_000,
+            "canonical_bp": (i % 31) * 6,
             "fwdCan": i % 31, "revCan": (i % 5) * (i % 2), "fwdNonCan": i % 7, "revNonCan": i % 11,
         })
         pairs = REPORT.pd.DataFrame(columns=REPORT._PAIR_COLUMNS)
@@ -999,9 +990,7 @@ class ResilientITSReportTests(unittest.TestCase):
         df.attrs["display_labels"] = REPORT._its_labels(df, sizes)
         cells = REPORT._its_atlas_cells(df)
         self.assertEqual(sum(len(starts) for starts, _, _ in cells.values()), n)
-        summary = REPORT.its_scaffold_summary(df, {}, sizes)
-        self.assertEqual(summary["rows"].sum(), n)
-        self.assertEqual(summary["display_label"].nunique(), 83)
+        self.assertEqual(len(set(df.attrs["display_labels"].values())), 83)
         chroms = REPORT._its_atlas_chroms(df, {}, sizes)
         height, columns, pitch, tiers = REPORT._atlas_layout(chroms, sizes)
         self.assertEqual(height, REPORT.ATLAS_HEIGHTS[-1])  # too many rows to label: one condensed page
@@ -1411,8 +1400,7 @@ class ResilientITSReportTests(unittest.TestCase):
             self.assertFalse((root / "png" / "teloscope_its_statistics.png").exists())
             self.assertNotIn("placeholder", log.getvalue())
             self.assertNotIn("Assembly overview", stderr.getvalue())
-            exported = REPORT.pd.read_csv(root / "sample_its_rows.tsv", sep="\t")
-            self.assertEqual(len(exported), 1)
+            self.assertEqual(list(root.rglob("*.tsv")), [])
             (root / "sample_terminal_telomeres.bed").write_text("", encoding="utf-8")
             with mock.patch.object(sys, "argv", ["report", tmpdir, "--section", "terminal",
                                                 "-o", str(root / "terminal.pdf")]):

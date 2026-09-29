@@ -465,7 +465,6 @@ def load_its_frame(path, motif_len=6, blocks=None):
     df = pd.DataFrame(rows, columns=_ITS_COLUMNS).astype(_ITS_DTYPES)
 
     df["canonical_bp"] = (df["fwdCan"] + df["revCan"]) * motif_len
-    df["can_prop"] = np.where(df["teloLen"] > 0, df["canonical_bp"] / df["teloLen"], np.nan)
     # Missing/inconsistent scaffold sizes are not evidence of a q end; leave relative coordinates undefined instead.
     sizes = df.groupby("chr")["chrSize"].transform("max")
     ends = df.groupby("chr")["end"].transform("max")
@@ -475,8 +474,6 @@ def load_its_frame(path, motif_len=6, blocks=None):
     if uncertain:
         _warn(f"{uncertain} ITS scaffold(s) have missing or inconsistent sizes; relative positions are undefined.")
     df["chrSize"] = sizes.where(known_size, 0).astype(np.int64)
-    df["pos_frac"] = ((df["start"] + df["end"]) / 2.0 / df["chrSize"].replace(0, np.nan))
-    df["end_dist"] = np.minimum(df["start"], df["chrSize"] - df["end"]).where(known_size)
     return df
 
 
@@ -683,8 +680,7 @@ def get_chrom_sizes(blocks, *bedgraph_datasets):
 # ITS analysis: candidate fusion pairing and top hits
 # ---------------------------------------------------------------------------
 
-_PAIR_COLUMNS = ["chr", "start", "end", "q_bp", "p_bp", "min_arm", "combined_bp",
-                 "spacer_bp", "q_can_prop", "p_can_prop", "pos_frac"]
+_PAIR_COLUMNS = ["chr", "start", "end", "q_bp", "p_bp", "min_arm", "combined_bp", "spacer_bp"]
 
 
 def pair_fusions(df, gaps, d):
@@ -721,9 +717,6 @@ def pair_fusions(df, gaps, d):
         "end":          nxt.loc[mask, "end"].to_numpy().astype(np.int64),
         "q_bp":         ordered.loc[mask, "teloLen"].to_numpy(),
         "p_bp":         nxt.loc[mask, "teloLen"].to_numpy().astype(np.int64),
-        "q_can_prop":   ordered.loc[mask, "can_prop"].to_numpy(),
-        "p_can_prop":   nxt.loc[mask, "can_prop"].to_numpy(),
-        "chrSize":      ordered.loc[mask, "chrSize"].to_numpy(),
     })
 
     # drop pairs whose gap spans a real N-gap; searchsorted per chromosome, not per pair
@@ -747,52 +740,28 @@ def pair_fusions(df, gaps, d):
     cand["spacer_bp"] = np.clip(cand["p_start"] - cand["q_end"], 0, None).astype(np.int64)
     cand["min_arm"] = np.minimum(cand["q_bp"], cand["p_bp"])
     cand["combined_bp"] = cand["q_bp"] + cand["p_bp"]
-    cand["pos_frac"] = np.where(cand["chrSize"] > 0,
-                                (cand["start"] + cand["end"]) / 2.0 / cand["chrSize"], np.nan)
 
     cand = cand.sort_values(["min_arm", "combined_bp", "chr", "start", "end"],
                             ascending=[False, False, True, True, True]).reset_index(drop=True)
     return cand[_PAIR_COLUMNS]
 
 
-_LONG_ITS_COLUMNS = ["chr", "start", "end", "teloLen", "canonical_bp", "can_prop",
-                     "teloLabel", "teloType", "pos_frac"]
-_CLUSTER_COLUMNS = ["chr", "start", "end", "rows", "span", "its_bp", "canonical_bp"]
+_CLUSTER_COLUMNS = ["chr", "start", "end", "rows", "span", "its_bp"]
 
 
 def rank_long_its(df, top_n=25):
     """Long ITS rows ranked by canonical bp descending, ties broken by length descending."""
     if df.empty:
-        return df[_LONG_ITS_COLUMNS] if set(_LONG_ITS_COLUMNS) <= set(df.columns) else df
+        return df
     ranked = df.sort_values(["canonical_bp", "teloLen", "chr", "start", "end", "teloLabel", "teloType"],
                            ascending=[False, False, True, True, True, True, True]).reset_index(drop=True)
-    return ranked.head(top_n)[_LONG_ITS_COLUMNS]
-
-
-def its_top_hits(out_path, df, pairs, clusters, top_longest=25):
-    """Write <prefix>_its_top_hits.tsv: candidate fusions, long ITS by canonical bp, then clusters."""
-    with open(out_path, "w") as fh:
-        fh.write("# teloscope ITS top hits\n")
-        fh.write("# section 1: candidate fusion pairs (q->p), ranked by min(q_bp, p_bp) "
-                "descending, ties broken by combined_bp descending\n")
-        fh.write("#" + "\t".join(_PAIR_COLUMNS) + "\n")
-        pairs[_PAIR_COLUMNS].to_csv(fh, sep="\t", header=False, index=False, float_format="%.4f")
-
-        fh.write(f"# section 2: {top_longest} longest ITS by canonical bp "
-                "descending, ties broken by teloLen descending\n")
-        fh.write("#chr\tstart\tend\tteloLen\tcanonical_bp\tcan_prop\tlabel\tclass\tpos_frac\n")
-        rank_long_its(df, top_longest).to_csv(fh, sep="\t", header=False, index=False, float_format="%.4f")
-
-        fh.write("# section 3: ITS clusters (scaffold rows within 50 kb of each other) with "
-                ">= 3 rows, ranked by summed ITS bp descending\n")
-        fh.write("#chr\tstart\tend\trows\tspan\tits_bp\tcanonical_bp\n")
-        clusters[_CLUSTER_COLUMNS].to_csv(fh, sep="\t", header=False, index=False, float_format="%.4f")
+    return ranked.head(top_n)
 
 
 def compute_its_clusters(df, merge_gap=ITS_CLUSTER_MERGE_GAP):
     """Assign a cluster id to each ITS row: same scaffold, merged while the gap to the
     running-max end of earlier rows on that scaffold is <= merge_gap (vectorised; shared
-    by the ITS-1 ideogram, the ITS-2/TSV cluster tables, and plot_its.py's auto-window)."""
+    by the ITS-1 ideogram, the ITS-2 cluster tables, and plot_its.py's auto-window)."""
     if df.empty:
         out = df.copy()
         out["cluster_id"] = pd.Series(dtype=np.int64)
@@ -807,15 +776,13 @@ def compute_its_clusters(df, merge_gap=ITS_CLUSTER_MERGE_GAP):
 
 
 def summarize_its_clusters(df, merge_gap=ITS_CLUSTER_MERGE_GAP, min_rows=ITS_CLUSTER_MIN_ROWS):
-    """Per-cluster chr/start/end/rows/span/its_bp/canonical_bp, ranked by its_bp descending."""
+    """Per-cluster chr/start/end/rows/span/its_bp, ranked by its_bp descending."""
     if df.empty:
         return pd.DataFrame(columns=_CLUSTER_COLUMNS)
     clustered = compute_its_clusters(df, merge_gap)
-    if "canonical_bp" not in clustered.columns:
-        clustered = clustered.assign(canonical_bp=0)
     agg = clustered.groupby("cluster_id").agg(
         chr=("chr", "first"), start=("start", "min"), end=("end", "max"),
-        rows=("chr", "size"), its_bp=("teloLen", "sum"), canonical_bp=("canonical_bp", "sum"))
+        rows=("chr", "size"), its_bp=("teloLen", "sum"))
     agg = agg[agg["rows"] >= min_rows].copy()
     agg["span"] = agg["end"] - agg["start"]
     agg = agg.sort_values(["its_bp", "chr", "start", "end"],
@@ -2054,8 +2021,8 @@ def _draw_its_blocks_track(ax, view_start, view_end, blocks_list, its_blocks_lis
 # ITS-1 "Interstitial telomeres: genome view"
 # ---------------------------------------------------------------------------
 
-def _its_labels(df, chrom_sizes, arm_blocks=None, names=None):
-    names = _its_atlas_chroms(df, arm_blocks or {}, chrom_sizes) if names is None else names
+def _its_labels(df, chrom_sizes, arm_blocks=None):
+    names = _its_atlas_chroms(df, arm_blocks or {}, chrom_sizes)
     # Stable aliases preserve identity even when a long suffix is also shared.
     labels = {}
     reserved = set(names)
@@ -2067,19 +2034,6 @@ def _its_labels(df, chrom_sizes, arm_blocks=None, names=None):
         labels[name] = label
         used.add(label)
     return labels
-
-
-def its_scaffold_summary(df, arm_blocks, chrom_sizes):
-    """Complete observed-row accounting, including zero-ITS terminal scaffolds."""
-    names = _its_atlas_chroms(df, arm_blocks, chrom_sizes)
-    labels = _its_labels(df, chrom_sizes, arm_blocks, names=names)
-    grouped = df.groupby("chr").agg(rows=("chr", "size"), its_bp=("teloLen", "sum"),
-                                    canonical_bp=("canonical_bp", "sum"), _size=("chrSize", "max"))
-    out = grouped.reindex(names, fill_value=0).rename_axis("chr").reset_index()
-    out.insert(1, "display_label", [labels[c] for c in names])
-    out.insert(2, "plot_extent_bp", [chrom_sizes.get(c, 0) for c in names])
-    out.insert(3, "its_size_known", out.pop("_size") > 0)
-    return out
 
 
 def _its_atlas_cells(df, threshold=LABEL_THRESHOLD):
@@ -2615,9 +2569,7 @@ def _its_locus_name(df, chrom):
 def _draw_its_long_glyphs(ax, df):
     """Panel c: top ITS as to-scale bars split into their four strand/canonical segments, fwd first."""
     top = rank_long_its(df, 5)
-    keys = ["chr", "start", "end", "teloLen", "teloLabel", "teloType"]
     counts = [k for k, _, _ in _ITS_SEGMENT_KEYS]
-    top = top.merge(df.drop_duplicates(keys)[keys + counts], on=keys, how="left")
     _its_glyph_axes(ax, 0, top["teloLen"].max(), "ITS length ({})")
     colors = np.array([DOUBLE_KEY_COLORS[c][s] for _, c, s in _ITS_SEGMENT_KEYS])
     for i, row in enumerate(top.itertuples(index=False)):
@@ -3386,17 +3338,6 @@ def main():
         out_path = args.output or os.path.join(args.directory, default_name)
         out_dir = os.path.dirname(out_path) or "."
     os.makedirs(out_dir, exist_ok=True)
-
-    if its_page is not None:
-        interstitial_base = os.path.basename(files["interstitial"])
-        suffix = "_interstitial_telomeres.bed"
-        prefix = interstitial_base[:-len(suffix)] if interstitial_base.endswith(suffix) else os.path.splitext(interstitial_base)[0]
-        its_frame, pairs, clusters, params = its_page
-        os.makedirs(out_dir, exist_ok=True)
-        its_top_hits(os.path.join(out_dir, f"{prefix}_its_top_hits.tsv"), its_frame, pairs, clusters)
-        its_frame.to_csv(os.path.join(out_dir, f"{prefix}_its_rows.tsv"), sep="\t", index=False, na_rep="NA")
-        its_scaffold_summary(its_frame, arm_blocks, chrom_sizes).to_csv(
-            os.path.join(out_dir, f"{prefix}_its_scaffolds.tsv"), sep="\t", index=False)
 
     # --- One page list shared by the PDF and PNG branches ---
     pages = [

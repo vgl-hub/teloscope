@@ -37,7 +37,7 @@ ITS report. Colors follow a 3x3 key: hue is the strand (fwd blue, both purple, r
 - **Candidates:** top clusters (>= 3 ITS within 50 kbp), candidate fusions around their junction, and the top ITS by canonical bp.
 - **Loci:** one track page per top cluster, fusion, and ITS.
 
-Candidate fusions are q→p pairs within the distance threshold with no gap between them. They are not confirmed fusions.
+Candidate fusions are q→p pairs within the distance threshold with no gap between them, where at least one row is classed as fusion. They are not confirmed fusions. Fusions are sorted by shorter arm bp and clusters by summed ITS bp. Canonical bp is `(fwdCan+revCan) x` the canonical motif length, so it can exceed the ITS length when matches overlap.
 
 ## Standalone plotting
 
@@ -49,7 +49,7 @@ python3 scripts/teloscope_report.py results/ --section its -o its.pdf
 python3 scripts/teloscope_report.py results/ --png -o figures/
 ```
 
-By default `-o report.pdf` writes `report_terminal.pdf` and `report_its.pdf`. It also writes `*_its_rows.tsv`, `*_its_scaffolds.tsv`, and `*_its_top_hits.tsv`.
+By default `-o report.pdf` writes `report_terminal.pdf` and `report_its.pdf`.
 
 To plot a single ITS locus:
 
