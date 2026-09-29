@@ -10,15 +10,7 @@ teloscope asm.fa -o results/ -r -e -g -i --plot-report
 
 This writes `results/asm.fa_plot_report_terminal.pdf` and `results/asm.fa_plot_report_its.pdf`. The ITS report needs an ITS BED.
 
-Use `-r` with `--plot-report` to get the repeat-density, canonical-ratio, and strand-bias tracks. GC and entropy tracks are added when their files exist.
-
-Record filters apply before anything is written. For example, to keep only chromosomes listed by accession.version:
-
-```sh
-teloscope asm.fa -o results/ --include-bed chromosomes.ids -r --plot-report
-```
-
-`--include-prefix` also works, but check the FASTA IDs first, since prefixes differ between databases.
+Use `-r` with `--plot-report` to get the repeat-density, canonical-ratio, and strand-ratio tracks. GC and entropy tracks are added when their files exist. [Record filters](parameters.md#record-filters) limit the report like every other output.
 
 ## What the report contains
 
@@ -30,7 +22,7 @@ Terminal report:
 
 Contig-terminal rows (`-n`) are drawn outline-only and left out of the counts.
 
-ITS report. Colors follow a 3x3 key: hue is the strand (fwd blue, both purple, rev vermillion) and opacity is the canonical share.
+ITS report, colored by a 3x3 key where hue is the strand (fwd blue, both purple, rev vermillion) and opacity is the canonical share:
 
 - **Summary:** headline numbers, ITS length distribution, ITS count vs. density per scaffold (dot size is scaffold size), and ITS composition by strand and canonical share.
 - **Atlas:** every scaffold with a terminal telomere or ITS, drawn to scale, homologs side by side. Up to one slide in two size groups, else a double slide in four, each group on its own axis. Rows spread to fill the page. ▼ marks the top (F) fusion candidates, (L) longest canonical ITS and (C) clusters of ITS. If rows do not fit even a double slide, the atlas becomes an unlabelled heatmap.
@@ -74,10 +66,4 @@ Required input is `*_terminal_telomeres.bed` for the terminal report or `*_inter
 
 ## Requirements
 
-Python 3 with `matplotlib` 3.5 or newer, `numpy`, and `pandas`.
-
-## Regression check
-
-```sh
-python3 scripts/test_teloscope_report.py
-```
+Python 3 with `matplotlib` 3.5 or newer, `numpy`, and `pandas`. `--plot-report` looks for `scripts/teloscope_report.py` in the source checkout, or for `teloscope_report.py` next to the binary.

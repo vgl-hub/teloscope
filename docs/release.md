@@ -2,54 +2,46 @@
 
 # Release checklist
 
-Use this checklist after the release commit is on `main`.
+Run through this once the release commit is on `main`.
 
-## Repository contents
+## Before tagging
 
-- Keep `testFiles/` on GitHub. The validator manifests in `validateFiles/` and the CI workflow call files from `testFiles/` directly.
-- Do not add generated root-level `testFiles/*_report.tsv` or `testFiles/*_gaps.bed` outputs. Expected regression outputs live under `testFiles/expected/`.
-- Confirm `src/main.cpp` reports the release version.
-- Run the normal validation checks before tagging.
+- Confirm `src/main.cpp` reports the new version.
+- Keep `testFiles/` in the repo, since the manifests and CI read it. Expected outputs go in `testFiles/expected/`, never as root-level `testFiles/*_report.tsv` or `testFiles/*_gaps.bed`.
+- Run the checks:
 
 ```sh
 make all -j
 bash .github/workflows/val.sh
-python3 scripts/test_sequence_filters.py
+make test-synthetic test-filters test-gaps
 python3 scripts/test_teloscope_report.py
-bash scripts/test_gaps_bed.sh
 ```
 
 ## GitHub release
-
-Push a tag from the release commit:
 
 ```sh
 git tag v0.1.6
 git push origin v0.1.6
 ```
 
-The `Create Release` workflow should publish these assets:
+The `Create Release` workflow publishes:
 
 - `teloscope.v0.1.6-linux.zip`
 - `teloscope.v0.1.6-macOS.zip`
 - `teloscope.v0.1.6-win.zip`
-- `teloscope.v0.1.6-with_submodules.zip`
-
-The `with_submodules` asset is the source archive used by the Bioconda recipe.
+- `teloscope.v0.1.6-with_submodules.zip`, the source archive Bioconda builds from
 
 ## Bioconda
 
-Bioconda does not update from this repository automatically. After the GitHub release assets exist, open a PR against [`bioconda/bioconda-recipes`](https://github.com/bioconda/bioconda-recipes/tree/master/recipes/teloscope) that updates `recipes/teloscope/meta.yaml`:
+Bioconda does not follow this repository. Once the assets exist, open a PR on [`bioconda/bioconda-recipes`](https://github.com/bioconda/bioconda-recipes/tree/master/recipes/teloscope) that updates `recipes/teloscope/meta.yaml`:
 
-- set `version` to `0.1.6`
-- set `source.url` to `https://github.com/vgl-hub/teloscope/releases/download/v{{version}}/teloscope.v{{version}}-with_submodules.zip`
-- replace `source.sha256` with the SHA-256 digest of the new `with_submodules` asset
-- update `doc_url` to point at `v{{ version }}`
+- `version`: `0.1.6`
+- `source.url`: `https://github.com/vgl-hub/teloscope/releases/download/v{{version}}/teloscope.v{{version}}-with_submodules.zip`
+- `source.sha256`: the SHA-256 of the new `with_submodules` asset
+- `doc_url`: pointing at `v{{ version }}`
 
-The current recipe installs only the `teloscope` binary. If Python plotting helpers should be shipped by Conda, update the Bioconda `build.sh` in the same PR and add any required runtime Python dependencies there.
+The recipe installs only the binary. To ship the plotting scripts too, extend its `build.sh` and add the Python dependencies in the same PR.
 
 ## Zenodo
 
-No repository file is required just to generate a Zenodo DOI URL. Zenodo must be connected to the public GitHub repository from the [Zenodo GitHub settings](https://zenodo.org/account/settings/github/), and for an organization repository an owner may need to approve the Zenodo GitHub app. Once enabled, Zenodo archives each new GitHub release and issues a DOI.
-
-`CITATION.cff` or `.zenodo.json` can improve citation metadata, but they are not required for DOI minting. If a DOI is needed before the release is published, reserve it from a Zenodo draft record.
+With the [Zenodo GitHub integration](https://zenodo.org/account/settings/github/) enabled for the repository, which an organization owner may need to approve, every GitHub release is archived with a DOI. A DOI needed before the release can be reserved from a Zenodo draft.

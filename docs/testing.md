@@ -2,189 +2,66 @@
 
 # Testing
 
-Teloscope has four test layers:
+`make all -j` builds the binary and its helpers: `teloscope-validate`, `teloscope-generate-tests`, and `teloscope-simulate`.
 
-- invariant and declared-intent checks over generated fixtures (`make test-synthetic`)
-- `.tst` manifests in `validateFiles/` for the main binary
-- focused shell checks in `scripts/`
-- Python regression checks for the plotting code
+## Suites
 
-## Invariants and declared intent
+| Command | Checks |
+| --- | --- |
+| `make test-synthetic` | fixtures regenerate unchanged, declared intent, and invariants |
+| `build/bin/teloscope-validate validateFiles` | the `.tst` manifests |
+| `bash .github/workflows/val.sh` | the `.tst` manifests, output file counts, and classification spot checks |
+| `make test-filters` | record filters on FASTA and GFA |
+| `make test-gaps` | gap BEDs against `testFiles/expected/` |
+| `make test-n50` | scaffold and contig N50 |
+| `make test-bam` | kept BAM records and malformed BAM |
+| `make test-read-tl` | read telomere rows and report |
+| `make test-bam-hardening` | a samtools oracle, zlib fault injection, and 512 BAM mutations |
+| `make test-bam-coverage` | every executable line of the BAM code |
+| `make test-bam-sanitize` | the BAM tests under AddressSanitizer and UndefinedBehaviorSanitizer |
+| `python3 scripts/test_teloscope_report.py` | the report plots, on synthetic data |
+
+`TELOSCOPE=/path/to/binary` points the Python checks at another binary.
+
+CI runs the manifests and the synthetic, filter, BAM, and read checks on Linux, macOS, and Windows (`val.sh` outside Windows), the report check on two matplotlib versions, and the three BAM hardening targets on Linux. A weekly job repeats hardening and sanitizing with 4096 mutations.
+
+## Synthetic fixtures
+
+`scripts/test_synthetic_intent.py` checks the binary against `testFiles/synthetic/manifest.tsv`. `scripts/check_invariants.py` needs no expected values: it re-derives report fields from the BED files and compares runs with each other: repeated runs, thread counts, fast against full scan, a higher `-x` never losing matches, a small `-t` giving the same terminal BED, and `-n` adding only contig rows.
 
 ```sh
-make test-synthetic     # fixture check, declared intent, and invariants
-make test-intent        # declared intent alone
-make test-invariants    # invariants alone
-```
-
-`TELOSCOPE=/path/to/binary` overrides the binary for either script.
-
-`scripts/test_synthetic_intent.py` asserts `testFiles/synthetic/manifest.tsv` against what
-the binary reports. `scripts/check_invariants.py` needs no recorded expected values:
-derivation checks re-derive a report field from the BED files, and cross-run checks compare
-two runs against each other — determinism, thread count, fast mode against full scan, `-x`
-monotonicity at match level, a tip-window check (a small `-t` gives the same terminal BED as
-the default), and a manual-curation check (`-n` only adds contig rows, and only to the
-terminal BED).
-
-### Fixtures
-
-```sh
-bash testFiles/generate_synthetic.sh          # write fixtures and the manifest
-bash testFiles/generate_synthetic.sh --check  # regeneration must be a no-op
+bash testFiles/generate_synthetic.sh          # write the fixtures and the manifest
+bash testFiles/generate_synthetic.sh --check  # regeneration must change nothing
 bash testFiles/generate_synthetic.sh --list   # fixture ids
 ```
 
-`make fixtures` and `make fixtures-check` wrap the same script. It reads its thresholds
-from `include/input.h`, `include/teloscope.h`, and `src/teloscope.cpp`, and refuses to run
-when one has moved.
+`make fixtures` and `make fixtures-check` wrap the first two. The script reads its thresholds from `include/input.h`, `include/teloscope.h`, and `src/teloscope.cpp`, and refuses to run when one has moved.
 
-Declaration format, as used by `fx` in `testFiles/synthetic_fixtures.sh`:
+Fixtures are declared in `testFiles/synthetic_fixtures.sh` and `testFiles/synthetic_axis_*.sh`:
 
 - `fx <id> <path> <record_spec> <flags> <expect> <intent>` declares one fixture; `xfx` declares a checked-in file the script does not write.
-- `<expect>` is `key=value` pairs joined by `;`; for a multi-record file, one `<expect>` per record joined by `|`, or a single one for all.
-- `type` t2t, incomplete or none; `anom` `.` or comma-joined anomaly flags; `telo` terminal row count; `labels` lowercase arm letters or none; `gaps` gap rows.
-- `gran` one token per terminal row by start (uppercase an arm, lowercase a contig row, `*` after a discordant row); empty with no row.
-- `its` interstitial block count in every full-scan run (`-i`, `-r`, `-g`, `-e`, or `-m`), `-` otherwise.
+- `<expect>` holds `key=value` pairs joined by `;`, one set per record joined by `|`, or one set for all records.
+- Keys: `type`; `anom`, `.` or comma-joined flags; `telo`, the arm count; `labels`, the arm ends or `none`; `gaps`; `its`, the interstitial count in any full scan; `telolen`, an arm's length.
 
-## Build the helper binaries
+## `.tst` manifests
 
-```sh
-make all -j
-```
-
-If you only need the validator:
-
-```sh
-make validate
-```
-
-## Main validation suite
-
-Run the checked-in `.tst` suite:
-
-```sh
-build/bin/teloscope-validate validateFiles
-```
-
-This is the same validator used by the CI workflow in `.github/workflows/validate.yml`.
-
-## `.tst` formats
-
-`teloscope-validate` supports two styles.
-
-Legacy mode compares stdout against embedded text or an expected file.
-
-Directive mode is used for GFA and file-oriented checks. Supported directives are:
-
-- `expect_exit`
-- `expect_stdout`
-- `expect_file`
-- `expect_stderr_substr`
-- `expect_output_name`
-- `expect_gfa_header`
-- `gfa_expect`
-- `gfa_preserve_input`
-- `expect_gfa_colors`
-
-Minimal directive-mode example:
-
-```text
--f testFiles/gfa_pathless_small.gfa -o %OUTDIR% -j 1
-expect_exit 0
-expect_stdout ignore
-expect_output_name gfa_pathless_small.gfa.telo.annotated.gfa
-expect_gfa_header 1.2
-gfa_expect testFiles/expected/gfa/gfa_pathless_small.tsv
-gfa_preserve_input strict
-```
-
-`%OUTDIR%` is replaced by a per-test temporary directory. GFA expectations are semantic, not raw file diffs. See [validateFiles/README.md](https://github.com/vgl-hub/teloscope/blob/main/validateFiles/README.md) for the full format.
-
-Use `expect_file <output-basename> <golden-path>` for generated BED, BEDgraph, or report files. The validator compares the file under `%OUTDIR%` with the golden after dropping blank and `#`-prefixed lines. The directive is repeatable, so one manifest can check several companion files.
-
-## Regenerate legacy expected outputs
-
-Only regenerate expected outputs when the current behavior is accepted:
-
-```sh
-make regenerate
-build/bin/teloscope-generate-tests
-```
-
-Directive-mode manifests and their golden files are hand-authored and checked in directly.
-
-## Report regression script
-
-The plotting regression script now lives in `scripts/`:
-
-```sh
-python3 scripts/test_teloscope_report.py
-```
-
-It exercises `scripts/teloscope_report.py` directly with synthetic in-memory data.
-
-## Gap BED regression script
-
-```sh
-bash scripts/test_gaps_bed.sh
-```
-
-This script compares generated `*_gaps.bed` files against the checked-in expected files in `testFiles/expected/`.
-
-## Assembly record filter regression script
-
-```sh
-make test-filters
-```
-
-This builds temporary FASTA and GFA fixtures and checks exact-ID and prefix selection, include/exclude precedence, selector validation, compressed input, line endings, unsupported modes, and output isolation. The CI workflow runs the same script on Linux, macOS, and Windows.
-
-## Reads mode regression scripts
-
-```sh
-make test-bam       # scripts/test_bam_subset.py
-make test-read-tl   # scripts/test_read_tl.py
-```
-
-Both use only the Python standard library: `test-bam` checks the kept records and malformed BAM, `test-read-tl` the BED rows and report.
-
-## BAM hardening
-
-The Linux hardening target adds an independent `samtools` oracle and zlib fault injection:
-
-```sh
-make test-bam-hardening
-```
-
-`samtools` generates the input BAM from SAM, validates the output with `quickcheck`, and checks headers and records independently. GNU linker wrappers force zlib initialization, compression, finalization, size, and output failures without production test hooks.
-
-The strict coverage target uses GNU gcov:
-
-```sh
-make test-bam-coverage
-```
-
-It requires 100% of executable lines in `src/bam.cpp`, `src/bgzf.cpp`, and `src/read-filter.cpp`. The checker reads gcov JSON and counts a line as executable when gcov reports execution or an unexecuted block. Compiler-only cleanup braces are not counted as source executable lines. There are no source exclusions or manual coverage allowlists. Set `COVERAGE_BRANCH_DETAILS=1` to show raw gcov branch counts for diagnostics; they are not a gate because exceptions and standard-library templates add implementation-dependent branches.
-
-The sanitizer target builds a temporary binary with AddressSanitizer and UndefinedBehaviorSanitizer:
-
-```sh
-make test-bam-sanitize
-```
-
-Pull requests run the standard integration suite, 512 deterministic mutations, strict coverage, sanitizers, zlib fault injection, and the `samtools` oracle in independent jobs. A weekly workflow repeats normal and sanitized mutation testing with 4096 cases.
-
-## Useful local runs
-
-Quick validator pass:
-
-```sh
-bash .github/workflows/val.sh
-```
-
-Single `.tst` file:
+`teloscope-validate` runs the manifests in `validateFiles/`. A legacy manifest compares stdout with embedded text. A directive manifest checks exit codes, named output files, and GFA graphs semantically. `-c` prints each test's command:
 
 ```sh
 build/bin/teloscope-validate -c validateFiles/gfa_pathless_small.tst
 ```
+
+`make regenerate` builds `teloscope-generate-tests`, which rewrites the legacy manifests from the current binary; run it only when the new behavior is accepted. Directive manifests and their goldens are edited by hand. [validateFiles/README.md](https://github.com/vgl-hub/teloscope/blob/main/validateFiles/README.md) has the full format.
+
+## BAM hardening
+
+`make test-bam-hardening` builds its BAM from SAM with samtools, validates the output with `samtools quickcheck`, compares headers and records independently, and forces zlib failures through GNU linker wrappers. `make test-bam-coverage` reads gcov JSON and requires every executable line of `src/bam.cpp`, `src/bgzf.cpp`, and `src/read-filter.cpp`, with no exclusions; `COVERAGE_BRANCH_DETAILS=1` also prints branch counts. These targets need Linux.
+
+## Repo layout
+
+- `src/`, `include/`: C++ sources and headers
+- `scripts/`: the report and plotting scripts, and the Python checks
+- `testFiles/`: FASTA and GFA fixtures, with expected outputs in `testFiles/expected/`
+- `validateFiles/`: `.tst` manifests
+- `gfalibs/`: the GFA and I/O submodule
+- `docs/`: this documentation

@@ -1,83 +1,45 @@
 [Back to README](index.md)
 
-# Chromosome classification
+# Classification
 
-This page applies to FASTA mode. GFA mode annotates graph segments but does not emit scaffold classes.
+FASTA mode classifies every sequence from its two arms. GFA mode has no classes.
 
-Teloscope classifies each sequence from its two arms: the p arm is the telomere chain anchored at the first contig's start, and the q arm is the chain anchored at the last contig's end. These are the scaffold's own ends, so leading and trailing runs of `N` don't count. Each arm has to anchor within the start zone — the smaller of `--terminal-tolerance` and `-t` — of its contig end. An arm's own strand can be `p` or `q` regardless of which end it sits at.
+## Arms
 
-When one array runs from a contig's start to its own end, both chains would claim it. It belongs to the end its strand points to: forward (the `CCCTAA` family) claims the p end, reverse (`TTAGGG`) the q end, and the other end has no telomere. A scaffold that is `TTAGGG` from end to end is therefore `incomplete`, `q`, with no anomaly.
+The p arm is the telomere anchored at the start of the first contig, and the q arm the one anchored at the end of the last contig; leading and trailing runs of `N` don't count. An arm must start inside the start zone, the smaller of `--terminal-tolerance` and `-t`. Its strand can be `p` or `q` at either end.
 
-The same rule covers a short record: one no longer than about twice the distance to end (`--terminal-tolerance`; `6 kb` at the defaults) has its two start zones overlap, so both ends reach its only array. The strand still decides which end it belongs to, and no `discordant` flag is raised. On chromosome-length records the two zones never overlap, and position decides as usual.
+When one array runs from a contig's start to its end, both arms would claim it. It belongs to the end its strand points to: forward (`CCCTAA`) to the p end, reverse (`TTAGGG`) to the q end. A sequence that is `TTAGGG` from end to end is therefore `incomplete`, `q`, with no anomaly. The same holds for a record shorter than about twice `--terminal-tolerance` (6 kb by default), whose two start zones overlap.
 
-## Output classes
+## Classes
 
-How many telomeres a sequence has, and whether they are plausible, are two separate
-questions, so they live in two separate columns. An anomaly never overwrites the count.
+`type` counts the arms, and `anomaly` says whether they look like ordinary chromosome ends. An anomaly never changes the type.
 
-The `type` column answers completeness only:
-
-| Type | Meaning |
+| `type` | Arms |
 | --- | --- |
-| `t2t` | both arms present |
-| `incomplete` | one arm present |
-| `none` | neither arm present |
+| `t2t` | both |
+| `incomplete` | one |
+| `none` | neither |
 
-The `anomaly` column answers plausibility. It reads `.` when there is nothing to report,
-or one or more of the following, comma separated:
-
-| Anomaly | Meaning |
+| `anomaly` | Meaning |
 | --- | --- |
-| `discordant_p`, `discordant_q` | that arm's strand points the wrong way for the end it sits at, which is an inverted terminal repeat or a fusion, not an ordinary chromosome end |
-| `fragmented_p`, `fragmented_q` | that arm is built from more than one piece (`teloLen` is less than `end - start`) |
+| `.` | nothing to report |
+| `discordant_p`, `discordant_q` | that arm's strand points the wrong way for its end |
+| `fragmented_p`, `fragmented_q` | that arm is built from more than one piece (`teloLen` below `end - start`) |
 
-Neither anomaly is expected at an ordinary chromosome end. Both do occur in real biology:
-`discordant` at genuine head-to-head fusions and inverted terminal repeats, `fragmented`
-where a short non-telomeric stretch splits an otherwise continuous array. They are flagged
-for a curator to judge rather than asserted as errors. A terminal row is always
-strand-pure; an array that alternates strands has no qualifying strand-pure piece and
-becomes an interstitial `b` row instead.
+Several flags are comma-separated. Both kinds occur in real genomes, discordant at head-to-head fusions and inverted terminal repeats, fragmented where a short non-telomeric stretch splits an array, so they are flags for a curator, not errors.
 
-Gappedness is not part of either column. The `gaps` column already carries it, and the
-assembly summary splits each completeness class on it.
+Gaps are in neither column: `gaps` counts them, and the summary splits each type by them. Contig rows (`-n`) never count toward `type`, `telomeres`, `anomaly`, or the statistics; they appear only in the terminal BED.
 
-## Decision order
+## Labels
 
-The two columns are computed independently from the two arms. Completeness is three
-cases: both arms present is `t2t`, exactly one is `incomplete`, neither is `none`. The
-anomaly set is then read off each arm: a strand that disagrees with the end it sits at
-sets `discordant_p`/`discordant_q`; more than one piece in the chain sets
-`fragmented_p`/`fragmented_q`.
+Every block has two labels, BED columns 5 and 6.
 
-Contig-terminal rows, written only with `-n`, never count toward `type`, `telomeres`, the
-anomalies, or the length statistics. They appear lowercase in `granular` and nowhere else.
+`teloLabel` is the strand. A terminal row is strand-pure, so it is `p` (forward) or `q` (reverse), never `b`; an array that alternates strands has no qualifying piece and becomes an interstitial `b` row. An interstitial row is labeled from its forward-strand share and `--label-threshold` (default `0.667`):
 
-## Block labels
+- `p`: above the threshold
+- `q`: below one minus the threshold
+- `b`: in between
 
-Every row carries two labels, in two separate columns of both BED files.
+`closestEnd` is the end a row belongs to. For a telomere, that is the end it is the arm of; when one array reaches both ends of a contig, the end its strand points to. For an interstitial row, it is the nearer end, `p` at the exact midpoint.
 
-Column 5, `teloLabel`, is the strand.
-
-A terminal row is strand-pure by construction, so its `teloLabel` is simply the strand of its repeats: `p` (forward) or `q` (reverse); it never reads `b`.
-
-An interstitial row's matches can mix both strands, so its `teloLabel` comes from `--label-threshold` (default `0.667`) instead:
-
-- `p`: forward-strand share above the threshold
-- `q`: forward-strand share below one minus the threshold
-- `b`: between the two
-
-Column 6, `closestEnd`, is the end a row belongs to:
-
-- for a telomere, the end it is the arm of: `p` at the start of the record, `q` at the end; when one array reaches both ends of a contig it is the end its strand points to
-- for an interstitial row, the nearer record end; an exact midpoint reads `p`
-
-For an ordinary telomere the two agree, since a p arm carries the forward motif and sits near the start. They disagree on a discordant arm, which the `anomaly` column flags as `discordant_p` or `discordant_q`.
-
-The `granular` column in `*_report.tsv` shows one character per terminal row, in position order along the sequence. An arm is uppercase (`P` or `Q`). A contig-terminal row, written only with `-n`, is lowercase (`p` or `q`). A discordant row is followed by `*`.
-
-Examples:
-
-- `PQ`: a p arm and a q arm
-- `P`: a p arm only, no q arm
-- `P*`: a p arm whose strand disagrees with the end it sits at
-- `Pq`: a p arm, plus a contig-terminal telomere elsewhere on the sequence (`-n`)
+On an ordinary telomere the two agree, since a p arm carries the forward motif and sits at the start. They disagree on a discordant arm.
