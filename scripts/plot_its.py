@@ -19,7 +19,6 @@ Coordinates accept commas/underscores and optional bp/kb/Mb suffixes.
 import os
 import sys
 import re
-import glob
 import argparse
 
 import numpy as np
@@ -248,7 +247,8 @@ def main():
         description="Plot interstitial telomeric sequences (ITSs) for specified regions.",
         epilog="Example: python plot_its.py output/ NC_052576.1:19250000-19280000",
     )
-    parser.add_argument("directory", help="Teloscope output directory")
+    parser.add_argument("directory",
+                        help="Teloscope output directory, or one run's file stem (results/asm.fa) when it holds several")
     parser.add_argument("regions", nargs="+",
                         help="CHROM:START-END for an exact window, or bare CHROM to "
                              "auto-center on its largest interstitial cluster")
@@ -278,12 +278,9 @@ def main():
     enabled |= set(args.show)
     enabled -= set(args.hide)
 
-    if not os.path.isdir(args.directory):
-        sys.exit(f"Error: '{args.directory}' is not a directory.")
-
-    files = find_files(args.directory)
+    run, files = find_files(args.directory)
     if "interstitial" not in files:
-        sys.exit(f"Error: no '*_interstitial_telomeres.bed' file in '{args.directory}'.")
+        sys.exit(f"Error: no '{run}_interstitial_telomeres.bed' file in '{args.directory}'.")
 
     its_blocks = parse_terminal_bed(files["interstitial"])
     blocks = parse_terminal_bed(files["terminal"]) if "terminal" in files else {}
@@ -296,9 +293,8 @@ def main():
 
     matches = None
     if "matches" in enabled:
-        hits = sorted(glob.glob(os.path.join(args.directory, "*_canonical_matches.bed")))
-        if hits:
-            matches = parse_interval_bed(hits[0])
+        if "matches" in files:
+            matches = parse_interval_bed(files["matches"])
         else:
             _warn("No '*_canonical_matches.bed' found; skipping canonical-matches track.")
 
@@ -354,11 +350,11 @@ def main():
         )
 
     if args.png:
-        out_dir = args.output or args.directory
+        out_dir = args.output or os.path.dirname(files["interstitial"])
         os.makedirs(out_dir, exist_ok=True)
         for chrom, start, end in windows:
             stem = _sanitize_filename(f"{chrom}_{start}-{end}")
-            path = os.path.join(out_dir, f"teloscope_its_{stem}.png")
+            path = os.path.join(out_dir, f"{run}_its_{stem}.png")
             ok, _ = _save_figure_with_fallback(
                 lambda fig, path=path: fig.savefig(path, dpi=args.dpi),
                 lambda chrom=chrom, start=start, end=end: _region_fig(chrom, start, end),
@@ -367,7 +363,7 @@ def main():
             )
             print(f"{'[warning] ' if not ok else ''}{path}", file=sys.stderr)
     else:
-        out_path = args.output or os.path.join(args.directory, "teloscope_its.pdf")
+        out_path = args.output or os.path.join(os.path.dirname(files["interstitial"]), f"{run}_its.pdf")
         with PdfPages(out_path) as pdf:
             for chrom, start, end in windows:
                 ok, _ = _save_figure_with_fallback(

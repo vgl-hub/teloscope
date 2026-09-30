@@ -3,26 +3,26 @@
 teloscope_report.py — Publication-ready figures from Teloscope output.
 
 Usage:
-    python teloscope_report.py <output_directory> [-o report.pdf]
-    python teloscope_report.py <output_directory> --png
+    python teloscope_report.py <output_directory> [-j 8]
+    python teloscope_report.py <output_directory>/<input> [--png] [-o figures/]
 
-Reads Teloscope output files and writes separate terminal and ITS PDFs by default.
+Plots every run in the directory, named after its input, that has no report
+yet, several at once; a run named by its file stem is plotted again. Each run
+gets a terminal and an ITS PDF.
   Terminal: assembly overview and per-chromosome terminal zoom figures.
   ITS: observed-row distributions, paginated atlas, candidates, selected loci.
-Use --section all for a combined PDF, or terminal/its to select one section.
 
 Requires: Python 3.6+, matplotlib, numpy, pandas
 """
 
 import sys
 import os
-import glob
 import re
 import argparse
 import textwrap
 import inspect
 from collections import Counter, defaultdict, OrderedDict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
@@ -207,27 +207,74 @@ def _bad_interval(start, end):
 # Parsing helpers
 # ---------------------------------------------------------------------------
 
-def find_files(directory):
-    """Auto-detect Teloscope output files in *directory*."""
-    files = {}
-    patterns = {
-        "terminal":        "*_terminal_telomeres.bed",
-        "interstitial":    "*_interstitial_telomeres.bed",
-        "gaps":            "*_gaps.bed",
-        "density":         "*_window_repeat_density.bedgraph",
-        "canonical_ratio": "*_window_canonical_ratio.bedgraph",
-        "strand_ratio":    "*_window_strand_ratio.bedgraph",
-        "gc":              "*_window_gc.bedgraph",
-        "entropy":         "*_window_entropy.bedgraph",
-        "report":          "*_report.tsv",
-    }
-    for key, pat in patterns.items():
-        hits = sorted(glob.glob(os.path.join(directory, pat)))
-        if hits:
-            if len(hits) > 1:
-                _warn(f"Multiple matches for '{pat}' in '{directory}'; using '{hits[0]}'.")
-            files[key] = hits[0]
-    return files
+# every file of a run is named <input><suffix>, so the input name keys the run
+RUN_FILES = {
+    "terminal":        "_terminal_telomeres.bed",
+    "interstitial":    "_interstitial_telomeres.bed",
+    "gaps":            "_gaps.bed",
+    "density":         "_window_repeat_density.bedgraph",
+    "canonical_ratio": "_window_canonical_ratio.bedgraph",
+    "strand_ratio":    "_window_strand_ratio.bedgraph",
+    "gc":              "_window_gc.bedgraph",
+    "entropy":         "_window_entropy.bedgraph",
+    "matches":         "_canonical_matches.bed",
+    "report":          "_report.tsv",
+}
+
+
+def _is_reads_run(files):
+    """A reads run writes a terminal BED too, but its report declares metric/value columns."""
+    if "interstitial" in files or "report" not in files:
+        return False
+    with open(files["report"]) as fh:
+        for line in fh:
+            if not line.startswith("#"):
+                return False
+            if line.startswith("#columns\t"):
+                return line.startswith("#columns\tmetric\t")
+    return False
+
+
+def find_runs(directory):
+    """Assembly runs in *directory*, keyed by input name, each mapping a file type to its path."""
+    runs = defaultdict(dict)
+    for name in sorted(os.listdir(directory)):
+        for key, suffix in RUN_FILES.items():
+            if name.endswith(suffix) and not name.startswith("."):
+                runs[name[:-len(suffix)]][key] = os.path.join(directory, name)
+    return {run: files for run, files in sorted(runs.items())
+            if ("terminal" in files or "interstitial" in files) and not _is_reads_run(files)}
+
+
+def resolve_runs(target):
+    """Directory and runs at *target*: every run of an output directory, or the one at a file stem (results/asm.fa)."""
+    directory, run = (target, None) if os.path.isdir(target) else os.path.split(target)
+    directory = directory or "."
+    if not os.path.isdir(directory):
+        sys.exit(f"Error: '{directory}' is not a directory.")
+    runs = find_runs(directory)
+    if run is not None and run not in runs:
+        sys.exit(f"Error: no Teloscope run '{run}' in '{directory}'"
+                 + (f", which holds {', '.join(runs)}" if runs else "") + ".")
+    if not runs:
+        sys.exit(f"Error: Missing teloscope output files in '{directory}'.\n"
+                 f"Run teloscope first to generate output files.")
+    return directory, ({run: runs[run]} if run is not None else runs)
+
+
+def find_files(target):
+    """Name and files of the one run at *target*."""
+    directory, runs = resolve_runs(target)
+    if len(runs) > 1:
+        sys.exit(f"Error: '{directory}' holds {len(runs)} runs; name one by its file stem, "
+                 f"such as {os.path.join(directory, next(iter(runs)))}.")
+    return next(iter(runs.items()))
+
+
+def report_paths(run, files, out_dir):
+    """The PDFs a run gets: terminal from its terminal BED, ITS from its ITS BED."""
+    return {key: os.path.join(out_dir, f"{run}_plot_report_{tag}.pdf")
+            for key, tag in (("terminal", "terminal"), ("interstitial", "its")) if key in files}
 
 
 def parse_terminal_bed(path):
@@ -3246,15 +3293,17 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
 def main():
     parser = argparse.ArgumentParser(
         description="Generate publication-ready figures from Teloscope output.",
-        epilog="Example: python teloscope_report.py output/ -o report.pdf",
+        epilog="Example: python teloscope_report.py results/",
     )
-    parser.add_argument("directory", help="Teloscope output directory")
+    parser.add_argument("directory",
+                        help="Teloscope output directory, or one run's file stem (results/asm.fa) to plot it again")
     parser.add_argument("-o", "--output", default=None,
-                        help="PDF stem in split mode, exact path for one PDF, or PNG directory")
+                        help="Directory for the PDFs or PNGs (default: the output directory)")
+    parser.add_argument("-j", "--jobs", type=int,
+                        default=len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count() or 1,
+                        help="Runs plotted at once, one process each (default: all cores)")
     parser.add_argument("--png", action="store_true",
-                        help="Save individual PNG files instead of a single PDF")
-    parser.add_argument("--section", choices=("split", "all", "terminal", "its"), default="split",
-                        help="Default: separate PDFs; all: combined PDF; terminal/its: one section")
+                        help="Save individual PNG files instead of one PDF per section")
     parser.add_argument("--dpi", type=int, default=450,
                         help="DPI for raster output (default: 450)")
     parser.add_argument("--draft", action="store_true",
@@ -3265,21 +3314,48 @@ def main():
         args.dpi = 150
     if args.dpi <= 0:
         parser.error("--dpi must be positive")
+    if args.jobs <= 0:
+        parser.error("--jobs must be positive")
+    if args.output and os.path.splitext(args.output)[1].lower() == ".pdf":
+        parser.error("-o is a directory; each report is named after its run")
 
-    if not os.path.isdir(args.directory):
-        sys.exit(f"Error: '{args.directory}' is not a directory.")
+    directory, runs = resolve_runs(args.directory)
+    out_dir = args.output or directory
+    os.makedirs(out_dir, exist_ok=True)
 
-    files = find_files(args.directory)
-    if (args.section == "terminal" and "terminal" not in files or
-            args.section == "its" and "interstitial" not in files or
-            not ({"terminal", "interstitial"} & set(files))):
-        sys.exit(f"Error: Missing teloscope output files in '{args.directory}'.\n"
-                 f"Run teloscope first to generate output files.")
-    if "report" not in files and args.section != "its":
-        _warn(f"No '*_report.tsv' file found in '{args.directory}'; the overview classification panel will show no data.")
+    # a named run and PNGs are always written; a directory's runs only when a report is missing
+    if args.png or not os.path.isdir(args.directory):
+        todo = runs
+    else:
+        todo = {run: files for run, files in runs.items()
+                if not all(os.path.exists(pdf) for pdf in report_paths(run, files, out_dir).values())}
+        if len(runs) > 1 or not todo:
+            print(f"Found {len(runs)} run(s) in '{directory}': {len(todo)} without a report"
+                  f"{'' if todo else f'; name one as {os.path.join(directory, next(iter(runs)))} to plot it again'}.",
+                  file=sys.stderr)
+
+    # matplotlib holds the GIL, so runs render in parallel processes, not threads
+    jobs = min(args.jobs, len(todo))
+    if jobs <= 1:
+        for run, files in todo.items():
+            plot_run(args, run, files, out_dir)
+        return
+    with ProcessPoolExecutor(jobs) as pool:
+        done = {run: pool.submit(plot_run, args, run, files, out_dir) for run, files in todo.items()}
+    failed = [run for run, job in done.items() if job.exception() is not None]
+    for run in failed:
+        _warn(f"{run}: {done[run].exception()!r}")
+    if failed:
+        sys.exit(f"Error: {len(failed)} of {len(todo)} run(s) failed.")
+
+
+def plot_run(args, run, files, out_dir):
+    """Write the reports of one run into *out_dir*, named after its input."""
+    if "report" not in files and "terminal" in files:
+        _warn(f"No '{run}_report.tsv' beside the BEDs; the overview classification panel will show no data.")
 
     blocks = parse_terminal_bed(files["terminal"]) if "terminal" in files else {}
-    include_terminal = args.section != "its" and "terminal" in files
+    include_terminal = "terminal" in files
 
     # Split terminal blocks into arm telomeres (scaffold) and contig-terminal rows (contig)
     arm_blocks = {}
@@ -3313,39 +3389,29 @@ def main():
         _warn(f"Skipping {len(skipped_no_size)} chromosome(s) with no usable size: {', '.join(skipped_no_size[:5])}"
               f"{' ...' if len(skipped_no_size) > 5 else ''}.")
 
-    # ITS pages: skipped entirely when the interstitial BED is missing or empty.
+    # ITS pages whenever the interstitial BED exists, so an empty scan still gets its summary
     its_page = None
-    if "interstitial" in files and args.section != "terminal":
+    if "interstitial" in files:
         params = read_params(files.get("report"))
         its_frame = load_its_frame(files["interstitial"], motif_len=params["motif_len"], blocks=its_blocks)
-        if len(its_frame) or args.section in ("its", "split") or not include_terminal:
-            extents = its_frame.groupby("chr").agg(size=("chrSize", "max"), end=("end", "max"))
-            for chrom, row in extents.iterrows():
-                chrom_sizes[chrom] = max(chrom_sizes.get(chrom, 0), int(row["size"]), int(row["end"]))
-            gaps_frame = load_gaps_frame(files["gaps"]) if "gaps" in files else pd.DataFrame(columns=["chr", "start", "end"])
-            pairs = pair_fusions(its_frame, gaps_frame, params["max_block_dist"])
-            clusters = summarize_its_clusters(its_frame)
-            its_page = (its_frame, pairs, clusters, params)
-            its_frame.attrs["display_labels"] = _its_labels(its_frame, chrom_sizes, arm_blocks)
+        extents = its_frame.groupby("chr").agg(size=("chrSize", "max"), end=("end", "max"))
+        for chrom, row in extents.iterrows():
+            chrom_sizes[chrom] = max(chrom_sizes.get(chrom, 0), int(row["size"]), int(row["end"]))
+        gaps_frame = load_gaps_frame(files["gaps"]) if "gaps" in files else pd.DataFrame(columns=["chr", "start", "end"])
+        pairs = pair_fusions(its_frame, gaps_frame, params["max_block_dist"])
+        clusters = summarize_its_clusters(its_frame)
+        its_page = (its_frame, pairs, clusters, params)
+        its_frame.attrs["display_labels"] = _its_labels(its_frame, chrom_sizes, arm_blocks)
 
     fallback_pages = []
 
-    if args.png:
-        out_dir = args.output or args.directory
-    else:
-        default_name = ("teloscope_report.pdf" if args.section in ("all", "split")
-                        else f"teloscope_{args.section}_report.pdf")
-        out_path = args.output or os.path.join(args.directory, default_name)
-        out_dir = os.path.dirname(out_path) or "."
-    os.makedirs(out_dir, exist_ok=True)
-
     # --- One page list shared by the PDF and PNG branches ---
     pages = [
-        ("overview-1", "teloscope_overview_1.png",
+        ("overview-1", f"{run}_overview_1.png",
          lambda: plot_overview_page1(classifications, arm_blocks, chrom_sizes),
          "Assembly overview (page 1)",
          "Failed to render overview page 1. A placeholder page was written instead."),
-        ("overview-2", "teloscope_overview_2.png",
+        ("overview-2", f"{run}_overview_2.png",
          lambda: plot_overview_page2(arm_blocks, chrom_sizes),
          "Assembly overview (page 2)",
          "Failed to render overview page 2. A placeholder page was written instead."),
@@ -3366,7 +3432,7 @@ def main():
         gc = gc_data.get(chrom) if gc_data else None
         ent = entropy_data.get(chrom) if entropy_data else None
         pages.append((
-            chrom, f"teloscope_{_sanitize_filename(chrom)}.png",
+            chrom, f"{run}_{_sanitize_filename(chrom)}.png",
             lambda chrom=chrom, csize=csize, arm_blist=arm_blist, contig_blist=contig_blist,
                    den=den, can=can, strand=strand, its=its, gc=gc, ent=ent, gaps=gaps:
                 plot_terminal_zoom(chrom, csize, arm_blist, den, can, strand, its, gc, ent,
@@ -3381,7 +3447,7 @@ def main():
         loci = resolve_its_loci(clusters, its_frame, pairs, chrom_sizes)
         unknown_extents = set(its_frame.loc[its_frame["chrSize"] == 0, "chr"])
         pages.append((
-            "its-summary", "teloscope_its_summary.png",
+            "its-summary", f"{run}_its_summary.png",
             lambda: plot_its_summary_page(its_frame, pairs, clusters, chrom_sizes, params),
             "ITS summary", "Failed to render ITS summary.",
         ))
@@ -3391,19 +3457,19 @@ def main():
         top_hits = _its_top_hits(its_frame, pairs, clusters)
         known_sizes = its_frame.groupby("chr")["chrSize"].max().to_dict()
         pages.append((
-            "its-atlas", "teloscope_its_atlas.png",
+            "its-atlas", f"{run}_its_atlas.png",
             lambda: plot_its_overview_page(its_frame, pairs, clusters, arm_blocks, chrom_sizes, params,
                                            atlas, cells, top_hits, known_sizes),
             "ITS atlas", "Failed to render ITS atlas.",
         ))
         pages.append((
-            "its-candidates", "teloscope_its_candidates.png",
+            "its-candidates", f"{run}_its_candidates.png",
             lambda: plot_its_composition_page(its_frame, pairs, clusters, params),
             "ITS candidates", "Failed to render ITS candidates.",
         ))
         for locus in loci:
             pages.append((
-                f"its-locus-{locus[0]}", f"teloscope_its_locus_{locus[0]}.png",
+                f"its-locus-{locus[0]}", f"{run}_its_locus_{locus[0]}.png",
                 lambda locus=locus: plot_its_loci_page(
                     [locus], chrom_sizes, arm_blocks, its_blocks, gap_blocks,
                     density_data, canonical_data, strand_data, gc_data, entropy_data,
@@ -3419,11 +3485,10 @@ def main():
         ok, error_text = _save_figure_with_fallback(save_fig, builder, title, message)
         if not ok:
             fallback_pages.append((name, error_text))
-        print(f"[{index}/{n_figures}] {title}{' [warning]' if not ok else ''}", file=sys.stderr)
+        print(f"[{run} {index}/{n_figures}] {title}{' [warning]' if not ok else ''}", file=sys.stderr)
 
     # --- Write-and-close pattern: one figure in memory at a time ---
     if args.png:
-        os.makedirs(out_dir, exist_ok=True)
         used_names = set()
         for i, (name, png_name, builder, title, message) in enumerate(pages, start=1):
             if png_name in used_names:
@@ -3433,16 +3498,12 @@ def main():
             emit_page(lambda fig, path=path: fig.savefig(path, dpi=args.dpi), builder, title, message, name, i)
         print(f"Saved: {out_dir}/", file=sys.stderr)
     else:
-        if args.section == "split":
-            stem = os.path.splitext(out_path)[0]
-            groups = [(stem + "_terminal.pdf", pages[:terminal_page_count]),
-                      (stem + "_its.pdf", pages[terminal_page_count:])]
-        else:
-            groups = [(out_path, pages)]
+        pdfs = report_paths(run, files, out_dir)
+        groups = [(pdfs[key], section) for key, section in (("terminal", pages[:terminal_page_count]),
+                                                            ("interstitial", pages[terminal_page_count:]))
+                  if key in pdfs]
         i = 0
         for pdf_path, section_pages in groups:
-            if not section_pages:
-                continue
             with PdfPages(pdf_path) as pdf:
                 for name, png_name, builder, title, message in section_pages:
                     i += 1
@@ -3452,7 +3513,7 @@ def main():
     if fallback_pages:
         preview = ", ".join(f"{name} ({err})" for name, err in fallback_pages[:5])
         more = " ..." if len(fallback_pages) > 5 else ""
-        _warn(f"Report generation completed with {len(fallback_pages)} placeholder figure(s): {preview}{more}")
+        _warn(f"Report generation for {run} completed with {len(fallback_pages)} placeholder figure(s): {preview}{more}")
 
 
 if __name__ == "__main__":

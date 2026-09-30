@@ -6,6 +6,7 @@ import os
 from collections import OrderedDict
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -1380,60 +1381,107 @@ class ResilientITSReportTests(unittest.TestCase):
         self.assertEqual(lines, {c.lower() for c in expected})
         self.assertEqual(set(faces), {c.lower() for c in expected})
 
-    def test_its_only_cli_and_terminal_selection(self):
+    def test_its_only_cli_and_png_names(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             (root / "sample_interstitial_telomeres.bed").write_text(
                 _its_row("chrA", 100, 200, "p", "single", fwd_can=4), encoding="utf-8")
-            output = root / "its.pdf"
             stderr = io.StringIO()
-            with mock.patch.object(sys, "argv", ["report", tmpdir, "--section", "its", "-o", str(output)]):
+            with mock.patch.object(sys, "argv", ["report", tmpdir]):
                 with contextlib.redirect_stderr(stderr):
                     REPORT.main()
-            self.assertTrue(output.is_file())
+            self.assertTrue((root / "sample_plot_report_its.pdf").is_file())
+            self.assertFalse((root / "sample_plot_report_terminal.pdf").exists())
             self.assertNotIn("placeholder", stderr.getvalue())
-            with mock.patch.object(sys, "argv", ["report", tmpdir, "--section", "its", "--png",
-                                                "-o", str(root / "png")]):
-                with contextlib.redirect_stderr(io.StringIO()) as log:
-                    REPORT.main()
-            self.assertTrue((root / "png" / "teloscope_its_summary.png").is_file())
-            self.assertFalse((root / "png" / "teloscope_its_statistics.png").exists())
-            self.assertNotIn("placeholder", log.getvalue())
             self.assertNotIn("Assembly overview", stderr.getvalue())
-            self.assertEqual(list(root.rglob("*.tsv")), [])
-            (root / "sample_terminal_telomeres.bed").write_text("", encoding="utf-8")
-            with mock.patch.object(sys, "argv", ["report", tmpdir, "--section", "terminal",
-                                                "-o", str(root / "terminal.pdf")]):
+            with mock.patch.object(sys, "argv", ["report", tmpdir, "--png", "-o", str(root / "png")]):
                 with contextlib.redirect_stderr(io.StringIO()) as log:
                     REPORT.main()
-            self.assertNotIn("ITS composition", log.getvalue())
+            self.assertTrue((root / "png" / "sample_its_summary.png").is_file())
+            self.assertFalse((root / "png" / "sample_its_statistics.png").exists())
+            self.assertNotIn("placeholder", log.getvalue())
+            self.assertEqual(list(root.rglob("*.tsv")), [])
+            with mock.patch.object(sys, "argv", ["report", tmpdir, "-o", str(root / "one.pdf")]):
+                with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                    REPORT.main()
             self.assertEqual(REPORT.plt.get_fignums(), [])
 
-    def test_default_split_combined_opt_in_and_empty_its_only(self):
+    def test_terminal_and_empty_its_reports_beside_the_run(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             (root / "sample_terminal_telomeres.bed").write_text("", encoding="utf-8")
             (root / "sample_interstitial_telomeres.bed").write_text("", encoding="utf-8")
-            base = root / "custom.pdf"
-            with mock.patch.object(sys, "argv", ["report", tmpdir, "-o", str(base)]):
+            with mock.patch.object(sys, "argv", ["report", tmpdir, "-o", str(root / "out")]):
                 with contextlib.redirect_stderr(io.StringIO()) as log:
                     REPORT.main()
-            self.assertTrue((root / "custom_terminal.pdf").is_file())
-            self.assertTrue((root / "custom_its.pdf").is_file())
-            self.assertFalse(base.exists())
-            self.assertNotIn("placeholder", log.getvalue())
-            with mock.patch.object(sys, "argv", ["report", tmpdir, "--section", "all", "-o", str(base)]):
-                with contextlib.redirect_stderr(io.StringIO()):
-                    REPORT.main()
-            self.assertTrue(base.is_file())
-            (root / "sample_terminal_telomeres.bed").unlink()
-            with mock.patch.object(sys, "argv", ["report", tmpdir, "--section", "all",
-                                                "-o", str(root / "empty-its-only.pdf")]):
-                with contextlib.redirect_stderr(io.StringIO()) as log:
-                    REPORT.main()
-            self.assertTrue((root / "empty-its-only.pdf").is_file())
+            self.assertTrue((root / "out" / "sample_plot_report_terminal.pdf").is_file())
+            self.assertTrue((root / "out" / "sample_plot_report_its.pdf").is_file())
             self.assertIn("ITS summary", log.getvalue())
             self.assertNotIn("placeholder", log.getvalue())
+            # a run with its reports is skipped
+            with mock.patch.object(sys, "argv", ["report", tmpdir, "-o", str(root / "out")]):
+                with contextlib.redirect_stderr(io.StringIO()) as log:
+                    REPORT.main()
+            self.assertIn("0 without a report", log.getvalue())
+            self.assertNotIn("Plot Report", log.getvalue())
+            # the run named by its file stem is plotted again
+            with mock.patch.object(sys, "argv", ["report", str(root / "sample"), "-o", str(root / "out")]):
+                with contextlib.redirect_stderr(io.StringIO()) as log:
+                    REPORT.main()
+            self.assertIn("ITS summary", log.getvalue())
+            (root / "sample_terminal_telomeres.bed").unlink()
+            with mock.patch.object(sys, "argv", ["report", tmpdir]):
+                with contextlib.redirect_stderr(io.StringIO()) as log:
+                    REPORT.main()
+            self.assertTrue((root / "sample_plot_report_its.pdf").is_file())
+            self.assertFalse((root / "sample_plot_report_terminal.pdf").exists())
+            self.assertIn("ITS summary", log.getvalue())
+
+    def test_shared_directory_plots_each_missing_run_on_its_own(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            for run, chrom in (("asm.fa", "chrA"), ("asm.fa.gz", "chrB")):
+                (root / f"{run}_terminal_telomeres.bed").write_text(
+                    _its_row(chrom, 0, 600, "p", "scaffold", fwd_can=100), encoding="utf-8")
+                (root / f"{run}_interstitial_telomeres.bed").write_text("", encoding="utf-8")
+            # a reads run can have an empty BED, so its report header marks it
+            (root / "reads.fq_terminal_telomeres.bed").write_text("", encoding="utf-8")
+            (root / "reads.fq_report.tsv").write_text(
+                "#teloscope version=0.1.6\n#params canonical=CCCTAA/TTAGGG\n#columns\tmetric\tvalue\n"
+                "Reads measured:\t8\n", encoding="utf-8")
+            (root / "._asm.fa_terminal_telomeres.bed").write_bytes(b"\x00\x05\x16\x07")
+            self.assertEqual(list(REPORT.find_runs(tmpdir)), ["asm.fa", "asm.fa.gz"])
+            with self.assertRaises(SystemExit):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    REPORT.find_files(tmpdir)
+            self.assertEqual(REPORT.find_files(os.path.join(tmpdir, "asm.fa.gz"))[0], "asm.fa.gz")
+            with self.assertRaises(SystemExit):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    REPORT.find_files(os.path.join(tmpdir, "asm.fasta"))
+
+            # a subprocess, so the runs really go through the process pool
+            command = [sys.executable, str(MODULE_PATH), tmpdir, "-j", "2", "--draft"]
+            first = subprocess.run(command, capture_output=True, text=True, timeout=600)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertIn("Found 2 run(s)", first.stderr)
+            pages = {}
+            for line in first.stderr.splitlines():
+                if line.startswith("[asm.fa"):
+                    run, title = line[1:].split(" ", 1)[0], line.split("] ", 1)[1]
+                    pages.setdefault(run, set()).add(title)
+            self.assertIn("chrA", pages["asm.fa"])
+            self.assertNotIn("chrB", pages["asm.fa"])
+            self.assertIn("chrB", pages["asm.fa.gz"])
+            self.assertNotIn("chrA", pages["asm.fa.gz"])
+            for run in ("asm.fa", "asm.fa.gz"):
+                self.assertTrue((root / f"{run}_plot_report_terminal.pdf").is_file())
+                self.assertTrue((root / f"{run}_plot_report_its.pdf").is_file())
+            self.assertFalse(list(root.glob("reads*.pdf")))
+
+            second = subprocess.run(command, capture_output=True, text=True, timeout=600)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertIn("0 without a report", second.stderr)
+            self.assertNotIn("Plot Report", second.stderr)
 
 
 if __name__ == "__main__":

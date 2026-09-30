@@ -33,15 +33,14 @@ A candidate fusion is a `q` ITS followed by a `p` ITS within `-d` on the same sc
 
 ## Standalone plotting
 
-The plotting script also runs on an existing output directory:
+The plotting script also runs on an existing output directory, for runs made without `--plot-report`:
 
 ```sh
-python3 scripts/teloscope_report.py results/ -o report.pdf
-python3 scripts/teloscope_report.py results/ --section its -o its.pdf
+python3 scripts/teloscope_report.py results/
 python3 scripts/teloscope_report.py results/ --png -o figures/
 ```
 
-By default `-o report.pdf` writes `report_terminal.pdf` and `report_its.pdf`.
+Every run in the directory that has no report yet gets `<input>_plot_report_terminal.pdf` and `<input>_plot_report_its.pdf` beside its files, as with `--plot-report`, several at once. Name one run by its file stem, `results/asm.fa`, to plot it again. Reads-mode runs are left out.
 
 To plot a single ITS locus:
 
@@ -50,7 +49,7 @@ python3 scripts/plot_its.py results/ CHROM:START-END -o its.pdf
 python3 scripts/plot_its.py results/ CHROM --png -o its_figures/
 ```
 
-A bare `CHROM` centers on its largest ITS cluster.
+A bare `CHROM` centers on its largest ITS cluster. When the directory holds several runs, name one by its file stem.
 
 Required input is `*_terminal_telomeres.bed` for the terminal report or `*_interstitial_telomeres.bed` for the ITS report. Gaps, window bedgraphs, and `*_report.tsv` are used when present.
 
@@ -58,9 +57,9 @@ Required input is `*_terminal_telomeres.bed` for the terminal report or `*_inter
 
 | Flag | Meaning | Default |
 | --- | --- | --- |
-| `-o` | PDF stem in split mode; exact PDF path otherwise; PNG output directory | `<input_dir>/teloscope_report.pdf` stem |
-| `--section` | `split`, `all` (combined), `terminal`, or `its` | `split` |
-| `--png` | write one PNG per page instead of one PDF | `false` |
+| `-o` | directory for the PDFs or PNGs | the output directory |
+| `-j` | runs of a directory plotted at once, one process each | all cores |
+| `--png` | write one PNG per page instead of the PDFs | `false` |
 | `--dpi` | raster DPI | `450` |
 | `--draft` | use 150 DPI for fast iteration | `false` |
 

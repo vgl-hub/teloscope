@@ -913,17 +913,16 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Warning: Could not locate teloscope_report.py.\n");
             fprintf(stderr, "  Ensure the scripts/ directory is present alongside the teloscope binary.\n");
         } else {
-            std::string pdfPath = userInput.outRoute + "/" + userInput.inSequenceName + "_plot_report.pdf";
             std::cout.flush();
 
-            std::string cmd = "python3 \"" + scriptPath + "\" \""
-                            + userInput.outRoute + "\" -o \"" + pdfPath + "\"";
+            // the run's file stem names this input's files, so other runs in the directory are left alone
+            std::string cmd = "python3 \"" + scriptPath + "\" \"" + userInput.outRoute + "/" + userInput.inSequenceName + "\"";
             int ret = system(cmd.c_str());
             if (ret != 0) {
                 fprintf(stderr, "Warning: Report generation failed.\n");
                 fprintf(stderr, "  Ensure Python 3 is installed with: matplotlib, numpy, pandas\n");
-                fprintf(stderr, "  Or generate manually: python3 scripts/teloscope_report.py %s\n",
-                        userInput.outRoute.c_str());
+                fprintf(stderr, "  Or generate manually: python3 scripts/teloscope_report.py %s/%s\n",
+                        userInput.outRoute.c_str(), userInput.inSequenceName.c_str());
             }
         }
     }
