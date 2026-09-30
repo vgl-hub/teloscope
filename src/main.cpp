@@ -221,32 +221,42 @@ int main(int argc, char **argv) {
         userInput.sequenceFilterActive = true;
     };
 
-    auto parsePositive = [](const char* value, const char* optionName) -> uint32_t {
-        try {
-            long v = std::stol(value);
-            if (v <= 0) {
-                fprintf(stderr, "Error: %s must be > 0.\n", optionName);
-                exit(EXIT_FAILURE);
-            }
-            return static_cast<uint32_t>(v);
-        } catch (const std::exception&) {
-            fprintf(stderr, "Error: Invalid value '%s' for %s. Must be a number.\n", value, optionName);
-            exit(EXIT_FAILURE);
-        }
+    // true when the whole value is one number: 5e4, 10kb or 1.5 for an integer stop at the letter
+    auto wholeLong = [](const char* value, long& v) -> bool {
+        size_t used = 0;
+        try { v = std::stol(value, &used); } catch (const std::exception&) { return false; }
+        return value[used] == '\0';
+    };
+    auto wholeFloat = [](const char* value, float& v) -> bool {
+        size_t used = 0;
+        try { v = std::stof(value, &used); } catch (const std::exception&) { return false; }
+        return value[used] == '\0';
     };
 
-    auto parseLabelThreshold = [](const char* value) -> float {
-        try {
-            float v = std::stof(value);
-            if (v <= 0.5f || v > 1.0f) {
-                fprintf(stderr, "Error: --label-threshold must be in the range (0.5,1].\n");
-                exit(EXIT_FAILURE);
-            }
-            return v;
-        } catch (const std::exception&) {
+    auto parsePositive = [&](const char* value, const char* optionName) -> uint32_t {
+        long v = 0;
+        if (!wholeLong(value, v) || v > INT32_MAX) {
+            fprintf(stderr, "Error: Invalid value '%s' for %s. Must be a whole number up to 2147483647.\n", value, optionName);
+            exit(EXIT_FAILURE);
+        }
+        if (v <= 0) {
+            fprintf(stderr, "Error: %s must be > 0.\n", optionName);
+            exit(EXIT_FAILURE);
+        }
+        return static_cast<uint32_t>(v);
+    };
+
+    auto parseLabelThreshold = [&](const char* value) -> float {
+        float v = 0;
+        if (!wholeFloat(value, v)) {
             fprintf(stderr, "Error: Invalid value '%s' for --label-threshold. Must be a number.\n", value);
             exit(EXIT_FAILURE);
         }
+        if (v <= 0.5f || v > 1.0f) {
+            fprintf(stderr, "Error: --label-threshold must be in the range (0.5,1].\n");
+            exit(EXIT_FAILURE);
+        }
+        return v;
     };
 
     static struct option long_options[] = { // struct mapping long options
@@ -310,7 +320,14 @@ int main(int argc, char **argv) {
                     fprintf(stderr, "Error: Option -%c is missing a required argument\n", optopt);
                 }
                 return EXIT_FAILURE;
-            default: // handle positional arguments
+            default: // unknown or ambiguous option, before any input is read
+                if (optopt == 0 && optind > 0 && optind <= argc &&
+                    strncmp(argv[optind - 1], "--", 2) == 0) {
+                    fprintf(stderr, "Error: Unknown or ambiguous option %s\n", argv[optind - 1]);
+                } else {
+                    fprintf(stderr, "Error: Unknown option -%c\n", optopt);
+                }
+                return EXIT_FAILURE;
 
 
             case 0: // long options without short options
@@ -445,131 +462,63 @@ int main(int argc, char **argv) {
             }
 
 
-            case 'w': {
-                try {
-                    userInput.windowSize = std::stoi(optarg);
-                    
-                    if (userInput.windowSize <= 0) {
-                        fprintf(stderr, "Error: Window size (-w or --window) must be > 0.\n");
-                        exit(EXIT_FAILURE);
-                    }
-                } catch (const std::exception& e) {
-                    fprintf(stderr, "Error: Invalid window size '%s'. Must be a number.\n", optarg);
-                    exit(EXIT_FAILURE);
-                }
+            case 'w':
+                userInput.windowSize = parsePositive(optarg, "-w/--window");
                 break;
-            }
 
 
-            case 's': {
-                try {
-                    userInput.step = std::stoi(optarg);
-
-                    if (userInput.step <= 0) {
-                        fprintf(stderr, "Error: Step size (-s or --step) must be > 0.\n");
-                        exit(EXIT_FAILURE);
-                    }
-                } catch (const std::exception& e) {
-                    fprintf(stderr, "Error: Invalid step size '%s'. Must be a number.\n", optarg);
-                    exit(EXIT_FAILURE);
-                }
+            case 's':
+                userInput.step = parsePositive(optarg, "-s/--step");
                 break;
-            }
 
 
-            case 't' : {
-                try {
-                    userInput.terminalLimit = std::stoi(optarg);
-                    userInput.terminalLimitSet = true;
-
-                    if (userInput.terminalLimit <= 0) {
-                        fprintf(stderr, "Error: Terminal limit (-t or --terminal-limit) must be > 0.\n");
-                        exit(EXIT_FAILURE);
-                    }
-                } catch (const std::exception& e) {
-                    fprintf(stderr, "Error: Invalid terminal limit '%s'. Must be a number.\n", optarg);
-                    exit(EXIT_FAILURE);
-                }
+            case 't':
+                userInput.terminalLimit = parsePositive(optarg, "-t/--terminal-limit");
+                userInput.terminalLimitSet = true;
                 break;
-            }
 
 
-            case 'k': { // max match distance
-                try {
-                    int v = std::stoi(optarg);
-                    if (v <= 0) {
-                        fprintf(stderr, "Error: Max match distance (-k/--max-match-distance) must be > 0.\n");
-                        exit(EXIT_FAILURE);
-                    }
-                    userInput.maxMatchDist = static_cast<uint32_t>(v);
-                } catch (...) {
-                    fprintf(stderr, "Error: Invalid max match distance '%s'. Must be a number.\n", optarg);
-                    exit(EXIT_FAILURE);
-                }
+            case 'k': // max match distance
+                userInput.maxMatchDist = parsePositive(optarg, "-k/--max-match-distance");
                 break;
-            }
 
 
-            case 'l': {
-                try {
-                    userInput.minBlockLen = std::stoi(optarg);
-
-                    if (userInput.minBlockLen <= 0) {
-                        fprintf(stderr, "Error: Min block length (-l or --min-block-length) must be > 0.\n");
-                        exit(EXIT_FAILURE);
-                    }
-                } catch (const std::exception& e) {
-                    fprintf(stderr, "Error: Invalid min block length '%s'. Must be a number.\n", optarg);
-                    exit(EXIT_FAILURE);
-                }
+            case 'l':
+                userInput.minBlockLen = parsePositive(optarg, "-l/--min-block-length");
                 break;
-            }
 
 
-            case 'd': {
-                try {
-                    userInput.maxBlockDist = std::stoi(optarg);
-                    
-                    if (userInput.maxBlockDist <= 0) {
-                        fprintf(stderr, "Error: Max block distance (-d or --max-block-distance) must be > 0.\n");
-                        exit(EXIT_FAILURE);
-                    }
-                } catch (const std::exception& e) {
-                    fprintf(stderr, "Error: Invalid max block distance '%s'. Must be a number.\n", optarg);
-                    exit(EXIT_FAILURE);
-                }
+            case 'd':
+                userInput.maxBlockDist = parsePositive(optarg, "-d/--max-block-distance");
                 break;
-            }
 
 
             case 'y': { // min block density
-                try {
-                    float v = std::stof(optarg);
-                    if (v <= 0.0f || v > 1.0f) {
-                        fprintf(stderr, "Error: Min block density (-y/--min-block-density) must be in the range (0,1].\n");
-                        exit(EXIT_FAILURE);
-                    }
-                    userInput.minBlockDensity = v;
-                } catch (...) {
+                float v = 0;
+                if (!wholeFloat(optarg, v)) {
                     fprintf(stderr, "Error: Invalid min block density '%s'. Must be a number in (0,1].\n", optarg);
                     exit(EXIT_FAILURE);
                 }
+                if (v <= 0.0f || v > 1.0f) {
+                    fprintf(stderr, "Error: Min block density (-y/--min-block-density) must be in the range (0,1].\n");
+                    exit(EXIT_FAILURE);
+                }
+                userInput.minBlockDensity = v;
                 break;
             }
 
 
             case 'x': { // edit distance
-                try {
-                    int v = std::stoi(optarg);
-                    if (v < 0 || v > 2) {
-                        fprintf(stderr, "Error: Edit distance (-x/--edit-distance) must be in the range [0,2].\n");
-                        exit(EXIT_FAILURE);
-                    }
-                    userInput.editDistance = static_cast<uint8_t>(v);
-                } catch (...) {
+                long v = 0;
+                if (!wholeLong(optarg, v)) {
                     fprintf(stderr, "Error: Invalid edit distance '%s'. Must be a number [0,2].\n", optarg);
                     exit(EXIT_FAILURE);
                 }
+                if (v < 0 || v > 2) {
+                    fprintf(stderr, "Error: Edit distance (-x/--edit-distance) must be in the range [0,2].\n");
+                    exit(EXIT_FAILURE);
+                }
+                userInput.editDistance = static_cast<uint8_t>(v);
                 break;
             }
 
