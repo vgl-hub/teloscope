@@ -8,9 +8,9 @@ Teloscope can write terminal and interstitial (ITS) PDF reports during a FASTA r
 teloscope asm.fa -o results/ -r -e -g -i --plot-report
 ```
 
-This writes `results/asm.fa_plot_report_terminal.pdf` and `results/asm.fa_plot_report_its.pdf`. The ITS report needs an ITS BED.
+This writes `results/asm.fa_plot_report_terminal.pdf` and `results/asm.fa_plot_report_its.pdf`. In the default fast scan the ITS report covers only the scanned ends; add `-i` for the whole genome.
 
-Use `-r` with `--plot-report` to get the repeat-density, canonical-ratio, and strand-ratio tracks. GC and entropy tracks are added when their files exist. [Record filters](parameters.md#record-filters) limit the report like every other output.
+Use `-r` with `--plot-report` to get the repeat-density, canonical-ratio, and strand-ratio tracks. GC and entropy tracks are added when their files exist.
 
 ## What the report contains
 
@@ -26,10 +26,10 @@ ITS report, colored by a 3x3 key where hue is the strand (fwd blue, both purple,
 
 - **Summary:** headline numbers, ITS length distribution, ITS count vs. density per scaffold (dot size is scaffold size), and ITS composition by strand and canonical share.
 - **Atlas:** every scaffold with a terminal telomere or ITS, drawn to scale, homologs side by side. Up to one slide in two size groups, else a double slide in four, each group on its own axis. Rows spread to fill the page. ▼ marks the top (F) fusion candidates, (L) longest canonical ITS and (C) clusters of ITS. If rows do not fit even a double slide, the atlas becomes an unlabelled heatmap.
-- **Candidates:** top clusters (>= 3 ITS within 50 kbp), candidate fusions around their junction, and the top ITS by canonical bp.
+- **Candidates:** the top ITS clusters (3 or more ITS chained within 50 kbp, ranked by summed length), candidate fusions around their junction (ranked by the shorter array), and the top ITS by canonical bp, the bases in exact canonical repeats.
 - **Loci:** one track page per top cluster, fusion, and ITS.
 
-Candidate fusions are q→p pairs within the distance threshold with no gap between them, where at least one row is classed as fusion. They are not confirmed fusions. Fusions are sorted by shorter arm bp and clusters by summed ITS bp. Canonical bp is `(fwdCan+revCan) x` the canonical motif length, so it can exceed the ITS length when matches overlap.
+A candidate fusion is a `q` ITS followed by a `p` ITS within `-d` on the same scaffold, with no gap between them and at least one of the two classed `fusion` in the BED. It marks a possible end-to-end join, not a confirmed one.
 
 ## Standalone plotting
 

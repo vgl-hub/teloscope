@@ -14,7 +14,7 @@ make simulate    # writes build/bin/teloscope-simulate
 build/bin/teloscope-simulate -n 1000 -r 1e-4 -s 42 -o testFiles/simulate/rate_1e-4
 ```
 
-This writes `sequences.fa` and `ground_truth.tsv`. Each sequence is a canonical telomere, a TVR block, random sequence, a TVR block, and a canonical telomere, in that order; the mutation rate then applies to the whole sequence.
+This writes `sequences.fa` and `ground_truth.tsv`. Each sequence runs canonical telomere, TVR block, random sequence, TVR block, canonical telomere; the mutation rate then applies to all of it.
 
 | Flag | Meaning | Default |
 | --- | --- | --- |
@@ -35,7 +35,7 @@ build/bin/teloscope-simulate --evaluate \
   -b testFiles/simulate/rate_1e-4/teloscope_out/sequences.fa_terminal_telomeres.bed
 ```
 
-The evaluator prints one tab-separated line with these fields:
+The evaluator prints the seven values on one tab-separated line, without a header:
 
 | Field | Meaning |
 | --- | --- |
@@ -52,5 +52,5 @@ The evaluator prints one tab-separated line with these fields:
 `.github/workflows/val-simulate.sh` runs rates from `1e-6` to `1e-2` and prints one line per rate. `SIM_N` and `SIM_SEED` override its 1000 sequences and seed 42:
 
 ```sh
-SIM_N=1000000 SIM_SEED=42 bash .github/workflows/val-simulate.sh
+SIM_N=10000 SIM_SEED=7 bash .github/workflows/val-simulate.sh
 ```

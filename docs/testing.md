@@ -21,13 +21,19 @@
 | `make test-bam-sanitize` | the BAM tests under AddressSanitizer and UndefinedBehaviorSanitizer |
 | `python3 scripts/test_teloscope_report.py` | the report plots, on synthetic data |
 
-`TELOSCOPE=/path/to/binary` points the Python checks at another binary.
+To test another binary, run a Python check directly with `TELOSCOPE=/path/to/binary`; the make targets set their own.
 
-CI runs the manifests and the synthetic, filter, BAM, and read checks on Linux, macOS, and Windows (`val.sh` outside Windows), the report check on two matplotlib versions, and the three BAM hardening targets on Linux. A weekly job repeats hardening and sanitizing with 4096 mutations.
+| Workflow | When | Runs |
+| --- | --- | --- |
+| `validate.yml` | every push, and pull requests to `main` | the manifests, `test-synthetic`, and the filter, BAM, and read checks on Linux, macOS, and Windows (`val.bat` on Windows); the three BAM hardening targets on Linux |
+| `report.yml` | when the report scripts change | the report check on matplotlib 3.8.4 and 3.10.8, on Linux |
+| `bam_hardening.yml` | weekly | hardening and sanitizing with 4096 mutations |
+
+CI never runs `test-gaps` or `test-n50`; run them before a release.
 
 ## Synthetic fixtures
 
-`scripts/test_synthetic_intent.py` checks the binary against `testFiles/synthetic/manifest.tsv`. `scripts/check_invariants.py` needs no expected values: it re-derives report fields from the BED files and compares runs with each other: repeated runs, thread counts, fast against full scan, a higher `-x` never losing matches, a small `-t` giving the same terminal BED, and `-n` adding only contig rows.
+`scripts/test_synthetic_intent.py` checks the binary against `testFiles/synthetic/manifest.tsv`. `scripts/check_invariants.py` needs no expected values. It re-derives report fields from the BED files and compares runs: repeated runs, thread counts, fast against full scan, a higher `-x` never losing matches, a small `-t` giving the same terminal BED, and `-n` adding only contig rows, leaving every arm as it was.
 
 ```sh
 bash testFiles/generate_synthetic.sh          # write the fixtures and the manifest
@@ -35,13 +41,22 @@ bash testFiles/generate_synthetic.sh --check  # regeneration must change nothing
 bash testFiles/generate_synthetic.sh --list   # fixture ids
 ```
 
-`make fixtures` and `make fixtures-check` wrap the first two. The script reads its thresholds from `include/input.h`, `include/teloscope.h`, and `src/teloscope.cpp`, and refuses to run when one has moved.
+`make fixtures` and `make fixtures-check` wrap the first two. The script reads its thresholds from `include/input.h` and `src/teloscope.cpp`, and refuses to run when one has moved.
 
 Fixtures are declared in `testFiles/synthetic_fixtures.sh` and `testFiles/synthetic_axis_*.sh`:
 
-- `fx <id> <path> <record_spec> <flags> <expect> <intent>` declares one fixture; `xfx` declares a checked-in file the script does not write.
+- `fx <id> <path> <record_spec> <flags> <expect> <intent>` declares one fixture; `xfx <id> <path> <scaffold> <flags> <expect> <intent>` declares a checked-in file the script does not write.
 - `<expect>` holds `key=value` pairs joined by `;`, one set per record joined by `|`, or one set for all records.
-- Keys: `type`; `anom`, `.` or comma-joined flags; `telo`, the arm count; `labels`, the arm ends or `none`; `gaps`; `its`, the interstitial count in any full scan; `telolen`, an arm's length.
+
+| Key | Expected value | When absent |
+| --- | --- | --- |
+| `type` | `t2t`, `incomplete`, or `none` | fails as unstated |
+| `anom` | `.` or comma-joined flags | fails as unstated |
+| `telo` | the arm count | fails as unstated |
+| `labels` | the arm ends, or `none` | fails as unstated |
+| `gaps` | the gap count | fails as unstated |
+| `its` | the interstitial count, in any full scan | not checked |
+| `telolen` | the `teloLen` of one arm | not checked |
 
 ## `.tst` manifests
 
@@ -51,7 +66,7 @@ Fixtures are declared in `testFiles/synthetic_fixtures.sh` and `testFiles/synthe
 build/bin/teloscope-validate -c validateFiles/gfa_pathless_small.tst
 ```
 
-`make regenerate` builds `teloscope-generate-tests`, which rewrites the legacy manifests from the current binary; run it only when the new behavior is accepted. Directive manifests and their goldens are edited by hand. [validateFiles/README.md](https://github.com/vgl-hub/teloscope/blob/main/validateFiles/README.md) has the full format.
+`make regenerate` builds `teloscope-generate-tests`. Run from the repo root, it deletes and rewrites the legacy manifests from the current binary, adds the two `chr_only` ones, and leaves outputs in `testFiles/`, so review the diff. Directive manifests and their goldens are edited by hand; a new BED golden needs `git add -f`, since `.gitignore` matches it. [validateFiles/README.md](https://github.com/vgl-hub/teloscope/blob/main/validateFiles/README.md) has the full format.
 
 ## BAM hardening
 
@@ -63,5 +78,6 @@ build/bin/teloscope-validate -c validateFiles/gfa_pathless_small.tst
 - `scripts/`: the report and plotting scripts, and the Python checks
 - `testFiles/`: FASTA and GFA fixtures, with expected outputs in `testFiles/expected/`
 - `validateFiles/`: `.tst` manifests
+- `tests/`: the BGZF fault-injection test
 - `gfalibs/`: the GFA and I/O submodule
 - `docs/`: this documentation

@@ -2,18 +2,18 @@
 
 # Troubleshooting
 
-Rerun with `--cmd --verbose` first: `--cmd` prints the resolved command, and `--verbose` prints progress, which shows where a run stops.
+Rerun with `--verbose` first: it prints progress, which shows where a run stops.
 
 ## Errors
 
 | Message | Fix |
 | --- | --- |
-| `Input sequence file is required`, `No input file provided` | pass the input as the first argument or with `-f` |
+| `file does not exist`, `No input file provided` | pass an existing input as the first argument or with `-f` |
 | `Option -<flag> is missing a required argument` | give the flag a value |
 | `input ... is not FASTA, GFA, FASTQ or BAM` | only the first bytes are checked, so a malformed GFA can still fail later |
 | `Cannot create output directory`, `Output directory ... is not writable` | check the path, the permissions, and the free space |
 | `Step size (...) cannot be larger than window size (...)` | keep `-s` at or below `-w` |
-| `... must be > 0`, `... must be in the range ...` | `-w`, `-s`, `-t`, `-k`, `-d`, and `-l` take positive integers; `-y` takes `(0,1]`, `-x` `0` to `2`, and `--label-threshold` `(0.5,1]` |
+| `... must be > 0`, `... must be in the range ...` | `-w`, `-s`, `-t`, `-k`, `-d`, `-l`, `--terminal-tolerance`, and `--min-block-counts` take positive integers; `-y` takes `(0,1]`, `-x` `0` to `2`, and `--label-threshold` `(0.5,1]` |
 | `... patterns is unusually high` | over 500 patterns: use fewer IUPAC codes in `-p` or a lower `-x` |
 | `Could not locate teloscope_report.py` | see [Report](#report) |
 
@@ -43,13 +43,13 @@ make -j
 
 - A FASTA run writes four files by default; the rest need flags ([Outputs](outputs.md)).
 - A GFA run writes only the annotated graph and its color file.
-- `-n` adds `contig` rows to the terminal BED but never changes `type`, `anomaly`, or the statistics.
+- `-n` adds `contig` rows to the terminal BED (and to `-a`) and changes which arrays count as interstitial: a full scan loses them, and a fast scan can gain rows from the extra windows. `type`, `anomaly`, and the statistics stay the same.
 - `-r`, `-g`, `-e`, `-m`, and `-i` force the full scan, and `-n` reads every contig end, so all of them cost time.
 - `--chr-only` misses a chromosome whose name breaks the longest record's convention, such as `chromosome_X` beside `chr1`. Add it with `--include-bed`.
 
 ## Calls
 
-Calls depend most on `-c`, `-t`, `-l`, `-y`, `-k`, `-d`, and `-x`.
+Terminal calls depend most on `-c`, `--terminal-tolerance`, `-l`, `-y`, `-d`, and `-x`; interstitial rows on `-k`, `-d`, and `-y`.
 
 - **No telomeres:** check that `-c` matches the organism and that the start zone (`-t`, `--terminal-tolerance`) reaches the telomere. Try a permissive run, then restore one threshold at a time:
 

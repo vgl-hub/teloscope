@@ -62,8 +62,8 @@ nav:
   - Classification: classification.md
   - Algorithm: algorithm.md
   - Report generation: report.md
-  - Simulation: simulation.md
-  - Testing: testing.md
   - Troubleshooting: troubleshooting.md
+  - Testing: testing.md
+  - Simulation: simulation.md
   - Release checklist: release.md
   - Validation format: https://github.com/vgl-hub/teloscope/blob/main/validateFiles/README.md

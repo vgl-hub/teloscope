@@ -12,7 +12,7 @@ Teloscope is a telomere annotation tool. It rapidly matches, counts, and reports
 ## Install
 
 ```sh
-conda install -c bioconda teloscope
+conda install -c conda-forge -c bioconda teloscope
 ```
 
 Or download a Linux, macOS, or Windows binary from [Releases](https://github.com/vgl-hub/teloscope/releases), or build from source with a C++17 compiler and zlib:
@@ -23,7 +23,7 @@ cd teloscope
 make -j
 ```
 
-`--plot-report` needs Python 3 with `matplotlib`, `numpy`, and `pandas`, and finds `scripts/teloscope_report.py` in a source checkout or next to the binary.
+`--plot-report` needs Python 3 with `matplotlib`, `numpy`, and `pandas`, and finds `scripts/teloscope_report.py` in a source checkout or a Bioconda install; a release binary needs the script beside it.
 
 ## Quick start
 
@@ -33,12 +33,12 @@ make -j
 | Write every output and the PDF reports | `teloscope asm.fa -o results/ -r -g -e -m -a -i --plot-report` |
 | Switch to a plant canonical repeat | `teloscope asm.fa -c CCCTAAA` |
 | Search explicit motif variants | `teloscope asm.fa -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG` |
-| Also report telomeres at contig ends, e.g. before manual curation | `teloscope asm.fa -n` |
+| Add telomeres at contig ends to the terminal BED, e.g. for manual curation | `teloscope asm.fa -n` |
 | Keep only records named like the longest one | `teloscope asm.fa --chr-only` |
 | Keep only listed records | `teloscope asm.fa --include-bed ids.txt` |
 | Annotate a graph for BandageNG | `teloscope asm.gfa -o results/` |
 | Measure and subset telomeric reads (FASTQ or BAM) | `teloscope reads.fq.gz -j 32 -o results/` |
-| Read decompressed stdin | `zcat asm.fa.gz \| teloscope -o results/` |
+| Read decompressed stdin | <code>zcat asm.fa.gz &#124; teloscope -o results/</code> |
 
 Each pattern is also searched as its reverse complement, and without `-p` the search set comes from `-c`. The default scan reads only sequence ends; `-r`, `-g`, `-e`, `-m`, or `-i` switch to a full scan. Compressed stdin must be BAM.
 
@@ -70,7 +70,7 @@ A GFA run writes `asm.gfa.telo.annotated.gfa` and a BandageNG color file. A read
 | [Troubleshooting](docs/troubleshooting.md) | errors and surprising calls |
 | [Testing](docs/testing.md) | test suites, validation, and repo layout |
 | [Simulation](docs/simulation.md) | the synthetic benchmark |
-| [Release checklist](docs/release.md) | GitHub, Bioconda, and Zenodo steps |
+| [Release checklist](docs/release.md) | GitHub, Bioconda, Galaxy, and Zenodo steps |
 
 ## Citation
 

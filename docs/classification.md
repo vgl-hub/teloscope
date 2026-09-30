@@ -8,7 +8,7 @@ FASTA mode classifies every sequence from its two arms. GFA mode has no classes.
 
 The p arm is the telomere anchored at the start of the first contig, and the q arm the one anchored at the end of the last contig; leading and trailing runs of `N` don't count. An arm must start inside the start zone, the smaller of `--terminal-tolerance` and `-t`. Its strand can be `p` or `q` at either end.
 
-When one array runs from a contig's start to its end, both arms would claim it. It belongs to the end its strand points to: forward (`CCCTAA`) to the p end, reverse (`TTAGGG`) to the q end. A sequence that is `TTAGGG` from end to end is therefore `incomplete`, `q`, with no anomaly. The same holds for a record shorter than about twice `--terminal-tolerance` (6 kb by default), whose two start zones overlap.
+When one array runs from a contig's start to its end, both arms would claim it. It belongs to the end its strand points to: forward (`CCCTAA`) to the p end, reverse (`TTAGGG`) to the q end. A sequence that is `TTAGGG` from end to end is therefore `incomplete`, `q`, with no anomaly. The same holds for a record shorter than about twice `--terminal-tolerance` (6 kb by default), whose two start zones overlap. With `-n`, a scaffold end keeps such an array over the internal end of its contig.
 
 ## Classes
 
@@ -23,12 +23,12 @@ When one array runs from a contig's start to its end, both arms would claim it. 
 | `anomaly` | Meaning |
 | --- | --- |
 | `.` | nothing to report |
-| `discordant_p`, `discordant_q` | that arm's strand points the wrong way for its end |
-| `fragmented_p`, `fragmented_q` | that arm is built from more than one piece (`teloLen` below `end - start`) |
+| `discordant_p`, `discordant_q` | that arm's strand points the wrong way for its end, as at a head-to-head fusion or an inverted terminal repeat |
+| `fragmented_p`, `fragmented_q` | that arm is built from more than one piece (`teloLen` below `end - start`), split by a short non-telomeric stretch |
 
-Several flags are comma-separated. Both kinds occur in real genomes, discordant at head-to-head fusions and inverted terminal repeats, fragmented where a short non-telomeric stretch splits an array, so they are flags for a curator, not errors.
+Flags are comma-separated, and are for a curator to judge, not errors.
 
-Gaps are in neither column: `gaps` counts them, and the summary splits each type by them. Contig rows (`-n`) never count toward `type`, `telomeres`, `anomaly`, or the statistics; they appear only in the terminal BED.
+Gaps are in neither column: `gaps` counts them, and the summary splits each type by them. Contig rows (`-n`) never count toward `type`, `telomeres`, `anomaly`, or the statistics; they appear in the terminal BED, not in the report.
 
 ## Labels
 
@@ -40,6 +40,6 @@ Every block has two labels, BED columns 5 and 6.
 - `q`: below one minus the threshold
 - `b`: in between
 
-`closestEnd` is the end a row belongs to. For a telomere, that is the end it is the arm of; when one array reaches both ends of a contig, the end its strand points to. For an interstitial row, it is the nearer end, `p` at the exact midpoint.
+`closestEnd` is the end a row belongs to: for a telomere, the end it is anchored at ([Arms](#arms)); for an interstitial row, the nearer end, `p` at the exact midpoint.
 
 On an ordinary telomere the two agree, since a p arm carries the forward motif and sits at the start. They disagree on a discordant arm.

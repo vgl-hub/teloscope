@@ -2,7 +2,7 @@
 
 # Outputs
 
-Every file name starts with the input file name, as in `asm.fa_report.tsv`. Only the kept-reads BAM drops the extension: `reads_telomeric.bam`.
+Every file name starts with the input file name, as in `asm.fa_report.tsv`, or with `stdin` for a pipe. Only the kept-reads BAM drops the extension: `reads_telomeric.bam`.
 
 ## FASTA mode
 
@@ -47,7 +47,7 @@ Both block files share one 12-column layout, with zero-based, half-open coordina
 
 The junction class compares an interstitial row with the nearest row within `-d` on the same contig: `fusion` is a reverse array then a forward one, `tail_to_tail` forward then reverse, `fragmentation` two arrays of the same strand, and `single` means nothing is that close.
 
-Coverage counts each base under a match once, however many matches overlap it, so counts alone do not give it. A terminal piece needs `-y` canonical coverage over its length; an interstitial row needs `-y` coverage from all its matches.
+Coverage counts each covered base once, however many matches overlap it. A terminal piece needs `-y` canonical coverage over its length; an interstitial row needs `-y` coverage from all its matches.
 
 Forward and reverse are a sequence convention, not a `+` strand: of the canonical motif and its reverse complement, the lexicographically smaller one is forward. By default that is `CCCTAA`, found at chromosome starts, and reverse is `TTAGGG`, found at ends. Each expanded seed takes the closer orientation (ties go to forward), and its variants inherit it.
 
@@ -84,7 +84,7 @@ The assembly summary follows:
 | Chromosome Telomere/Gap Completeness | `t2t`, `incomplete`, and `none`, each split by gaps |
 | Scaffold Anomalies | flagged and clean sequences, and the discordant and fragmented arms behind them |
 
-Contig rows (`-n`) never count in the report. Under a filter, every number describes the selected paths.
+Contig rows (`-n`) never count in the report, and in a full scan they leave the `its` count. Under a filter, every number describes the selected paths.
 
 ## `*_gaps.bed`
 
@@ -126,4 +126,4 @@ With `P` paths, only path-terminal segment ends are scanned, oriented by the pat
 | `Discordant` | strand does not match the end |
 | `Mean length` to `Max length` | over `Complete` rows: mean, median, 25th, 75th, and 90th percentiles (linear interpolation, two decimals), min, and max; left out when there are none |
 
-The estimate needs no alignment, so a read broken inside a telomere looks complete and pulls the lengths down.
+The estimate is alignment-free: a read broken inside a telomere looks complete and pulls the lengths down.

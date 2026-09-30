@@ -30,16 +30,16 @@ Every pattern is also searched as its reverse complement. `-c` decides canonical
 
 | Flag | Long form | Meaning | Default |
 | --- | --- | --- | --- |
-| `-t` | `--terminal-limit` | how far in from each end to look | `50000` |
+| `-t` | `--terminal-limit` | fast-scan window at each end, grown while a telomere reaches its edge; also caps the start zone | `50000` |
 |  | `--terminal-tolerance` | how far from an end a telomere may start | `3000` |
 | `-k` | `--max-match-distance` | matches this close chain into one interstitial seed | `50` |
 | `-d` | `--max-block-distance` | longest non-telomeric stretch inside a telomere | `1000` |
-| `-l` | `--min-block-length` | shortest piece kept | `300` |
+| `-l` | `--min-block-length` | shortest telomere piece kept | `300` |
 | `-y` | `--min-block-density` | repeat-covered fraction a piece needs, in `(0,1]` | `0.5` |
-|  | `--min-block-counts` | canonical matches a block needs | `2` |
+|  | `--min-block-counts` | canonical matches a telomere piece needs | `2` |
 |  | `--label-threshold` | forward-strand share for a `p` or `q` label, in `(0.5,1]` | `0.667` |
 
-The start zone is the smaller of `--terminal-tolerance` and `-t`, counted in called bases. A value exactly at `-l`, `-y`, or `--min-block-counts` passes.
+The start zone is the smaller of `--terminal-tolerance` and `-t`, counted in called bases. A value exactly at `-l` or `--min-block-counts` passes. Interstitial rows ignore both and need four exact canonical repeats instead.
 
 ## Windows
 
@@ -58,11 +58,10 @@ The start zone is the smaller of `--terminal-tolerance` and `-t`, counted in cal
 | `-m` | `--out-matches` | canonical and terminal non-canonical matches | off |
 | `-a` | `--out-fasta` | terminal telomere sequences | off |
 | `-i` | `--out-its` | interstitial telomeres from a whole-sequence scan | off |
-| `-n` | `--manual-curation` | telomeres at contig ends too | off |
-| `-u` | `--ultra-fast` | a scan of sequence ends only | on |
+| `-n` | `--manual-curation` | telomeres at contig ends, added to the terminal BED | off |
 |  | `--plot-report` | terminal and ITS PDF reports | off |
 
-`-r`, `-g`, `-e`, `-m`, or `-i` switch to a full scan. `-n` keeps the fast scan but reads both ends of every contig. [Outputs](outputs.md) lists the files.
+The fast scan of sequence ends is the default; `-r`, `-g`, `-e`, `-m`, or `-i` switch to a full scan. `-n` keeps the fast scan but reads both ends of every contig. [Outputs](outputs.md) lists the files.
 
 ## Record filters
 
@@ -77,8 +76,8 @@ The start zone is the smaller of `--terminal-tolerance` and `-t`, counted in cal
 - Filtering is off unless a flag is set. Include and exclude flags repeat. Includes, `--chr-only` among them, form a union; exclusions run last.
 - Matching is case-sensitive, and prefixes are literal, not globs. FASTA uses the first word after `>`, accession version included. GFA1 uses `P` names, or `S` names in a graph without paths.
 - A selector file holds one ID per line or BED3+ rows. Column 1 selects the whole record; coordinates must be valid but never crop it. Blank, `#`, `track`, and `browser` lines are skipped.
-- Every ID and prefix must match a record, and the selection cannot be empty. Duplicate FASTA IDs are rejected. The input and selected counts go to stderr and the report.
-- Filters work on FASTA and on GFA1 made of `H`, `S`, `L`, `J`, and `P` records; anything else is rejected, as are FASTQ and BAM. A filtered GFA keeps every record and only limits which ends are scanned. Filtered stdin is read as FASTA, so a filtered GFA needs a `.gfa` file name.
+- Every ID and prefix must match a record, and the selection cannot be empty. Duplicate FASTA IDs are rejected. The input and selected counts go to stderr, and for FASTA to the report.
+- Filters work on FASTA and on GFA1 made of `H`, `S`, `L`, `J`, and `P` records; anything else is rejected, as are FASTQ and BAM. A filtered GFA keeps every record and only limits which ends are scanned. Filtered stdin is read as FASTA, so a filtered GFA needs a `.gfa` or `.gfa.gz` file name.
 - Filters apply after loading, so they cut scan time and output size, not memory.
 
 `--chr-only` takes the longest record as a chromosome. A record is kept when its name starts with the same letters and has the same number of separators (characters that are neither letters nor digits). stderr prints the rule it used.
@@ -97,7 +96,7 @@ For NCBI FASTA, use accession.version IDs from the [genome sequence report](http
 
 ## Reads mode
 
-FASTQ or BAM input is detected from its first bytes. Two defaults change: `-t` becomes `2000`, the read tile, and `--terminal-tolerance` becomes `300`. `-l` sets which telomeres are measured. A read is kept when it has a measured telomere or a telomeric block of at least 42 bp. BAM is read directly, without HTSlib or samtools. Assembly-only output flags are ignored with a warning. [Outputs](outputs.md#reads-mode) describes the files.
+FASTQ or BAM input is detected from its first bytes and read without HTSlib or samtools. `-t` defaults to `2000` and `--terminal-tolerance` to `300`, and assembly-only output flags are ignored with a warning. `-l` sets which telomeres are measured; a read is kept when it has one, or any telomeric block of at least 42 bp ([Outputs](outputs.md#reads-mode)).
 
 ## Stdin and pipes
 
@@ -116,5 +115,6 @@ Compressed FASTA or FASTQ on a stream is not supported; BAM is.
 | --- | --- | --- |
 | `-v` | `--version` | print the version |
 | `-h` | `--help` | print the help |
+| `-u` | `--ultra-fast` | fast scan, the default; kept for older scripts |
 |  | `--verbose` | print progress |
-|  | `--cmd` | print the resolved command line |
+|  | `--cmd` | print the command line |
