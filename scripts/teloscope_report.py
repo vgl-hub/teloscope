@@ -749,7 +749,7 @@ def pair_fusions(df, gaps, d):
 _CLUSTER_COLUMNS = ["chr", "start", "end", "rows", "span", "its_bp"]
 
 
-def rank_long_its(df, top_n=25):
+def rank_long_its(df, top_n=5):
     """Long ITS rows ranked by canonical bp descending, ties broken by length descending."""
     if df.empty:
         return df

@@ -312,7 +312,7 @@ xfx vgp_turtle vgp_turtle.fa.gz giant_CM098529.1_84917045-85927174 '-i' \
 
 xfx vgp_turtle_n vgp_turtle.fa.gz giant_CM098529.1_84917045-85927174 '-i -n' \
    'type=none;anom=.;telo=0;labels=none;gaps=1;its=0' \
-   'Same file with -n: the array anchors its own contig'"'"'s internal end and becomes a lowercase contig row, leaving the interstitial BED'
+   'Same file with -n: the array anchors its own contig'"'"'s internal end and becomes a contig row, leaving the interstitial BED'
 
 # Combinatorial axes
 source "$SCRIPT_DIR/synthetic_axis_anomaly.sh"

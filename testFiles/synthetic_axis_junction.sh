@@ -102,7 +102,7 @@ fx jn_contig_end_telomere synthetic/jn_contig_end_telomere.fa \
 fx jn_contig_end_telomere_n synthetic/jn_contig_end_telomere.fa \
    'chr_jn_contig_end_telomere=F:CCCTAAx100+L:2000+N:100+L:1500+R:TTAGGGx100+N:100+L:2000+R:TTAGGGx100' '-n -i' \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=2;its=0' \
-   'Same file with -n: the internal contig-end telomere moves to the terminal BED as a lowercase contig row and leaves the interstitial BED (its 1 -> 0)'
+   'Same file with -n: the internal contig-end telomere moves to the terminal BED as a contig row and leaves the interstitial BED (its 1 -> 0)'
 
 # A three-contig scaffold: true p and q arms on the outer contigs, an internal contig-end telomere on the middle one.
 fx jn_contig_middle synthetic/jn_contig_middle.fa \
@@ -113,7 +113,7 @@ fx jn_contig_middle synthetic/jn_contig_middle.fa \
 fx jn_contig_middle_n synthetic/jn_contig_middle.fa \
    'chr_jn_contig_middle=F:CCCTAAx100+L:2000+N:100+L:1500+R:TTAGGGx100+N:100+L:2000+R:TTAGGGx100' '-n -i' \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=2;its=0' \
-   'With -n the middle contig'"'"'s telomere becomes a lowercase contig row and leaves the interstitial BED'
+   'With -n the middle contig'"'"'s telomere becomes a contig row and leaves the interstitial BED'
 
 # An array flanked by N on both sides forms its own contig; -n chains from both ends, which R3 collapses to one row.
 fx jn_flanked_both synthetic/jn_flanked_both.fa \
@@ -124,7 +124,7 @@ fx jn_flanked_both synthetic/jn_flanked_both.fa \
 fx jn_flanked_both_n synthetic/jn_flanked_both.fa \
    'chr_jn_flanked_both=L:1500+N:100+F:CCCTAAx60+N:100+L:1500' '-n -i' \
    'type=none;anom=.;telo=0;labels=none;gaps=2;its=0' \
-   'With -n both of the contig'"'"'s own internal chains find the same array; R3 keeps one lowercase contig row'
+   'With -n both of the contig'"'"'s own internal chains find the same array; R3 keeps one contig row'
 
 # A 300 bp inverted tip anchors the p end; the forward telomere 1500 bp behind it is beyond -d and stays an interstitial row.
 fx jn_tip_beats_giant synthetic/jn_tip_beats_giant.fa \

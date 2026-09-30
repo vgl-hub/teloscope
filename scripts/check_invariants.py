@@ -451,18 +451,20 @@ def check_metamorphic(rec, subject, fasta_path, base_flags, stem):
         d8, n_res = once_with(n_flags, [])
         dirs.append(d8)
         if no_n_res and n_res:
+            # typed rows: an arm demoted to a contig row keeps its span but not its type
             n_terminal = read_block_bed(outputs(d8, stem)["terminal"])
-            n_set = {(b["chrom"], b["start"], b["end"]) for b in n_terminal}
-            no_n_set = block_spans(outputs(d7, stem)["terminal"])
-            contig_rows = {(b["chrom"], b["start"], b["end"])
-                           for b in n_terminal if b["teloType"] == "contig"}
+            n_set = {(b["chrom"], b["start"], b["end"], b["teloLabel"], b["closestEnd"], b["teloType"])
+                     for b in n_terminal}
+            no_n_set = {(b["chrom"], b["start"], b["end"], b["teloLabel"], b["closestEnd"], b["teloType"])
+                        for b in read_block_bed(outputs(d7, stem)["terminal"])}
+            contig_rows = {r for r in n_set if r[5] == "contig"}
             rec.check("MET-07-manual-curation", subject,
-                      n_set == no_n_set | contig_rows,
+                      n_set == no_n_set | contig_rows and len({r[:3] for r in n_set}) == len(n_terminal),
                       f"-n terminal BED should equal the full-scan terminal BED (without -n) "
-                      f"plus contig rows: missing {sorted((no_n_set | contig_rows) - n_set)[:3]}, "
+                      f"plus contig rows, one row per span: missing {sorted((no_n_set | contig_rows) - n_set)[:3]}, "
                       f"extra {sorted(n_set - (no_n_set | contig_rows))[:3]}")
             its_set = block_spans(outputs(d8, stem)["interstitial"])
-            overlap = contig_rows & its_set
+            overlap = {r[:3] for r in contig_rows} & its_set
             rec.check("MET-07-manual-curation", subject + ":its", not overlap,
                       f"contig rows {sorted(overlap)[:3]} also appear in the -n run's "
                       f"own interstitial BED")

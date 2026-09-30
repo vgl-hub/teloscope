@@ -164,11 +164,11 @@ jn_fragmented_p_plain	synthetic/jn_fragmented_p.fa	chr_jn_fragmented_p	-	t2t	.	2
 jn_its_96bp	synthetic/jn_its_96bp.fa	chr_jn_its_96bp	-i	none	.	0	none	0	1	-	96 bp is within --terminal-tolerance but far too short for -l to anchor a piece; reported as a plain interstitial row now that there is no length floor for one
 jn_gap_inside_telomere	synthetic/jn_gap_inside_telomere.fa	chr_jn_gap_inside_telomere	-	t2t	.	2	pq	1	-	300	A 100 bp N run splits the p array into two contigs; pieces never chain across a gap, so the p arm is only the first piece (teloLen 300, not the old gap-bridged 700)
 jn_contig_end_telomere	synthetic/jn_contig_end_telomere.fa	chr_jn_contig_end_telomere	-i	t2t	.	2	pq	2	1	-	An internal contig-end telomere reads as an ordinary interstitial row without -n
-jn_contig_end_telomere_n	synthetic/jn_contig_end_telomere.fa	chr_jn_contig_end_telomere	-n -i	t2t	.	2	pq	2	0	-	Same file with -n: the internal contig-end telomere moves to the terminal BED as a lowercase contig row and leaves the interstitial BED (its 1 -> 0)
+jn_contig_end_telomere_n	synthetic/jn_contig_end_telomere.fa	chr_jn_contig_end_telomere	-n -i	t2t	.	2	pq	2	0	-	Same file with -n: the internal contig-end telomere moves to the terminal BED as a contig row and leaves the interstitial BED (its 1 -> 0)
 jn_contig_middle	synthetic/jn_contig_middle.fa	chr_jn_contig_middle	-i	t2t	.	2	pq	2	1	-	Without -n the middle contig's telomere is a plain interstitial row; the scaffold arms are unaffected
-jn_contig_middle_n	synthetic/jn_contig_middle.fa	chr_jn_contig_middle	-n -i	t2t	.	2	pq	2	0	-	With -n the middle contig's telomere becomes a lowercase contig row and leaves the interstitial BED
+jn_contig_middle_n	synthetic/jn_contig_middle.fa	chr_jn_contig_middle	-n -i	t2t	.	2	pq	2	0	-	With -n the middle contig's telomere becomes a contig row and leaves the interstitial BED
 jn_flanked_both	synthetic/jn_flanked_both.fa	chr_jn_flanked_both	-i	none	.	0	none	2	1	-	Without -n the flanked array is a plain interstitial row; neither outer contig has a telomere
-jn_flanked_both_n	synthetic/jn_flanked_both.fa	chr_jn_flanked_both	-n -i	none	.	0	none	2	0	-	With -n both of the contig's own internal chains find the same array; R3 keeps one lowercase contig row
+jn_flanked_both_n	synthetic/jn_flanked_both.fa	chr_jn_flanked_both	-n -i	none	.	0	none	2	0	-	With -n both of the contig's own internal chains find the same array; R3 keeps one contig row
 jn_tip_beats_giant	synthetic/jn_tip_beats_giant.fa	chr_jn_tip_beats_giant	-i	incomplete	discordant_p	1	p	0	1	300	A 300 bp reverse tip is the outermost qualifying piece and becomes the (discordant) p arm; the 3 kb forward telomere behind it is too far to end the chain and is reported as an interstitial row
 bTaeGut7_mat	bTaeGut7_chr33_mat.fa.gz	chr33_mat	-	t2t	.	2	pq	0	-	-	Real zebra finch chr33, maternal haplotype
 bTaeGut7_pat	bTaeGut7_chr33_pat.fa.gz	chr33_pat	-	t2t	.	2	pq	0	-	-	Real zebra finch chr33, paternal haplotype
@@ -176,4 +176,4 @@ vgp_probe_mega	vgp_probe.fa.gz	mega_OZ124247.1_p_0-600000	-i	incomplete	.	1	p	0	
 vgp_probe_frag32	vgp_probe.fa.gz	frag32_OZ221982.1_q_302227075-302307075	-i	incomplete	fragmented_q	1	q	0	0	73964	Frog OZ221982.1 last 80 kb: ten blocks chain into one fragmented q arm, 0-79994
 vgp_probe_mito	vgp_probe.fa.gz	mito_CM010492.2_whole	-i	none	.	0	none	0	0	-	A 16 kb mitochondrial genome: no telomere
 vgp_turtle	vgp_turtle.fa.gz	giant_CM098529.1_84917045-85927174	-i	none	.	0	none	1	3	-	Turtle CM098529.1: a near-1 Mb reverse array on the first contig, too far from either scaffold end to be an arm, reported as three interstitial rows; never bridged across the 200 bp gap
-vgp_turtle_n	vgp_turtle.fa.gz	giant_CM098529.1_84917045-85927174	-i -n	none	.	0	none	1	0	-	Same file with -n: the array anchors its own contig's internal end and becomes a lowercase contig row, leaving the interstitial BED
+vgp_turtle_n	vgp_turtle.fa.gz	giant_CM098529.1_84917045-85927174	-i -n	none	.	0	none	1	0	-	Same file with -n: the array anchors its own contig's internal end and becomes a contig row, leaving the interstitial BED

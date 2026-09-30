@@ -963,8 +963,8 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos,
     bool haveP = chainP.pieces > 0, haveQ = chainQ.pieces > 0;
     if (haveP && haveQ && chainP.strandLabel == chainQ.strandLabel &&
         chainP.start + chainP.blockLen > chainQ.start) {
-        // one array reached from both ends belongs to the end its strand points to
-        if (chainP.strandLabel == 'q') chainP = chainQ;
+        // one array reached from both ends belongs to the scaffold end, else to the end its strand points to
+        if (isFirst != isLast ? isLast : chainP.strandLabel == 'q') chainP = chainQ;
         haveQ = false;
     }
     if (haveP) chainP.isScaffold = (chainP.anchorSide == 'p') ? isFirst : isLast;
