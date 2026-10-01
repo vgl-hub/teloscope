@@ -2,34 +2,37 @@ testFiles/gapped_discordant_q.fa -f testFiles/gapped_discordant_q.fa -n
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	chr_gapped_discordant_q	0	none	1	none	.	q
+pos	header	telomeres	labels	gaps	type	anomaly
+1	chr_gapped_discordant_q	1	p	1	incomplete	discordant_p
 
 +++ Assembly Summary Report +++
 Total paths:	1
 Total gaps:	1
 Scaffold N50:	5000
 Contig N50:	2600
-Total telomeres:	0
+Total telomeres:	1
 
 +++ Telomere Statistics +++
-No telomeres found for statistics.
+Mean length:	600
+Median length:	600
+Min length:	600
+Max length:	600
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	0
-One telomere:	0
-Zero telomeres:	1
+One telomere:	1
+Zero telomeres:	0
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	0
 Gapped T2T:	0
 Incomplete:	0
-Gapped incomplete:	0
+Gapped incomplete:	1
 No telomeres:	0
-Gapped no telomeres:	1
+Gapped no telomeres:	0
 
 +++ Scaffold Anomalies +++
-Scaffolds flagged:	0
-Scaffolds clean:	1
-Discordant arms:	0
+Scaffolds flagged:	1
+Scaffolds clean:	0
+Discordant arms:	1
 Fragmented arms:	0

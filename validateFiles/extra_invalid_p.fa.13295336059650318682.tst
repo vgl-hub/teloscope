@@ -2,8 +2,8 @@ testFiles/extra_invalid_p.fa -f testFiles/extra_invalid_p.fa -r -o testFiles/tmp
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	chr_extra_invalid_p	2	pq	0	t2t	discordant_q	PQ*	0	184	5
+pos	header	telomeres	labels	gaps	type	anomaly	its
+1	chr_extra_invalid_p	2	pq	0	t2t	discordant_q	0
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -12,8 +12,6 @@ Scaffold N50:	5000
 Contig N50:	5000
 Total telomeres:	2
 Total ITS blocks:	0
-Total canonical matches:	184
-Total windows analyzed:	5
 
 +++ Telomere Statistics +++
 Mean length:	552
@@ -21,12 +19,12 @@ Median length:	552
 Min length:	504
 Max length:	600
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	1
 One telomere:	0
 Zero telomeres:	0
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	1
 Gapped T2T:	0
 Incomplete:	0

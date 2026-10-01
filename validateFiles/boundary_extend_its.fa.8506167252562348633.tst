@@ -2,8 +2,8 @@ testFiles/boundary_extend_its.fa -f testFiles/boundary_extend_its.fa -t 300 -i -
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	chr_boundary_ext_its	2	pq	0	t2t	fragmented_q	PQ	0	250	0
+pos	header	telomeres	labels	gaps	type	anomaly	its
+1	chr_boundary_ext_its	2	pq	0	t2t	fragmented_q	0
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -12,8 +12,6 @@ Scaffold N50:	4500
 Contig N50:	4500
 Total telomeres:	2
 Total ITS blocks:	0
-Total canonical matches:	250
-Total windows analyzed:	0
 
 +++ Telomere Statistics +++
 Mean length:	750
@@ -21,12 +19,12 @@ Median length:	750
 Min length:	600
 Max length:	900
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	1
 One telomere:	0
 Zero telomeres:	0
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	1
 Gapped T2T:	0
 Incomplete:	0

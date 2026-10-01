@@ -27,7 +27,6 @@ MANIFEST = ROOT / "testFiles" / "synthetic" / "manifest.tsv"
 CHECKED = [
     ("expect_type", "type"),
     ("expect_anomaly", "anomaly"),
-    ("expect_granular", "granular"),
     ("expect_telomeres", "telomeres"),
     ("expect_labels", "labels"),
     ("expect_gaps", "gaps"),

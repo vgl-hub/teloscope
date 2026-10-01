@@ -33,13 +33,13 @@ jobs:
       run: .\.github\workflows\val.bat
 
     - name: Validate BAM subset
-      run: python3 scripts/test_bam_subset.py
+      run: make test-bam
 
     - name: Validate read TL mode
-      run: python3 scripts/test_read_tl.py
+      run: make test-read-tl
 
     - name: Validate assembly record filters
-      run: python3 scripts/test_sequence_filters.py
+      run: make test-filters
 
     - name: Validate synthetic fixtures, declared intent and output invariants
       if: runner.os != 'Windows'

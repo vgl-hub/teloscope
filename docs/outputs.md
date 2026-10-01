@@ -2,73 +2,31 @@
 
 # Outputs
 
-Teloscope writes different outputs in assembly mode and reads mode (FASTQ or BAM input).
+Every file name starts with the input file name, as in `asm.fa_report.tsv`, or with `stdin` for a pipe. Only the kept-reads BAM drops the extension: `reads_telomeric.bam`.
 
-## File naming
+## FASTA mode
 
-FASTA outputs keep the input file name as a prefix:
-
-- `asm.fa_terminal_telomeres.bed`
-- `asm.fa_gaps.bed`
-- `asm.fa_report.tsv`
-
-GFA mode writes one graph file:
-
-- `asm.gfa.telo.annotated.gfa`
-
-Reads mode (BAM drops its extension):
-
-- `reads.fq_telomeric.fastq`, `reads.fq_terminal_telomeres.bed`, `reads.fq_report.tsv`
-- `reads_telomeric.bam`, `reads.bam_terminal_telomeres.bed`, `reads.bam_report.tsv`
-
-## FASTA mode outputs
-
-Always written:
-
-| File | Purpose |
-| --- | --- |
-| `*_terminal_telomeres.bed` | terminal telomere rows |
-| `*_interstitial_telomeres.bed` | interstitial telomere-like rows |
-| `*_gaps.bed` | gap intervals from runs of `N`/`n`/`X`/`x` |
-| `*_report.tsv` | per-sequence and assembly summaries |
-
-`*_interstitial_telomeres.bed` is always written. In fast mode it holds what the end windows found: by default the first contig's head and the last contig's tail, with `-n` both end windows of every contig. Pass `-i` to scan everything.
-
-Optional:
-
-| File | Flag | Purpose |
+| File | Flag | Content |
 | --- | --- | --- |
+| `*_terminal_telomeres.bed` |  | telomeres at sequence ends |
+| `*_interstitial_telomeres.bed` |  | interstitial telomeres (ITS) |
+| `*_gaps.bed` |  | runs of `N`, `n`, `X`, or `x` |
+| `*_report.tsv` |  | per-sequence and assembly summaries, as printed on stdout |
 | `*_window_repeat_density.bedgraph` | `-r` | repeat density per window |
-| `*_window_canonical_ratio.bedgraph` | `-r` | canonical-share track per window |
-| `*_window_strand_ratio.bedgraph` | `-r` | forward-strand share per window |
+| `*_window_canonical_ratio.bedgraph` | `-r` | canonical share of the repeats per window |
+| `*_window_strand_ratio.bedgraph` | `-r` | forward-strand share of the repeats per window |
 | `*_window_gc.bedgraph` | `-g` | GC content per window |
 | `*_window_entropy.bedgraph` | `-e` | Shannon entropy per window |
-| `*_canonical_matches.bed` | `-m` | canonical repeat matches |
-| `*_noncanonical_matches.bed` | `-m` | terminal non-canonical repeat matches |
-| `*_terminal_telomeres.fa` | `-a` | terminal telomere sequences, header `>{chr}:{start}-{end}` with the BED row's coordinates |
-| `*_plot_report_terminal.pdf` | `--plot-report` | terminal PDF report |
-| `*_plot_report_its.pdf` | `--plot-report` | interstitial PDF report |
-| `*_its_rows.tsv` | ITS report | every accepted ITS row |
-| `*_its_scaffolds.tsv` | ITS report | per-scaffold ITS counts and display labels |
-| `*_its_top_hits.tsv` | `--plot-report` (when ITS present) | candidate fusion pairs, longest ITS rows by canonical bp, and ITS clusters |
+| `*_canonical_matches.bed` | `-m` | canonical matches |
+| `*_noncanonical_matches.bed` | `-m` | non-canonical matches near sequence ends |
+| `*_terminal_telomeres.fa` | `-a` | terminal telomere sequences |
+| `*_plot_report_terminal.pdf`, `*_plot_report_its.pdf` | `--plot-report` | [PDF reports](report.md) |
 
-## Run provenance
+The fast scan fills the interstitial file only from the ends it reads; `-i` scans everything ([scanning modes](algorithm.md#fasta-scanning-modes)). BED files have no header and BEDgraph files start with a `track` line; run metadata lives in the report.
 
-The always-written `*_report.tsv` starts with three comment lines:
+## Telomere block BED
 
-```text
-#teloscope version=0.1.6 commit=<short-commit-or-unknown>
-#params canonical=<forward>/<reverse> patterns=<count> window=<bp> step=<bp> terminal_limit=<bp> max_match_dist=<bp> max_block_dist=<bp> min_block_len=<bp> min_block_density=<fraction> min_block_counts=<n> min_canonical_count=<n> terminal_tolerance=<bp> label_threshold=<fraction> edit_distance=<n> ultra_fast=<true-or-false> manual_curation=<true-or-false>
-#columns	<tab-separated column names>
-```
-
-`patterns` is the number of search patterns after expansion and deduplication. `commit` is the short commit checked out when the binary was built, or `unknown` when Git metadata was unavailable. It does not indicate whether that commit was built from a clean worktree. The normal report on standard output is unchanged.
-
-BED files contain BED records only. BEDGraph files begin with their standard browser `track` declaration followed by four-column data. Keeping run metadata in the companion report avoids comment headers that strict coordinate converters reject. Telomere block files still have explicitly documented custom fields, so schema-aware converters must be told they are BED3 plus nine custom fields.
-
-## Telomere block BED files
-
-Both block files use zero-based, half-open coordinates and share one 12-column layout. Only the first three fields are standard BED; the rest are Teloscope-specific, so readers that only understand predefined BED fields should consume the first three columns. UCSC bigBed conversion requires a matching AutoSql definition for the custom fields. See the [UCSC BED specification](https://genome.ucsc.edu/FAQ/FAQformat.html#format1) and [bigBed custom-field documentation](https://genome.ucsc.edu/goldenPath/help/bigBed.html).
+Both block files share one 12-column layout, with zero-based, half-open coordinates. Columns 1 to 3 are standard BED and the rest are Teloscope fields, so a bigBed conversion needs an AutoSql file for BED3+9.
 
 | Column | Name | Meaning |
 | ---: | --- | --- |
@@ -76,133 +34,96 @@ Both block files use zero-based, half-open coordinates and share one 12-column l
 | 2 | `start` | block start |
 | 3 | `end` | block end |
 | 4 | `teloLen` | sum of the piece lengths |
-| 5 | `teloLabel` | strand: `p` (forward, the `CCCTAA` family) or `q` (reverse, `TTAGGG`); `b` only on interstitial rows |
-| 6 | `closestEnd` | for a telomere, the end it belongs to (`p` or `q`); for an interstitial row, the nearer record end, `p` on an exact midpoint |
+| 5 | `teloLabel` | strand: `p` forward (`CCCTAA`), `q` reverse (`TTAGGG`), `b` mixed (interstitial rows only) |
+| 6 | `closestEnd` | end the telomere belongs to, `p` or `q`; for an interstitial row, the nearer end, `p` at the midpoint |
 | 7 | `fwdCan` | exact forward canonical matches |
 | 8 | `revCan` | exact reverse canonical matches |
-| 9 | `fwdNonCan` | forward-oriented variant matches |
-| 10 | `revNonCan` | reverse-oriented variant matches |
-| 11 | `chrSize` | full FASTA record length |
-| 12 | `teloType` | `scaffold` or `contig` in the terminal file; junction class in the interstitial file: `fusion`, `tail_to_tail`, `fragmentation`, or `single` |
+| 9 | `fwdNonCan` | forward variant matches |
+| 10 | `revNonCan` | reverse variant matches |
+| 11 | `chrSize` | record length |
+| 12 | `teloType` | terminal file: `scaffold` for an arm, `contig` for a contig end (`-n`); interstitial file: junction class |
 
-`teloLen` equals `end - start` for every interstitial row, and for a terminal telomere built from a single piece. Only a fragmented terminal telomere — one built from more than one piece — has `teloLen` smaller than `end - start` (`fragmented_p`/`fragmented_q` in the report). A block never contains a gap: blocks are built per contig, and a contig is by definition a run of called bases with no `N` inside.
+`teloLen` equals `end - start` except on a fragmented telomere, one built from more than one piece. No block crosses a gap.
 
-Canonical coverage is the number of bases covered by exact canonical repeats, with overlaps counted once. A terminal piece must average at least `-y` canonical coverage over its own length to qualify. An interstitial row must average at least `-y` all-repeat coverage — canonical and variant matches together — over its own length. Counts alone do not give you the coverage, since matches can overlap and non-canonical motifs can differ in length.
+The junction class compares an interstitial row with the nearest row within `-d` on the same contig: `fusion` is a reverse array then a forward one, `tail_to_tail` forward then reverse, `fragmentation` two arrays of the same strand, and `single` means nothing is that close.
 
-For an ordinary telomere `teloLabel` and `closestEnd` agree: a `p` row carries the forward motif and sits near the start, a `q` row the reverse motif near the end. They differ on a discordant arm, which the report's `granular` column marks with `*` and the `anomaly` column names as `discordant_p`/`discordant_q`.
+Coverage counts each covered base once, however many matches overlap it. A terminal piece needs `-y` canonical coverage over its length; an interstitial row needs `-y` coverage from all its matches.
 
-“Forward” is a sequence-family convention, not a reference `+` strand annotation. Teloscope orders the canonical motif and its reverse complement lexicographically and calls the smaller string forward. With the default motif pair, forward is `CCCTAA`, normally seen at a chromosome start, and reverse is `TTAGGG`, normally seen at a chromosome end. Each concrete seed after IUPAC expansion is assigned to the closer canonical orientation (ties go to forward), and its edit-distance variants inherit that orientation.
-
-`teloType=scaffold` marks an arm row in the terminal file. `teloType=contig` marks a contig-terminal row in the terminal file; those only appear with `-n`. In the interstitial file `teloType` is always a junction class, judged against the nearest row within `-d` on the same contig: `fusion` for a reverse array then a forward one, `tail_to_tail` for forward then reverse, `fragmentation` for two arrays of the same strand, and `single` when nothing is that close.
-
-## `*_terminal_telomeres.fa`
-
-Written with `-a`, one record per row of `*_terminal_telomeres.bed` — scaffold arms, plus contig rows when `-n` is also given. The header is `>{chr}:{start}-{end}`, using the BED row's own zero-based, half-open coordinates, so a record joins back to its BED row without arithmetic. The sequence is the block span as scanned, uppercase, on one line. A fragmented telomere is written as its whole span, spacers included.
-
-## `*_gaps.bed`
-
-Columns:
-
-1. `chr`
-2. `start`
-3. `end`
-
-Each row marks one contiguous run of `N`, `n`, `X`, or `x`. Blocks are built per contig — the called sequence between gaps — so a block never spans a gap. `-d/--max-block-distance` bounds how much non-telomeric sequence a telomere may bridge.
-
-To attach the nearest gap to each terminal and interstitial block with BEDTools, first select their common BED3 prefix:
-
-```sh
-cut -f1-3 asm.fa_terminal_telomeres.bed > blocks.bed
-cut -f1-3 asm.fa_interstitial_telomeres.bed >> blocks.bed
-bedtools closest -a blocks.bed -b asm.fa_gaps.bed -d > blocks_with_nearest_gap.tsv
-```
-
-The output contains the three block fields, the three gap fields, and the block-to-gap distance.
-
-## `*_its_top_hits.tsv`
-
-Written with every ITS report. Three sections:
-
-**Section 1: Candidate fusion pairs** (q→p), sorted by shorter arm bp descending, ties broken by combined bp descending. Columns:
-- `chr`, `start`, `end` (spanning both arrays)
-- `q_bp`, `p_bp` (bp per arm)
-- `min_arm` (minimum of q_bp and p_bp)
-- `combined_bp` (sum of both arms)
-- `spacer_bp` (gap between the two arrays)
-- `q_can_prop`, `p_can_prop` (canonical bp / array bp, per array)
-- `pos_frac` (midpoint position as fraction of scaffold length)
-
-A candidate fusion requires a q array followed by a p array on the same scaffold, at most `-d` apart, with no N-gap between them, where at least one row is classed as fusion. The shorter array's bp is the longest length cutoff at which the pair still has both arms.
-
-**Section 2: Longest interstitial telomere rows by canonical bp** (top 25), sorted by canonical bp descending, ties broken by `teloLen` descending. `canonical_bp` is `(fwdCan+revCan) x` the canonical motif length (6 for `CCCTAA`/`TTAGGG`, from the report's `#params canonical=` line). Columns:
-- `chr`, `start`, `end`, `teloLen`, `canonical_bp`, `can_prop` (`canonical_bp / teloLen`), `label`, `class`, `pos_frac` (`label` and `class` are the BED `teloLabel` and `teloType`)
-
-`can_prop` can exceed one when matches overlap. `pos_frac` is empty when the scaffold size is unknown. For every row, see `*_its_rows.tsv`.
-
-**Section 3: ITS clusters**. Same-scaffold rows are merged into one cluster while `start - <furthest end seen so far>` stays <= 50 kb, where "furthest end seen so far" is the running maximum of `end` over the rows already placed in that cluster (not just the previous row's `end`), so a row nested inside an earlier, longer row doesn't wrongly split the cluster. Kept when a cluster has >= 3 rows, sorted by summed ITS bp descending. Columns:
-- `chr`, `start`, `end`, `rows`, `span`, `its_bp`, `canonical_bp`
+Forward and reverse are a sequence convention, not a `+` strand: of the canonical motif and its reverse complement, the lexicographically smaller one is forward. By default that is `CCCTAA`, found at chromosome starts, and reverse is `TTAGGG`, found at ends. Each expanded seed takes the closer orientation (ties go to forward), and its variants inherit it.
 
 ## `*_report.tsv`
 
-The report contains two tables.
+Three comment lines come first:
 
-Path Summary columns in ultra-fast mode:
+```text
+#teloscope version=0.1.6 commit=<short-commit-or-unknown>
+#params canonical=<forward>/<reverse> patterns=<count> window=<bp> step=<bp> terminal_limit=<bp> max_match_dist=<bp> max_block_dist=<bp> min_block_len=<bp> min_block_density=<fraction> min_block_counts=<n> min_canonical_count=<n> terminal_tolerance=<bp> label_threshold=<fraction> edit_distance=<n> ultra_fast=<true-or-false> manual_curation=<true-or-false>
+#columns	<column names>
+```
 
-- `pos`
-- `header`
-- `telomeres`
-- `labels`
-- `gaps`
-- `type`
-- `anomaly`
-- `granular`
+`commit` is the commit the binary was built from, and `patterns` counts the search patterns after expansion. Then comes the per-sequence table:
 
-Full-scan mode adds three more columns; fast mode never reports `its`:
+| Column | Meaning |
+| --- | --- |
+| `pos` | position in the input, from 1; skips records removed by a filter |
+| `header` | sequence ID |
+| `telomeres` | arms found: `0`, `1`, or `2` |
+| `labels` | ends with an arm, in order: `p`, `q`, `pq`, or `none` |
+| `gaps` | number of gaps |
+| `type` | `t2t`, `incomplete`, or `none` ([Classification](classification.md)) |
+| `anomaly` | `.`, or a comma-separated list of `discordant_p`, `discordant_q`, `fragmented_p`, `fragmented_q` |
+| `its` | interstitial rows, full scan only |
 
-- `its`
-- `canonical`
-- `windows`
+The assembly summary follows:
 
-Assembly Summary reports totals and counts for:
+| Section | Lines |
+| --- | --- |
+| Assembly Summary | paths, gaps, scaffold and contig N50, telomeres; ITS blocks in a full scan; input and selected paths under a filter |
+| Telomere Statistics | mean, median, min, and max arm length |
+| Chromosome Telomere Counts | sequences with two, one, or zero arms |
+| Chromosome Telomere/Gap Completeness | `t2t`, `incomplete`, and `none`, each split by gaps |
+| Scaffold Anomalies | flagged and clean sequences, and the discordant and fragmented arms behind them |
 
-- paths
-- gaps
-- telomeres
-- telomere length statistics
-- chromosomes with two, one, or zero telomeres
-- each scaffold class
-- flagged and clean scaffolds, and the discordant and fragmented arms behind them
+Contig rows (`-n`) never count in the report, and in a full scan they leave the `its` count. Under a filter, every number describes the selected paths.
 
-The summary line `Fragmented arms` replaces the old `Extra terminal blocks` and `Balanced arms` lines. Contig-terminal rows, written to the terminal BED only with `-n`, never count toward `type`, `telomeres`, the anomalies, or the length statistics in either table.
+## `*_gaps.bed`
 
-When an assembly record filter is active, the summary also reports the number of input and selected paths. `Total paths` and every other statistic describe the selected paths only.
+One BED3 row per run of `N`, `n`, `X`, or `x`. To find the gap nearest each block with BEDTools, which needs sorted input:
 
-## GFA mode output
+```sh
+cut -f1-3 asm.fa_terminal_telomeres.bed asm.fa_interstitial_telomeres.bed | sort -k1,1 -k2,2n > blocks.bed
+sort -k1,1 -k2,2n asm.fa_gaps.bed > gaps.bed
+bedtools closest -a blocks.bed -b gaps.bed -d > nearest_gap.tsv
+```
 
-GFA mode writes the original graph plus synthetic telomere segments connected back to the carrier segment with `L telomere_...` links at `0M` overlap. It also writes `<input>.telo.annotated.colors.csv`, which paints every cap green (`#008000`) for BandageNG.
+Each output row holds the block, the gap, and their distance.
 
-Each synthetic telomere segment includes:
+## `*_terminal_telomeres.fa`
 
-- `LN:i:6`
-- `RC:i:6000`
-- `TL:i:<detected_block_length_bp>`
+One record per row of the terminal BED, named `>{chr}:{start}-{end}` with the row's own coordinates. The sequence is the block span in uppercase on one line; a fragmented telomere is written whole, spacers included.
 
-Each telomere link points from the synthetic node (`+`) to the assembly segment, with the segment-side orientation set so the cap sits on the correct physical end (`+` at a start, `-` at an end), and carries `RC:i:0`. `J` jump records stay reserved for real assembly gaps. With GFA1 `P` paths, only terminal segment ends reached from selected paths are scanned and orientation follows the path context. In a pathless GFA1 graph, selected segments are scanned independently. Caps are graph-level, so a shared annotated segment end is visible from selected and excluded paths. Filtered GFA2, GFA1 `C` containment and `W` walk records, and unknown GFA record types are rejected.
+## GFA mode
 
-No BED, BEDgraph, or TSV files are written in GFA mode. Record filters do not delete supported original graph records; they limit which terminal segment ends Teloscope scans for new annotations.
+`<input>.telo.annotated.gfa` is the input graph plus one telomere segment per detected end, joined to its segment by an `L` link at `0M` overlap. `J` records stay reserved for real gaps. `<input>.telo.annotated.colors.csv` paints every cap green (`#008000`) for BandageNG.
 
-## Reads mode outputs
+Each cap carries `LN:i:6`, `RC:i:6000`, and `TL:i:<telomere length>`. Its link runs from the cap (`+`) to the segment end (`+` at a start, `-` at an end) and carries `RC:i:0`.
 
-- `*_telomeric.fastq` or `*_telomeric.bam`: the kept reads, unchanged, in input order.
-- `*_terminal_telomeres.bed`: one row per measured read telomere, in the [terminal BED layout](#telomere-block-bed-files). `chr` is the read name, `chrSize` the read length, and `teloType` is `read`. A read can have both a `p` and a `q` row, or none.
-- `*_report.tsv`: the provenance header, then `label<TAB>value` lines, also printed to stdout:
+With `P` paths, only path-terminal segment ends are scanned, oriented by the path. Without paths, every segment is scanned on its own. Caps belong to the graph, so a shared segment end shows its cap in every path. GFA mode writes no BED or report files.
 
-- `Reads measured`: FASTQ counts every read; BAM counts primary records that have a sequence and are not hard-clipped at either CIGAR end
-- `Reads kept`: records written to the subset; can exceed `Reads measured` on an aligned BAM
-- `Read telomeres`: BED rows written
-- `Complete`: strand matches the end (C-rich at a read start, G-rich at a read end), and the read continues at least `-d` past the telomere
-- `Reaching read end`: strand matches, but the read ends within `-d` of the telomere
-- `Discordant`: strand does not match the end
-- `Mean length`, `Median length`, `25th percentile length`, `75th percentile length`, `90th percentile length` (linear interpolation, two decimals), `Min length`, `Max length` (integers) — over `Complete` rows only; omitted with none
+## Reads mode
 
-The estimate is alignment-free: a read broken inside a telomere looks complete and pulls it down.
+- `*_telomeric.fastq` or `*_telomeric.bam`: the kept reads, unchanged and in input order.
+- `*_terminal_telomeres.bed`: one row per measured read telomere, in the [block layout](#telomere-block-bed). `chr` is the read name, `chrSize` the read length, and `teloType` is `read`. A read can have a `p` row, a `q` row, both, or none.
+- `*_report.tsv`: the comment lines, then `label<TAB>value` lines, also printed on stdout.
+
+| Line | Meaning |
+| --- | --- |
+| `Reads measured` | FASTQ: every read; BAM: primary records with a sequence and no hard clip at either end |
+| `Reads kept` | records written to the subset; can exceed `Reads measured` on an aligned BAM |
+| `Read telomeres` | BED rows written |
+| `Complete` | strand matches the end (C-rich at a read start, G-rich at a read end), and the read continues at least `-d` past the telomere |
+| `Reaching read end` | strand matches, but the read ends within `-d` of the telomere |
+| `Discordant` | strand does not match the end |
+| `Mean length` to `Max length` | over `Complete` rows: mean, median, 25th, 75th, and 90th percentiles (linear interpolation, two decimals), min, and max; left out when there are none |
+
+The estimate is alignment-free: a read broken inside a telomere looks complete and pulls the lengths down.

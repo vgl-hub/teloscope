@@ -2,8 +2,8 @@ testFiles/boundary_cross.fa -f testFiles/boundary_cross.fa -i -o testFiles/tmp
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	chr_boundary_cross	2	pq	0	t2t	.	PQ	0	400	0
+pos	header	telomeres	labels	gaps	type	anomaly	its
+1	chr_boundary_cross	2	pq	0	t2t	.	0
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -12,8 +12,6 @@ Scaffold N50:	2400
 Contig N50:	2400
 Total telomeres:	2
 Total ITS blocks:	0
-Total canonical matches:	400
-Total windows analyzed:	0
 
 +++ Telomere Statistics +++
 Mean length:	1200
@@ -21,12 +19,12 @@ Median length:	1200
 Min length:	1200
 Max length:	1200
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	1
 One telomere:	0
 Zero telomeres:	0
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	1
 Gapped T2T:	0
 Incomplete:	0

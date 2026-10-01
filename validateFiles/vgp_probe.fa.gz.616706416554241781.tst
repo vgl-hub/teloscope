@@ -2,10 +2,10 @@ testFiles/vgp_probe.fa.gz
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	mega_OZ124247.1_p_0-600000	1	p	0	incomplete	.	P
-2	frag32_OZ221982.1_q_302227075-302307075	1	q	0	incomplete	fragmented_q	Q
-3	mito_CM010492.2_whole	0	none	0	none	.	
+pos	header	telomeres	labels	gaps	type	anomaly
+1	mega_OZ124247.1_p_0-600000	1	p	0	incomplete	.
+2	frag32_OZ221982.1_q_302227075-302307075	1	q	0	incomplete	fragmented_q
+3	mito_CM010492.2_whole	0	none	0	none	.
 
 +++ Assembly Summary Report +++
 Total paths:	3
@@ -20,12 +20,12 @@ Median length:	306108
 Min length:	73964
 Max length:	538251
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	0
 One telomere:	2
 Zero telomeres:	1
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	0
 Gapped T2T:	0
 Incomplete:	2

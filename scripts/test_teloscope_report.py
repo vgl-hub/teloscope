@@ -6,6 +6,7 @@ import os
 from collections import OrderedDict
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -184,10 +185,10 @@ class TeloscopeReportTests(unittest.TestCase):
             report_path = Path(tmpdir) / "synthetic_report.tsv"
             report_path.write_text(
                 "+++\n"
-                "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular\n"
-                "1\tchr_dis\t1\tq\t0\tincomplete\tdiscordant_q\tQ*\n"
-                "2\tchr_frag\t1\tp\t0\tincomplete\tfragmented_p\tPp\n"
-                "3\tchr_none\t0\tnone\t0\tnone\t.\t\n",
+                "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\n"
+                "1\tchr_dis\t1\tq\t0\tincomplete\tdiscordant_q\n"
+                "2\tchr_frag\t1\tp\t0\tincomplete\tfragmented_p\n"
+                "3\tchr_none\t0\tnone\t0\tnone\t.\n",
                 encoding="utf-8",
             )
 
@@ -316,9 +317,16 @@ class TeloscopeReportTests(unittest.TestCase):
         self.assertLess(legend_gap, 0.03)
 
         legend_group_center = (legend_boxes[0].x0 + legend_boxes[1].x1) / 2.0
-        legend_axis = min(fig.axes, key=lambda ax: ax.get_position().y0)
+        legend_axis = legends[0].axes
         legend_axis_center = (legend_axis.get_position().x0 + legend_axis.get_position().x1) / 2.0
         self.assertAlmostEqual(legend_group_center, legend_axis_center, delta=0.02)
+        # Docked right under panel a's x-label rather than floating lower down.
+        summary = next(ax for ax in fig.axes if ax.get_title() == "Scaffold classification")
+        renderer = fig.canvas.get_renderer()
+        label_bottom = summary.xaxis.label.get_window_extent(renderer).y0
+        legend_top = max(legend.get_window_extent(renderer).y1 for legend in legends)
+        self.assertLess(label_bottom - legend_top, 0.15 * fig.dpi)
+        self.assertGreaterEqual(label_bottom - legend_top, 0)
 
     def test_overview_summary_separates_scaffold_and_block_flag_counts(self):
         blocks = {
@@ -341,10 +349,43 @@ class TeloscopeReportTests(unittest.TestCase):
         fig = REPORT.plot_overview_page1(classifications, blocks, chrom_sizes)
         self.addCleanup(REPORT.plt.close, fig)
 
-        summary_text = next(text.get_text() for text in fig.texts if text.get_text().startswith("Scaffolds ("))
-        self.assertIn("Scaffolds (n=4, flagged=3)", summary_text)
-        self.assertIn("telomere blocks (n=2, distance-flagged=1)", summary_text)
-        self.assertNotIn("Scaffolds (n=4, distance-flagged=", summary_text)
+        tile_ax = next(ax for ax in fig.axes if "Terminal telomeres" in [t.get_text() for t in ax.texts])
+        texts = [t.get_text() for t in tile_ax.texts]
+        tiles = dict(zip(texts[1::2], texts[0::2]))
+        self.assertEqual(tiles["Scaffolds"], "4")
+        self.assertEqual(tiles["Flagged scaffolds"], "3")
+        self.assertEqual(tiles["Terminal telomeres"], "2")
+        self.assertEqual(tiles["Distance-flagged telomeres"], "1")
+        self.assertEqual(tiles["Median assembled array (bp)"], "600")
+
+    def test_overview_tiles_lead_with_median_array_and_centre_on_the_page(self):
+        blocks = {"chrA": [_block(0, 9_800, "p", 50_000)]}
+        fig = REPORT.plot_overview_page1(OrderedDict([("Incomplete", ["chrA"])]), blocks, {"chrA": 50_000})
+        self.addCleanup(REPORT.plt.close, fig)
+        self.assertEqual(tuple(fig.get_size_inches()), REPORT.SLIDE_SIZE)
+        tile_ax = next(ax for ax in fig.axes if "Terminal telomeres" in [t.get_text() for t in ax.texts])
+        self.assertEqual([t.get_text() for t in tile_ax.texts][:10],
+                         ["9,800", "Median assembled array (bp)", "1", "Scaffolds", "0", "Flagged scaffolds",
+                          "1", "Terminal telomeres", "0", "Distance-flagged telomeres"])
+        box = tile_ax.get_position()
+        self.assertAlmostEqual(box.x0 + box.x1, 1.0, places=6)
+        self.assertLessEqual(max(t.get_fontsize() for t in tile_ax.texts), 8.0)
+
+    def test_ranked_bars_keep_one_thickness_and_pitch_for_any_count(self):
+        heights, pitches = set(), set()
+        for n in (1, 2, 10):
+            fig = REPORT.plt.figure(figsize=(3.0, 1.6))
+            self.addCleanup(REPORT.plt.close, fig)
+            ax = fig.add_axes([0.2, 0.2, 0.7, 0.7])
+            rows = [{"label": f"chr{i}", "value": 5.0, "color": "#888888"} for i in range(n)]
+            REPORT._draw_ranked_bar_panel(ax, rows, "x", [0, 2, 4, 6])
+            fig.canvas.draw()
+            boxes = [p.get_window_extent() for p in ax.patches]
+            heights.add(round(boxes[0].height, 3))
+            if n > 1:
+                pitches.add(round(boxes[0].y0 - boxes[1].y0, 3))
+        self.assertEqual(len(heights), 1)
+        self.assertEqual(len(pitches), 1)
 
     def test_text_floor_and_block_glyphs_are_nature_compliant(self):
         chrom, blocks, chrom_sizes, bedgraph = _synthetic_terminal_dataset()
@@ -393,8 +434,8 @@ class TeloscopeReportTests(unittest.TestCase):
         self.addCleanup(REPORT.plt.close, fig)
         fig.canvas.draw()
 
-        flagged_panel = next(ax for ax in fig.axes if ax.get_xlabel() == "Scaffold size (log10 bp)")
-        labels = flagged_panel.texts
+        flagged_panel = next(ax for ax in fig.axes if ax.get_xlabel() == "Scaffold size (Mbp)")
+        labels = [text for text in flagged_panel.texts if text.get_text() != "b"]
         self.assertTrue(any("\n" in text.get_text() for text in labels))
 
         renderer = fig.canvas.get_renderer()
@@ -416,16 +457,34 @@ class TeloscopeReportTests(unittest.TestCase):
         )
         fig1 = REPORT.plot_overview_page1(classifications, page1_blocks, page1_sizes)
         self.addCleanup(REPORT.plt.close, fig1)
-        page1_flagged = next(ax for ax in fig1.axes if ax.get_xlabel() == "Scaffold size (log10 bp)")
+        page1_flagged = next(ax for ax in fig1.axes if ax.get_xlabel() == "Scaffold size (Mbp)")
         self.assertIsNone(page1_flagged.spines["left"].get_bounds())
         self.assertTrue(page1_flagged.spines["bottom"].get_visible())
 
         page2_blocks = {"chrTel": [_block(1_400, 2_000, "p", 5_000)]}
         fig2 = REPORT.plot_overview_page2(page2_blocks, {"chrTel": 5_000})
         self.addCleanup(REPORT.plt.close, fig2)
-        page2_flagged = next(ax for ax in fig2.axes if ax.get_xlabel() == "Flagged length (log10 bp)")
+        page2_flagged = next(ax for ax in fig2.axes if ax.get_xlabel() == "Flagged length (kbp)")
         self.assertIsNone(page2_flagged.spines["left"].get_bounds())
         self.assertTrue(page2_flagged.spines["bottom"].get_visible())
+
+    def test_positioning_panel_uses_plain_bp_decades_and_shares_length_scale(self):
+        blocks = {"chrA": [_block(0, 6_000, "p", 90_000), _block(84_000, 90_000, "q", 90_000)],
+                  "chrB": [_block(2_500, 14_000, "p", 90_000)]}
+        fig = REPORT.plot_overview_page2(blocks, {"chrA": 90_000, "chrB": 90_000})
+        self.addCleanup(REPORT.plt.close, fig)
+        fig.canvas.draw()
+        self.assertEqual(fig._suptitle.get_text(), "Terminal telomeres")
+        self.assertEqual(tuple(fig.get_size_inches()), REPORT.SLIDE_SIZE)
+        rain = next(ax for ax in fig.axes if ax.get_title() == "Length by arm")
+        scatter = next(ax for ax in fig.axes if ax.get_title() == "Telomere positioning")
+        self.assertEqual(scatter.get_xlabel(), "Distance to end (bp)")
+        self.assertEqual(scatter.get_xscale(), "log")
+        self.assertEqual([t.get_text() for t in scatter.get_xticklabels()], ["1", "10", "100", "1000", "10000"])
+        self.assertEqual(rain.get_ylabel(), "Telomere length (kbp)")
+        self.assertEqual(scatter.get_ylabel(), "Telomere length (kbp)")
+        self.assertEqual(rain.get_ylim(), scatter.get_ylim())
+        self.assertEqual(list(rain.get_yticks()), list(scatter.get_yticks()))
 
     def test_contig_rows_are_excluded_from_overview_statistics(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -467,9 +526,6 @@ class TeloscopeReportTests(unittest.TestCase):
         self.assertEqual((row["chr"], row["start"], row["end"]), ("chrA", 1000, 1180))
         self.assertEqual((row["q_bp"], row["p_bp"], row["min_arm"]), (100, 70, 70))
         self.assertEqual((row["combined_bp"], row["spacer_bp"]), (170, 10))
-        # canonical_bp = matches x motif length (6); can_prop = canonical_bp / teloLen
-        self.assertAlmostEqual(row["q_can_prop"], 30 / 100)
-        self.assertAlmostEqual(row["p_can_prop"], 24 / 70)
 
     def test_pair_fusions_rejects_spacer_greater_than_d(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -527,7 +583,7 @@ class TeloscopeReportTests(unittest.TestCase):
         self.assertEqual(list(pairs["chr"]), ["chrC", "chrB", "chrA"])
         self.assertEqual(list(pairs["min_arm"]), [90, 90, 50])
 
-    def test_load_its_frame_computes_canonical_bp_and_can_prop(self):
+    def test_load_its_frame_computes_canonical_bp(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             df = _its_frame([
                 _its_row("chrA", 0, 100, "p", "single", fwd_can=4),   # engine floor: 4 matches
@@ -536,9 +592,7 @@ class TeloscopeReportTests(unittest.TestCase):
 
         floor_row, long_row = df.iloc[0], df.iloc[1]
         self.assertEqual(floor_row["canonical_bp"], 4 * 6)
-        self.assertAlmostEqual(floor_row["can_prop"], 24 / 100)
         self.assertEqual(long_row["canonical_bp"], 10 * 6)
-        self.assertAlmostEqual(long_row["can_prop"], 60 / 200)
 
     def test_load_its_frame_respects_a_non_default_motif_length(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -617,12 +671,13 @@ class TeloscopeReportTests(unittest.TestCase):
             params = REPORT.read_params(str(report_path))
 
         self.assertEqual(params, {"max_block_dist": 500, "terminal_limit": 20000, "ultra_fast": False,
-                                  "motif_len": 6, "min_canonical_count": 4,
-                                  "known_params": {"max_block_dist", "terminal_limit", "motif_len", "min_canonical_count"}})
+                                  "motif_len": 6, "min_canonical_count": 4, "label_threshold": 0.667,
+                                  "known_params": {"max_block_dist", "terminal_limit", "motif_len",
+                                                   "min_canonical_count", "label_threshold"}})
 
     def test_read_params_defaults_when_the_report_is_missing(self):
         defaults = {"max_block_dist": 1000, "terminal_limit": None, "ultra_fast": None,
-                   "motif_len": 6, "min_canonical_count": 4, "known_params": set()}
+                   "motif_len": 6, "min_canonical_count": 4, "label_threshold": 0.667, "known_params": set()}
         self.assertEqual(REPORT.read_params(None), defaults)
         self.assertEqual(REPORT.read_params("/no/such/report.tsv"), defaults)
 
@@ -637,7 +692,17 @@ class TeloscopeReportTests(unittest.TestCase):
             params = REPORT.read_params(str(report_path))
 
         self.assertEqual(params, {"max_block_dist": 500, "terminal_limit": None, "ultra_fast": False,
-                                  "motif_len": 6, "min_canonical_count": 4, "known_params": {"max_block_dist"}})
+                                  "motif_len": 6, "min_canonical_count": 4, "label_threshold": 0.667,
+                                  "known_params": {"max_block_dist"}})
+
+    def test_composition_class_matches_the_engine_thirds_rule(self):
+        # fwdCan, revCan, fwdNonCan, revNonCan -> (strand, canonicity)
+        cases = [((3, 0, 0, 0), (2, 2)), ((0, 3, 0, 0), (0, 2)), ((0, 0, 3, 0), (2, 0)),
+                 ((0, 0, 0, 3), (0, 0)), ((1, 1, 1, 1), (1, 1)), ((2, 0, 0, 1), (1, 1)),
+                 ((1, 0, 0, 2), (1, 1)), ((0, 0, 0, 0), (1, 1))]
+        for counts, expected in cases:
+            strand, canon = REPORT.composition_class(*[[v] for v in counts])
+            self.assertEqual((int(strand[0]), int(canon[0])), expected, counts)
 
     def test_read_params_derives_motif_length_from_the_canonical_pattern(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -674,10 +739,13 @@ class ResilientITSReportTests(unittest.TestCase):
         df.attrs["display_labels"] = REPORT._its_labels(df, sizes)
         return pairs, clusters, sizes
 
-    def draw(self, fig, name):
+    def draw(self, fig, name, fixed_height=True):
         self.addCleanup(REPORT.plt.close, fig)
         fig.canvas.draw()
-        np.testing.assert_allclose(fig.get_size_inches(), [7.2, 3.7])
+        if fixed_height:
+            np.testing.assert_allclose(fig.get_size_inches(), [7.2, 3.7])
+        else:
+            self.assertEqual(fig.get_size_inches()[0], 7.2)
         renderer = fig.canvas.get_renderer()
         for text in fig.findobj(mtext.Text):
             if text.get_text().strip() and text.get_visible():
@@ -709,11 +777,9 @@ class ResilientITSReportTests(unittest.TestCase):
 
     def test_unknown_extent_is_not_a_q_end(self):
         df = self.frame([_its_row("chrA", 1000, 1100, "p", "single", chrom_size=0)])
-        self.assertTrue(df["pos_frac"].isna().all())
-        self.assertTrue(df["end_dist"].isna().all())
         pairs, clusters, sizes = self.parts(df)
         self.draw(REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes,
-                                               REPORT.read_params(None)), "unknown_extent")
+                                               REPORT.read_params(None)), "unknown_extent", False)
 
     def test_header_like_scaffold_names_and_conflicting_sizes(self):
         df = self.frame([_its_row(c, 100, 200, "p", "single") for c in
@@ -723,7 +789,6 @@ class ResilientITSReportTests(unittest.TestCase):
             df = self.frame([_its_row("chrA", 100, 200, "p", "single", chrom_size=size)
                              for size in (1000, 2000)])
         self.assertTrue((df["chrSize"] == 0).all())
-        self.assertTrue(df["pos_frac"].isna().all())
 
     def test_bedgraph_invalid_values_do_not_reach_plots(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -734,6 +799,19 @@ class ResilientITSReportTests(unittest.TestCase):
                 data = REPORT.parse_bedgraph(str(path))
         np.testing.assert_array_equal(data["track_001"][0], [0, 10])
         np.testing.assert_allclose(data["track_001"][2], [0.2, 0.5])
+
+    def test_bedgraph_interleaved_scaffolds_group_in_name_order(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "track.bedgraph"
+            path.write_text("track type=bedGraph\nchrB\t200\t300\t0.5\nchrA\t100\t200\t0.1\nchrB\t0\t100\t0.3\n"
+                            "chrA\t0\t100\t0.2\nchrB\t100\t200\t0.7\nchrA\t50\t40\t0.9\nchrC\t0\t10\t1\n")
+            with contextlib.redirect_stderr(io.StringIO()):
+                data = REPORT.parse_bedgraph(str(path))
+        self.assertEqual(list(data), ["chrA", "chrB", "chrC"])
+        np.testing.assert_array_equal(data["chrA"][0], [0, 100])
+        np.testing.assert_array_equal(data["chrB"][0], [0, 100, 200])
+        np.testing.assert_allclose(data["chrB"][2], [0.3, 0.7, 0.5])
+        np.testing.assert_array_equal(data["chrB"][1], [100, 200, 300])
 
     def test_populated_rank_tables_and_partial_scan_geometry(self):
         rows = []
@@ -748,20 +826,31 @@ class ResilientITSReportTests(unittest.TestCase):
                   "min_canonical_count": 4, "max_block_dist": 1000,
                   "known_params": {"motif_len", "min_canonical_count", "max_block_dist"}}
         self.draw(REPORT.plot_its_composition_page(df, pairs, clusters, params), "full_candidates")
-        self.draw(REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, params), "partial_atlas")
-        self.draw(REPORT.plot_its_statistics_page(df, pairs, clusters, params), "partial_statistics")
+        self.draw(REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, params), "partial_atlas", False)
+        self.draw(REPORT.plot_its_summary_page(df, pairs, clusters, {}, params), "partial_statistics")
 
     def test_unknown_extent_is_disclosed_on_selected_locus(self):
         fig = REPORT.plot_its_loci_page([("L1", "chrA", 0, 1100)], {"chrA": 1100}, {},
                     {"chrA": [_block(1000, 1100, "p", 0)]}, {}, None, None, None, None, None,
                     unknown_extents={"chrA"})
         self.draw(fig, "unknown_locus")
-        self.assertTrue(any("scaffold length unknown" in ax.get_xlabel() for ax in fig.axes))
+        self.assertEqual(fig._suptitle.get_text(), "chrA  (≥1.1 kb)")
+        self.assertTrue(any("Observed" in ax.get_ylabel() for ax in fig.axes))
 
     def test_sub_kilobase_region_ticks_are_distinguishable(self):
         for start, end in ((0, 1100), (100, 200), (0, 1), (100_000_000, 100_000_010)):
-            ticks = REPORT._region_axis_spec(start, end)["tick_labels"]
-            self.assertEqual(len(ticks), len(set(ticks)), (start, end, ticks))
+            for plain in (False, True):
+                ticks = REPORT._region_axis_spec(start, end, plain)["tick_labels"]
+                self.assertEqual(len(ticks), len(set(ticks)), (start, end, ticks))
+
+    def test_locus_axis_and_title_share_one_unit(self):
+        spec = REPORT._region_axis_spec(117_000, 171_000, plain=True)
+        self.assertEqual(spec["xlabel"], "Position (kbp)")
+        self.assertEqual(spec["tick_labels"], ["120", "130", "140", "150", "160", "170"])
+        self.assertEqual(REPORT._fmt_region(117_000, 171_000), "117–171 kbp")
+        self.assertEqual(REPORT._region_axis_spec(0, 20_000_000, plain=True)["xlabel"], "Position (Mbp)")
+        self.assertEqual(REPORT._fmt_region(1_000_000, 11_000_000), "1–11 Mbp")
+        self.assertEqual(REPORT._region_axis_spec(117_000, 171_000)["xlabel"], "Position (Mbp)")  # plot_its default
 
     def test_failed_builder_closes_partial_figures_and_preserves_existing_ones(self):
         sentinel = REPORT.plt.figure()
@@ -811,24 +900,78 @@ class ResilientITSReportTests(unittest.TestCase):
                 df = self.frame(rows)
                 pairs, clusters, sizes = self.parts(df)
                 params = REPORT.read_params(None)
-                stats = REPORT.plot_its_statistics_page(df, pairs, clusters, params)
+                stats = REPORT.plot_its_summary_page(df, pairs, clusters, {}, params)
                 self.draw(stats, label + "_statistics")
+                self.draw(REPORT.plot_its_summary_page(df, pairs, clusters, sizes, params), label + "_summary")
                 self.draw(REPORT.plot_its_composition_page(df, pairs, clusters, params),
                           label + "_candidates")
                 self.draw(REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, params),
-                          label + "_atlas")
-                if label == "zero":
-                    texts = [t.get_text() for t in stats.findobj(mtext.Text)]
-                    self.assertIn("Positive n=0; zero canonical n=1", texts)
-                    self.assertIn("unknown (n=1)", texts)
-                    self.assertIn("other", texts)
+                          label + "_atlas", False)
+                texts = [t.get_text() for t in stats.findobj(mtext.Text)]
+                if label == "empty":
+                    self.assertIn("No ITS", texts)
+                    self.assertEqual(len(stats.axes), 0)
 
     def test_low_canonical_observation_keeps_its_true_coordinate(self):
-        df = self.frame([_its_row("chrA", 100, 200, "p", "single", fwd_can=1)])
-        fig, ax = REPORT.plt.subplots()
-        self.addCleanup(REPORT.plt.close, fig)
-        REPORT._draw_its_composition_panel(ax, df, 6, 4)
-        self.assertEqual(float(ax.collections[0].get_offsets()[0, 1]), 6)
+        df = self.frame([_its_row("chrA", 100, 200, "p", "single", fwd_can=1, rev_noncan=3)])
+        pairs, clusters, _ = self.parts(df)
+        fig = REPORT.plot_its_summary_page(df, pairs, clusters, {}, REPORT.read_params(None))
+        self.draw(fig, "low_canonical")
+        offsets = [c.get_offsets() for ax in fig.axes[3:4] for c in ax.collections if len(c.get_offsets())]
+        np.testing.assert_allclose(offsets[0][0], [0.25, 0.25])
+
+    def test_its_pages_never_say_rows(self):
+        rows = [_its_row("chrA", 1000 + 1200 * i, 1500 + 1200 * i, "qp"[i % 2], "fusion",
+                         fwd_can=10 * (i % 3), rev_noncan=5, fwd_noncan=i) for i in range(12)]
+        df = self.frame(rows)
+        pairs, clusters, _ = self.parts(df)
+        params = REPORT.read_params(None)
+        summary = lambda *a: REPORT.plot_its_summary_page(*a[:3], {"chrA": 100_000}, a[3])
+        for build in (summary, REPORT.plot_its_composition_page):
+            fig = build(df, pairs, clusters, params)
+            self.draw(fig, "never_rows")
+            for text in fig.findobj(mtext.Text):
+                self.assertNotIn("row", text.get_text().lower(), text.get_text())
+        self.assertFalse(pairs.empty)
+        self.assertFalse(clusters.empty)
+
+    def test_its_page_titles_are_single_bold_lines(self):
+        df = self.frame([_its_row("chrA", 100, 200, "p", "single", fwd_can=4)])
+        pairs, clusters, _ = self.parts(df)
+        params = REPORT.read_params(None)
+        summary = lambda *a: REPORT.plot_its_summary_page(*a[:3], {}, a[3])
+        for build, title in ((summary, "Assembly ITS summary"),
+                             (REPORT.plot_its_composition_page, "ITS candidates")):
+            fig = build(df, pairs, clusters, params)
+            self.draw(fig, title)
+            self.assertEqual(fig._suptitle.get_text(), title)
+            self.assertEqual([t for t in fig.texts if t is not fig._suptitle], [])
+
+    def test_statistics_page_scales_from_one_to_thousands(self):
+        rng = np.random.default_rng(3)
+        for n in (0, 1, 2000):
+            with self.subTest(n=n):
+                rows = [_its_row(f"chr{i % 7}", 1000 * i, 1000 * i + int(rng.integers(30, 9000)),
+                                 "pqb"[i % 3], "single", fwd_can=int(rng.integers(0, 50)),
+                                 rev_can=int(rng.integers(0, 50)), fwd_noncan=int(rng.integers(0, 50)),
+                                 rev_noncan=int(rng.integers(0, 50)), chrom_size=10_000_000)
+                        for i in range(n)]
+                df = self.frame(rows)
+                pairs, clusters, _ = self.parts(df)
+                fig = REPORT.plot_its_summary_page(df, pairs, clusters, {}, REPORT.read_params(None))
+                self.draw(fig, f"stats_{n}")
+                if n:
+                    points = sum(len(c.get_offsets()) for c in fig.axes[3].collections)
+                    self.assertEqual(points, n)
+
+    def test_candidates_page_renders_without_pairs_or_clusters(self):
+        df = self.frame([_its_row("chrA", 100, 200, "p", "single", fwd_can=4),
+                         _its_row("chrB", 100, 900, "q", "single", rev_noncan=40)])
+        pairs, clusters, _ = self.parts(df)
+        self.assertTrue(pairs.empty and clusters.empty)
+        fig = REPORT.plot_its_composition_page(df, pairs, clusters, REPORT.read_params(None))
+        self.draw(fig, "candidates_sparse")
+        self.assertEqual([t.get_text() for t in fig.findobj(mtext.Text)].count("None"), 2)
 
     def test_dense_population_and_all_scaffolds_are_accounted_for(self):
         n = 61_000
@@ -838,31 +981,34 @@ class ResilientITSReportTests(unittest.TestCase):
             "start": i * 1000, "end": i * 1000 + 100 + i % 300,
             "teloLen": 100 + i % 300, "teloLabel": np.array(["p", "q", "b"])[i % 3],
             "teloType": np.array(REPORT.CLASS_ORDER)[i % 4], "chrSize": 100_000_000,
-            "canonical_bp": (i % 31) * 6, "can_prop": (i % 31) * 6 / (100 + i % 300),
-            "pos_frac": i * 1000 / 100_000_000,
+            "fwdCan": i % 7, "revCan": i % 5, "fwdNonCan": i % 11, "revNonCan": i % 13,
+            "canonical_bp": (i % 31) * 6,
+            "fwdCan": i % 31, "revCan": (i % 5) * (i % 2), "fwdNonCan": i % 7, "revNonCan": i % 11,
         })
         pairs = REPORT.pd.DataFrame(columns=REPORT._PAIR_COLUMNS)
         clusters = REPORT.summarize_its_clusters(df)
         sizes = {c: 100_000_000 for c in df["chr"].unique()}
         df.attrs["display_labels"] = REPORT._its_labels(df, sizes)
-        counts = REPORT._its_position_counts(df, sizes)
-        self.assertEqual(sum(v.sum() for _, v in counts.values()), n)
-        summary = REPORT.its_scaffold_summary(df, {}, sizes)
-        self.assertEqual(summary["rows"].sum(), n)
-        self.assertEqual(summary["display_label"].nunique(), 83)
+        cells = REPORT._its_atlas_cells(df)
+        self.assertEqual(sum(len(starts) for starts, _, _ in cells.values()), n)
+        self.assertEqual(len(set(df.attrs["display_labels"].values())), 83)
         chroms = REPORT._its_atlas_chroms(df, {}, sizes)
-        seen = []
-        for page_idx, start in enumerate(range(0, len(chroms), REPORT.ITS_ATLAS_ROWS)):
-            chunk = chroms[start:start + REPORT.ITS_ATLAS_ROWS]
-            seen.extend(chunk)
-            fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes,
-                    {"ultra_fast": False}, chunk, page_idx + 1, 5, counts)
-            self.draw(fig, f"dense_atlas_{page_idx + 1}")
-        self.assertEqual(seen, chroms)
-        stats = REPORT.plot_its_statistics_page(df, pairs, clusters, REPORT.read_params(None))
+        height, columns, pitch, tiers = REPORT._atlas_layout(chroms, sizes)
+        self.assertEqual(height, REPORT.ATLAS_HEIGHTS[-1])  # too many rows to label: one condensed page
+        self.assertLess(pitch, REPORT.ATLAS_PITCH_IN)
+        self.assertEqual(len(tiers), REPORT.ATLAS_TIERS[-1])
+        self.assertLessEqual(len(columns), REPORT.ATLAS_COLUMNS)
+        self.assertEqual(sorted(c for column in columns for _, names in column for c in names), sorted(chroms))
+        fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, {"ultra_fast": False}, chroms, cells)
+        self.draw(fig, "dense_atlas", False)
+        self.assertEqual(tuple(fig.get_size_inches()), (REPORT.FIG_WIDTH_DOUBLE, REPORT.ATLAS_HEIGHTS[-1]))
+        rows = [ax for ax in fig.axes if ax.get_xlabel().startswith("Position")]
+        self.assertTrue(rows)
+        self.assertFalse([t for ax in rows for t in ax.get_yticklabels() if t.get_text()])  # unlabelled heatmap
+        stats = REPORT.plot_its_summary_page(df, pairs, clusters, {}, REPORT.read_params(None))
         self.draw(stats, "dense_statistics")
-        hexagons = stats.axes[0].collections[0]
-        self.assertEqual(int(hexagons.get_array().sum()), int((df["canonical_bp"] > 0).sum()))
+        points = sum(len(c.get_offsets()) for c in stats.axes[3].collections)
+        self.assertEqual(points, int((df[["fwdCan", "revCan", "fwdNonCan", "revNonCan"]].sum(axis=1) > 0).sum()))
         self.draw(REPORT.plot_its_composition_page(df, pairs, clusters, REPORT.read_params(None)),
                   "dense_candidates")
 
@@ -871,7 +1017,7 @@ class ResilientITSReportTests(unittest.TestCase):
             self.assertEqual(REPORT.ITS_ORIENT_COLORS[key], REPORT.COLORS[key])
         df = self.frame([_its_row("chrA", 100, 200, "p", "single", fwd_can=4)])
         pairs, clusters, _ = self.parts(df)
-        fig = REPORT.plot_its_statistics_page(df, pairs, clusters, REPORT.read_params(None))
+        fig = REPORT.plot_its_summary_page(df, pairs, clusters, {}, REPORT.read_params(None))
         self.addCleanup(REPORT.plt.close, fig)
         pdf = io.BytesIO()
         fig.savefig(pdf, format="pdf", dpi=450)
@@ -888,54 +1034,469 @@ class ResilientITSReportTests(unittest.TestCase):
                                         {}, its, {}, track, track, track, track, track)
         self.draw(fig, "locus_all_tracks")
 
-    def test_its_only_cli_and_terminal_selection(self):
+    def test_homolog_grouping_keeps_haplotypes_adjacent(self):
+        names = ["chr1_mat", "chr33_mat", "chr2_pat", "chr33_pat", "chr1_pat", "hap1_chr5", "chr5_hap2",
+                 "chr7_h1", "chr7_h2", "chr9.1", "chr9.2", "s#1#chr4", "s#2#chr4", "chrZ_PAT",
+                 "ptg000001l.1", "ptg000001l.2", "chr6_hap1", "chr6_hap2", "chr6_hap3", "chr6_hap4", "chrW_mat"]
+        sizes = {n: 1_000_000 - 1_000 * i for i, n in enumerate(names)}
+        self.assertEqual(REPORT._homolog_key("chr33_mat"), REPORT._homolog_key("chr33_pat"))
+        self.assertEqual(REPORT._homolog_key("chrZ_PAT"), REPORT._homolog_key("chrW_mat"))
+        self.assertEqual(REPORT._homolog_key("chrX_hap1"), REPORT._homolog_key("chrY_hap2"))
+        self.assertNotEqual(REPORT._homolog_key("chr1A_mat"), REPORT._homolog_key("chr1_mat"))
+        groups = REPORT._homolog_groups(names, sizes)
+        self.assertIn(["chr33_mat", "chr33_pat"], groups)
+        for pair in (["hap1_chr5", "chr5_hap2"], ["chr7_h1", "chr7_h2"], ["s#1#chr4", "s#2#chr4"],
+                     ["chrW_mat", "chrZ_PAT"], ["chr6_hap1", "chr6_hap2", "chr6_hap3", "chr6_hap4"]):
+            self.assertIn(sorted(pair), groups)  # any ploidy bundles, sex chromosomes pair
+        # Version or piece suffixes are not haplotypes.
+        for name in ("chr9.1", "chr9.2", "ptg000001l.1", "ptg000001l.2"):
+            self.assertIn([name], groups)
+        order = [c for g in groups for c in g]
+        self.assertEqual(abs(order.index("chr33_mat") - order.index("chr33_pat")), 1)
+        mid = {"a_mat": 100, "a_pat": 10, "b_mat": 60, "b_pat": 60}
+        self.assertEqual(REPORT._homolog_groups(list(mid), mid), [["b_mat", "b_pat"], ["a_mat", "a_pat"]])  # by midpoint
+
+    def test_candidates_colours_follow_composition_class(self):
+        df = self.frame([_its_row("chrA", 1000, 1600, "q", "fusion", rev_can=90),
+                         _its_row("chrA", 1700, 2300, "p", "fusion", fwd_can=90),
+                         _its_row("chrB", 500, 900, "p", "single")])
+        pairs, clusters, _ = self.parts(df)
+        self.assertEqual(len(pairs), 1)
+        fig = REPORT.plot_its_composition_page(df, pairs, clusters, REPORT.read_params(None))
+        self.draw(fig, "candidates_colours")
+        self.assertFalse(fig.legends)  # the segment legend lives on its own axes under the title
+        texts = [t.get_text() for t in fig.findobj(mtext.Text)]
+        # Zero-count ITS takes the (both, mixed) cell, as on the composition page.
+        long_ax = fig.axes[2]  # clusters, fusions, then long ITS
+        faces = {REPORT.matplotlib.colors.to_hex(p.get_facecolor()) for p in long_ax.patches}
+        self.assertIn(REPORT.DOUBLE_KEY_COLORS[1][1].lower(), faces)
+        self.assertIn("NA", texts)
+        fusion = {REPORT.matplotlib.colors.to_hex(p.get_facecolor()) for p in fig.axes[1].patches}
+        self.assertEqual(fusion, {REPORT.DOUBLE_KEY_COLORS[2][0].lower(), REPORT.DOUBLE_KEY_COLORS[2][2].lower()})
+        # A pair whose arms match no ITS falls back to the neutral grey, never a canonical colour.
+        fig, ax = REPORT.plt.subplots()
+        self.addCleanup(REPORT.plt.close, fig)
+        REPORT._draw_its_fusion_glyphs(ax, df[df["chr"] == "chrB"], pairs, REPORT.LABEL_THRESHOLD)
+        faces = {REPORT.matplotlib.colors.to_hex(p.get_facecolor()) for p in ax.patches}
+        self.assertEqual(faces, {REPORT.COLORS["its"].lower()})
+
+    def test_long_its_canonical_share_is_count_based(self):
+        df = self.frame([_its_row("chrA", 100, 160, "p", "single", fwd_can=30, fwd_noncan=10)])
+        df["canonical_bp"] = 180  # overlapping matches push the bp ratio past one
+        fig, ax = REPORT.plt.subplots()
+        self.addCleanup(REPORT.plt.close, fig)
+        REPORT._draw_its_long_glyphs(ax, df)
+        self.assertIn("75% canonical", [t.get_text() for t in ax.texts])
+
+    def test_long_its_segments_run_fwd_before_rev(self):
+        df = self.frame([_its_row("chrA", 100, 500, "b", "single", fwd_can=10, rev_can=20,
+                                  fwd_noncan=30, rev_noncan=40)])
+        fig, ax = REPORT.plt.subplots()
+        self.addCleanup(REPORT.plt.close, fig)
+        REPORT._draw_its_long_glyphs(ax, df)
+        order = [REPORT.matplotlib.colors.to_hex(p.get_facecolor())
+                 for p in sorted(ax.patches, key=lambda p: p.get_x())]
+        key = REPORT.DOUBLE_KEY_COLORS
+        self.assertEqual(order, [key[2][2], key[0][2], key[0][0], key[2][0]])
+        np.testing.assert_allclose([p.get_width() for p in sorted(ax.patches, key=lambda p: p.get_x())],
+                                   [40, 120, 160, 80])
+
+    def test_candidates_legend_explains_segments_and_ticks_carry_no_units(self):
+        df = self.frame([_its_row("chrA", 1000 + 3000 * i, 3500 + 3000 * i, "qp"[i % 2], "fusion",
+                                  fwd_can=40 * (i % 2), rev_can=40 * (1 - i % 2), fwd_noncan=5)
+                         for i in range(6)])
+        pairs, clusters, _ = self.parts(df)
+        self.assertFalse(pairs.empty or clusters.empty)
+        fig = REPORT.plot_its_composition_page(df, pairs, clusters, REPORT.read_params(None))
+        self.draw(fig, "candidates_legend")
+        legends = [ax.get_legend() for ax in fig.axes if ax.get_legend()]
+        self.assertEqual(len(legends), 1)
+        labels = [t.get_text() for t in legends[0].get_texts()]
+        for label in ("fwd canonical", "fwd non-canonical", "rev non-canonical", "rev canonical"):
+            self.assertIn(label, labels)
+        self.assertLess(labels.index("fwd canonical"), labels.index("rev canonical"))
+        ticks = [t.get_text() for ax in fig.axes for t in ax.get_xticklabels() if t.get_text()]
+        self.assertTrue(ticks)
+        for text in ticks:
+            self.assertRegex(text, r"^[0-9.,]+$")
+        for ax in fig.axes[:3]:
+            self.assertRegex(ax.get_xlabel(), r"\((bp|kbp|Mbp)\)")
+
+    def test_panel_letters_share_the_terminal_left_margin(self):
+        df = self.frame([_its_row("chrA", 100, 200, "p", "single", fwd_can=4)])
+        pairs, clusters, _ = self.parts(df)
+        params = REPORT.read_params(None)
+        figs = [REPORT.plot_its_summary_page(df, pairs, clusters, {}, params),
+                REPORT.plot_its_summary_page(df, pairs, clusters, {}, params),
+                REPORT.plot_its_composition_page(df, pairs, clusters, params),
+                REPORT.plot_overview_page1(OrderedDict([("T2T", ["chrA"])]), {}, {"chrA": 1000}),
+                REPORT.plot_overview_page2({}, {"chrA": 1000})]
+        for fig in figs:
+            self.addCleanup(REPORT.plt.close, fig)
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+            letters = [t for ax in fig.axes for t in ax.texts
+                       if len(t.get_text()) == 1 and t.get_fontweight() == "bold"]
+            self.assertTrue(letters)
+            x0 = min(t.get_window_extent(renderer).x0 for t in letters) / fig.dpi
+            self.assertAlmostEqual(x0, REPORT.PANEL_LETTER_X_IN, delta=0.03)
+
+    def test_summary_page_tiles_and_empty_state(self):
+        df = self.frame([_its_row("chr1_mat", 100, 400, "p", "single", fwd_can=40, chrom_size=5_000_000),
+                         _its_row("chr1_pat", 100, 200, "q", "single", rev_can=15, chrom_size=4_000_000)])
+        pairs, clusters, sizes = self.parts(df)
+        fig = REPORT.plot_its_summary_page(df, pairs, clusters, sizes, REPORT.read_params(None))
+        self.draw(fig, "summary_tiles")
+        hist, per = fig.axes[1:3]
+        self.assertEqual(hist.get_title(), "ITS length distribution")
+        self.assertEqual(hist.get_ylabel(), "# ITSs")
+        self.assertTrue(any("median\n" in t.get_text() for t in hist.texts))
+        self.assertAlmostEqual(hist.bbox.width, hist.bbox.height)
+        self.assertEqual(per.get_title(), "ITS scaffold distribution")
+        self.assertEqual(per.get_ylabel(), "ITS density (bp/Mbp)")
+        tiles = [t.get_text() for t in fig.axes[0].texts]
+        self.assertEqual(tiles[1::2], ["Median ITS length (bp)", "ITS", "ITS content (kbp)",
+                                       "Scaffolds with ITS", "Clusters", "Candidate fusions"])
+        self.assertEqual(tiles[0::2], ["200", "2", "0.4", "2", "0", "0"])
+        # One dot per scaffold on plain-number log axes; no homolog connectors.
+        per = fig.axes[2]
+        self.assertEqual(len(per.collections[0].get_offsets()), 2)
+        self.assertEqual(len(per.lines), 0)  # identical counts cannot support a trend
+        for label in per.get_xticklabels() + per.get_yticklabels() + fig.axes[1].get_xticklabels():
+            self.assertRegex(label.get_text(), r"^[0-9.]+$")
+        empty = self.frame([])
+        fig = REPORT.plot_its_summary_page(empty, *self.parts(empty)[:2], {}, REPORT.read_params(None))
+        self.draw(fig, "summary_empty")
+        self.assertEqual(len(fig.axes), 0)
+        self.assertIn("No ITS", [t.get_text() for t in fig.texts])
+
+    def test_summary_repel_and_composition_totals(self):
+        df = self.frame([_its_row(f"chr{i}", 100, 400, "p", "single", fwd_can=40,
+                                 chrom_size=5_000_000) for i in range(3)])
+        pairs, clusters, sizes = self.parts(df)
+        fig = REPORT.plot_its_summary_page(df, pairs, clusters, sizes, REPORT.read_params(None))
+        self.draw(fig, "summary_coincident_labels")
+        renderer = fig.canvas.get_renderer()
+        per, joint = fig.axes[2:4]
+        boxes = [mtext.Text.get_window_extent(t, renderer) for t in per.texts
+                 if isinstance(t, mtext.Annotation)]
+        self.assertEqual(len(boxes), 3)
+        self.assertTrue(all(t.arrow_patch is None for t in per.texts if isinstance(t, mtext.Annotation)))
+        for i, box in enumerate(boxes):
+            self.assertTrue(per.bbox.contains(box.x0, box.y0))
+            self.assertTrue(per.bbox.contains(box.x1, box.y1))
+            self.assertFalse(any(box.overlaps(other) for other in boxes[:i]))
+        cells = [t.get_text() for t in joint.texts if "%" in t.get_text() and "Class" not in t.get_text()]
+        self.assertEqual(len(cells), 9)
+        self.assertIn("3\n100%", cells)
+        self.assertEqual(sum(int(t.split("\n")[0].replace(",", "")) for t in cells), len(df))
+        for text in joint.texts:
+            self.assertIsNone(text.get_bbox_patch())
+            self.assertGreaterEqual(text.get_window_extent(renderer).y0, 0)
+
+    def test_summary_scaffold_cutoff_counts_scaffolds_without_its(self):
+        df = self.frame([_its_row(f"chr{i}", 1000 * j, 1000 * j + 100, "p", "single",
+                                 fwd_can=10, chrom_size=1_000_000)
+                         for i, n in enumerate((1, 2, 4)) for j in range(n)])
+        for total in (10, 11):
+            fig, ax = REPORT.plt.subplots()
+            self.addCleanup(REPORT.plt.close, fig)
+            REPORT._draw_its_scaffold_panel(ax, df, {f"chr{i}": 1_000_000 for i in range(total)})
+            self.assertEqual(len(ax.collections[0].get_offsets()), 3)
+            self.assertEqual(len(ax.texts), 3 if total == 10 else 0)
+            self.assertEqual(len(ax.lines), 1)
+            x, y = ax.lines[0].get_data()
+            np.testing.assert_allclose(y, 100 * x)  # 100 bp per ITS on a 1 Mb scaffold
+
+    def test_forward_share_axis_is_mirrored(self):
+        df = self.frame([_its_row("chrA", 100, 200, "p", "single", fwd_can=40),
+                         _its_row("chrA", 900, 1000, "q", "single", rev_noncan=40)])
+        pairs, clusters, _ = self.parts(df)
+        fig = REPORT.plot_its_summary_page(df, pairs, clusters, {}, REPORT.read_params(None))
+        self.draw(fig, "mirrored")
+        joint, top = fig.axes[3], fig.axes[4]
+        for ax in (joint, top):
+            left, right = ax.get_xlim()
+            self.assertGreater(left, right)
+        self.assertEqual(joint.get_xlabel(), "← Forward proportion")
+        # The fwd ITS sits left of the rev ITS in display space.
+        xs = joint.transData.transform(joint.collections[0].get_offsets())[:, 0]
+        colours = [REPORT.matplotlib.colors.to_hex(c) for c in joint.collections[0].get_facecolors()]
+        self.assertLess(xs[colours.index(REPORT.DOUBLE_KEY_COLORS[2][2])],
+                        xs[colours.index(REPORT.DOUBLE_KEY_COLORS[0][0])])
+
+    def test_size_key_centres_its_references(self):
+        for lengths in (np.array([50.0]), np.array([50.0, 900.0]), np.array([50.0, 9000.0])):
+            fig, ax = REPORT.plt.subplots()
+            self.addCleanup(REPORT.plt.close, fig)
+            REPORT._draw_its_size_key(ax, lengths, False)
+            xs = ax.collections[0].get_offsets()[:, 0]
+            self.assertAlmostEqual(float(np.mean(xs)), 0.0)
+            self.assertAlmostEqual(sum(ax.get_xlim()), 0.0)
+
+    def test_top_five_loci_match_atlas_ranks(self):
+        for n in (0, 1, 3, 5, 8):
+            rows = []
+            for i in range(n):
+                rows.extend([_its_row(f"chr{i}", 1000, 2000, "q", "fusion", rev_can=100),
+                             _its_row(f"chr{i}", 2010, 4010, "p", "single", fwd_can=200),
+                             _its_row(f"chr{i}", 8000, 8500, "b", "tail_to_tail", fwd_can=40)])
+            df = self.frame(rows)
+            pairs, clusters, sizes = self.parts(df)
+            loci = REPORT.resolve_its_loci(clusters, df, pairs, sizes)
+            marks = REPORT._its_top_hits(df, pairs, clusters)
+            expected = {f"{prefix}{rank}" for prefix, count in
+                        (("L", len(df)), ("C", len(clusters)), ("F", len(pairs)))
+                        for rank in range(1, min(count, 5) + 1)}
+            self.assertEqual({tag for tag, _, _, _ in loci}, expected)
+            self.assertEqual({tag for entries in marks.values() for tag, _ in entries}, expected)
+            for tag, chrom, start, end in loci:
+                midpoint = next(mid for label, mid in marks[chrom] if label == tag)
+                self.assertLessEqual(start, midpoint)
+                self.assertGreaterEqual(end, midpoint)
+
+    def test_atlas_tiers_are_halves_or_quartiles_on_rounded_axes(self):
+        sizes = {f"chr{i}_{h}": int(s) for i, s in enumerate(np.geomspace(7.2e9, 4.2e6, 30), 1) for h in ("hap1", "hap2")}
+        sizes.update({f"scaffold_{i}": 20_000 + 1_000 * i for i in range(5)})  # unplaced
+        tiers = REPORT._atlas_tiers(sorted(sizes, key=lambda c: -sizes[c]), sizes)
+        self.assertEqual([c for t in tiers for c in t], [c for g in REPORT._homolog_groups(list(sizes), sizes) for c in g])
+        self.assertEqual(len(tiers), 4)
+        self.assertLessEqual(max(map(len, tiers)), -(-len(sizes) // 4) + 1)  # a quarter, pairs whole
+        self.assertEqual([len(t) for t in REPORT._atlas_tiers(list(sizes), sizes, 2)], [34, 31])  # halves, pairs whole
+        keys = [{REPORT._homolog_key(c) for c in tier} for tier in tiers]
+        self.assertEqual(sum(map(len, keys)), len(set().union(*keys)))  # homologs never split across tiers
+        self.assertEqual(REPORT._atlas_tiers(["chrA", "chrB"], {"chrA": 10, "chrB": 9}), [["chrA", "chrB"]])  # one shared axis
+        self.assertEqual(REPORT._atlas_tiers([], {}), [])
+        for bp, span in ((7.2e9, (7e9, 1e9)), (248e6, (240e6, 40e6)), (152.56e6, (140e6, 20e6)), (26e6, (25e6, 5e6)),
+                         (11.2e6, (10e6, 2e6)), (9.9e6, (9e6, 1e6)), (4.25e6, (4e6, 5e5)), (112e3, (100e3, 20e3))):
+            self.assertEqual(REPORT._atlas_span(bp), span)  # the last tick on a 1-2-5 step; longer bars run past it
+        few = {f"chr{i}_{h}": 100_000_000 // i for i in range(1, 9) for h in ("mat", "pat")}
+        height, columns, _, tiers = REPORT._atlas_layout(list(few), few)
+        self.assertEqual((height, len(columns), len(tiers)), (REPORT.ATLAS_HEIGHTS[0], 1, 2))  # full-width halves
+
+    def test_atlas_labels_keep_one_precision_and_mark_loci(self):
+        df = self.frame([_its_row("chr1_mat", 1000, 1500, "p", "single", fwd_can=40, chrom_size=116_000_000),
+                         _its_row("chr1_pat", 1000, 1500, "p", "single", fwd_can=40, chrom_size=115_910_000)])
+        pairs, clusters, sizes = self.parts(df)
+        fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, REPORT.read_params(None))
+        self.draw(fig, "atlas_precision", False)
+        ticks = [t.get_text() for t in fig.axes[0].get_yticklabels()]
+        self.assertEqual(ticks, ["chr1_mat", "chr1_pat"])  # names only
+        self.assertEqual([t.get_text() for t in fig.axes[0].get_xticklabels()], ["0", "20", "40", "60", "80", "100"])
+        self.assertEqual(fig.axes[0].get_xlabel(), "Position (Mbp)")
+        labels = [t.get_text() for leg in fig.legends for t in leg.get_texts()]
+        self.assertIn("Scaffold", labels)
+        self.assertIn("(L)  Longest canonical ITS", labels)
+        texts = [t.get_text() for t in fig.findobj(mtext.Text)]
+        self.assertFalse([t for t in texts if "top long ITS" in t or "—" in t], texts)
+        self.assertIn("L1", texts)
+        self.assertFalse([t for t in fig.findobj(mtext.Text) if t.get_text() == "L1" and t.get_fontweight() == "bold"])
+        triangles = [l for l in fig.axes[0].get_lines() if l.get_marker() == "v"]
+        self.assertEqual(len(triangles), 2)
+        self.assertEqual(float(triangles[0].get_xdata()[0]), 1250.0)  # at the locus, not the scaffold end
+
+    def test_atlas_page_grows_to_a_double_slide_and_spreads_its_rows(self):
+        def atlas(n):
+            rows = [_its_row(f"chr{i}_{h}", 1000, 1500, "p", "single", fwd_can=40, chrom_size=5_000_000)
+                    for i in range(n // 2) for h in ("mat", "pat")]
+            df = self.frame(rows)
+            pairs, clusters, sizes = self.parts(df)
+            fig = REPORT.plot_its_overview_page(df, pairs, clusters, {}, sizes, REPORT.read_params(None))
+            self.draw(fig, f"atlas_{n}", False)
+            return fig
+        two, twenty, eighty = atlas(2), atlas(20), atlas(80)
+        for fig, size, columns in ((two, REPORT.SLIDE_SIZE, 1), (twenty, REPORT.SLIDE_SIZE, 2),
+                                   (eighty, (REPORT.FIG_WIDTH_DOUBLE, REPORT.ATLAS_HEIGHTS[1]), 2)):
+            self.assertEqual(tuple(fig.get_size_inches()), size)  # one slide, else a double slide
+            texts = [t.get_text() for t in fig.findobj(mtext.Text)]
+            self.assertFalse([t for t in texts if "row" in t.lower()], texts)
+            self.assertEqual(fig._suptitle.get_text(), "ITS atlas")
+            self.assertEqual([t.get_text() for t in fig.texts], ["ITS atlas"])  # no footer
+            box = fig.get_tightbbox(fig.canvas.get_renderer())
+            self.assertAlmostEqual(box.x0, fig.get_size_inches()[0] - box.x1, delta=0.05)
+            rows = [ax for ax in fig.axes if ax.get_xlabel() == "Position (Mbp)"]
+            self.assertEqual(len({round(ax.get_position().x0, 3) for ax in rows}), columns)
+            for ax in rows:  # rows spread from the fixed pitch up to a cap
+                ys = ax.get_yticks()
+                inch = ax.get_position().height * fig.get_size_inches()[1] / (ax.get_ylim()[0] - ax.get_ylim()[1])
+                pitch = min(np.diff(ys), default=REPORT.ATLAS_PITCH_IN) * inch
+                self.assertGreaterEqual(pitch, REPORT.ATLAS_PITCH_IN - 1e-9)
+                self.assertLessEqual(pitch, REPORT.ATLAS_STRETCH * REPORT.ATLAS_PITCH_IN + 1e-9)
+
+    def test_locus_page_marks_the_zoom_with_a_box_only(self):
+        chrom, size = "chr33_mat", 1_000_000
+        its = {chrom: [dict(_block(400_000, 400_600, "p", size), fwdCan=0, revCan=0, fwdNonCan=90, revNonCan=0)]}
+        fig = REPORT.plot_its_loci_page([("C1", chrom, 390_000, 410_000)], {chrom: size}, {}, its, {},
+                                        None, None, None, None, None)
+        self.draw(fig, "locus_box")
+        self.assertFalse(fig.findobj(REPORT.ConnectionPatch))
+        self.assertEqual(fig._suptitle.get_text(), "chr33_mat  (1 Mb)")
+        texts = [t.get_text() for t in fig.findobj(mtext.Text)]
+        self.assertIn("C1  390–410 kbp", texts)
+        self.assertFalse([t for t in texts if "row" in t.lower()], texts)
+        faces = {REPORT.matplotlib.colors.to_hex(c) for ax in fig.axes for coll in ax.collections
+                 if isinstance(coll, REPORT.PatchCollection) for c in coll.get_facecolors()}
+        self.assertIn(REPORT.DOUBLE_KEY_COLORS[0][2].lower(), faces)
+
+    def test_locus_entropy_and_key_are_legible(self):
+        chrom, size = "chr33_mat", 1_000_000
+        its = {chrom: [_block(400_000, 400_600, "p", size)]}
+        track = {chrom: (np.array([390_000, 400_000]), np.array([400_000, 410_000]), np.array([1.2, 1.9]))}
+        fig = REPORT.plot_its_loci_page([("C1", chrom, 390_000, 410_000)], {chrom: size}, {}, its, {},
+                                        None, None, None, None, track)
+        self.draw(fig, "locus_entropy")
+        ranges = [tuple(float(t) for t in ax.get_yticks()) for ax in fig.axes if ax.get_visible()]
+        self.assertIn((1.0, 1.5, 2.0), ranges)  # the full 1-2 bit range, so dips are not clipped
+        renderer = fig.canvas.get_renderer()
+        key = next(ax for ax in fig.axes if ax.get_xlabel() == "← Forward share")
+        self.assertAlmostEqual(key.get_position().width * 7.2, REPORT.LOCUS_KEY_SIDE, places=3)
+        self.assertLessEqual(REPORT.LOCUS_KEY_SIDE, 0.45)
+        self.assertLessEqual(key.get_tightbbox(renderer).x1, 0.97 * fig.bbox.width + 0.5)
+        self.assertEqual({t.get_fontsize() for t in key.get_xticklabels()}, {REPORT.MIN_TEXT_SIZE})
+        self.assertIn("Position (kbp)", [ax.get_xlabel() for ax in fig.axes])
+        self.assertEqual(tuple(fig.get_size_inches()), REPORT.SLIDE_SIZE)
+        ticks = [t.get_window_extent(renderer) for t in key.get_xticklabels()]
+        for left, right in zip(ticks, ticks[1:]):
+            self.assertLess(left.x1, right.x0)
+        key_box = key.get_tightbbox(renderer)
+        self.assertLessEqual(key_box.y1, fig.bbox.height)
+        tracks_top = max(ax.get_position().y1 for ax in fig.axes if ax is not key) * fig.bbox.height
+        self.assertGreater(key_box.y0, tracks_top)
+        for text in (fig._suptitle, *[ax.title for ax in fig.axes if ax.get_title()]):
+            self.assertFalse(key_box.overlaps(text.get_window_extent(renderer)), text.get_text())
+
+    def test_shared_locus_tracks_keep_orientation_colours_by_default(self):
+        size = 1_000_000
+        its = [dict(_block(400_000, 400_600, k, size), fwdCan=0, revCan=0, fwdNonCan=90, revNonCan=0)
+               for k in ("p", "q", "b")]
+        fig, (ax_ideo, ax_blocks) = REPORT.plt.subplots(2, 1)
+        self.addCleanup(REPORT.plt.close, fig)
+        REPORT._draw_locus_ideogram(ax_ideo, size, 390_000, 410_000, [], its)
+        REPORT._draw_its_blocks_track(ax_blocks, 390_000, 410_000, [], its, [])
+        lines = {REPORT.matplotlib.colors.to_hex(c) for coll in ax_ideo.collections
+                 for c in coll.get_colors()}
+        faces = [REPORT.matplotlib.colors.to_hex(c) for coll in ax_blocks.collections
+                 for c in coll.get_facecolors()]
+        expected = {REPORT.ITS_ORIENT_COLORS[k] for k in ("p", "q", "b")}
+        self.assertEqual(lines, {c.lower() for c in expected})
+        self.assertEqual(set(faces), {c.lower() for c in expected})
+
+    def test_its_only_cli_and_png_names(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             (root / "sample_interstitial_telomeres.bed").write_text(
                 _its_row("chrA", 100, 200, "p", "single", fwd_can=4), encoding="utf-8")
-            output = root / "its.pdf"
             stderr = io.StringIO()
-            with mock.patch.object(sys, "argv", ["report", tmpdir, "--section", "its", "-o", str(output)]):
+            with mock.patch.object(sys, "argv", ["report", tmpdir]):
                 with contextlib.redirect_stderr(stderr):
                     REPORT.main()
-            self.assertTrue(output.is_file())
+            self.assertTrue((root / "sample_plot_report_its.pdf").is_file())
+            self.assertFalse((root / "sample_plot_report_terminal.pdf").exists())
             self.assertNotIn("placeholder", stderr.getvalue())
             self.assertNotIn("Assembly overview", stderr.getvalue())
-            exported = REPORT.pd.read_csv(root / "sample_its_rows.tsv", sep="\t")
-            self.assertEqual(len(exported), 1)
-            (root / "sample_terminal_telomeres.bed").write_text("", encoding="utf-8")
-            with mock.patch.object(sys, "argv", ["report", tmpdir, "--section", "terminal",
-                                                "-o", str(root / "terminal.pdf")]):
+            with mock.patch.object(sys, "argv", ["report", tmpdir, "--png", "-o", str(root / "png")]):
                 with contextlib.redirect_stderr(io.StringIO()) as log:
                     REPORT.main()
-            self.assertNotIn("ITS distributions", log.getvalue())
+            self.assertTrue((root / "png" / "sample_its_summary.png").is_file())
+            self.assertFalse((root / "png" / "sample_its_statistics.png").exists())
+            self.assertNotIn("placeholder", log.getvalue())
+            self.assertEqual(list(root.rglob("*.tsv")), [])
+            with mock.patch.object(sys, "argv", ["report", tmpdir, "-o", str(root / "one.pdf")]):
+                with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                    REPORT.main()
             self.assertEqual(REPORT.plt.get_fignums(), [])
 
-    def test_default_split_combined_opt_in_and_empty_its_only(self):
+    def test_terminal_and_empty_its_reports_beside_the_run(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             (root / "sample_terminal_telomeres.bed").write_text("", encoding="utf-8")
             (root / "sample_interstitial_telomeres.bed").write_text("", encoding="utf-8")
-            base = root / "custom.pdf"
-            with mock.patch.object(sys, "argv", ["report", tmpdir, "-o", str(base)]):
+            with mock.patch.object(sys, "argv", ["report", tmpdir, "-o", str(root / "out")]):
                 with contextlib.redirect_stderr(io.StringIO()) as log:
                     REPORT.main()
-            self.assertTrue((root / "custom_terminal.pdf").is_file())
-            self.assertTrue((root / "custom_its.pdf").is_file())
-            self.assertFalse(base.exists())
+            self.assertTrue((root / "out" / "sample_plot_report_terminal.pdf").is_file())
+            self.assertTrue((root / "out" / "sample_plot_report_its.pdf").is_file())
+            self.assertIn("ITS summary", log.getvalue())
             self.assertNotIn("placeholder", log.getvalue())
-            with mock.patch.object(sys, "argv", ["report", tmpdir, "--section", "all", "-o", str(base)]):
-                with contextlib.redirect_stderr(io.StringIO()):
+            # a run with its reports is skipped
+            with mock.patch.object(sys, "argv", ["report", tmpdir, "-o", str(root / "out")]):
+                with contextlib.redirect_stderr(io.StringIO()) as log:
                     REPORT.main()
-            self.assertTrue(base.is_file())
+            self.assertIn("0 without a report", log.getvalue())
+            self.assertNotIn("Plot Report", log.getvalue())
+            # the run named by its file stem is plotted again
+            with mock.patch.object(sys, "argv", ["report", str(root / "sample"), "-o", str(root / "out")]):
+                with contextlib.redirect_stderr(io.StringIO()) as log:
+                    REPORT.main()
+            self.assertIn("ITS summary", log.getvalue())
             (root / "sample_terminal_telomeres.bed").unlink()
-            with mock.patch.object(sys, "argv", ["report", tmpdir, "--section", "all",
-                                                "-o", str(root / "empty-its-only.pdf")]):
+            with mock.patch.object(sys, "argv", ["report", tmpdir]):
                 with contextlib.redirect_stderr(io.StringIO()) as log:
                     REPORT.main()
-            self.assertTrue((root / "empty-its-only.pdf").is_file())
-            self.assertIn("ITS distributions", log.getvalue())
-            self.assertNotIn("placeholder", log.getvalue())
+            self.assertTrue((root / "sample_plot_report_its.pdf").is_file())
+            self.assertFalse((root / "sample_plot_report_terminal.pdf").exists())
+            self.assertIn("ITS summary", log.getvalue())
+
+    def test_shared_directory_plots_each_missing_run_on_its_own(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            for run, chrom in (("asm.fa", "chrA"), ("asm.fa.gz", "chrB")):
+                (root / f"{run}_terminal_telomeres.bed").write_text(
+                    _its_row(chrom, 0, 600, "p", "scaffold", fwd_can=100), encoding="utf-8")
+                (root / f"{run}_interstitial_telomeres.bed").write_text("", encoding="utf-8")
+            # a reads run can have an empty BED, so its report header marks it
+            (root / "reads.fq_terminal_telomeres.bed").write_text("", encoding="utf-8")
+            (root / "reads.fq_report.tsv").write_text(
+                "#teloscope version=0.1.6\n#params canonical=CCCTAA/TTAGGG\n#columns\tmetric\tvalue\n"
+                "Reads measured:\t8\n", encoding="utf-8")
+            (root / "._asm.fa_terminal_telomeres.bed").write_bytes(b"\x00\x05\x16\x07")
+            self.assertEqual(list(REPORT.find_runs(tmpdir)), ["asm.fa", "asm.fa.gz"])
+            with self.assertRaises(SystemExit):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    REPORT.find_files(tmpdir)
+            self.assertEqual(REPORT.find_files(os.path.join(tmpdir, "asm.fa.gz"))[0], "asm.fa.gz")
+            with self.assertRaises(SystemExit):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    REPORT.find_files(os.path.join(tmpdir, "asm.fasta"))
+
+            # a subprocess, so the runs really go through the process pool
+            command = [sys.executable, str(MODULE_PATH), tmpdir, "-j", "2", "--draft"]
+            first = subprocess.run(command, capture_output=True, text=True, timeout=600)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertIn("Found 2 run(s)", first.stderr)
+            pages = {}
+            for line in first.stderr.splitlines():
+                if line.startswith("[asm.fa"):
+                    run, title = line[1:].split(" ", 1)[0], line.split("] ", 1)[1]
+                    pages.setdefault(run, set()).add(title)
+            self.assertIn("chrA", pages["asm.fa"])
+            self.assertNotIn("chrB", pages["asm.fa"])
+            self.assertIn("chrB", pages["asm.fa.gz"])
+            self.assertNotIn("chrA", pages["asm.fa.gz"])
+            for run in ("asm.fa", "asm.fa.gz"):
+                self.assertTrue((root / f"{run}_plot_report_terminal.pdf").is_file())
+                self.assertTrue((root / f"{run}_plot_report_its.pdf").is_file())
+            self.assertFalse(list(root.glob("reads*.pdf")))
+
+            second = subprocess.run(command, capture_output=True, text=True, timeout=600)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertIn("0 without a report", second.stderr)
+            self.assertNotIn("Plot Report", second.stderr)
+
+            # one failing run is named, and the others still finish, with -j 1 as in a pool
+            (root / "bad.fa_terminal_telomeres.bed").mkdir()
+            (root / "asm.fa_plot_report_its.pdf").unlink()
+            with mock.patch.object(sys, "argv", ["report", tmpdir, "-j", "1", "--draft"]):
+                with contextlib.redirect_stderr(io.StringIO()) as log, self.assertRaises(SystemExit) as stop:
+                    REPORT.main()
+            self.assertIn("Found 3 run(s)", log.getvalue())
+            self.assertIn("2 without a report", log.getvalue())
+            self.assertIn("[asm.fa ", log.getvalue())
+            self.assertNotIn("[asm.fa.gz ", log.getvalue())
+            self.assertTrue((root / "asm.fa_plot_report_its.pdf").is_file())
+            self.assertIn("bad.fa failed", log.getvalue())
+            self.assertIn("1 of 2 run(s) failed: bad.fa", str(stop.exception))
+            (root / "bad.fa_terminal_telomeres.bed").rmdir()
 
 
 if __name__ == "__main__":

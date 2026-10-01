@@ -2,8 +2,8 @@ testFiles/gapped_incomplete_q.fa -f testFiles/gapped_incomplete_q.fa -r -o testF
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular	its	canonical	windows
-1	chr_gapped_incomplete_q	1	q	1	incomplete	.	Q	0	100	5
+pos	header	telomeres	labels	gaps	type	anomaly	its
+1	chr_gapped_incomplete_q	1	q	1	incomplete	.	0
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -12,8 +12,6 @@ Scaffold N50:	5000
 Contig N50:	2900
 Total telomeres:	1
 Total ITS blocks:	0
-Total canonical matches:	100
-Total windows analyzed:	5
 
 +++ Telomere Statistics +++
 Mean length:	600
@@ -21,12 +19,12 @@ Median length:	600
 Min length:	600
 Max length:	600
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	0
 One telomere:	1
 Zero telomeres:	0
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	0
 Gapped T2T:	0
 Incomplete:	0

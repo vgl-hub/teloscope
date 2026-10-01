@@ -2,293 +2,79 @@
 
 # Troubleshooting
 
-Use this page when a run fails, writes less than expected, or produces calls that do not match what you expected.
+Rerun with `--verbose` first: it prints progress, which shows where a run stops.
 
-Start with:
+## Errors
 
-```sh
-teloscope asm.fa --cmd --verbose
-```
+| Message | Fix |
+| --- | --- |
+| `file does not exist`, `No input file provided` | pass an existing input as the first argument or with `-f` |
+| `Option -<flag> is missing a required argument` | give the flag a value |
+| `Unknown option ...`, `Unknown or ambiguous option ...` | check the flag against `-h` |
+| `input ... is not FASTA, GFA, FASTQ or BAM` | only the first bytes are checked, so a malformed GFA can still fail later |
+| `Cannot create output directory`, `Output directory ... is not writable` | check the path, the permissions, and the free space |
+| `Step size (...) cannot be larger than window size (...)` | keep `-s` at or below `-w` |
+| `... must be > 0`, `Invalid value ...`, `... must be in the range ...` | `-w`, `-s`, `-t`, `-k`, `-d`, `-l`, `--terminal-tolerance`, and `--min-block-counts` take positive integers written out (`50000`, not `5e4`); `-y` takes `(0,1]`, `-x` `0` to `2`, and `--label-threshold` `(0.5,1]` |
+| `... patterns is unusually high` | over 500 patterns: use fewer IUPAC codes in `-p` or a lower `-x` |
+| `Could not locate teloscope_report.py` | see [Report](#report) |
 
-`--cmd` shows the resolved command line. `--verbose` makes it easier to see whether the run is failing during input parsing, scanning, or report generation.
+## Build
 
-## Setup problems
-
-### Build fails because `gfalibs` is missing
-
-Teloscope needs the `gfalibs` submodule for GFA support.
+If `gfalibs` is missing:
 
 ```sh
 git submodule update --init --recursive
 make -j
 ```
 
-### `--plot-report` fails immediately
+## Input
 
-The report step needs Python 3 plus:
+- Compressed input on a pipe fails, except BAM. Pass the file, or decompress into the pipe:
 
-- `matplotlib`
-- `numpy`
-- `pandas`
+  ```sh
+  teloscope asm.fa.gz                      # works
+  zcat asm.fa.gz | teloscope -o results/   # works
+  cat asm.fa.gz | teloscope -o results/    # fails
+  ```
 
-If those packages are missing, run Teloscope without `--plot-report` or install them in the Python environment that will run `scripts/teloscope_report.py`.
+- Gzipped FASTQ on a pipe is read as BAM and fails with a hint; pass the file.
+- BAM must be BGZF-compressed; SAM, CRAM, plain gzip, and uncompressed BAM are rejected. A missing BGZF end-of-file marker only warns.
 
-## Input and argument errors
+## Outputs
 
-### No input file was provided
+- A FASTA run writes four files by default; the rest need flags ([Outputs](outputs.md)).
+- A GFA run writes only the annotated graph and its color file.
+- `-n` adds `contig` rows to the terminal BED (and to `-a`) and changes which arrays count as interstitial: a full scan loses them, and a fast scan can gain rows from the extra windows. `type`, `anomaly`, and the statistics stay the same.
+- `-r`, `-g`, `-e`, `-m`, and `-i` force the full scan, and `-n` reads every contig end, so all of them cost time.
+- `--chr-only` misses a chromosome whose name breaks the longest record's convention, such as `chromosome_X` beside `chr1`. Add it with `--include-bed`.
 
-If you see `Error: Input sequence file is required` or `Error: No input file provided`, pass the input as either:
+## Calls
 
-```sh
-teloscope asm.fa
-teloscope -f asm.fa
-```
+Terminal calls depend most on `-c`, `--terminal-tolerance`, `-l`, `-y`, `-d`, and `-x`; interstitial rows on `-k`, `-d`, and `-y`.
 
-### A flag is missing its value
+- **No telomeres:** check that `-c` matches the organism and that the start zone (`-t`, `--terminal-tolerance`) reaches the telomere. Try a permissive run, then restore one threshold at a time:
 
-If you see `Error: Option -<flag> is missing a required argument`, one of the value-taking flags was given without a value.
+  ```sh
+  teloscope asm.fa -t 100000 --terminal-tolerance 100000 -l 200 -y 0.3 --verbose
+  ```
 
-Common cases:
+- **A telomere in pieces:** raise `-d`, the longest stretch a telomere may bridge.
+- **Wrong class:** `type` and `anomaly` come from the two scaffold arms only. Recheck `-c`, `-t`, and `--terminal-tolerance`, and don't compare them with `contig` rows.
+- **Wrong `p`/`q` labels:** `-c` sets the canonical motif and with it the strand labels.
 
-- `-f`
-- `-o`
-- `-c`
-- `-p`
-- `-j`
-- `-w`
-- `-s`
-- `-t`
-- `-k`
-- `-d`
-- `-l`
-- `-y`
-- `-x`
+## GFA
 
-### Compressed stdin or a pipe is not supported
+- **No caps:** the segment sequence is `*`, the block fails `-l` or `-y`, the end is not path-terminal, or `-c` does not match.
+- **Caps on some ends only:** with paths, only path-terminal segment ends are scanned.
+- **Checking for caps:** `grep telomere_ results/asm.gfa.telo.annotated.gfa`
 
-This does not work, whether piped or through a FIFO or process substitution:
+## Report
 
-```sh
-cat asm.fa.gz | teloscope -o results/
-teloscope <(cat asm.fa.gz) -o results/
-```
+- `--plot-report` needs Python 3 with `matplotlib`, `numpy`, and `pandas`.
+- On `Could not locate teloscope_report.py` or `Report generation failed`, run the script from a source checkout on the output directory:
 
-Use one of these:
+  ```sh
+  python3 scripts/teloscope_report.py results/
+  ```
 
-```sh
-teloscope asm.fa.gz
-zcat asm.fa.gz | teloscope -o results/
-```
-
-BAM is the exception because BAM mode reads BGZF directly:
-
-```sh
-cat reads.bam | teloscope -o results/
-```
-
-Gzipped FASTQ on a pipe is read as BAM and fails with a hint; pass the file instead.
-
-### "is not FASTA, GFA, FASTQ or BAM"
-
-The input does not start like FASTA, GFA, FASTQ or BAM. Only the first bytes are checked, so a GFA with missing columns further in can still stop the GFA reader.
-
-### Reads mode rejects the BAM input
-
-BAM input requires BGZF compression, not SAM, CRAM, plain gzip, or an uncompressed BAM payload. Teloscope rejects invalid block sizes, checksums, headers, and record boundaries. A missing BGZF EOF marker is accepted with a warning.
-
-### Output directory is not writable
-
-If you see `Cannot create output directory`, `Output directory ... is not writable`, or `Could not open ... for writing`, check:
-
-- the directory exists or can be created
-- you have write permission
-- the filesystem has free space
-- no other process is writing the same outputs at the same time
-
-Quick check:
-
-```sh
-mkdir -p results
-test -w results && echo ok
-```
-
-## Invalid flag values
-
-These flags must be positive integers:
-
-- `-w`
-- `-s`
-- `-t`
-- `-k`
-- `-d`
-- `-l`
-
-`-y` must be a number from `0` to `1`.
-
-`-x` must be `0`, `1`, or `2`.
-
-If Teloscope says a value is invalid, start from a known-good baseline:
-
-```sh
-teloscope asm.fa -w 1000 -s 1000 -t 50000 -k 50 -d 200 -l 500 -y 0.5 -x 1
-```
-
-Also keep `-s <= -w`. A larger step than window size is rejected.
-
-## Missing or unexpected outputs
-
-### FASTA run wrote fewer files than expected
-
-By default, FASTA mode writes:
-
-- `*_terminal_telomeres.bed`
-- `*_interstitial_telomeres.bed`
-- `*_gaps.bed`
-- `*_report.tsv`
-
-Everything else depends on flags:
-
-- `-r`: repeat-density, canonical-ratio, strand-ratio BEDgraphs
-- `-g`: GC BEDgraph
-- `-e`: entropy BEDgraph
-- `-m`: canonical and non-canonical match BED files
-- `--plot-report`: PDF report
-
-### GFA run did not write BED or TSV files
-
-That is expected. GFA mode writes only:
-
-```text
-<input>.telo.annotated.gfa
-```
-
-### `-n` did not change classification
-
-`-n/--manual-curation` reads both end windows of every contig and writes contig-terminal telomeres to `*_terminal_telomeres.bed` as `teloType=contig` rows. Contig rows never drive `type`, `anomaly`, or the length statistics in `*_report.tsv`; they appear lowercase in `granular`.
-
-### `--chr-only` missed a chromosome
-
-`--chr-only` misses a chromosome when its name breaks the longest record's convention (for example `chromosome_X` beside `chr1`…`chr22`). Add `--include-bed FILE` with the missed name alongside `--chr-only`.
-
-### Runtime increased after enabling output flags
-
-`-r`, `-g`, `-e`, `-m`, and `-i` force the full scan instead of the fast end-only scan. `-n` keeps the fast scan but reads every contig's two end windows, which costs more than the default. That slowdown is expected.
-
-## Calls look wrong
-
-Start with the two files that drive most debugging:
-
-- `*_terminal_telomeres.bed`
-- `*_report.tsv`
-
-Most surprises come from `-c`, `-t`, `-l`, `-y`, `-k`, `-d`, or `-x`.
-
-### No telomeres were called
-
-Check these first:
-
-- `-c` matches the organism
-- `-t` and `--terminal-tolerance` reach far enough in for the telomere to start there (the start zone is the smaller of the two)
-- `-l` is not too strict
-- `-y` is not too strict
-- `-x` is not too strict for the assembly
-
-Use one permissive run first:
-
-```sh
-teloscope asm.fa -t 100000 --terminal-tolerance 100000 -l 200 -y 0.3 -x 1 --verbose
-```
-
-Then restore one threshold at a time.
-
-### Blocks are split or merged incorrectly
-
-`-d` sets how far a telomere may bridge non-telomeric sequence; `-k` joins matches into seeds.
-If a telomere is reported in pieces, raise `-d`.
-
-### Classification looks wrong
-
-`*_report.tsv` is based on the two arms: the first contig's p chain and the last contig's q chain.
-
-- `-n` reads both end windows of every contig and adds contig-terminal rows to `*_terminal_telomeres.bed`. It does not affect classification
-- `-n` does not change `t2t`, `incomplete`, `discordant_p`/`discordant_q`, `fragmented_p`/`fragmented_q`, or `none`
-
-If classification looks wrong, recheck:
-
-- `-c`
-- `-t` and `--terminal-tolerance`
-- whether you are comparing the two arms in `*_report.tsv` to contig-terminal rows in `*_terminal_telomeres.bed`
-
-### Pattern matching is slow or labels look wrong
-
-If runtime jumps after changing `-p` or `-x`, the search set likely got too large because of:
-
-- many entries in `-p`
-- IUPAC ambiguity codes
-- a larger `-x`
-
-If Teloscope warns that pattern count is unusually high, reduce ambiguity in `-p` or lower `-x`.
-
-If `p` and `q` labels look wrong, recheck `-c`. It sets the canonical repeat used for canonical counting and strand labeling.
-
-## GFA-specific behavior
-
-### The annotated GFA has no telomere nodes
-
-The usual causes are:
-
-- segment sequence is `*`, so there is nothing to scan
-- the detected block fails `-l` or `-y`
-- the segment end is not path-terminal in a graph with paths
-- `-c` does not match the assembly motif
-
-### Only some segment ends were annotated
-
-When paths are present, Teloscope annotates path-terminal segment ends. It does not annotate every segment end in the graph.
-
-### Telomere nodes draw long lines across the graph
-
-Telomere caps use `L` links at `0M` overlap, the direct adjacency a cap represents, so BandageNG draws them as short caps. If the graph still looks cluttered, try a layout reset in BandageNG.
-
-### You want to confirm that telomere nodes were added
-
-Check the annotated graph directly:
-
-```sh
-rg "telomere_" results/asm.gfa.telo.annotated.gfa
-```
-
-## Report generation
-
-### `Axes.boxplot() got an unexpected keyword argument 'orientation'`
-
-Report scripts from before this fix needed matplotlib 3.10 or newer. Update Teloscope's `scripts/`, or upgrade matplotlib.
-
-### Teloscope could not find `teloscope_report.py`
-
-If you see `Warning: Could not locate teloscope_report.py` or `Warning: Report generation failed`, run the script directly:
-
-```sh
-python3 scripts/teloscope_report.py results/
-```
-
-### The standalone report script says files are missing
-
-Point it at a Teloscope output directory, not the repo root:
-
-```sh
-python3 scripts/teloscope_report.py results/
-```
-
-At minimum, that directory must contain `*_terminal_telomeres.bed` or `*_interstitial_telomeres.bed`.
-
-## Quick checklist
-
-If a run looks wrong, check these in order:
-
-1. Confirm whether you are running FASTA mode or GFA mode.
-2. Confirm the canonical motif in `-c`.
-3. Confirm which optional outputs you actually requested.
-4. Check whether `-r`, `-g`, `-e`, `-m`, or `-i` forced the full scan.
-5. Revisit `-t`, `-l`, `-y`, `-k`, and `-d`.
-6. Rerun once with `--cmd --verbose`.
+- The script needs `*_terminal_telomeres.bed` or `*_interstitial_telomeres.bed` in that directory, so point it at the outputs, not the repo root.

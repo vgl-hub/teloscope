@@ -2,8 +2,8 @@ testFiles/density_edge.fa -f testFiles/density_edge.fa -l 1000 -y 0.3
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	chr_density	1	p	0	incomplete	.	P
+pos	header	telomeres	labels	gaps	type	anomaly
+1	chr_density	1	p	0	incomplete	.
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -18,12 +18,12 @@ Median length:	1194
 Min length:	1194
 Max length:	1194
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	0
 One telomere:	1
 Zero telomeres:	0
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	0
 Gapped T2T:	0
 Incomplete:	1

@@ -1064,9 +1064,6 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
                 std::make_move_iterator(segmentData.nonCanonicalMatches.end())
             );
 
-            pathData.canonicalCounts += segmentData.canonicalCounts;
-            pathData.windowCounts += segmentData.windowCounts;
-
             absPos += sequence.size();
 
         }else if (component->componentType == GAP){
@@ -1082,8 +1079,7 @@ bool Teloscope::walkPath(InPath* path, std::vector<InSegment*> &inSegments, std:
 
     }
 
-    labelTerminalBlocks(pathData.terminalBlocks,
-                        pathData.terminalLabel, pathData.scaffoldType, pathData.anomalyFlags);
+    labelTerminalBlocks(pathData.terminalBlocks, pathData.scaffoldType, pathData.anomalyFlags);
     threadLog.add("\tCompleted walking path:\t" + path->getHeader());
 
     std::lock_guard<std::mutex> lck(mtx);

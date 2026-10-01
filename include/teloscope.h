@@ -147,13 +147,11 @@ struct WindowData {
 
 struct SegmentData {
     std::vector<WindowData> windows;
-    uint64_t windowCounts = 0;
     std::vector<TelomereBlock> terminalBlocks;
     std::vector<std::string> terminalSeqs; // -a: one sequence per terminalBlocks entry
     std::vector<TelomereBlock> interstitialBlocks;
     std::vector<MatchSeqInfo> canonicalMatches;
     std::vector<MatchSeqInfo> nonCanonicalMatches;
-    uint64_t canonicalCounts = 0;
     uint64_t fwdCounts = 0;
     uint64_t revCounts = 0;
     std::vector<MatchInfo> allMatches;
@@ -193,14 +191,11 @@ struct PathData {
     std::vector<GapInfo> gapInfos;
     uint64_t pathSize;
     std::vector<WindowData> windows;
-    uint64_t windowCounts = 0;
     std::vector<TelomereBlock> terminalBlocks;
     std::vector<std::string> terminalSeqs; // -a: one sequence per terminalBlocks entry
     std::vector<TelomereBlock> interstitialBlocks;
     std::vector<MatchSeqInfo> canonicalMatches;
     std::vector<MatchSeqInfo> nonCanonicalMatches;
-    uint64_t canonicalCounts = 0;
-    std::string terminalLabel;
     ScaffoldType scaffoldType = ScaffoldType::NONE;
     uint8_t anomalyFlags = 0;
 };
@@ -213,14 +208,12 @@ class Teloscope {
     
     // Assembly Summary
     uint32_t totalPaths = 0;
-    uint32_t totalNWindows = 0;
     uint32_t totalTelomeres = 0;
     // bucketed on the count actually reported, so every path lands in exactly one
     uint32_t totalTwoTelomeres = 0;
     uint32_t totalOneTelomere = 0;
     uint32_t totalZeroTelomeres = 0;
     uint32_t totalITS = 0;
-    uint32_t totalCanMatches = 0;
     uint32_t totalGaps = 0;
     uint64_t scaffoldN50 = 0;
     uint64_t contigN50 = 0;
@@ -331,8 +324,7 @@ public:
         std::vector<TelomereBlock>& outBlocks);
 
     void labelTerminalBlocks(std::vector<TelomereBlock>& blocks,
-                        std::string& terminalLabel, ScaffoldType& scaffoldType,
-                        uint8_t& anomalyFlags);
+                        ScaffoldType& scaffoldType, uint8_t& anomalyFlags);
     
     void writeBEDFile(std::ofstream& windowDensityFile,
                     std::ofstream& windowCanonicalRatioFile,

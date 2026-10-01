@@ -1,5 +1,5 @@
 site_name: Teloscope
-site_description: Scan assembly ends for telomeric repeats — FASTA, FASTA.gz, and GFA aware.
+site_description: Telomere annotation for genome assemblies and reads.
 site_url: https://teloscope.readthedocs.io/
 repo_url: https://github.com/vgl-hub/teloscope
 repo_name: vgl-hub/teloscope
@@ -62,8 +62,8 @@ nav:
   - Classification: classification.md
   - Algorithm: algorithm.md
   - Report generation: report.md
-  - Simulation: simulation.md
-  - Testing: testing.md
   - Troubleshooting: troubleshooting.md
+  - Testing: testing.md
+  - Simulation: simulation.md
   - Release checklist: release.md
   - Validation format: https://github.com/vgl-hub/teloscope/blob/main/validateFiles/README.md

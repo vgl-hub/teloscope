@@ -88,8 +88,8 @@ check_file_count "-a flag file count" 5 "$TMPDIR"
 # Test: -i's file count equals the default; check the full-scan report gains the its column instead
 DEFAULT_HEADER=$(build/bin/teloscope -f testFiles/t2t.fa 2>/dev/null | grep "^pos	header")
 I_HEADER=$(build/bin/teloscope -f testFiles/t2t.fa -i 2>/dev/null | grep "^pos	header")
-check_output_not_contains "default report has no its column" "	its	" "$DEFAULT_HEADER"
-check_output_contains "-i report has an its column" "	its	" "$I_HEADER"
+check_output_not_contains "default report has no its column" "	its" "$DEFAULT_HEADER"
+check_output_contains "-i report has an its column" "	its" "$I_HEADER"
 
 # Test: -r -g -e produces 9 files
 rm -rf "$TMPDIR"/* 2>/dev/null || true
@@ -120,9 +120,9 @@ T2T_DEFAULT=$(build/bin/teloscope -f testFiles/t2t.fa 2>/dev/null)
 T2T_R=$(build/bin/teloscope -f testFiles/t2t.fa -r -o "$TMPDIR" 2>/dev/null)
 T2T_M=$(build/bin/teloscope -f testFiles/t2t.fa -m -o "$TMPDIR" 2>/dev/null)
 
-check_output_contains "t2t default: type=t2t" "t2t	.	PQ" "$T2T_DEFAULT"
-check_output_contains "t2t -r: type=t2t" "t2t	.	PQ" "$T2T_R"
-check_output_contains "t2t -m: type=t2t" "t2t	.	PQ" "$T2T_M"
+check_output_contains "t2t default: type=t2t" "2	pq	0	t2t	." "$T2T_DEFAULT"
+check_output_contains "t2t -r: type=t2t" "2	pq	0	t2t	." "$T2T_R"
+check_output_contains "t2t -m: type=t2t" "2	pq	0	t2t	." "$T2T_M"
 
 # =====================================================
 # Classification tests on synthetic data
@@ -130,42 +130,42 @@ check_output_contains "t2t -m: type=t2t" "t2t	.	PQ" "$T2T_M"
 
 # All 10 scaffold types
 OUT=$(build/bin/teloscope -f testFiles/t2t.fa 2>/dev/null)
-check_output_contains "t2t classification" "t2t	.	PQ" "$OUT"
+check_output_contains "t2t classification" "2	pq	0	t2t	." "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/incomplete_p.fa 2>/dev/null)
-check_output_contains "incomplete_p classification" "incomplete	.	P" "$OUT"
+check_output_contains "incomplete_p classification" "1	p	0	incomplete	." "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/incomplete_q.fa 2>/dev/null)
-check_output_contains "incomplete_q classification" "incomplete	.	Q" "$OUT"
+check_output_contains "incomplete_q classification" "1	q	0	incomplete	." "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/no_telo.fa 2>/dev/null)
-check_output_contains "no_telo classification" "none	.	" "$OUT"  # tab-anchored: a bare "none" also matches the header chr_none
+check_output_contains "no_telo classification" "0	none	0	none	." "$OUT"
 
 # fragmented arms: a small array behind a gap longer than the tip drags coverage below -y and chains as a second block
 OUT=$(build/bin/teloscope -f testFiles/misassembly.fa 2>/dev/null)
-check_output_contains "fragmented_p classification" "incomplete	fragmented_p	P" "$OUT"
+check_output_contains "fragmented_p classification" "1	p	0	incomplete	fragmented_p" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/misassembly_qq.fa 2>/dev/null)
-check_output_contains "fragmented_q classification" "incomplete	fragmented_q	Q" "$OUT"
+check_output_contains "fragmented_q classification" "1	q	0	incomplete	fragmented_q" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/discordant.fa 2>/dev/null)
-check_output_contains "discordant classification" "incomplete	discordant_q	Q*" "$OUT"
+check_output_contains "discordant classification" "1	q	0	incomplete	discordant_q" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/gapped_t2t.fa 2>/dev/null)
-check_output_contains "gapped_t2t classification" "t2t	.	PQ" "$OUT"
+check_output_contains "gapped_t2t classification" "2	pq	1	t2t	." "$OUT"
 
 # fragmented-arm detection: an unrelated N-gap sits in the tail contig
 OUT=$(build/bin/teloscope -f testFiles/gapped_misassembly.fa 2>/dev/null)
-check_output_contains "gapped_misassembly classification" "1	incomplete	fragmented_p	P" "$OUT"
+check_output_contains "gapped_misassembly classification" "1	p	1	incomplete	fragmented_p" "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/gapped_incomplete.fa 2>/dev/null)
-check_output_contains "gapped_incomplete classification" "incomplete	.	P" "$OUT"
+check_output_contains "gapped_incomplete classification" "1	p	1	incomplete	." "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/gapped_none.fa 2>/dev/null)
-check_output_contains "gapped_none classification" "	1	none	.	" "$OUT"  # tab-anchored: "gapped_none" alone matches the header
+check_output_contains "gapped_none classification" "0	none	1	none	." "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/gapped_discordant.fa 2>/dev/null)
-check_output_contains "gapped_discordant classification" "incomplete	discordant_q	Q*" "$OUT"
+check_output_contains "gapped_discordant classification" "1	q	1	incomplete	discordant_q" "$OUT"
 
 # =====================================================
 # Spelling consistency
@@ -187,16 +187,16 @@ check_output_contains "-l 1000 kills 600bp blocks" "none" "$OUT"
 
 # -t flag: caps the start zone; t2t.fa's arms sit at 0, so use an array 2500 bp in instead, which -t 100 puts out of reach.
 OUT=$(build/bin/teloscope -f testFiles/synthetic/th_tol_2500.fa 2>/dev/null)
-check_output_contains "th_tol_2500 default: within the zone" "incomplete	.	P" "$OUT"
+check_output_contains "th_tol_2500 default: within the zone" "1	p	0	incomplete	." "$OUT"
 OUT=$(build/bin/teloscope -f testFiles/synthetic/th_tol_2500.fa -t 100 2>/dev/null)
 check_output_contains "-t 100 shrinks the zone past 2500 bp" "none" "$OUT"
 
 # -y flag: density threshold controls block survival
 OUT=$(build/bin/teloscope -f testFiles/density_edge.fa -y 0.8 2>/dev/null)
-check_output_contains "-y 0.8 kills 50% density block" "incomplete	.	Q" "$OUT"
+check_output_contains "-y 0.8 kills 50% density block" "1	q	0	incomplete	." "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/density_edge.fa -y 0.3 2>/dev/null)
-check_output_contains "-y 0.3 keeps 50% density block" "t2t	.	PQ" "$OUT"
+check_output_contains "-y 0.3 keeps 50% density block" "2	pq	0	t2t	." "$OUT"
 
 # -k flag: small merge distance prevents block formation
 OUT=$(build/bin/teloscope -f testFiles/density_edge.fa -k 1 2>/dev/null)

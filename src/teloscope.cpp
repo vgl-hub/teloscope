@@ -609,9 +609,8 @@ void Teloscope::getInterstitialBlocks(const std::vector<MatchInfo>& matches,
 
 void Teloscope::labelTerminalBlocks(
     std::vector<TelomereBlock>& blocks,
-    std::string& terminalLabel, ScaffoldType& scaffoldType, uint8_t& anomalyFlags) {
+    ScaffoldType& scaffoldType, uint8_t& anomalyFlags) {
 
-    terminalLabel.clear();
     anomalyFlags = 0;
 
     std::sort(blocks.begin(), blocks.end(),
@@ -622,13 +621,7 @@ void Teloscope::labelTerminalBlocks(
     TelomereBlock* armP = nullptr;
     TelomereBlock* armQ = nullptr;
 
-    // uppercase for arms, lowercase for contig rows, '*' after a discordant row
     for (auto& block : blocks) {
-        char letter = block.isScaffold ? static_cast<char>(std::toupper(block.anchorSide))
-                                        : block.anchorSide;
-        terminalLabel += letter;
-        if (block.strandLabel != block.anchorSide) terminalLabel += '*';
-
         if (!block.isScaffold) continue;
         if (block.anchorSide == 'p') armP = &block; else armQ = &block;
     }
@@ -748,7 +741,6 @@ void Teloscope::analyzeWindow(const std::string_view &window, uint64_t windowSta
                     if (isCanonical) {
                         windowData.canonicalCounts++;
                         windowData.canonicalCovered += matchLen;
-                        segmentData.canonicalCounts++;
                         if (needMatchSeq) {
                             segmentData.canonicalMatches.push_back({matchPos, std::string(window.data() + i, matchLen)});
                         }
@@ -833,7 +825,6 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos,
                         bool isCanonical = trie.isCanonical(node);
 
                         out.push_back({absPos + i, len, isCanonical, isForward});
-                        if (isCanonical) segmentData.canonicalCounts++;
                         if (isForward) segmentData.fwdCounts++;
                         else segmentData.revCounts++;
                     }
@@ -941,7 +932,6 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos,
             // Update windowData
             windowData.windowStart = windowStart + absPos;
             windowData.currentWindowSize = currentWindowSize;
-            segmentData.windowCounts++;
             if (keepWindows) windows.emplace_back(windowData);
 
             prevOverlapData = nextOverlapData;
@@ -973,8 +963,8 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos,
     bool haveP = chainP.pieces > 0, haveQ = chainQ.pieces > 0;
     if (haveP && haveQ && chainP.strandLabel == chainQ.strandLabel &&
         chainP.start + chainP.blockLen > chainQ.start) {
-        // one array reached from both ends belongs to the end its strand points to
-        if (chainP.strandLabel == 'q') chainP = chainQ;
+        // one array reached from both ends belongs to the scaffold end, else to the end its strand points to
+        if (isFirst != isLast ? isLast : chainP.strandLabel == 'q') chainP = chainQ;
         haveQ = false;
     }
     if (haveP) chainP.isScaffold = (chainP.anchorSide == 'p') ? isFirst : isLast;
@@ -1039,8 +1029,8 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
     writeProvenanceHeader(
         reportFile, userInput,
         userInput.ultraFastMode
-            ? "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular"
-            : "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular\tits\tcanonical\twindows");
+            ? "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly"
+            : "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tits");
 
     // BEDgraph headers
     if (userInput.outWinRepeats) {
@@ -1058,11 +1048,11 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
     // Report header (console + file)
     std::cout << "\n+++ Path Summary Report +++\n";
     if (!userInput.ultraFastMode) {
-        std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular\tits\tcanonical\twindows\n";
-        reportFile << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular\tits\tcanonical\twindows\n";
+        std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tits\n";
+        reportFile << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tits\n";
     } else {
-        std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular\n";
-        reportFile << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\tgranular\n";
+        std::cout << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\n";
+        reportFile << "pos\theader\ttelomeres\tlabels\tgaps\ttype\tanomaly\n";
     }
 
     // Processing paths
@@ -1166,13 +1156,11 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
         std::cout << pos + 1 << "\t" << header << "\t"
                 << longestCount << "\t" << labelsStr << "\t"
                 << gaps << "\t" << typeStr << "\t"
-                << anomalyStr << "\t"
-                << pathData.terminalLabel;
+                << anomalyStr;
         reportFile << pos + 1 << "\t" << header << "\t"
                 << longestCount << "\t" << labelsStr << "\t"
                 << gaps << "\t" << typeStr << "\t"
-                << anomalyStr << "\t"
-                << pathData.terminalLabel;
+                << anomalyStr;
 
         totalTelomeres += longestCount;
         if (longestCount == 0) totalZeroTelomeres++;
@@ -1182,18 +1170,9 @@ void Teloscope::writeBEDFile(std::ofstream& windowDensityFile,
 
         // Expand path summary
         if (!userInput.ultraFastMode) {
-            std::cout << "\t"
-                    << pathData.interstitialBlocks.size() << "\t"
-                    << pathData.canonicalCounts << "\t"
-                    << pathData.windowCounts;
-            reportFile << "\t"
-                    << pathData.interstitialBlocks.size() << "\t"
-                    << pathData.canonicalCounts << "\t"
-                    << pathData.windowCounts;
-
-            totalNWindows += pathData.windowCounts;
+            std::cout << "\t" << pathData.interstitialBlocks.size();
+            reportFile << "\t" << pathData.interstitialBlocks.size();
             totalITS += pathData.interstitialBlocks.size();
-            totalCanMatches += pathData.canonicalCounts;
         }
         std::cout << "\n";
         reportFile << "\n";
@@ -1367,8 +1346,6 @@ void Teloscope::printSummary(std::ofstream& reportFile) {
 
     if (!userInput.ultraFastMode) {
         out("Total ITS blocks:\t", totalITS, "\n");
-        out("Total canonical matches:\t", totalCanMatches, "\n");
-        out("Total windows analyzed:\t", totalNWindows, "\n");
     }
 
     out("\n+++ Telomere Statistics +++\n");
@@ -1382,13 +1359,13 @@ void Teloscope::printSummary(std::ofstream& reportFile) {
         out("No telomeres found for statistics.\n");
     }
 
-    out("\n+++ Chromosome Telomere Counts+++\n");
+    out("\n+++ Chromosome Telomere Counts +++\n");
     out("Two telomeres:\t", totalTwoTelomeres, "\n");
     out("One telomere:\t", totalOneTelomere, "\n");
     out("Zero telomeres:\t", totalZeroTelomeres, "\n");
 
     // these six partition the scaffolds, which is the property worth protecting
-    out("\n+++ Chromosome Telomere/Gap Completeness+++\n");
+    out("\n+++ Chromosome Telomere/Gap Completeness +++\n");
     out("T2T:\t", totalT2T, "\n");
     out("Gapped T2T:\t", totalGappedT2T, "\n");
 

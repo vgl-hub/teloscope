@@ -24,6 +24,9 @@ ifeq ($(OS),Windows_NT)
     EXE := .exe
 endif
 
+# the binary every Python test recipe hands its script, .exe included on Windows
+TELOSCOPE_BIN := $(BUILD)/$(TARGET)$(EXE)
+
 GFALIBS_DIR := $(CURDIR)/gfalibs
 
 OBJS := main teloscope input tools read-filter bgzf bam
@@ -83,10 +86,10 @@ fixtures-check:
 	bash testFiles/generate_synthetic.sh --check
 
 test-intent: head
-	TELOSCOPE="$(BUILD)/$(TARGET)$(EXE)" python3 scripts/test_synthetic_intent.py
+	TELOSCOPE="$(TELOSCOPE_BIN)" python3 scripts/test_synthetic_intent.py
 
 test-invariants: head
-	TELOSCOPE="$(BUILD)/$(TARGET)$(EXE)" python3 scripts/check_invariants.py
+	TELOSCOPE="$(TELOSCOPE_BIN)" python3 scripts/check_invariants.py
 
 test-synthetic: fixtures-check test-intent test-invariants
 
@@ -97,21 +100,21 @@ test-n50: head
 	bash scripts/test_n50.sh
 
 test-bam: head
-	python3 scripts/test_bam_subset.py
+	TELOSCOPE="$(TELOSCOPE_BIN)" python3 scripts/test_bam_subset.py
 
 .PHONY: test-read-tl
 test-read-tl: head
-	TELOSCOPE="$(BUILD)/$(TARGET)" python3 scripts/test_read_tl.py
+	TELOSCOPE="$(TELOSCOPE_BIN)" python3 scripts/test_read_tl.py
 
 .PHONY: test-filters
 test-filters: head
-	TELOSCOPE="$(BUILD)/$(TARGET)" python3 scripts/test_sequence_filters.py
+	TELOSCOPE="$(TELOSCOPE_BIN)" python3 scripts/test_sequence_filters.py
 
 .PHONY: test-bam-hardening test-bam-coverage test-bam-sanitize
 test-bam-hardening: head
-	TELOSCOPE="$(BUILD)/$(TARGET)" BAM_MUTATION_CASES="$${BAM_MUTATION_CASES:-512}" python3 scripts/test_bam_subset.py
+	TELOSCOPE="$(TELOSCOPE_BIN)" BAM_MUTATION_CASES="$${BAM_MUTATION_CASES:-512}" python3 scripts/test_bam_subset.py
 	BUILD_DIR="$(BUILD)" CXX="$(CXX)" bash scripts/test_bgzf_faults.sh
-	TELOSCOPE="$(BUILD)/$(TARGET)" python3 scripts/test_bam_samtools.py
+	TELOSCOPE="$(TELOSCOPE_BIN)" python3 scripts/test_bam_samtools.py
 
 test-bam-coverage:
 	CXX="$(CXX)" bash scripts/test_bam_coverage.sh

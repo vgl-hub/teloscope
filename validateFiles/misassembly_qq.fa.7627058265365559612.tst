@@ -2,8 +2,8 @@ testFiles/misassembly_qq.fa
 embedded
 
 +++ Path Summary Report +++
-pos	header	telomeres	labels	gaps	type	anomaly	granular
-1	chr_misassembly_qq	1	q	0	incomplete	fragmented_q	Q
+pos	header	telomeres	labels	gaps	type	anomaly
+1	chr_misassembly_qq	1	q	0	incomplete	fragmented_q
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -18,12 +18,12 @@ Median length:	900
 Min length:	900
 Max length:	900
 
-+++ Chromosome Telomere Counts+++
++++ Chromosome Telomere Counts +++
 Two telomeres:	0
 One telomere:	1
 Zero telomeres:	0
 
-+++ Chromosome Telomere/Gap Completeness+++
++++ Chromosome Telomere/Gap Completeness +++
 T2T:	0
 Gapped T2T:	0
 Incomplete:	1

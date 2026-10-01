@@ -3,25 +3,27 @@
 teloscope_report.py — Publication-ready figures from Teloscope output.
 
 Usage:
-    python teloscope_report.py <output_directory> [-o report.pdf]
-    python teloscope_report.py <output_directory> --png
+    python teloscope_report.py <output_directory> [-j 8]
+    python teloscope_report.py <output_directory>/<input> [--png] [-o figures/]
 
-Reads Teloscope output files and writes separate terminal and ITS PDFs by default.
+Plots every run in the directory, named after its input, that has no report
+yet, several at once; a run named by its file stem is plotted again. Each run
+gets a terminal and an ITS PDF.
   Terminal: assembly overview and per-chromosome terminal zoom figures.
   ITS: observed-row distributions, paginated atlas, candidates, selected loci.
-Use --section all for a combined PDF, or terminal/its to select one section.
 
 Requires: Python 3.6+, matplotlib, numpy, pandas
 """
 
 import sys
 import os
-import glob
 import re
 import argparse
 import textwrap
 import inspect
+import traceback
 from collections import Counter, defaultdict, OrderedDict
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, wait
 
 import numpy as np
 import pandas as pd
@@ -32,11 +34,13 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Rectangle, Patch, ConnectionPatch
 from matplotlib.lines import Line2D
-from matplotlib.collections import LineCollection, PatchCollection
+from matplotlib.collections import LineCollection, PatchCollection, PolyCollection
+import matplotlib.colors as mcolors
 import matplotlib.ticker as ticker
 import matplotlib.patheffects as patheffects
-from matplotlib import transforms
-from matplotlib.colors import LinearSegmentedColormap, LogNorm
+from matplotlib import cbook, transforms
+from matplotlib.font_manager import FontProperties
+from matplotlib.textpath import TextToPath
 
 # ---------------------------------------------------------------------------
 # Nature-style configuration
@@ -46,8 +50,16 @@ from matplotlib.colors import LinearSegmentedColormap, LogNorm
 FIG_WIDTH_SINGLE = 3.50    # inches (89 mm)
 FIG_WIDTH_DOUBLE = 7.20    # inches (183 mm)
 REPORT_PAGE_HEIGHT = 2.2 + 0.25 * 6  # terminal page with all six tracks
-ITS_ATLAS_ROWS = 20  # two columns of ten; paginate instead of shrinking text
-ITS_POSITION_BINS = 100
+SLIDE_SIZE = (FIG_WIDTH_DOUBLE, REPORT_PAGE_HEIGHT)  # one page size for every report page
+ATLAS_PITCH_IN, ATLAS_GROUP_GAP_IN, ATLAS_BAR_IN = 0.10, 0.05, 0.04  # fixed row pitch, extra gap between homolog groups, bar
+ATLAS_HEADER_IN, ATLAS_KEY_IN, ATLAS_FOOT_IN, ATLAS_AXIS_IN = 0.36, 0.74, 0.06, 0.30
+ATLAS_COLUMNS, ATLAS_COL_GAP_IN = 2, 0.30
+ATLAS_TIERS = (2, 4)  # size tiers of homolog groups per page height (halves, then quartiles), each on its own axis
+ATLAS_HEIGHTS = (SLIDE_SIZE[1], 2 * SLIDE_SIZE[1])  # one slide, else a double slide within Nature's 247 mm page
+ITS_LENGTH_COLOR = "#91C9C1"  # teal, outside the double-key hues
+ATLAS_BACKBONE = "#E8E8E8"  # light scaffold backbone behind atlas ITS cells
+ATLAS_MARKS = ("#000000", "#5E5E5E", "#9A9A9A")  # F/L/C triangle shades, rarest darkest and on top
+ATLAS_STRETCH = 3.0  # rows may spread up to this many times the fixed pitch to fill the page
 
 COLORS = {
     # Classification palette (colorblind-friendly, quality-graduated)
@@ -76,15 +88,8 @@ COLORS = {
     "no_data":      "#e0e0e0",
 }
 
-# ITS junction classes, fixed order; fusion is the one accent hue, the rest recede to greys picked for >=3:1 contrast on white.
+# ITS junction classes, fixed order.
 CLASS_ORDER = ["fusion", "tail_to_tail", "fragmentation", "single"]
-CLASS_SHORT = {"fusion": "fusion", "tail_to_tail": "t2t", "fragmentation": "frag", "single": "single"}
-CLASS_COLORS = {
-    "fusion":        COLORS["q"],
-    "tail_to_tail":  COLORS["terminal"],  # #4A4A4A, contrast 8.9:1
-    "fragmentation": "#6E6E6E",           # contrast 5.1:1
-    "single":        COLORS["its"],       # #8C8C8C, contrast 3.4:1
-}
 
 # Text glyphs keep the directional symbols light while remaining editable in PDF export.
 BLOCK_GLYPHS = {
@@ -99,6 +104,15 @@ ITS_ORIENT_COLORS["unknown"] = COLORS["its"]
 ITS_ORIENT_LABELS = (("p", "p (forward)"), ("q", "q (reverse)"),
                      ("b", "balanced"), ("unknown", "unknown"))
 ZOOM_COLOR = COLORS["Discordant"]  # red box/funnel marking a zoom region
+# Double key: hue = strand (rev, both, fwd), opacity = canonicity (nonCan, mixed, can).
+DOUBLE_KEY_BASE = ("#D55E00", "#88307A", "#0072B2")
+DOUBLE_KEY_ALPHA = (0.40, 0.70, 1.0)
+DOUBLE_KEY_RGBA = tuple(tuple(mcolors.to_rgba(b, a) for b in DOUBLE_KEY_BASE) for a in DOUBLE_KEY_ALPHA)
+DOUBLE_KEY_COLORS = tuple(tuple(mcolors.to_hex([a * v + 1 - a for v in mcolors.to_rgb(b)]) for b in DOUBLE_KEY_BASE)
+                          for a in DOUBLE_KEY_ALPHA)  # the same cells flattened on white, for opaque marks
+DOUBLE_KEY_STRAND = ("rev", "both", "fwd")
+DOUBLE_KEY_CANON = ("nonCan", "mixed", "can")
+LABEL_THRESHOLD = 0.667  # engine default for symmetric thirds
 ITS_CLUSTER_MERGE_GAP = 50_000
 MAX_COORD = 2**53 - 1  # exact-integer limit for float64 BED coordinates
 ITS_CLUSTER_MIN_ROWS = 3
@@ -112,16 +126,12 @@ FLAGGED_SCAFFOLD_CATEGORIES = (
     "Gapped Discordant",
 )
 
-FIGURE_TITLE_SIZE = 9.3
 FIGURE_SUMMARY_SIZE = 6.0
 PANEL_LABEL_SIZE = 8.0
 PANEL_TITLE_SIZE = 6.9
 AXIS_LABEL_SIZE = 6.2
 AXIS_TICK_SIZE = 5.5
-PANEL_D_TICK_SIZE = 5.0  # panel d's two narrow log-x sub-panels need smaller decade ticks
 LEGEND_TEXT_SIZE = 5.4
-TABLE_TEXT_SIZE = 6.5
-TABLE_ROW_IN = 0.135  # fixed physical row height (header + data rows alike) for ITS tables
 MIN_TEXT_SIZE = 5.0
 ANNOTATION_TEXT_SIZE = MIN_TEXT_SIZE
 PLACEHOLDER_TEXT_SIZE = 6.2
@@ -132,6 +142,8 @@ BLOCK_GLYPH_MIN_FRACTION = {
     "b": 0.030,
 }
 TRACK_LABEL_X = -0.10
+PANEL_LETTER_X_IN = 0.24  # leftmost panel letter, as on the terminal page
+PANEL_LETTER_DX_IN = 0.36  # other letters sit this far left of their axes
 
 def _apply_nature_style():
     """Apply Nature journal rcParams globally."""
@@ -196,27 +208,74 @@ def _bad_interval(start, end):
 # Parsing helpers
 # ---------------------------------------------------------------------------
 
-def find_files(directory):
-    """Auto-detect Teloscope output files in *directory*."""
-    files = {}
-    patterns = {
-        "terminal":        "*_terminal_telomeres.bed",
-        "interstitial":    "*_interstitial_telomeres.bed",
-        "gaps":            "*_gaps.bed",
-        "density":         "*_window_repeat_density.bedgraph",
-        "canonical_ratio": "*_window_canonical_ratio.bedgraph",
-        "strand_ratio":    "*_window_strand_ratio.bedgraph",
-        "gc":              "*_window_gc.bedgraph",
-        "entropy":         "*_window_entropy.bedgraph",
-        "report":          "*_report.tsv",
-    }
-    for key, pat in patterns.items():
-        hits = sorted(glob.glob(os.path.join(directory, pat)))
-        if hits:
-            if len(hits) > 1:
-                _warn(f"Multiple matches for '{pat}' in '{directory}'; using '{hits[0]}'.")
-            files[key] = hits[0]
-    return files
+# every file of a run is named <input><suffix>, so the input name keys the run
+RUN_FILES = {
+    "terminal":        "_terminal_telomeres.bed",
+    "interstitial":    "_interstitial_telomeres.bed",
+    "gaps":            "_gaps.bed",
+    "density":         "_window_repeat_density.bedgraph",
+    "canonical_ratio": "_window_canonical_ratio.bedgraph",
+    "strand_ratio":    "_window_strand_ratio.bedgraph",
+    "gc":              "_window_gc.bedgraph",
+    "entropy":         "_window_entropy.bedgraph",
+    "matches":         "_canonical_matches.bed",
+    "report":          "_report.tsv",
+}
+
+
+def _is_reads_run(files):
+    """A reads run writes a terminal BED too, but its report declares metric/value columns."""
+    if "interstitial" in files or "report" not in files:
+        return False
+    with open(files["report"]) as fh:
+        for line in fh:
+            if not line.startswith("#"):
+                return False
+            if line.startswith("#columns\t"):
+                return line.startswith("#columns\tmetric\t")
+    return False
+
+
+def find_runs(directory):
+    """Assembly runs in *directory*, keyed by input name, each mapping a file type to its path."""
+    runs = defaultdict(dict)
+    for name in sorted(os.listdir(directory)):
+        for key, suffix in RUN_FILES.items():
+            if name.endswith(suffix) and not name.startswith("."):
+                runs[name[:-len(suffix)]][key] = os.path.join(directory, name)
+    return {run: files for run, files in sorted(runs.items())
+            if ("terminal" in files or "interstitial" in files) and not _is_reads_run(files)}
+
+
+def resolve_runs(target):
+    """Directory and runs at *target*: every run of an output directory, or the one at a file stem (results/asm.fa)."""
+    directory, run = (target, None) if os.path.isdir(target) else os.path.split(target)
+    directory = directory or "."
+    if not os.path.isdir(directory):
+        sys.exit(f"Error: '{directory}' is not a directory.")
+    runs = find_runs(directory)
+    if run is not None and run not in runs:
+        sys.exit(f"Error: no Teloscope run '{run}' in '{directory}'"
+                 + (f", which holds {', '.join(runs)}" if runs else "") + ".")
+    if not runs:
+        sys.exit(f"Error: Missing teloscope output files in '{directory}'.\n"
+                 f"Run teloscope first to generate output files.")
+    return directory, ({run: runs[run]} if run is not None else runs)
+
+
+def find_files(target):
+    """Name and files of the one run at *target*."""
+    directory, runs = resolve_runs(target)
+    if len(runs) > 1:
+        sys.exit(f"Error: '{directory}' holds {len(runs)} runs; name one by its file stem, "
+                 f"such as {os.path.join(directory, next(iter(runs)))}.")
+    return next(iter(runs.items()))
+
+
+def report_paths(run, files, out_dir):
+    """The PDFs a run gets: terminal from its terminal BED, ITS from its ITS BED."""
+    return {key: os.path.join(out_dir, f"{run}_plot_report_{tag}.pdf")
+            for key, tag in (("terminal", "terminal"), ("interstitial", "its")) if key in files}
 
 
 def parse_terminal_bed(path):
@@ -401,7 +460,7 @@ def parse_bedgraph(path):
     try:
         df = pd.read_csv(path, sep="\t", header=None, skiprows=skip,
                          names=["chrom", "start", "end", "value"],
-                         dtype={"chrom": str, "start": np.int64,
+                         dtype={"chrom": "category", "start": np.int64,
                                 "end": np.int64, "value": np.float64},
                          engine="c", on_bad_lines="skip")
     except pd.errors.EmptyDataError:
@@ -412,14 +471,28 @@ def parse_bedgraph(path):
         return _parse_bedgraph_fallback(path)
 
     valid = ((df["start"] >= 0) & (df["end"] > df["start"]) &
-             (df["end"] <= MAX_COORD) & np.isfinite(df["value"]))
+             (df["end"] <= MAX_COORD) & np.isfinite(df["value"])).to_numpy()
     if not valid.all():
         _warn(f"Skipped {int((~valid).sum())} invalid BEDgraph row(s) from '{path}'.")
-    df = df.loc[valid].sort_values(["chrom", "start"], kind="mergesort")
-    data = OrderedDict()
-    for chrom, grp in df.groupby("chrom", sort=False):
-        data[chrom] = (grp["start"].values, grp["end"].values, grp["value"].values)
-    return data
+    # Plain arrays, filtered only when needed; each scaffold becomes a slice (a view) of them.
+    codes, names = df["chrom"].cat.codes.to_numpy(), df["chrom"].cat.categories
+    starts, ends, values = (df[c].to_numpy() for c in ("start", "end", "value"))
+    if not valid.all():
+        codes, starts, ends, values = codes[valid], starts[valid], ends[valid], values[valid]
+    del df
+    cuts = np.flatnonzero(codes[1:] != codes[:-1]) + 1
+    if len(cuts) + 1 > len(np.unique(codes)):  # a scaffold's windows are split up: group them, keeping file order
+        order = np.argsort(codes, kind="stable")
+        codes, starts, ends, values = codes[order], starts[order], ends[order], values[order]
+        cuts = np.flatnonzero(codes[1:] != codes[:-1]) + 1
+    data = {}
+    for lo, hi in zip(np.r_[0, cuts], np.r_[cuts, len(codes)]):
+        s, e, v = starts[lo:hi], ends[lo:hi], values[lo:hi]
+        if np.any(s[1:] < s[:-1]):  # engine output is already ordered; sort only when it is not
+            order = np.argsort(s, kind="stable")
+            s, e, v = s[order], e[order], v[order]
+        data[str(names[codes[lo]])] = (s, e, v)
+    return OrderedDict(sorted(data.items()))
 
 
 _ITS_COLUMNS = ["chr", "start", "end", "teloLen", "teloLabel", "closestEnd",
@@ -440,7 +513,6 @@ def load_its_frame(path, motif_len=6, blocks=None):
     df = pd.DataFrame(rows, columns=_ITS_COLUMNS).astype(_ITS_DTYPES)
 
     df["canonical_bp"] = (df["fwdCan"] + df["revCan"]) * motif_len
-    df["can_prop"] = np.where(df["teloLen"] > 0, df["canonical_bp"] / df["teloLen"], np.nan)
     # Missing/inconsistent scaffold sizes are not evidence of a q end; leave relative coordinates undefined instead.
     sizes = df.groupby("chr")["chrSize"].transform("max")
     ends = df.groupby("chr")["end"].transform("max")
@@ -450,8 +522,6 @@ def load_its_frame(path, motif_len=6, blocks=None):
     if uncertain:
         _warn(f"{uncertain} ITS scaffold(s) have missing or inconsistent sizes; relative positions are undefined.")
     df["chrSize"] = sizes.where(known_size, 0).astype(np.int64)
-    df["pos_frac"] = ((df["start"] + df["end"]) / 2.0 / df["chrSize"].replace(0, np.nan))
-    df["end_dist"] = np.minimum(df["start"], df["chrSize"] - df["end"]).where(known_size)
     return df
 
 
@@ -472,7 +542,8 @@ def read_params(report_tsv):
     line and silently leave the later keys at their defaults.
     """
     result = {"max_block_dist": 1000, "terminal_limit": None, "ultra_fast": None,
-              "motif_len": 6, "min_canonical_count": 4, "known_params": set()}
+              "motif_len": 6, "min_canonical_count": 4, "label_threshold": LABEL_THRESHOLD,
+              "known_params": set()}
     if not report_tsv:
         return result
     try:
@@ -504,6 +575,14 @@ def read_params(report_tsv):
                     if fwd_motif:
                         result["motif_len"] = len(fwd_motif)
                         result["known_params"].add("motif_len")
+                if "label_threshold" in tokens:
+                    try:
+                        value = float(tokens["label_threshold"])
+                        if 0.5 <= value <= 1.0:
+                            result["label_threshold"] = value
+                            result["known_params"].add("label_threshold")
+                    except ValueError:
+                        pass
                 if "min_canonical_count" in tokens:
                     try:
                         value = int(tokens["min_canonical_count"])
@@ -649,8 +728,7 @@ def get_chrom_sizes(blocks, *bedgraph_datasets):
 # ITS analysis: candidate fusion pairing and top hits
 # ---------------------------------------------------------------------------
 
-_PAIR_COLUMNS = ["chr", "start", "end", "q_bp", "p_bp", "min_arm", "combined_bp",
-                 "spacer_bp", "q_can_prop", "p_can_prop", "pos_frac"]
+_PAIR_COLUMNS = ["chr", "start", "end", "q_bp", "p_bp", "min_arm", "combined_bp", "spacer_bp"]
 
 
 def pair_fusions(df, gaps, d):
@@ -687,9 +765,6 @@ def pair_fusions(df, gaps, d):
         "end":          nxt.loc[mask, "end"].to_numpy().astype(np.int64),
         "q_bp":         ordered.loc[mask, "teloLen"].to_numpy(),
         "p_bp":         nxt.loc[mask, "teloLen"].to_numpy().astype(np.int64),
-        "q_can_prop":   ordered.loc[mask, "can_prop"].to_numpy(),
-        "p_can_prop":   nxt.loc[mask, "can_prop"].to_numpy(),
-        "chrSize":      ordered.loc[mask, "chrSize"].to_numpy(),
     })
 
     # drop pairs whose gap spans a real N-gap; searchsorted per chromosome, not per pair
@@ -713,52 +788,28 @@ def pair_fusions(df, gaps, d):
     cand["spacer_bp"] = np.clip(cand["p_start"] - cand["q_end"], 0, None).astype(np.int64)
     cand["min_arm"] = np.minimum(cand["q_bp"], cand["p_bp"])
     cand["combined_bp"] = cand["q_bp"] + cand["p_bp"]
-    cand["pos_frac"] = np.where(cand["chrSize"] > 0,
-                                (cand["start"] + cand["end"]) / 2.0 / cand["chrSize"], np.nan)
 
     cand = cand.sort_values(["min_arm", "combined_bp", "chr", "start", "end"],
                             ascending=[False, False, True, True, True]).reset_index(drop=True)
     return cand[_PAIR_COLUMNS]
 
 
-_LONG_ITS_COLUMNS = ["chr", "start", "end", "teloLen", "canonical_bp", "can_prop",
-                     "teloLabel", "teloType", "pos_frac"]
-_CLUSTER_COLUMNS = ["chr", "start", "end", "rows", "span", "its_bp", "canonical_bp"]
+_CLUSTER_COLUMNS = ["chr", "start", "end", "rows", "span", "its_bp"]
 
 
-def rank_long_its(df, top_n=25):
+def rank_long_its(df, top_n=5):
     """Long ITS rows ranked by canonical bp descending, ties broken by length descending."""
     if df.empty:
-        return df[_LONG_ITS_COLUMNS] if set(_LONG_ITS_COLUMNS) <= set(df.columns) else df
+        return df
     ranked = df.sort_values(["canonical_bp", "teloLen", "chr", "start", "end", "teloLabel", "teloType"],
                            ascending=[False, False, True, True, True, True, True]).reset_index(drop=True)
-    return ranked.head(top_n)[_LONG_ITS_COLUMNS]
-
-
-def its_top_hits(out_path, df, pairs, clusters, top_longest=25):
-    """Write <prefix>_its_top_hits.tsv: candidate fusions, long ITS by canonical bp, then clusters."""
-    with open(out_path, "w") as fh:
-        fh.write("# teloscope ITS top hits\n")
-        fh.write("# section 1: candidate fusion pairs (q->p), ranked by min(q_bp, p_bp) "
-                "descending, ties broken by combined_bp descending\n")
-        fh.write("#" + "\t".join(_PAIR_COLUMNS) + "\n")
-        pairs[_PAIR_COLUMNS].to_csv(fh, sep="\t", header=False, index=False, float_format="%.4f")
-
-        fh.write(f"# section 2: {top_longest} longest interstitial telomere rows by canonical bp "
-                "descending, ties broken by teloLen descending\n")
-        fh.write("#chr\tstart\tend\tteloLen\tcanonical_bp\tcan_prop\tlabel\tclass\tpos_frac\n")
-        rank_long_its(df, top_longest).to_csv(fh, sep="\t", header=False, index=False, float_format="%.4f")
-
-        fh.write("# section 3: ITS clusters (scaffold rows within 50 kb of each other) with "
-                ">= 3 rows, ranked by summed ITS bp descending\n")
-        fh.write("#chr\tstart\tend\trows\tspan\tits_bp\tcanonical_bp\n")
-        clusters[_CLUSTER_COLUMNS].to_csv(fh, sep="\t", header=False, index=False, float_format="%.4f")
+    return ranked.head(top_n)
 
 
 def compute_its_clusters(df, merge_gap=ITS_CLUSTER_MERGE_GAP):
     """Assign a cluster id to each ITS row: same scaffold, merged while the gap to the
     running-max end of earlier rows on that scaffold is <= merge_gap (vectorised; shared
-    by the ITS-1 ideogram, the ITS-2/TSV cluster tables, and plot_its.py's auto-window)."""
+    by the ITS-1 ideogram, the ITS-2 cluster tables, and plot_its.py's auto-window)."""
     if df.empty:
         out = df.copy()
         out["cluster_id"] = pd.Series(dtype=np.int64)
@@ -773,15 +824,13 @@ def compute_its_clusters(df, merge_gap=ITS_CLUSTER_MERGE_GAP):
 
 
 def summarize_its_clusters(df, merge_gap=ITS_CLUSTER_MERGE_GAP, min_rows=ITS_CLUSTER_MIN_ROWS):
-    """Per-cluster chr/start/end/rows/span/its_bp/canonical_bp, ranked by its_bp descending."""
+    """Per-cluster chr/start/end/rows/span/its_bp, ranked by its_bp descending."""
     if df.empty:
         return pd.DataFrame(columns=_CLUSTER_COLUMNS)
     clustered = compute_its_clusters(df, merge_gap)
-    if "canonical_bp" not in clustered.columns:
-        clustered = clustered.assign(canonical_bp=0)
     agg = clustered.groupby("cluster_id").agg(
         chr=("chr", "first"), start=("start", "min"), end=("end", "max"),
-        rows=("chr", "size"), its_bp=("teloLen", "sum"), canonical_bp=("canonical_bp", "sum"))
+        rows=("chr", "size"), its_bp=("teloLen", "sum"))
     agg = agg[agg["rows"] >= min_rows].copy()
     agg["span"] = agg["end"] - agg["start"]
     agg = agg.sort_values(["its_bp", "chr", "start", "end"],
@@ -817,7 +866,9 @@ def _format_bp_axis(ax, max_bp):
 
 
 def _pick_bp_unit(max_bp):
-    """Pick one bp/kb/Mb unit for a value or panel from its largest value."""
+    """Pick one bp/kb/Mb/Gb unit for a value or panel from its largest value."""
+    if max_bp >= 1_000_000_000:
+        return 1e9, "Gb"
     if max_bp >= 1_000_000:
         return 1e6, "Mb"
     if max_bp >= 1_000:
@@ -837,9 +888,14 @@ def _fmt_bp(bp, _pos=None):
     divisor, unit = _pick_bp_unit(bp)
     if unit == "bp":
         return f"{int(round(bp)):,} bp"
-    decimals = 2 if unit == "Mb" else 1
+    decimals = 2 if unit in ("Mb", "Gb") else 1
     text = f"{bp / divisor:.{decimals}f}".rstrip("0").rstrip(".")
     return f"{text} {unit}"
+
+
+def _plain_number(value):
+    """Tick text without float noise or trailing zeros: 120, 2.5, 0."""
+    return np.format_float_positional(round(float(value), 6), trim="-")
 
 
 def _fmt_kbp(bp):
@@ -871,10 +927,80 @@ def _bedgraph_to_step(starts, ends, values):
     return xs, ys
 
 
-def _panel_label(ax, label, x=-0.05, y=1.15):
-    """Add Nature-style panel label (bold lowercase letter, top-left)."""
-    ax.text(x, y, label, transform=ax.transAxes,
-            fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="top", ha="left")
+def _panel_label(ax, label, x_in=None, y=1):
+    """Bold panel letter at a page x in inches (default: a fixed gap left of the axes), on the title baseline."""
+    fig = ax.figure
+    if x_in is None:
+        x_in = ax.get_position().x0 * fig.get_size_inches()[0] - PANEL_LETTER_DX_IN
+    trans = (transforms.blended_transform_factory(fig.dpi_scale_trans, ax.transAxes)
+             + transforms.ScaledTranslation(0, 3 / 72, fig.dpi_scale_trans))
+    ax.text(x_in, y, label, transform=trans, fontsize=PANEL_LABEL_SIZE, fontweight="bold",
+            va="baseline", ha="left")
+
+
+def _panel_title(ax, title, label=None, x_in=None, y=None):
+    """Axis-attached panel title with an optional panel letter, as on the terminal page; y lifts both in axes units."""
+    ax.set_title(title, fontsize=PANEL_TITLE_SIZE, pad=3, y=y)
+    if label:
+        _panel_label(ax, label, x_in=x_in, y=1 if y is None else y)
+
+
+def _page_title(fig, title):
+    """One bold page title at a fixed physical distance from the top edge; no subtitle."""
+    fig.suptitle(title, fontsize=PANEL_LABEL_SIZE, fontweight="bold",
+                 y=1 - 0.155 / fig.get_size_inches()[1])
+
+
+def _thirds(num, den, threshold=LABEL_THRESHOLD):
+    """Engine symmetric-thirds rule (computeStrandLabel): 2 above t, 0 below 1-t, else 1."""
+    num = np.asarray(num, dtype=np.int64)
+    den = np.asarray(den, dtype=np.int64)
+    scale = 1_000_000
+    t = int(round(threshold * scale))
+    out = np.ones(np.broadcast(num, den).shape, dtype=np.int64)
+    out = np.where(num * scale > den * t, 2, out)
+    out = np.where(num * scale < den * (scale - t), 0, out)
+    return np.where(den == 0, 1, out)
+
+
+def composition_class(fwd_can, rev_can, fwd_noncan, rev_noncan, threshold=LABEL_THRESHOLD):
+    """Double-key class per ITS: (strand 0 rev/1 both/2 fwd, canonicity 0 nonCan/1 mixed/2 can)."""
+    fwd_can, rev_can, fwd_noncan, rev_noncan = (np.asarray(v, dtype=np.int64)
+                                                for v in (fwd_can, rev_can, fwd_noncan, rev_noncan))
+    total = fwd_can + rev_can + fwd_noncan + rev_noncan
+    return (_thirds(fwd_can + fwd_noncan, total, threshold),
+            _thirds(fwd_can + rev_can, total, threshold))
+
+
+def double_key_colors(df, threshold=LABEL_THRESHOLD):
+    """Hex colour per ITS row from its four match counts."""
+    strand, canon = composition_class(df["fwdCan"], df["revCan"], df["fwdNonCan"], df["revNonCan"], threshold)
+    return [DOUBLE_KEY_COLORS[c][s] for s, c in zip(strand, canon)]
+
+
+def _draw_double_key(ax, counts=None, bp=None, fontsize=MIN_TEXT_SIZE):
+    """3x3 composition key, fwd drawn left (5' end); with counts[c][s] (and bp) each cell carries n and % of ITS bp."""
+    total_bp = float(np.sum(bp)) if bp is not None else 0.0
+    for c in range(3):
+        for s in range(3):
+            ax.add_patch(Rectangle((2 - s, c), 1, 1, facecolor=DOUBLE_KEY_RGBA[c][s], edgecolor="white", linewidth=0.8))
+            if counts is None:
+                continue
+            n = int(counts[c][s])
+            share = 100 * bp[c][s] / total_bp if total_bp > 0 else 0
+            text = f"{n:,}" if total_bp <= 0 or not n else f"{n:,}\n{share:.0f}%" if share >= 1 else f"{n:,}\n<1%"
+            ax.text(2.5 - s, c + 0.5, text, ha="center", va="center", fontsize=fontsize,
+                    color="white" if c == 2 else "#222222", linespacing=0.95)
+    ax.set_xlim(0, 3)
+    ax.set_ylim(0, 3)
+    ax.set_aspect("equal")
+    ax.set_xticks([0.5, 1.5, 2.5], DOUBLE_KEY_STRAND[::-1])
+    ax.set_yticks([0.5, 1.5, 2.5], DOUBLE_KEY_CANON)
+    ax.tick_params(length=0, labelsize=fontsize, pad=1.5)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.set_xlabel("← Forward share", fontsize=fontsize, labelpad=1.5)
+    ax.set_ylabel("Canonical share →", fontsize=fontsize, labelpad=1.5)
 
 
 def _sanitize_filename(name):
@@ -1254,118 +1380,56 @@ def _draw_centered_legend_pair(ax, left_handles, right_handles, gap=0.016,
 
     left_anchor = (left_center - axis_box.x0) / axis_box.width
     right_anchor = (right_center - axis_box.x0) / axis_box.width
-    left_legend.set_bbox_to_anchor((left_anchor, 0.50), transform=ax.transAxes)
-    right_legend.set_bbox_to_anchor((right_anchor, 0.50), transform=ax.transAxes)
+    left_legend.set_bbox_to_anchor((left_anchor, left_legend_kwargs["bbox_to_anchor"][1]), transform=ax.transAxes)
+    right_legend.set_bbox_to_anchor((right_anchor, right_legend_kwargs["bbox_to_anchor"][1]), transform=ax.transAxes)
     return left_legend, right_legend
 
 
-def _draw_ranked_bar_panel(ax, rows, x_label, xticks, title=None):
-    """Draw a ranked horizontal bar panel with a shared Nature-style axis treatment."""
-    label_space = 1.42
+def _draw_ranked_bar_panel(ax, rows, x_label, xticks, title=None, xticklabels=None):
+    """Ranked horizontal bars in ten fixed slots, so thickness and pitch never depend on n."""
+    label_in = 0.80
+    n_slots = max(len(rows), 10)
     y_pos = np.arange(len(rows), dtype=np.float64)
     values = [row["value"] for row in rows]
     colors = [row["color"] for row in rows]
 
-    ax.barh(
-        y_pos,
-        values,
-        height=0.20,
-        color=colors,
-        edgecolor="white",
-        linewidth=0.45,
-        zorder=2,
-    )
+    ax.barh(y_pos, values, height=0.6, color=colors, edgecolor="none", zorder=2)
     for y_pos_i, row in zip(y_pos, rows):
-        ax.text(
-            -0.08,
-            y_pos_i,
-            row["label"],
-            ha="right",
-            multialignment="right",
-            va="center",
-            fontsize=MIN_TEXT_SIZE,
-            color="#222222",
-            linespacing=1.0,
-        )
+        lines = row["label"].split("\n")
+        if len(lines) > 2:
+            lines = [lines[0], lines[1].rstrip("._-") + "…"]
+        ax.annotate("\n".join(lines), (0.0, y_pos_i), xytext=(-3, 0), textcoords="offset points",
+                    ha="right", multialignment="right", va="center",
+                    fontsize=MIN_TEXT_SIZE, color="#222222", linespacing=0.95)
 
     x_max = max(max(xticks), max(values) + 0.12) if values else max(xticks)
-    ax.set_ylim(len(rows) - 0.45, -0.55)
+    # Fixed physical label gutter inside the axes, whatever the panel width.
+    width_in = ax.get_position().width * ax.figure.get_size_inches()[0]
+    ax.set_xlim(-x_max * label_in / max(width_in - label_in, 0.1), x_max)
+    ax.set_ylim(n_slots - 0.5, -0.5)
     ax.set_yticks([])
-    ax.set_xlim(-label_space, x_max)
-    ax.set_xlabel(x_label, fontsize=AXIS_LABEL_SIZE)
+    ax.set_xlabel(x_label, fontsize=AXIS_LABEL_SIZE, labelpad=2.5)
     ax.set_xticks([tick for tick in xticks if tick <= x_max + 0.1])
-    ax.tick_params(axis="x", length=2.0, width=0.35, pad=0.6, labelsize=AXIS_TICK_SIZE)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_visible(False)
+    if xticklabels:
+        ax.set_xticklabels(xticklabels[:len(ax.get_xticks())])
+    ax.tick_params(axis="x", length=2.3, width=0.45, pad=1.5, labelsize=AXIS_TICK_SIZE)
+    for side in ("top", "right", "left"):
+        ax.spines[side].set_visible(False)
     ax.spines["bottom"].set_visible(True)
-    ax.spines["bottom"].set_linewidth(0.35)
-    ax.spines["bottom"].set_color("black")
-    ax.axvline(0.0, color="black", linewidth=0.35, zorder=1)
-    ax.minorticks_off()
-    if title:
-        ax.set_title(title, loc="left", fontsize=PANEL_TITLE_SIZE, pad=0.0, y=0.985)
-
-
-def _draw_summary_bar(ax, segments, title, x_label, fmt_value, x_formatter=None):
-    """Draw a thin stacked summary bar for overview panel a."""
-    total = sum(segment[1] for segment in segments)
-    if title:
-        ax.set_title(title, loc="left", fontsize=6.8, pad=0.0, y=0.995)
-
-    if total <= 0:
-        ax.text(0.5, 0.5, "No classification data",
-                transform=ax.transAxes, ha="center", va="center",
-                fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999")
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.spines["left"].set_visible(False)
-        ax.spines["bottom"].set_visible(False)
-        return
-
-    left = 0.0
-    bar_center = 0.103
-    for segment in segments:
-        label, value, color = segment[:3]
-        label_value = segment[3] if len(segment) > 3 else value
-        if value <= 0:
-            continue
-        ax.barh(
-            bar_center, value, left=left, height=0.034,
-            color=color, edgecolor="white", linewidth=0.6,
-            zorder=2,
-        )
-        if value / total >= 0.08:
-            ax.text(
-                left + value / 2.0, bar_center, fmt_value(label_value),
-                ha="center", va="center",
-                fontsize=ANNOTATION_TEXT_SIZE, color="#222222", zorder=3,
-            )
-        left += value
-
-    ax.set_xlim(0, total)
-    ax.set_ylim(0.055, 0.142)
-    ax.set_yticks([])
-    ax.tick_params(axis="x", length=2.0, width=0.45, pad=0.6, labelsize=AXIS_TICK_SIZE)
-    ax.spines["left"].set_visible(False)
-    ax.spines["bottom"].set_visible(True)
-    ax.spines["bottom"].set_color("#c7c7c7")
     ax.spines["bottom"].set_linewidth(0.45)
+    ax.spines["bottom"].set_color("#bcbcbc")
+    ax.spines["bottom"].set_bounds(0.0, x_max)
+    ax.axvline(0.0, color="#bcbcbc", linewidth=0.45, zorder=1)
     ax.minorticks_off()
-    if x_formatter is not None:
-        ax.xaxis.set_major_formatter(x_formatter)
-    ax.set_xlabel(x_label, fontsize=AXIS_LABEL_SIZE, labelpad=0.15)
+    ax.xaxis.label.set_x(1 - x_max / 2 / (x_max - ax.get_xlim()[0]))  # centred on the bars, not the label gutter
+    if title:
+        _panel_title(ax, title)
+        ax.title.set_x(ax.xaxis.label.get_position()[0])
 
 
 def _draw_dual_summary_panel(ax, all_segments, telo_segments, title=None):
-    """Draw a single two-row stacked summary panel with a shared percentage axis."""
-    if title:
-        ax.set_title(title, loc="left", fontsize=PANEL_TITLE_SIZE, pad=0.0, y=0.985)
-
-    plot_rows = [
-        (0.70, "All", all_segments),
-        (0.54, "With telomeres", telo_segments),
-    ]
+    """Two adjacent stacked percentage bars sharing one axis, pitched like the ranked bars."""
+    plot_rows = [(0, "All", all_segments), (1, "With telomeres", telo_segments)]
     for y_pos, _, segments in plot_rows:
         left = 0.0
         for segment in segments:
@@ -1373,35 +1437,32 @@ def _draw_dual_summary_panel(ax, all_segments, telo_segments, title=None):
             cnt = segment[3] if len(segment) > 3 else None
             if value <= 0:
                 continue
-            ax.barh(
-                y_pos, value, left=left, height=0.060,
-                color=color, edgecolor="white", linewidth=0.6,
-                zorder=2,
-            )
+            ax.barh(y_pos, value, left=left, height=0.5, color=color,
+                    edgecolor="white", linewidth=0.6, zorder=2)
             if cnt is not None and value >= 5.0:
-                ax.text(
-                    left + value / 2.0, y_pos, str(cnt),
-                    ha="center", va="center",
-                    fontsize=ANNOTATION_TEXT_SIZE, color="#222222", zorder=3,
-                )
+                r, g, b = matplotlib.colors.to_rgb(color)
+                ink = "white" if 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.45 else "#222222"
+                ax.text(left + value / 2.0, y_pos, str(cnt), ha="center", va="center",
+                        fontsize=ANNOTATION_TEXT_SIZE, color=ink, zorder=3)
             left += value
 
     ax.set_xlim(0.0, 100.0)
-    ax.set_ylim(0.43, 0.81)
+    ax.set_ylim(2.0, -1.0)
     ax.set_yticks([row[0] for row in plot_rows])
     ax.set_yticklabels([row[1] for row in plot_rows], fontsize=AXIS_TICK_SIZE)
-    ax.tick_params(axis="y", length=0, pad=3.2)
-    ax.tick_params(axis="x", length=2.0, width=0.45, pad=0.55, labelsize=AXIS_TICK_SIZE)
+    ax.tick_params(axis="y", length=0, pad=3.0)
+    ax.tick_params(axis="x", length=2.3, width=0.45, pad=1.5, labelsize=AXIS_TICK_SIZE)
     ax.xaxis.set_major_locator(ticker.MultipleLocator(25))
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:.0f}%"))
-    ax.set_xlabel("Sequences (%)", fontsize=AXIS_LABEL_SIZE, labelpad=0.45)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_visible(False)
+    ax.set_xlabel("Sequences (%)", fontsize=AXIS_LABEL_SIZE, labelpad=2.5)
+    for side in ("top", "right", "left"):
+        ax.spines[side].set_visible(False)
     ax.spines["bottom"].set_visible(True)
-    ax.spines["bottom"].set_color("black")
-    ax.spines["bottom"].set_linewidth(0.35)
+    ax.spines["bottom"].set_color("#bcbcbc")
+    ax.spines["bottom"].set_linewidth(0.45)
     ax.minorticks_off()
+    if title:
+        _panel_title(ax, title)
 
 
 def _wrap_scaffold_name(name, width=18):
@@ -1493,33 +1554,20 @@ def _draw_flagged_scaffolds_panel(ax, classifications, chrom_sizes, top_n=10, ti
     flagged_top = flagged[:top_n]
 
     if not flagged_top:
-        ax.text(0.5, 0.5, "No flagged scaffolds\n(fragmented / discordant)",
-                transform=ax.transAxes, ha="center", va="center",
-                fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999", linespacing=1.4)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        for spine in ax.spines.values():
-            spine.set_visible(False)
+        _draw_empty_state(ax, "No flagged scaffolds\n(fragmented / discordant)")
         if title:
-            ax.set_title(title, loc="left", fontsize=PANEL_TITLE_SIZE, pad=0.0, y=0.985)
+            _panel_title(ax, title)
         return
 
-    rows = []
-    for entry in flagged_top:
-        wrapped = _wrap_scaffold_name(entry["chrom"], width=14)
-        rows.append({
-            "label": wrapped,
-            "value": np.log10(entry["size"] + 1.0),
-            "color": COLORS.get(entry["category"], "#aaaaaa"),
-        })
-
-    _draw_ranked_bar_panel(
-        ax,
-        rows,
-        x_label="Scaffold size (log10 bp)",
-        xticks=[0, 2, 4, 6, 8],
-        title=title,
-    )
+    # Log bars from a 1 kbp baseline, ticked at plain Mbp decades.
+    rows = [{
+        "label": _wrap_scaffold_name(entry["chrom"], width=14),
+        "value": max(np.log10(entry["size"] / 1e3), 0.05),  # sub-kbp scaffolds keep a sliver
+        "color": COLORS.get(entry["category"], "#aaaaaa"),
+    } for entry in flagged_top]
+    xticks = list(range(max(int(np.ceil(rows[0]["value"] + 0.12)), 3) + 1))
+    _draw_ranked_bar_panel(ax, rows, x_label="Scaffold size (Mbp)", xticks=xticks, title=title,
+                           xticklabels=[f"{10.0 ** (tick - 3):g}" for tick in xticks])
 
 
 def _compute_block_rows(blocks, chrom_sizes):
@@ -1543,8 +1591,41 @@ def _compute_block_rows(blocks, chrom_sizes):
     return rows
 
 
+def _add_axes_in(fig, left, top, width, height):
+    """Add axes placed in inches from the figure's top-left corner."""
+    fig_w, fig_h = fig.get_size_inches()
+    return fig.add_axes([left / fig_w, 1 - (top + height) / fig_h, width / fig_w, height / fig_h])
+
+
+def _draw_empty_state(ax, message):
+    """Blank the axes and centre a muted message in it."""
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.text(0.5, 0.5, message, transform=ax.transAxes, ha="center", va="center",
+            fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999", linespacing=1.4)
+
+
+def _draw_stat_tiles(ax, tiles):
+    """Row of headline numbers over muted labels, split by hairlines."""
+    ax.axis("off")
+    ax.set_xlim(0, len(tiles))
+    ax.set_ylim(0, 1)
+    for i, (value, label) in enumerate(tiles):
+        ax.text(i + 0.5, 0.50, value, ha="center", va="bottom",
+                fontsize=PANEL_LABEL_SIZE, color="#222222")
+        ax.text(i + 0.5, 0.38, label, ha="center", va="top",
+                fontsize=MIN_TEXT_SIZE, color="#666666")
+        if i:
+            ax.plot([i, i], [0.08, 0.92], color="#d0d0d0", linewidth=0.4,
+                    solid_capstyle="butt")
+
+
 def plot_overview_page1(classifications, blocks, chrom_sizes):
-    """Page 1: Scaffold classification bars + legend + flagged scaffolds panel."""
+    """Page 1: headline tiles, scaffold classification (a) and flagged scaffolds (b)."""
     FLAGGED_DISTANCE_BP = 1000
 
     cat_labels = list(classifications.keys())
@@ -1553,29 +1634,33 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
     total = sum(cat_counts)
 
     block_rows = _compute_block_rows(blocks, chrom_sizes)
-    distance_flagged_blocks = [r for r in block_rows if r["distance"] > FLAGGED_DISTANCE_BP]
     flagged_scaffolds = {
         chrom
         for category in FLAGGED_SCAFFOLD_CATEGORIES
         for chrom in classifications.get(category, [])
     }
-    flagged_total_scaffolds = len(flagged_scaffolds)
-    distance_flagged_block_total = len(distance_flagged_blocks)
-
     all_len = [r["length"] for r in block_rows if r["label"] in ("p", "q", "b")]
-    total_blocks = len(block_rows)
     total_paths = total if total > 0 else max(len(chrom_sizes), len(blocks))
-    median_bp = int(round(_median(all_len))) if all_len else None
 
-    # ---- Figure layout: aligned top-row panels with legends below ----
-    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 3.55))
-    gs = fig.add_gridspec(2, 2, height_ratios=[1.0, 0.22],
-                          width_ratios=[1.0, 0.85], hspace=0.18, wspace=0.28)
+    # Inch layout: a centred tile strip, then panel a with the legend strip docked under its
+    # x-label; b holds ten bar slots and ends level with the strip, so no band is left empty.
+    fig = plt.figure(figsize=SLIDE_SIZE)
+    left, right = 0.145 * FIG_WIDTH_DOUBLE, 0.97 * FIG_WIDTH_DOUBLE
+    top, tile_w = 1.05, 1.12
+    b_left = 3.84 + PANEL_LETTER_DX_IN  # letter b where the terminal page puts it
+    ax_tiles = _add_axes_in(fig, (FIG_WIDTH_DOUBLE - 5 * tile_w) / 2, 0.36, 5 * tile_w, 0.34)
+    ax_summary = _add_axes_in(fig, left, top, 3.55 - left, 1.35)
+    ax_flagged_scaffolds = _add_axes_in(fig, b_left, top, right - b_left, 2.10)
+    ax_legends = _add_axes_in(fig, left, 2.72, 3.55 - left, 0.43)  # legends hang from its top
 
-    ax_summary = fig.add_subplot(gs[0, 0])
-    ax_flagged_scaffolds = fig.add_subplot(gs[0, 1])
-    ax_legends = fig.add_subplot(gs[1, :])
-    fig.subplots_adjust(left=0.096, right=0.962, top=0.81, bottom=0.08)
+    _draw_stat_tiles(ax_tiles, [
+        (f"{_median(all_len):,.0f}" if all_len else "NA", "Median assembled array (bp)"),
+        (f"{total_paths:,}", "Scaffolds"),
+        (f"{len(flagged_scaffolds):,}", "Flagged scaffolds"),
+        (f"{len(block_rows):,}", "Terminal telomeres"),
+        (f"{sum(r['distance'] > FLAGGED_DISTANCE_BP for r in block_rows):,}",
+         "Distance-flagged telomeres"),
+    ])
 
     # ---- Panel a: Classification bars ----
     absolute_segments = [
@@ -1598,9 +1683,14 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
         (lab, (100.0 * cnt / total) if total else 0.0, color, cnt)
         for lab, cnt, color in absolute_segments
     ]
-    _draw_dual_summary_panel(ax_summary, absolute_pct_segments, relative_segments, title=None)
+    _draw_dual_summary_panel(ax_summary, absolute_pct_segments, relative_segments)
+    _panel_title(ax_summary, "Scaffold classification", "a", x_in=PANEL_LETTER_X_IN)
 
-    # ---- Quality legend (5 categories) ----
+    # ---- Panel b: Flagged scaffolds (discordant / fragmented by size) ----
+    _draw_flagged_scaffolds_panel(ax_flagged_scaffolds, classifications, chrom_sizes)
+    _panel_title(ax_flagged_scaffolds, "Flagged scaffolds", "b")
+
+    # ---- Shared legend strip: gap key + quality legend ----
     quality_handles = [
         Patch(facecolor=COLORS["T2T"],         label="T2T"),
         Patch(facecolor=COLORS["Incomplete"],   label="Incomplete"),
@@ -1608,59 +1698,19 @@ def plot_overview_page1(classifications, blocks, chrom_sizes):
         Patch(facecolor=COLORS["Discordant"],   label="Discordant"),
         Patch(facecolor=COLORS["No telomeres"], label="No telomeres"),
     ]
-
-    # ---- Shared legend strip: gap key + quality legend ----
     gap_handles = [
         Patch(facecolor="#555555", label="Gapless"),
         Patch(facecolor="#cccccc", label="Gapped"),
     ]
     _draw_centered_legend_pair(
-        ax_legends,
-        gap_handles,
-        quality_handles,
-        gap=0.016,
-        left_legend_kwargs={
-            "ncol": 1,
-            "fontsize": LEGEND_TEXT_SIZE,
-        },
-        right_legend_kwargs={
-            "ncol": 3,
-            "fontsize": LEGEND_TEXT_SIZE,
-        },
+        ax_legends, gap_handles, quality_handles, gap=0.016,
+        left_legend_kwargs={"ncol": 1, "fontsize": LEGEND_TEXT_SIZE, "loc": "upper center",
+                            "bbox_to_anchor": (0.5, 1.0)},
+        right_legend_kwargs={"ncol": 3, "fontsize": LEGEND_TEXT_SIZE, "loc": "upper center",
+                             "bbox_to_anchor": (0.5, 1.0)},
     )
 
-    # ---- Panel b: Flagged scaffolds (discordant / fragmented by size) ----
-    _draw_flagged_scaffolds_panel(ax_flagged_scaffolds, classifications, chrom_sizes, title=None)
-
-    # ---- Titles and panel labels ----
-    fig.canvas.draw()
-    label_style = dict(fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="bottom", ha="left")
-    title_style = dict(fontsize=PANEL_TITLE_SIZE, va="bottom", ha="center")
-
-    panel_label_y = 0.825
-    panel_title_y = 0.827
-
-    bbox_a = ax_summary.get_position()
-    fig.text(max(0.005, bbox_a.x0 - 0.032), panel_label_y, "a", **label_style)
-    fig.text((bbox_a.x0 + bbox_a.x1) / 2.0, panel_title_y, "Scaffold classification", **title_style)
-    bbox_b = ax_flagged_scaffolds.get_position()
-    fig.text(max(0.005, bbox_b.x0 - 0.032), panel_label_y, "b", **label_style)
-    fig.text((bbox_b.x0 + bbox_b.x1) / 2.0, panel_title_y, "Flagged scaffolds", **title_style)
-
-    fig.suptitle("Assembly summary", fontsize=FIGURE_TITLE_SIZE, fontweight="bold",
-                 x=0.5, y=0.968, ha="center")
-    summary_line = (
-        f"Scaffolds (n={total_paths:,}, flagged={flagged_total_scaffolds:,}), "
-        f"telomere blocks (n={total_blocks:,}, distance-flagged={distance_flagged_block_total:,}), "
-        f"median {median_bp:,} bp"
-        if median_bp is not None else
-        f"Scaffolds (n={total_paths:,}, flagged={flagged_total_scaffolds:,}), "
-        f"telomere blocks (n={total_blocks:,}, distance-flagged={distance_flagged_block_total:,}), "
-        "median NA"
-    )
-    fig.text(0.5, 0.918, summary_line,
-             ha="center", va="top", fontsize=FIGURE_SUMMARY_SIZE, color="#444444")
-
+    _page_title(fig, "Assembly telomere summary")
     return fig
 
 
@@ -1686,13 +1736,24 @@ def plot_overview_page2(blocks, chrom_sizes):
     b_len = [row["length"] for row in block_rows if row["label"] == "b"]
     all_len = p_len + q_len + b_len
 
-    # ---- Figure layout ----
-    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, 3.15))
-    gs = fig.add_gridspec(1, 3, wspace=0.30, width_ratios=[1.0, 1.0, 0.80])
-    ax_rain = fig.add_subplot(gs[0, 0])
-    ax_scatter = fig.add_subplot(gs[0, 1])
-    ax_flagged = fig.add_subplot(gs[0, 2])
-    fig.subplots_adjust(left=0.096, right=0.962, top=0.81, bottom=0.14)
+    # Inch layout: three square axes sharing one top edge, so titles share a baseline.
+    fig = plt.figure(figsize=SLIDE_SIZE)
+    top, side = 1.05, 1.66  # plots sit below the independent panel headings
+    right = 0.97 * FIG_WIDTH_DOUBLE
+    ax_rain = _add_axes_in(fig, 0.66, top, side, side)
+    ax_scatter = _add_axes_in(fig, 2.98, top, side, side)
+    ax_flagged = _add_axes_in(fig, 5.21, top, right - 5.21, side)
+    # c and d share one linear kbp length axis.
+    y_top = max(max(all_len, default=0) / 1e3 * 1.06, 1.2)
+    for ax in (ax_rain, ax_scatter):
+        ax.set_ylim(-0.03 * y_top, y_top)
+        ax.yaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
+    tick_style = dict(length=2.3, width=0.45, pad=1.5, labelsize=AXIS_TICK_SIZE)
+    for ax in (ax_rain, ax_scatter):
+        for spine in ("left", "bottom"):
+            ax.spines[spine].set_linewidth(0.45)
+            ax.spines[spine].set_color("#bcbcbc")
+        ax.tick_params(axis="both", **tick_style)
 
     # ---- Panel c: Vertical raincloud ----
     groups = [
@@ -1701,6 +1762,7 @@ def plot_overview_page2(blocks, chrom_sizes):
         ("balanced", b_len, COLORS["b"]),
     ]
     groups = [(lbl, vals, col) for lbl, vals, col in groups if vals]
+    ax_rain.set_ylabel("Telomere length (kbp)", fontsize=AXIS_LABEL_SIZE)
 
     if groups:
         rng = np.random.default_rng(0)
@@ -1709,35 +1771,22 @@ def plot_overview_page2(blocks, chrom_sizes):
         offsets -= (len(groups) - 1) / 2.0
         positions = 0.75 + (spacing * offsets)
         for position, (lbl, vals, col) in zip(positions, groups):
-            log_vals = np.log10(np.asarray(vals, dtype=np.float64) + 1.0)
-            _draw_raincloud_group(ax_rain, log_vals, position, col, rng, vert=True)
+            _draw_raincloud_group(ax_rain, np.asarray(vals, dtype=np.float64) / 1e3, position, col, rng, vert=True)
 
         x_labels = [f"{lbl}\n(n={len(vals)})" for lbl, vals, _ in groups]
         ax_rain.set_xticks(positions)
         ax_rain.set_xticklabels(x_labels, fontsize=AXIS_TICK_SIZE)
-        ax_rain.tick_params(axis="x", length=2, pad=2.5)
-        ax_rain.tick_params(axis="y", length=2, labelsize=AXIS_TICK_SIZE)
         ax_rain.set_xlim(positions.min() - 0.34, positions.max() + 0.30)
-        ax_rain.set_box_aspect(1.0)
-        ax_rain.set_anchor("S")
-        ax_rain.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
 
-        median_log = np.log10(_median(all_len) + 1.0)
-        ax_rain.axhline(median_log, color="black",
+        median_kbp = _median(all_len) / 1e3
+        ax_rain.axhline(median_kbp, color="#555555",
                         linestyle=OVERVIEW_DASH_STYLE, linewidth=OVERVIEW_DASH_WIDTH)
         median_trans = transforms.blended_transform_factory(ax_rain.transAxes, ax_rain.transData)
-        ax_rain.text(1.01, median_log, "median",
+        ax_rain.text(1.01, median_kbp, "median",
                      transform=median_trans, ha="left", va="center",
                      rotation=90, fontsize=LEGEND_TEXT_SIZE, color="#555555")
-        ax_rain.set_ylabel("Telomere length (log10bp)", fontsize=AXIS_LABEL_SIZE)
     else:
-        lbl_text = "No labeled telomere blocks" if block_rows else "No telomere blocks"
-        ax_rain.text(0.5, 0.5, lbl_text, ha="center", va="center",
-                     transform=ax_rain.transAxes, fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999")
-        ax_rain.set_ylabel("Telomere length (log10bp)", fontsize=AXIS_LABEL_SIZE)
-        ax_rain.set_xticks([])
-        ax_rain.set_box_aspect(1.0)
-        ax_rain.set_anchor("S")
+        _draw_empty_state(ax_rain, "No labeled terminal telomeres" if block_rows else "No terminal telomeres")
 
     # ---- Panel d: Scatter (terminal offset vs length) ----
     scatter_groups = [
@@ -1746,149 +1795,72 @@ def plot_overview_page2(blocks, chrom_sizes):
         ("balanced", "b", COLORS["b"]),
     ]
     scatter_rows = [row for row in block_rows if row["label"] in {"p", "q", "b"}]
+    ax_scatter.set_xlabel("Distance to end (bp)", fontsize=AXIS_LABEL_SIZE, labelpad=2.5)
+    ax_scatter.set_ylabel("Telomere length (kbp)", fontsize=AXIS_LABEL_SIZE)
     if scatter_rows:
-        max_log_x = 0.0
+        max_x = 1.0
         for leg_lbl, arm_key, col in scatter_groups:
             field = "label" if arm_key == "b" else "closestEnd"
             arm_rows = [row for row in scatter_rows if row[field] == arm_key]
             if not arm_rows:
                 continue
-            x = np.log10(np.asarray([row["distance"] for row in arm_rows], dtype=np.float64) + 1.0)
+            # Blocks touching the end sit on the 1 bp tick of the log axis.
+            x = np.maximum(np.asarray([row["distance"] for row in arm_rows], dtype=np.float64), 1.0)
             y = np.asarray([row["length"] / 1e3 for row in arm_rows], dtype=np.float64)
-            max_log_x = max(max_log_x, float(np.max(x)))
-            ax_scatter.scatter(x, y, s=13, color=col, alpha=0.55,
+            max_x = max(max_x, float(np.max(x)))
+            ax_scatter.scatter(x, y, s=11, color=col, alpha=0.55,
                                edgecolors="white", linewidths=0.28,
                                rasterized=True, label=leg_lbl)
 
-        ax_scatter.set_xlabel("Distance to end (log10bp)", fontsize=AXIS_LABEL_SIZE)
-        ax_scatter.set_ylabel("Telomere length (kbp)", fontsize=AXIS_LABEL_SIZE)
-        ax_scatter.set_xticks([0, 1, 2, 3, 4])
-        x_right = max(4.12, max_log_x + 0.18)
-        ax_scatter.axvspan(3.0, x_right, facecolor="#ededed", linewidth=0, zorder=0)
-        ax_scatter.set_xlim(-0.10, x_right)
-        y_max_sc = max(float(np.max(np.asarray([row["length"] / 1e3 for row in scatter_rows],
-                                                dtype=np.float64))), 0.0)
-        ax_scatter.set_ylim(-0.45, max(1.2, y_max_sc * 1.10))
-        ax_scatter.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4))
-        ax_scatter.tick_params(axis="both", labelsize=AXIS_TICK_SIZE)
-        ax_scatter.set_box_aspect(1.0)
-        ax_scatter.set_anchor("S")
+        x_right = max(10 ** 4.12, max_x * 10 ** 0.18)
+        ax_scatter.set_xscale("log")
+        ax_scatter.axvspan(FLAGGED_DISTANCE_BP, x_right, facecolor="#ededed", linewidth=0, zorder=0)
+        ax_scatter.set_xlim(10 ** -0.10, x_right)
+        decades = [10 ** k for k in range(int(np.log10(x_right)) + 1)]
+        ax_scatter.xaxis.set_major_locator(ticker.FixedLocator(decades))
+        ax_scatter.xaxis.set_major_formatter(ticker.FixedFormatter([f"{d:d}" if d <= 10_000 else "" for d in decades]))
+        ax_scatter.xaxis.set_minor_locator(ticker.NullLocator())
         leg_d = ax_scatter.legend(loc="upper right", fontsize=LEGEND_TEXT_SIZE,
                                   frameon=True, facecolor="white", edgecolor="black",
-                                  framealpha=1.0, fancybox=False,
-                                  handletextpad=0.35, borderaxespad=0.2)
+                                  framealpha=1.0, fancybox=False, handletextpad=0.35,
+                                  borderaxespad=0.3, markerscale=0.8)
         leg_d.get_frame().set_linewidth(0.4)
-        ax_scatter.axvline(3.0, color="black", linewidth=OVERVIEW_DASH_WIDTH,
+        ax_scatter.axvline(FLAGGED_DISTANCE_BP, color="#555555", linewidth=OVERVIEW_DASH_WIDTH,
                            linestyle=OVERVIEW_DASH_STYLE, zorder=1)
     else:
-        ax_scatter.text(0.5, 0.5, "No telomere blocks",
-                        transform=ax_scatter.transAxes,
-                        ha="center", va="center", fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999")
-        ax_scatter.set_xlabel("Distance to end (log10bp)", fontsize=AXIS_LABEL_SIZE)
-        ax_scatter.set_ylabel("Telomere length (kbp)", fontsize=AXIS_LABEL_SIZE)
-        ax_scatter.set_box_aspect(1.0)
-        ax_scatter.set_anchor("S")
+        _draw_empty_state(ax_scatter, "No terminal telomeres")
 
-    # ---- Panel e: Flagged telomeres lollipop ----
+    # ---- Panel e: Flagged telomeres ----
     if not block_rows:
-        ax_flagged.text(0.5, 0.5, "No telomere blocks",
-                        transform=ax_flagged.transAxes,
-                        ha="center", va="center", fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999")
-        ax_flagged.set_xticks([])
-        ax_flagged.set_yticks([])
-        for spine in ax_flagged.spines.values():
-            spine.set_visible(False)
+        _draw_empty_state(ax_flagged, "No terminal telomeres")
     elif not flagged_top:
-        ax_flagged.text(
-            0.5, 0.5,
-            f"No flagged blocks\n(distance > {FLAGGED_DISTANCE_BP // 1000} kbp)",
-            transform=ax_flagged.transAxes,
-            ha="center", va="center", fontsize=PLACEHOLDER_TEXT_SIZE, color="#999999", linespacing=1.4,
-        )
-        ax_flagged.set_xticks([])
-        ax_flagged.set_yticks([])
-        for spine in ax_flagged.spines.values():
-            spine.set_visible(False)
+        _draw_empty_state(ax_flagged, f"No flagged telomeres\n(distance > {FLAGGED_DISTANCE_BP // 1000} kbp)")
     else:
         rows = []
         for scaffold, info in flagged_top:
-            wrapped = _wrap_scaffold_name(scaffold, width=14)
             dominant_arm = info["arms"].most_common(1)[0][0]
             rows.append({
-                "label": f"{wrapped}\n(n={info['count']})",
-                "value": np.log10(info["length"] + 1.0),
+                "label": f"{_wrap_scaffold_name(scaffold, width=14)} (n={info['count']})",
+                "value": info["length"] / 1e3,
                 "color": COLORS.get(dominant_arm, "#aaaaaa"),
             })
+        _draw_ranked_bar_panel(ax_flagged, rows, x_label="Flagged length (kbp)",
+                               xticks=list(ticker.MaxNLocator(nbins=4).tick_values(0, rows[0]["value"])))
 
-        _draw_ranked_bar_panel(
-            ax_flagged,
-            rows,
-            x_label="Flagged length (log10 bp)",
-            xticks=[0, 1, 2, 3, 4],
-        )
-
-    ax_flagged.set_anchor("S")
-
-    # ---- Panel labels and titles ----
-    fig.canvas.draw()
-    label_style = dict(fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="bottom", ha="left")
-    title_style = dict(fontsize=PANEL_TITLE_SIZE, ha="center", va="bottom")
-
-    panel_meta = [
-        (ax_rain,    "c", "Length by arm"),
-        (ax_scatter, "d", "Telomere positioning"),
-        (ax_flagged, "e", "Flagged telomeres"),
-    ]
-    title_y = 0.845
-    for ax, lbl, title in panel_meta:
-        bbox = ax.get_position()
-        fig.text(max(0.005, bbox.x0 - 0.032), title_y, lbl, **label_style)
-        fig.text((bbox.x0 + bbox.x1) / 2.0, title_y + 0.002, title, **title_style)
-
+    _panel_title(ax_rain, "Length by arm", "c", x_in=PANEL_LETTER_X_IN)
+    _panel_title(ax_scatter, "Telomere positioning", "d", x_in=2.48)
+    _panel_title(ax_flagged, "Flagged telomeres", "e", x_in=4.71)
+    for ax in (ax_rain, ax_scatter, ax_flagged):
+        ax.set_title(ax.get_title(), pad=24.6)  # keep headings 0.3 in above the plots
+        letter = ax.texts[-1]
+        letter.set_transform(letter.get_transform() + transforms.ScaledTranslation(0, 0.3, fig.dpi_scale_trans))
+    _page_title(fig, "Terminal telomeres")
     return fig
 
 
 # ---------------------------------------------------------------------------
 # ITS report pages (rendered last, after every per-chromosome zoom; see main())
 # ---------------------------------------------------------------------------
-
-def _class_totals(df):
-    """Per-class row count and total bp, reindexed to the fixed CLASS_ORDER."""
-    counts = df.groupby("teloType")["teloLen"].size().reindex(CLASS_ORDER, fill_value=0)
-    totals_bp = df.groupby("teloType")["teloLen"].sum().reindex(CLASS_ORDER, fill_value=0)
-    return counts, totals_bp
-
-
-def _fmt_frac(value):
-    """Format a fraction, or 'NA' when it is undefined."""
-    return f"{value:.2f}" if np.isfinite(value) else "NA"
-
-
-def _fmt_log_bp_tick(value):
-    """Format a signed log10(bp) decade tick (value=0 at the scaffold end) as clean bp/kb/Mb text."""
-    if value == 0:
-        return "0"
-    bp = 10 ** abs(value)
-    divisor, unit = _pick_bp_unit(bp)
-    return f"{bp / divisor:g} {unit}"
-
-
-def _short_scaffold_labels(names, width=18):
-    """Strip a shared prefix (common in PanSN-style names) then clip for display.
-
-    Rows need the *distinguishing* suffix, not a sample/haplotype tag every row
-    shares, so this trims to the last separator inside the common prefix.
-    """
-    if len(set(names)) > 1:
-        common = os.path.commonprefix(names)
-        cut = 0
-        for i in range(len(common), 0, -1):
-            if common[i - 1] in "#_./:|-":
-                cut = i
-                break
-        names = [n[cut:] or n for n in names]
-    return [n if len(n) <= width else n[:width - 1] + "…" for n in names]
-
 
 def _its_atlas_chroms(df, arm_blocks, chrom_sizes):
     """Scaffolds carrying a telomere or ITS row, longest first (ideogram row order)."""
@@ -1897,14 +1869,29 @@ def _its_atlas_chroms(df, arm_blocks, chrom_sizes):
     return sorted(telomere_chroms | its_chroms, key=lambda c: (-chrom_sizes.get(c, 0), c))
 
 
-def _split_long_short_chroms(atlas_chroms, chrom_sizes):
-    """Split scaffolds into >=20%-of-longest and shorter, preserving length-descending order."""
-    if not atlas_chroms:
-        return [], []
-    cutoff = chrom_sizes.get(atlas_chroms[0], 0) * 0.20
-    long_chroms = [c for c in atlas_chroms if chrom_sizes.get(c, 0) >= cutoff]
-    short_chroms = [c for c in atlas_chroms if chrom_sizes.get(c, 0) < cutoff]
-    return long_chroms, short_chroms
+def _atlas_tiers(atlas_chroms, chrom_sizes, n=ATLAS_TIERS[-1]):
+    """Up to n size tiers of whole homolog groups (at least four per tier), largest first, each holding about as many scaffolds."""
+    tiers = OrderedDict()
+    done = 0
+    groups = _homolog_groups(atlas_chroms, chrom_sizes)
+    n = max(1, min(n, len(groups) // 4))
+    for group in groups:
+        tiers.setdefault(done * n // len(atlas_chroms), []).extend(group)
+        done += len(group)
+    return list(tiers.values())
+
+
+def _atlas_span(bp):
+    """Tier axis end and tick step: bp rounded down to a 1-2-5 step (20, 10, 5, 2, 1, 0.5 Mb...) of about a fifth, so longer bars run past it."""
+    e = 10 ** np.floor(np.log10(max(bp, 5) / 5))
+    step = e * (5 if bp / 5 >= 5 * e else 2 if bp / 5 >= 2 * e else 1)
+    n = int(bp // step + 1e-9)
+    return (float(n // 2 * 2 * step), 2 * step) if n > 10 else (float(n * step), step)
+
+
+def _atlas_extent(chroms, chrom_sizes, cells):
+    """Drawn length per scaffold: its size, or its last ITS end when the size is unknown."""
+    return {c: max(int(chrom_sizes.get(c, 0)), int(cells[c][1].max()) if c in cells else 0, 1) for c in chroms}
 
 
 def _nearest_end(pos, chrom_size):
@@ -1917,8 +1904,20 @@ def _nearest_end(pos, chrom_size):
 # Region-zoom toolkit shared with plot_its.py (single-locus figures)
 # ---------------------------------------------------------------------------
 
-def _region_axis_spec(view_start, view_end):
-    """Round genomic ticks for an absolute-position window; positions always in Mbp."""
+def _region_unit(start, end):
+    """Locus-page unit: Mbp for spans from 5 Mb or windows past 10 Mb, kbp from 1 kb, else bp."""
+    span = end - start
+    return (1e6, "Mbp") if span >= 5_000_000 or end >= 10_000_000 else (1e3, "kbp") if span >= 1_000 else (1.0, "bp")
+
+
+def _region_axis_spec(view_start, view_end, plain=False):
+    """Round genomic ticks for an absolute-position window; in Mbp, or with plain=True in the span's unit."""
+    if plain:
+        div, unit = _region_unit(view_start, view_end)
+        ticks = [t * div for t in ticker.MaxNLocator(nbins=6, steps=[1, 2, 2.5, 5, 10]).tick_values(
+            view_start / div, view_end / div) if view_start <= t * div <= view_end]
+        return {"axis_start": view_start, "axis_end": view_end, "tick_pos": ticks,
+                "tick_labels": [_plain_number(t / div) for t in ticks], "xlabel": f"Position ({unit})"}
     span_mb = max(view_end - view_start, 1) / 1e6
     dec = _mb_tick_decimals(span_mb)
     ticks = [t for t in ticker.MaxNLocator(nbins=6, steps=[1, 2, 2.5, 5, 10]).tick_values(
@@ -1932,9 +1931,19 @@ def _region_axis_spec(view_start, view_end):
     }
 
 
+def _block_key_color(block, threshold):
+    """Double-key colour of one parsed BED block from its four match counts."""
+    strand, canon = composition_class(*(block.get(k, 0) for k in ("fwdCan", "revCan", "fwdNonCan", "revNonCan")),
+                                      threshold)
+    return DOUBLE_KEY_COLORS[int(canon)][int(strand)]
+
+
 def _draw_locus_ideogram(ax, chrom_size, view_start, view_end, blocks_list, its_blocks_list,
-                         contig_blocks_list=None, label="Scaffold"):
-    """Whole-scaffold overview for a single-locus zoom: terminal caps, all ITS ticks, zoom box."""
+                         contig_blocks_list=None, label="Scaffold", threshold=None):
+    """Whole-scaffold overview for a single-locus zoom: terminal caps, all ITS ticks, zoom box.
+
+    threshold: when set, ITS ticks take their double-key colours instead of p/q/b.
+    """
     bar_y, bar_h = 0.60, 0.34
     bottom = bar_y - bar_h / 2.0
     ax.add_patch(Rectangle((0, bottom), chrom_size, bar_h, facecolor="#ececec",
@@ -1959,14 +1968,15 @@ def _draw_locus_ideogram(ax, chrom_size, view_start, view_end, blocks_list, its_
         # Vectorised: a chromosome can carry thousands of ITS rows (fast-mode genomes),
         # and one ax.plot() call per row was the dominant cost of this figure.
         xs = np.array([(b["start"] + b["end"]) / 2.0 for b in its_blocks_list])
-        labels = np.array([b.get("label", "") for b in its_blocks_list])
+        labels = np.array([b.get("label", "") if threshold is None else _block_key_color(b, threshold)
+                           for b in its_blocks_list])
         for k in np.unique(labels):
             mask = labels == k
             segs = np.empty((int(mask.sum()), 2, 2))
             segs[:, 0, 0] = xs[mask]; segs[:, 0, 1] = bottom
             segs[:, 1, 0] = xs[mask]; segs[:, 1, 1] = bottom + bar_h
             ax.add_collection(LineCollection(
-                segs, colors=ITS_ORIENT_COLORS.get(k, COLORS["its"]),
+                segs, colors=ITS_ORIENT_COLORS.get(k, COLORS["its"]) if threshold is None else k,
                 linewidths=0.7, zorder=3, rasterized=True))
 
     mid = (view_start + view_end) / 2.0
@@ -1994,8 +2004,10 @@ def _draw_locus_ideogram(ax, chrom_size, view_start, view_end, blocks_list, its_
 
 
 def _draw_its_blocks_track(ax, view_start, view_end, blocks_list, its_blocks_list,
-                           gap_blocks_list, label="Blocks", contig_blocks_list=None):
+                           gap_blocks_list, label="Blocks", contig_blocks_list=None, threshold=None):
     """Single-panel block track in genomic coordinates; ITS colored by orientation.
+
+    threshold: when set, ITS take their double-key colours instead of p/q/b.
 
     Rectangles are batched into one PatchCollection per group (not one add_patch per
     block), since a locus window in a dense fast-mode genome can hold thousands of rows.
@@ -2039,7 +2051,8 @@ def _draw_its_blocks_track(ax, view_start, view_end, blocks_list, its_blocks_lis
           lambda b: COLORS["terminal"], 2)
     _draw_outline([b for b in blocks_list if b.get("term") == "contig"] if blocks_list else [],
                   COLORS["terminal"], 3)
-    _draw(its_blocks_list, lambda b: ITS_ORIENT_COLORS.get(b.get("label", ""), COLORS["its"]), 4)
+    _draw(its_blocks_list, (lambda b: ITS_ORIENT_COLORS.get(b.get("label", ""), COLORS["its"]))
+          if threshold is None else (lambda b: _block_key_color(b, threshold)), 4)
     _draw(gap_blocks_list, lambda b: COLORS["gap"], 6)
     _draw_outline(contig_blocks_list, COLORS["terminal"], 5)
 
@@ -2056,29 +2069,8 @@ def _draw_its_blocks_track(ax, view_start, view_end, blocks_list, its_blocks_lis
 # ITS-1 "Interstitial telomeres: genome view"
 # ---------------------------------------------------------------------------
 
-def _its_orientation(df):
-    return df["teloLabel"].where(df["teloLabel"].isin(("p", "q", "b")), "unknown")
-
-
-def _scan_note(params):
-    mode = params.get("ultra_fast")
-    if mode is False:
-        return "Full scan; observed ITS rows"
-    if mode is True:
-        limit = params.get("terminal_limit")
-        return ("End scan (initial " + _fmt_bp(limit) + " per end); observed ITS rows"
-                if limit else "End scan; scan limit unknown; observed ITS rows")
-    return "Scan scope unknown; observed ITS rows"
-
-
-def _its_header(fig, title, subtitle):
-    fig.suptitle(title, fontsize=PANEL_LABEL_SIZE, fontweight="bold", y=0.96)
-    fig.text(0.5, 0.895, subtitle, ha="center", va="top",
-             fontsize=FIGURE_SUMMARY_SIZE, color="black")
-
-
-def _its_labels(df, chrom_sizes, arm_blocks=None, names=None):
-    names = _its_atlas_chroms(df, arm_blocks or {}, chrom_sizes) if names is None else names
+def _its_labels(df, chrom_sizes, arm_blocks=None):
+    names = _its_atlas_chroms(df, arm_blocks or {}, chrom_sizes)
     # Stable aliases preserve identity even when a long suffix is also shared.
     labels = {}
     reserved = set(names)
@@ -2092,332 +2084,627 @@ def _its_labels(df, chrom_sizes, arm_blocks=None, names=None):
     return labels
 
 
-def its_scaffold_summary(df, arm_blocks, chrom_sizes):
-    """Complete observed-row accounting, including zero-ITS terminal scaffolds."""
-    names = _its_atlas_chroms(df, arm_blocks, chrom_sizes)
-    labels = _its_labels(df, chrom_sizes, arm_blocks, names=names)
-    grouped = df.groupby("chr").agg(rows=("chr", "size"), its_bp=("teloLen", "sum"),
-                                    canonical_bp=("canonical_bp", "sum"), _size=("chrSize", "max"))
-    out = grouped.reindex(names, fill_value=0).rename_axis("chr").reset_index()
-    out.insert(1, "display_label", [labels[c] for c in names])
-    out.insert(2, "plot_extent_bp", [chrom_sizes.get(c, 0) for c in names])
-    out.insert(3, "its_size_known", out.pop("_size") > 0)
-    return out
-
-
-def _its_position_counts(df, chrom_sizes):
-    """One count per row midpoint in 100 equal-width bins per scaffold."""
+def _its_atlas_cells(df, threshold=LABEL_THRESHOLD):
+    """Per scaffold: ITS starts, ends and double-key colours, widest first so narrow ITS stay on top."""
+    if df.empty:
+        return {}
+    colors = np.array(double_key_colors(df, threshold), dtype=object)
+    starts, ends = df["start"].to_numpy(), df["end"].to_numpy()
     out = {}
-    for chrom, grp in df.groupby("chr", sort=False):
-        extent = max(int(chrom_sizes.get(chrom, 0)), int(grp["end"].max()), 1)
-        edges = np.linspace(0, extent, ITS_POSITION_BINS + 1)
-        mid = grp["start"].to_numpy(dtype=float) + (
-            grp["end"].to_numpy(dtype=float) - grp["start"].to_numpy(dtype=float)) / 2
-        out[chrom] = (edges, np.histogram(mid, bins=edges)[0])
+    for chrom, idx in df.groupby("chr", sort=False).indices.items():
+        order = idx[np.argsort(-(ends[idx] - starts[idx]), kind="stable")]
+        out[chrom] = (starts[order], ends[order], colors[order])
     return out
 
 
 def _its_top_hits(df, pairs, clusters):
-    """Scaffold -> which top-ranked ITS list(s) (L1/C1/F1) it heads, for atlas star labels."""
+    """Scaffold -> [(ranked tag, midpoint)] for up to five loci per category."""
     top = {}
-    for prefix, frame in (("L1", rank_long_its(df, 1)), ("C1", clusters.head(1)), ("F1", pairs.head(1))):
-        if not frame.empty:
-            top.setdefault(frame.iloc[0]["chr"], []).append(prefix)
+    for prefix, frame in (("C", clusters.head(5)), ("F", pairs.head(5)), ("L", rank_long_its(df, 5))):
+        for rank, row in enumerate(frame.itertuples(index=False), 1):
+            top.setdefault(row.chr, []).append((f"{prefix}{rank}", (row.start + row.end) / 2.0))
     return top
 
 
+_HAPLOTYPE_TOKEN = re.compile(
+    r"(?i)(?:^|[_.\-|])(?:mat(?:ernal)?|pat(?:ernal)?|hap(?:lotype)?[_.\-]?\d+|h\d+)(?=$|[_.\-|])")
+_SEX_CHROM = re.compile(r"(?i)(^|[_.\-|#]|chr)(?:([ZW])|[XY])$")
+
+
+def _homolog_key(name):
+    """Scaffold name without its haplotype token (mat/pat, hapN, hN, PanSN #N#), so any ploidy bundles; Z/W and X/Y share a key."""
+    key = _HAPLOTYPE_TOKEN.sub("", re.sub(r"#\d+#", "#", name)).strip("_.-|") or name
+    return _SEX_CHROM.sub(lambda m: m.group(1) + ("ZW" if m.group(2) else "XY"), key)
+
+
+def _homolog_groups(chroms, chrom_sizes):
+    """Homolog groups by their size midpoint, largest first; members in name order so haplotypes keep one order."""
+    groups = OrderedDict()
+    for chrom in chroms:
+        groups.setdefault(_homolog_key(chrom), []).append(chrom)
+    return [sorted(g) for g in sorted(groups.values(), key=lambda g: (-max(chrom_sizes.get(c, 0) for c in g)
+                                                                      - min(chrom_sizes.get(c, 0) for c in g), min(g)))]
+
+
+def _set_mb_ticks(ax, longest, unit=1e6):
+    """Plain ticks from 0 to a scaffold length in Mbp (or another unit), whole steps from 2 units up."""
+    ticks = ticker.MaxNLocator(nbins=8, steps=[1, 2, 2.5, 5, 10], integer=longest >= 2 * unit).tick_values(0, longest / unit)
+    ax.set_xticks([t * unit for t in ticks if 0 <= t * unit <= longest])
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: _plain_number(x / unit)))
+
+
+def _atlas_rows(names, pitch=ATLAS_PITCH_IN):
+    """Row centres in inches below a segment top, homolog groups spaced apart, and the segment height; condensed rows abut."""
+    ys, y = [], -pitch / 2.0
+    gap = ATLAS_GROUP_GAP_IN * pitch / ATLAS_PITCH_IN if pitch >= ATLAS_PITCH_IN else 0.0
+    for i, c in enumerate(names):
+        y += pitch + (gap if i and _homolog_key(c) != _homolog_key(names[i - 1]) else 0.0)
+        ys.append(y)
+    return ys, y + pitch / 2.0
+
+
+def _atlas_columns(chroms, sizes, col_h, tiers=None, pitch=ATLAS_PITCH_IN):
+    """Flow homolog groups down columns of col_h inches; each column holds one axis segment per tier it touches."""
+    tiers = _atlas_tiers(chroms, sizes) if tiers is None else tiers
+    gap = ATLAS_GROUP_GAP_IN * pitch / ATLAS_PITCH_IN if pitch >= ATLAS_PITCH_IN else 0.0
+    columns, used = [[]], 0.0
+    for k, tier in enumerate(tiers):
+        for group in _homolog_groups(tier, sizes):
+            same = bool(columns[-1]) and columns[-1][-1][0] == k
+            cost = len(group) * pitch + (gap if same else ATLAS_AXIS_IN)
+            if columns[-1] and used + cost > col_h + 1e-9:
+                columns.append([])
+                used, same = 0.0, False
+                cost = len(group) * pitch + ATLAS_AXIS_IN
+            if not same:
+                columns[-1].append((k, []))
+            columns[-1][-1][1].extend(group)
+            used += cost
+    return columns
+
+
+def _atlas_layout(chroms, sizes):
+    """Page height, balanced columns, row pitch and tiers: one full-width column, else two, on one slide in halves, else a double slide in quartiles; else condensed. Rows spread to fill the page."""
+    for page_h, n_tiers in zip(ATLAS_HEIGHTS, ATLAS_TIERS):
+        tiers = _atlas_tiers(chroms, sizes, n_tiers)
+        col_h = page_h - ATLAS_HEADER_IN - ATLAS_KEY_IN - ATLAS_FOOT_IN
+        for n in range(1, ATLAS_COLUMNS + 1):
+            if len(_atlas_columns(chroms, sizes, col_h, tiers)) > n:
+                continue
+            lo, hi = ATLAS_PITCH_IN, ATLAS_STRETCH * ATLAS_PITCH_IN  # widest pitch that still needs only n columns
+            for _ in range(24):
+                mid = (lo + hi) / 2.0
+                lo, hi = (mid, hi) if len(_atlas_columns(chroms, sizes, col_h, tiers, mid)) <= n else (lo, mid)
+            pitch = hi if len(_atlas_columns(chroms, sizes, col_h, tiers, hi)) <= n else lo
+            lo, hi = 0.0, col_h  # shortest column height that still needs only n columns
+            for _ in range(24):
+                mid = (lo + hi) / 2.0
+                lo, hi = (lo, mid) if len(_atlas_columns(chroms, sizes, mid, tiers, pitch)) <= n else (mid, hi)
+            return page_h, _atlas_columns(chroms, sizes, hi, tiers, pitch), pitch, tiers
+    lo, hi = 0.0, ATLAS_PITCH_IN  # largest pitch that fits every scaffold on the double slide, as an unlabelled heatmap
+    for _ in range(30):
+        mid = (lo + hi) / 2.0
+        lo, hi = (mid, hi) if len(_atlas_columns(chroms, sizes, col_h, tiers, mid)) <= ATLAS_COLUMNS else (lo, mid)
+    return page_h, _atlas_columns(chroms, sizes, col_h, tiers, lo), lo, tiers
+
+
 def plot_its_overview_page(df, pairs, clusters, arm_blocks, chrom_sizes, params,
-                           chroms=None, page_number=1, page_count=1, position_counts=None,
-                           all_chroms=None, top_hits=None, known_sizes=None):
-    """Fixed-size atlas page; count bins include every observed midpoint once."""
-    all_chroms = _its_atlas_chroms(df, arm_blocks, chrom_sizes) if all_chroms is None else all_chroms
-    chroms = all_chroms[:ITS_ATLAS_ROWS] if chroms is None else list(chroms)
-    counts = _its_position_counts(df, chrom_sizes) if position_counts is None else position_counts
+                           chroms=None, cells=None, top_hits=None, known_sizes=None):
+    """ITS atlas: every ITS at its true position on its size tier's axis, coloured by its double-key class."""
+    chroms = _its_atlas_chroms(df, arm_blocks, chrom_sizes) if chroms is None else list(chroms)
+    threshold = params.get("label_threshold", LABEL_THRESHOLD)
+    cells = _its_atlas_cells(df, threshold) if cells is None else cells
     labels = df.attrs.get("display_labels") or _its_labels(df, chrom_sizes, arm_blocks)
-    vmax = max((int(v.max()) for _, v in counts.values()), default=1)
-    norm = LogNorm(vmin=1, vmax=max(2, vmax))
-    cmap = LinearSegmentedColormap.from_list("its_counts", ["#DCECF5", COLORS["p"]])
-    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, REPORT_PAGE_HEIGHT))
-    gs = fig.add_gridspec(1, 2, left=0.18, right=0.96, bottom=0.22, top=0.78, wspace=0.85)
     top = _its_top_hits(df, pairs, clusters) if top_hits is None else top_hits
     known = (df.groupby("chr")["chrSize"].max().to_dict() if known_sizes is None else known_sizes)
-    chunks = [chroms[:10], chroms[10:]]
-    for col, names in enumerate(chunks):
-        ax = fig.add_subplot(gs[0, col])
-        if not names:
-            ax.set_axis_off()
-            continue
-        # Each row uses a normalized 0-1 axis (own physical scale, shown in the label) so microchromosomes don't disappear beside large scaffolds.
-        for y, chrom in enumerate(names):
-            extent = max(int(chrom_sizes.get(chrom, 0)), 1)
-            ax.plot([0, 1], [y, y], color=COLORS["gap"], lw=7, solid_capstyle="butt", zorder=0)
-            if (params.get("ultra_fast") is True and params.get("terminal_limit") and
-                    known.get(chrom, extent) > 0):
-                fraction = min(params["terminal_limit"] / extent, 0.5)
-                ax.add_patch(Rectangle((fraction, y - 0.32), 1 - 2 * fraction, 0.64,
-                                       facecolor="white", edgecolor="none", zorder=1))
-            if chrom in counts:
-                edges, values = counts[chrom]
-                occupied = np.flatnonzero(values)
-                patches = [Rectangle((edges[i] / extent, y - 0.30),
-                                     (edges[i + 1] - edges[i]) / extent, 0.60) for i in occupied]
-                if patches:
-                    collection = PatchCollection(patches, cmap=cmap, norm=norm,
-                                                 edgecolors="none", rasterized=True, zorder=2)
-                    collection.set_array(values[occupied])
-                    ax.add_collection(collection)
-            for block in arm_blocks.get(chrom, []):
-                side = block.get("closestEnd")
-                if side in ("p", "q"):
-                    ax.plot([0 if side == "p" else 1], [y], marker="|",
-                            color=COLORS["terminal"], ms=8, mew=1, zorder=3)
-        tick_labels = []
-        for c in names:
-            suffix = " " + "/".join(top[c]) if c in top else ""
-            extent_label = _fmt_bp(chrom_sizes.get(c, 0))
-            if c in known and known[c] == 0:
-                extent_label += "*"
-            tick_labels.append(f"{labels[c]}{suffix}\n{extent_label}")
-        ax.set_yticks(range(len(names)))
-        ax.set_yticklabels(tick_labels, fontsize=MIN_TEXT_SIZE)
-        ax.set_ylim(9.6, -0.7)
-        ax.set_xlim(-0.01, 1.01)
-        ax.set_xticks([0, 0.5, 1])
-        ax.set_xticklabels(["0", "50", "100"])
-        ax.set_xlabel("Position within plotted extent (%)")
-        ax.tick_params(axis="y", length=0)
-        ax.spines["left"].set_visible(False)
-    cax = fig.add_axes([0.40, 0.08, 0.25, 0.025])
-    cb = fig.colorbar(matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap), cax=cax,
-                      orientation="horizontal")
-    cb.set_ticks(sorted(set([1, max(1, vmax)])))
-    cb.set_ticklabels([str(v) for v in sorted(set([1, max(1, vmax)]))])
-    cb.ax.minorticks_off()
-    fig.text(0.39, 0.095, "Rows per 1% bin", ha="right", va="center", fontsize=MIN_TEXT_SIZE)
-    fig.text(0.98, 0.022, "Midpoint counts; white: outside initial end windows; *extent inferred; caps: terminal calls",
-             ha="right", fontsize=MIN_TEXT_SIZE)
-    _its_header(fig, f"Interstitial telomeres: atlas ({page_number}/{page_count})",
-                f"{_scan_note(params)}; {len(chroms)} of {len(all_chroms)} scaffolds on this page")
+    limit = params.get("terminal_limit") or 0
+    end_scan = params.get("ultra_fast") is True and limit > 0
+    extent = _atlas_extent(chroms, chrom_sizes, cells)
+    height, columns, pitch, tiers = _atlas_layout(chroms, extent)
+    dense = pitch < ATLAS_PITCH_IN  # too many rows to label: a proportional heatmap
+    bar_h = pitch if dense else ATLAS_BAR_IN
+    width = FIG_WIDTH_DOUBLE
+    fig = plt.figure(figsize=(width, height))
+    _page_title(fig, "ITS atlas")
+    if not chroms:
+        fig.text(0.5, 0.45, "No ITS", ha="center", va="center",
+                 fontsize=PLACEHOLDER_TEXT_SIZE, color="#bbbbbb")
+        return fig
+
+    # Name-only row labels; the widest sets the label column so every bar starts at the same x.
+    row_label = {c: "" if dense else labels.get(c, c) for c in chroms}
+    font = FontProperties(size=AXIS_TICK_SIZE)
+    label_w = max(TextToPath().get_text_width_height_descent(t, font, ismath=False)[0]
+                  for t in row_label.values()) / 72 + 0.10
+    margin = 0.15
+    col_w = (width - 2 * margin - ATLAS_COL_GAP_IN * (len(columns) - 1)) / len(columns)
+    axes_w = col_w - label_w
+    longest = [max(extent[c] for c in tier) for tier in tiers]  # one scale per tier, shared across columns
+    lift = transforms.ScaledTranslation(0, 1.6 / 72, fig.dpi_scale_trans)  # triangle tip sits on the bar top
+    drew_caps, drew_marks = False, set()
+    used = max(sum(_atlas_rows(names, pitch)[1] + ATLAS_AXIS_IN for _, names in column) for column in columns)
+    drop = max(height - ATLAS_HEADER_IN - ATLAS_KEY_IN - ATLAS_FOOT_IN - used, 0.0) / 2.0  # room left after spreading is centred
+    for n, column in enumerate(columns):
+        x_in = margin + n * (col_w + ATLAS_COL_GAP_IN) + label_w
+        top_in = height - ATLAS_HEADER_IN - ATLAS_KEY_IN - drop
+        for k, names in column:
+            ys, seg_h = _atlas_rows(names, pitch)
+            ax = _inch_axes(fig, x_in, top_in - seg_h, axes_w, seg_h)
+            top_in -= seg_h + ATLAS_AXIS_IN
+            span = longest[k]
+            min_w = span * (1.2 / 72) / axes_w  # 1.2 pt floor keeps single ITS visible
+            backbone, masks, caps, its_rects, its_colors = [], [], [], [], []
+            for y, c in zip(ys, names):
+                size = extent[c]
+                y0 = y - bar_h / 2.0
+                backbone.append(Rectangle((0, y0), size, bar_h))
+                if end_scan and known.get(c, size) > 0 and size > 2 * limit:
+                    masks.append(Rectangle((limit, y0), size - 2 * limit, bar_h))
+                if c in cells:
+                    for s, e, color in zip(*cells[c]):
+                        w = max(e - s, min_w)
+                        its_rects.append(Rectangle((min(s, size - w), y0), w, bar_h))
+                        its_colors.append(color)
+                for block in arm_blocks.get(c, []):
+                    w = max(block["end"] - block["start"], min_w)
+                    x = min(block["start"], size - w) if block["start"] > size / 2.0 else block["start"]
+                    caps.append(Rectangle((max(x, 0), y0), w, bar_h))
+                marks = []
+                for tag, x in sorted([] if dense else top.get(c, []), key=lambda m: m[1]):
+                    if marks and (x - marks[-1][1]) / span * axes_w < max(0.22, 0.05 * len(marks[-1][0]) + 0.08):
+                        marks[-1] = (marks[-1][0] + "/" + tag, marks[-1][1])
+                    else:
+                        marks.append((tag, x))
+                for tag, x in marks:
+                    tag = "/".join(sorted(tag.split("/"), key=lambda t: ("FLC".find(t[0]), int(t[1:]))))
+                    drew_marks.update(tag.split("/"))
+                    ax.plot([x], [y0], marker="v", markersize=3, color=ATLAS_MARKS["FLC".find(tag[0])],
+                            markeredgewidth=0, linestyle="none", transform=ax.transData + lift, clip_on=False,
+                            zorder=6.2 - "FLC".find(tag[0]) / 10)
+                    ax.annotate(tag, (x, y0), xytext=(2.0, 1.6), textcoords="offset points", ha="left",
+                                va="center", fontsize=MIN_TEXT_SIZE, color="#222222",
+                                annotation_clip=False, zorder=6,
+                                path_effects=[patheffects.withStroke(linewidth=1.2, foreground="white")])
+            ax.add_collection(PatchCollection(backbone, facecolor=ATLAS_BACKBONE, edgecolor="none", zorder=1,
+                                              rasterized=len(backbone) > 2000))
+            if masks:
+                ax.add_collection(PatchCollection(masks, facecolor="white", edgecolor=COLORS["gap"],
+                                                  linewidth=0.4, zorder=2))
+            if its_rects:
+                ax.add_collection(PatchCollection(its_rects, facecolor=its_colors, edgecolor="none",
+                                                  zorder=3, rasterized=len(its_rects) > 2000))
+            if caps:
+                drew_caps = True
+                ax.add_collection(PatchCollection(caps, facecolor=COLORS["terminal"], edgecolor="none",
+                                                  zorder=4))
+            # Thin left bracket joins the members of a homolog group.
+            bracket = transforms.blended_transform_factory(ax.transAxes, ax.transData)
+            i = len(names) if dense else 0
+            while i < len(names):
+                j = i
+                while j + 1 < len(names) and _homolog_key(names[j + 1]) == _homolog_key(names[i]):
+                    j += 1
+                if j > i:
+                    ax.plot([-0.008, -0.008], [ys[i] - ATLAS_BAR_IN / 2, ys[j] + ATLAS_BAR_IN / 2],
+                            color="#8C8C8C", lw=0.5, transform=bracket, clip_on=False, solid_capstyle="butt")
+                i = j + 1
+            ax.set_yticks([] if dense else ys)
+            ax.set_yticklabels([] if dense else [row_label[c] for c in names], fontsize=AXIS_TICK_SIZE)
+            ax.tick_params(axis="y", length=0, pad=4)
+            ax.set_ylim(seg_h, 0)
+            ax.set_xlim(0, span)
+            end, step = _atlas_span(span)  # the longest bars run past the last tick
+            unit, name = _pick_bp_unit(max(end, 1e3))
+            ax.set_xticks(np.arange(0, end + step / 2, step))
+            ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _, unit=unit: _plain_number(x / unit)))
+            ax.spines["bottom"].set_bounds(0, end)
+            ax.tick_params(axis="x", length=2, width=0.4, pad=1.0, labelsize=AXIS_TICK_SIZE)
+            ax.set_xlabel(f"Position ({name}p)", fontsize=AXIS_TICK_SIZE, labelpad=1.5)
+            for side in ("left", "right", "top"):
+                ax.spines[side].set_visible(False)
+            ax.spines["bottom"].set_linewidth(0.45)
+
+    # Centre the rows, from labels to the last tick, on the page.
+    renderer = fig.canvas.get_renderer()
+    boxes = [ax.get_tightbbox(renderer) for ax in fig.axes]
+    dx = (width - (max(b.x1 for b in boxes) + min(b.x0 for b in boxes)) / fig.dpi) / 2.0 / width
+    for ax in fig.axes:
+        pos = ax.get_position()
+        ax.set_position([pos.x0 + dx, pos.y0, pos.width, pos.height])
+
+    handles = [Patch(facecolor=ATLAS_BACKBONE, edgecolor="none", label="Scaffold")]
+    if drew_caps:
+        handles.append(Patch(facecolor=COLORS["terminal"], edgecolor="none", label="Terminal telomere"))
+    if end_scan:
+        handles.append(Patch(facecolor="white", edgecolor=COLORS["gap"], linewidth=0.4,
+                             label=f"Not scanned (end scan, {_fmt_bp(limit)} per end)"))
+    handles += [Line2D([], [], marker="v", markersize=3, color=ATLAS_MARKS["FLC".find(tag)], markeredgewidth=0,
+                       linestyle="none", label=f"({tag})  {name}") for tag, name in (("F", "Fusion candidates"),
+                                                                  ("L", "Longest canonical ITS"), ("C", "Clusters of ITS"))
+                if any(mark.startswith(tag) for mark in drew_marks)]
+    # Key and legend share one strip under the title, centred as a pair.
+    key_side = LOCUS_KEY_SIDE
+    key_y = height - ATLAS_HEADER_IN - key_side - 0.04  # pinned under the title, leaving room above the rows
+    key = _inch_axes(fig, 0, key_y, key_side, key_side)
+    _draw_double_key(key)
+    legend = fig.legend(handles=handles, loc="center left", frameon=False, fontsize=LEGEND_TEXT_SIZE,
+                        ncol=(len(handles) + 1) // 2, bbox_to_anchor=(0, (key_y + key_side / 2) / height),
+                        handlelength=1.4, handleheight=0.8, borderaxespad=0, labelspacing=0.6, columnspacing=1.6)
+    key_box = key.get_tightbbox(renderer)
+    key_w = (key_box.x1 - key_box.x0) / fig.dpi
+    legend_w = legend.get_window_extent(renderer).width / fig.dpi
+    x0 = (width - key_w - 0.35 - legend_w) / 2.0
+    key.set_position([(x0 + key.get_position().x0 * width - key_box.x0 / fig.dpi) / width,
+                      key_y / height, key_side / width, key_side / height])
+    legend.set_bbox_to_anchor(((x0 + key_w + 0.35) / width, (key_y + key_side / 2) / height), fig.transFigure)
     return fig
 
 
-def _draw_its_length_hist_panel(ax, df):
-    """Exact ECDFs, including ties, singleton groups and unknown orientations."""
-    styles = ["-", "--", ":", "-."]
-    orientation = _its_orientation(df)
-    for (key, name), style in zip(ITS_ORIENT_LABELS, styles):
-        values = df.loc[orientation == key, "teloLen"].to_numpy(dtype=float)
-        if not len(values):
-            continue
-        x, counts = np.unique(values, return_counts=True)
-        cumulative = counts.cumsum() / len(values)
-        ax.step(np.r_[x[0], x], np.r_[0, cumulative], where="post",
-                color=ITS_ORIENT_COLORS[key], linestyle=style, linewidth=1,
-                label=f"{name} (n={len(values):,})")
-        if len(x) == 1:
-            ax.plot(x, [1], marker="o", ms=2, color=ITS_ORIENT_COLORS[key])
-    ax.set_xscale("log")
-    ax.set_ylim(0, 1.05)
-    ax.set_xlabel("ITS row length (bp)")
-    ax.set_ylabel("Cumulative fraction")
-    if len(df):
-        ax.legend(loc="lower right", fontsize=MIN_TEXT_SIZE)
-    ax.xaxis.set_minor_locator(ticker.NullLocator())
+def _inch_axes(fig, x, y, w, h, **kwargs):
+    """Axes placed in inches from the lower-left corner, so panels keep a fixed physical size."""
+    width, height = fig.get_size_inches()
+    return fig.add_axes([x / width, y / height, w / width, h / height], **kwargs)
 
 
-def _draw_its_class_totals_panel(ax_count, ax_mb, df):
-    classes = df["teloType"].where(df["teloType"].isin(CLASS_ORDER), "other")
-    order = CLASS_ORDER + (["other"] if (classes == "other").any() else [])
-    counts = df.groupby(classes)["teloLen"].size().reindex(order, fill_value=0)
-    totals = df.groupby(classes)["teloLen"].sum().reindex(order, fill_value=0)
-    for ax, series, label, fmt in ((ax_count, counts, "Rows", lambda x: f"{int(x):,}"),
-                                   (ax_mb, totals, "Summed row length (bp)", _fmt_bp)):
-        vals = series.to_numpy(dtype=float)
-        ax.set_xscale("log")
-        positive = vals[vals > 0]
-        low = min(positive.min() / 2, 0.5) if len(positive) else 0.5
-        high = max(vals.max(), 1) * 20
-        ax.set_xlim(low, high)
-        for i, (key, val) in enumerate(zip(order, vals)):
-            if val > 0:
-                ax.plot(val, i, marker="o", ms=3, color=CLASS_COLORS.get(key, COLORS["its"]))
-            ax.text(max(val, low) * 1.3, i, fmt(val), va="center", fontsize=MIN_TEXT_SIZE)
-        ax.set_yticks(range(len(order)))
-        ax.set_yticklabels(order if ax is ax_count else [])
-        ax.set_ylim(len(order) - 0.5, -0.5)
-        ax.set_xlabel(label)
-        ax.xaxis.set_major_locator(ticker.LogLocator(numticks=3))
-        ax.xaxis.set_minor_locator(ticker.NullLocator())
-        ax.tick_params(axis="y", length=0)
-        ax.spines["left"].set_visible(False)
+def _its_axis_style(ax, left=True):
+    """Terminal-page chrome: light 0.45-pt bottom/left spines, short ticks, grey tick labels."""
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("bottom", "left"):
+        ax.spines[side].set_linewidth(0.45)
+        ax.spines[side].set_color("#bcbcbc")
+    ax.spines["left"].set_visible(left)
+    ax.tick_params(length=2.0, width=0.45, pad=1.5, labelsize=AXIS_TICK_SIZE,
+                   color="#bcbcbc", labelcolor="#555555")
+    ax.minorticks_off()
 
 
-def _draw_its_composition_panel(ax, df, motif_len, min_canonical_count):
-    """Positive canonical estimates at their true coordinates; excluded zeros counted."""
-    valid = (df["teloLen"] > 0) & (df["canonical_bp"] > 0)
-    positive = df.loc[valid]
-    excluded = len(df) - len(positive)
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("ITS row length (bp)")
-    ax.set_ylabel("Canonical match bp")
-    if positive.empty:
-        ax.set_xlim(1, 10)
-        ax.set_ylim(1, 10)
-        ax.text(0.5, 0.5, "No positive canonical counts", transform=ax.transAxes,
-                ha="center", fontsize=PLACEHOLDER_TEXT_SIZE)
-    else:
-        x = positive["teloLen"].to_numpy(dtype=float)
-        y = positive["canonical_bp"].to_numpy(dtype=float)
-        lo, hi = min(x.min(), y.min()), max(x.max(), y.max())
-        ax.set_xlim(x.min() / 1.5, x.max() * 1.5)
-        ax.set_ylim(y.min() / 1.5, y.max() * 1.5)
-        if len(positive) > 500:
-            hb = ax.hexbin(x, y, xscale="log", yscale="log", gridsize=35, mincnt=1,
-                           cmap=LinearSegmentedColormap.from_list("composition", ["#DCECF5", COLORS["p"]]),
-                           norm=LogNorm(vmin=1, vmax=max(2, len(positive))), linewidths=0,
-                           rasterized=True)
-            # Normalize to actual occupied-bin counts (not the number of input rows).
-            hb.set_clim(1, max(2, float(hb.get_array().max())))
-            cb = ax.figure.colorbar(hb, ax=ax, fraction=0.045, pad=0.025)
-            cb.set_label("Rows per hexagon (log)", fontsize=MIN_TEXT_SIZE)
-            cb.ax.tick_params(labelsize=MIN_TEXT_SIZE)
+def _its_shares(df):
+    """Forward and canonical share of each ITS's repeat counts (NaN when it has none)."""
+    total = (df["fwdCan"] + df["revCan"] + df["fwdNonCan"] + df["revNonCan"]).to_numpy(dtype=float)
+    total[total == 0] = np.nan
+    return ((df["fwdCan"] + df["fwdNonCan"]).to_numpy(dtype=float) / total,
+            (df["fwdCan"] + df["revCan"]).to_numpy(dtype=float) / total)
+
+
+def _its_marker_area(lengths, longest, dense):
+    """Marker area in pt^2 proportional to ITS length."""
+    return np.maximum((24.0 if dense else 60.0) * lengths / max(longest, 1), 1.0)
+
+
+def _plain_log_axis(ax, which, lo, hi, margin=1.25):
+    """Log x or y axis spanning at least a decade, with plain-number ticks at decades or 1-2-5 steps."""
+    lo, hi = lo / margin, hi * margin
+    if hi / lo < 10:
+        mid = np.sqrt(lo * hi)
+        lo, hi = mid / np.sqrt(10), mid * np.sqrt(10)
+    k0, k1 = int(np.floor(np.log10(lo))), int(np.ceil(np.log10(hi)))
+    ticks = [10.0 ** k for k in range(k0, k1 + 1) if lo <= 10.0 ** k <= hi]
+    if len(ticks) < 2:
+        ticks = [m * 10.0 ** k for k in range(k0, k1 + 1) for m in (1, 2, 5) if lo <= m * 10.0 ** k <= hi]
+    getattr(ax, f"set_{which}scale")("log")
+    getattr(ax, f"set_{which}lim")(lo, hi)
+    axis = getattr(ax, f"{which}axis")
+    axis.set_ticks(ticks, [f"{t:.0f}" if t >= 1 else f"{t:g}" for t in ticks])
+    axis.set_minor_locator(ticker.NullLocator())
+
+
+def _draw_its_length_panel(ax, lengths):
+    """Log-binned ITS length histogram with the median marked."""
+    lengths = lengths[lengths > 0]
+    lo, hi = np.log10(lengths.min()), np.log10(lengths.max())
+    n_bins = int(np.clip(round((hi - lo) * 10), 1, 40))
+    edges = np.logspace(lo - 0.05, hi + 0.05, n_bins + 1)
+    counts = np.histogram(lengths, edges)[0]
+    ax.bar(edges[:-1], counts, width=np.diff(edges), align="edge", color=ITS_LENGTH_COLOR, edgecolor="white", linewidth=0.3)
+    median = _median(lengths)
+    ax.axvline(median, color="#222222", lw=0.6, zorder=3)
+    right_half = np.log10(median) > (lo + hi) / 2
+    ax.text(median, 0.94, f" median\n {_fmt_bp(median)} ", transform=ax.get_xaxis_transform(),
+            ha="right" if right_half else "left", va="top", fontsize=LEGEND_TEXT_SIZE, color="#222222")
+    ax.set_ylim(0, max(1, counts.max()) * 1.15)
+    _plain_log_axis(ax, "x", edges[0], edges[-1], margin=1.0)
+    ax.yaxis.set_major_locator(ticker.MaxNLocator(nbins=4, integer=True))
+    _its_axis_style(ax)
+    ax.set_xlabel("ITS length (bp)", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+    ax.set_ylabel("# ITSs", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+
+
+def _draw_its_scaffold_panel(ax, df, chrom_sizes):
+    """ITS count against density, with a descriptive log-space fit and sparse labels."""
+    per = df.groupby("chr").agg(n=("teloLen", "size"), bp=("teloLen", "sum"), size=("chrSize", "max"))
+    per["size"] = [max(chrom_sizes.get(c, 0), s) for c, s in zip(per.index, per["size"])]
+    per = per[(per["size"] > 0) & (per["bp"] > 0)]
+    if per.empty:
+        _hide_panel(ax, "No scaffold size")
+        return
+    x, y = per["n"].astype(float), per["bp"] / per["size"] * 1e6  # density already carries the size
+    if len(per) >= 3 and x.nunique() >= 2:
+        slope, intercept = np.polyfit(np.log10(x), np.log10(y), 1)
+        ends = np.array([x.min(), x.max()])
+        ax.plot(ends, 10 ** (intercept + slope * np.log10(ends)), color="#777777", lw=0.6, zorder=1)
+    # Dot diameter is linear in log10 scaffold size, so dot chromosomes stand apart; largest drawn first.
+    lo, hi = np.log10(per["size"].min()), np.log10(per["size"].max())
+    diameter = lambda v: 2.5 + 5.0 * ((np.log10(v) - lo) / (hi - lo) if hi > lo else 0.5)
+    order = np.argsort(-per["size"].to_numpy(), kind="stable")
+    ax.scatter(x.iloc[order], y.iloc[order], s=diameter(per["size"].iloc[order].to_numpy(float)) ** 2,
+               facecolor="#9ECAE1", alpha=0.8, edgecolor="#333333", linewidths=0.2, zorder=2)
+    nice = [m * 10.0 ** k for k in range(int(np.floor(lo)), int(np.ceil(hi)) + 1) for m in (1, 2, 5)
+            if lo - 1e-9 <= np.log10(m) + k <= hi + 1e-9]
+    refs = sorted({nice[0], nice[len(nice) // 2], nice[-1]}) if nice else [10 ** hi]
+    ax.legend(handles=[Line2D([], [], marker="o", linestyle="none", markersize=diameter(v), markerfacecolor="none",
+                              markeredgecolor="#333333", markeredgewidth=0.4, label=_fmt_bp(v)) for v in refs],
+              title="Scaffold size", title_fontsize=LEGEND_TEXT_SIZE, fontsize=LEGEND_TEXT_SIZE, loc="lower right",
+              frameon=False, handletextpad=0.3, labelspacing=0.5, borderaxespad=0.2, borderpad=0.2)
+    _plain_log_axis(ax, "x", x.min(), x.max())
+    _plain_log_axis(ax, "y", y.min(), y.max(), margin=1.6)
+    _its_axis_style(ax)
+    ax.set_xlabel("ITS per scaffold", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+    ax.set_ylabel("ITS density (bp/Mbp)", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+    # Count all known scaffolds, including those without ITS, before allowing labels.
+    if len(set(chrom_sizes) | set(df["chr"])) > 10:
+        return
+    # Place sparse labels in display coordinates, keeping them apart on log axes.
+    ax.figure.canvas.draw()
+    renderer = ax.figure.canvas.get_renderer()
+    placed = []
+    for chrom in per.index:
+        text = ax.annotate(chrom, (x[chrom], y[chrom]), xytext=(4, 0),
+                           textcoords="offset points", ha="left", va="center",
+                           fontsize=ANNOTATION_TEXT_SIZE, color="#222222")
+        for dy in (0, 9, -9, 18, -18, 27, -27):
+            for dx, align in ((4, "left"), (-4, "right")):
+                text.set_position((dx, dy))
+                text.set_ha(align)
+                text.update_positions(renderer)
+                box = matplotlib.text.Text.get_window_extent(text, renderer).expanded(1.04, 1.15)
+                if (ax.bbox.contains(box.x0, box.y0) and ax.bbox.contains(box.x1, box.y1)
+                        and not any(box.overlaps(other) for other in placed)):
+                    break
+            else:
+                continue
+            break
         else:
-            orientation = _its_orientation(positive)
-            for (key, name), marker in zip(ITS_ORIENT_LABELS, ("<", ">", "D", "o")):
-                mask = orientation == key
-                if mask.any():
-                    ax.scatter(x[mask], y[mask], s=9, color=ITS_ORIENT_COLORS[key],
-                               edgecolors="black", linewidths=0.2, marker=marker, label=name)
-            ax.legend(loc="upper left", fontsize=MIN_TEXT_SIZE, handletextpad=0.2)
-        ax.plot([lo / 2, hi * 2], [lo / 2, hi * 2], color="black", lw=0.5,
-                linestyle="--", zorder=0)
-        if min_canonical_count is not None and min_canonical_count > 0:
-            floor = min_canonical_count * motif_len
-            ax.axhline(floor, color="black", lw=0.5, linestyle=":", zorder=0)
-    ax.text(0.02, -0.29, f"Positive n={len(positive):,}; zero canonical n={excluded:,}",
-            transform=ax.transAxes, fontsize=MIN_TEXT_SIZE)
-    ax.xaxis.set_minor_locator(ticker.NullLocator())
-    ax.yaxis.set_minor_locator(ticker.NullLocator())
+            text.remove()
+            continue
+        placed.append(box)
 
 
-def plot_its_statistics_page(df, pairs, clusters, params):
-    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, REPORT_PAGE_HEIGHT))
-    gs = fig.add_gridspec(2, 2, left=0.085, right=0.97, top=0.77, bottom=0.22,
-                         width_ratios=[1.05, 1], hspace=1.0, wspace=0.55)
-    comp = fig.add_subplot(gs[:, 0])
-    ecdf = fig.add_subplot(gs[0, 1])
-    sub = gs[1, 1].subgridspec(1, 2, wspace=0.55)
-    count, length = fig.add_subplot(sub[0, 0]), fig.add_subplot(sub[0, 1])
-    known = params.get("known_params", set())
-    floor = params.get("min_canonical_count") if {"motif_len", "min_canonical_count"} <= known else None
-    _draw_its_composition_panel(comp, df, params.get("motif_len", 6), floor)
-    _draw_its_length_hist_panel(ecdf, df)
-    _draw_its_class_totals_panel(count, length, df)
-    _its_header(fig, "Interstitial telomeres: distributions",
-                f"{_scan_note(params)}; n={len(df):,} rows; {len(pairs):,} candidate pairs; {len(clusters):,} clusters")
-    motif_note = "" if "motif_len" in known else " (assumed)"
-    note = f"Canonical match bp = count × {params.get('motif_len', 6)} bp{motif_note}; dashed: equal bp"
-    if floor is not None:
-        note += "; dotted: configured count floor"
-    fig.text(0.5, 0.027, note, ha="center", fontsize=MIN_TEXT_SIZE)
+def plot_its_summary_page(df, pairs, clusters, chrom_sizes, params):
+    """ITS summary: headline tiles, length (a), scaffold density (b), and composition (c)."""
+    fig = plt.figure(figsize=SLIDE_SIZE)
+    _page_title(fig, "Assembly ITS summary")
+    if df.empty:
+        fig.text(0.5, 0.5, "No ITS", ha="center", va="center",
+                 fontsize=PLACEHOLDER_TEXT_SIZE, color="#bbbbbb")
+        return fig
+    lengths = df["teloLen"].to_numpy(dtype=float)
+    _draw_stat_tiles(_add_axes_in(fig, (FIG_WIDTH_DOUBLE - 6.0) / 2, 0.36, 6.0, 0.34), [
+        (f"{_median(lengths):,.0f}", "Median ITS length (bp)"),
+        (f"{len(df):,}", "ITS"),
+        (f"{lengths.sum() / 1e3:,.1f}", "ITS content (kbp)"),
+        (f"{df['chr'].nunique():,}", "Scaffolds with ITS"),
+        (f"{len(clusters):,}", "Clusters"),
+        (f"{len(pairs):,}", "Candidate fusions"),
+    ])
+    hist = _inch_axes(fig, 0.66, 0.63, 1.66, 1.66)  # level with panel c's joint square
+    per = _inch_axes(fig, 2.98, 0.63, 1.66, 1.66)
+    if (lengths > 0).any():
+        _draw_its_length_panel(hist, lengths)
+    else:
+        _hide_panel(hist, "No ITS length")
+    _panel_title(hist, "ITS length distribution", "a", x_in=PANEL_LETTER_X_IN, y=1 + 0.32 / 1.66)
+    _draw_its_scaffold_panel(per, df, chrom_sizes)
+    _panel_title(per, "ITS scaffold distribution", "b", y=1 + 0.32 / 1.66)  # titles level with c's marginal
+    _draw_its_composition(fig, df, params)
     return fig
 
 
-def _table_bbox(n_data_rows, ax_height_in):
-    """Top-aligned bbox giving every table row a fixed physical height instead of stretching."""
-    frac = min(1.0, (n_data_rows + 1) * TABLE_ROW_IN / ax_height_in)
-    return [0.0, 1.0 - frac, 1.0, frac]
+def _draw_its_joint_panel(ax, ax_top, ax_right, df, threshold):
+    """Forward proportion x canonical proportion per ITS, on the double-key class regions, with marginals."""
+    fwd, can = _its_shares(df)
+    ok = np.isfinite(fwd)
+    cuts = (-0.04, 1 - threshold, threshold, 1.04)
+    for c in range(3):
+        for s in range(3):
+            ax.add_patch(Rectangle((cuts[s], cuts[c]), cuts[s + 1] - cuts[s], cuts[c + 1] - cuts[c],
+                                   facecolor=DOUBLE_KEY_COLORS[c][s], alpha=0.25, linewidth=0, zorder=0))
+    for cut in cuts[1:3]:
+        ax.axvline(cut, color="#bcbcbc", lw=0.45, zorder=1)
+        ax.axhline(cut, color="#bcbcbc", lw=0.45, zorder=1)
+    lengths = df["teloLen"].to_numpy(dtype=float)
+    dense = len(df) > 500
+    order = np.argsort(-lengths[ok], kind="mergesort")
+    colors = np.asarray(double_key_colors(df, threshold), dtype=object)[ok][order]
+    ax.scatter(fwd[ok][order], can[ok][order],
+               s=_its_marker_area(lengths[ok][order], lengths.max(), dense), c=list(colors),
+               alpha=0.8 if dense else 1.0, edgecolors="#333333",
+               linewidths=0.2, rasterized=dense, zorder=2)
+    ticks = [0, 1 - threshold, threshold, 1]
+    labels = [f"{v:.2f}".rstrip("0").rstrip(".") for v in ticks]
+    for axis in (ax.xaxis, ax.yaxis):
+        axis.set_ticks(ticks, labels)
+    ax.set_xlim(cuts[-1], cuts[0])  # mirrored: fwd (5' end) on the left, as in the key
+    ax.set_ylim(cuts[0], cuts[-1])
+    _its_axis_style(ax)
+    ax.set_xlabel("← Forward proportion", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+    ax.set_ylabel("Canonical proportion →", fontsize=AXIS_LABEL_SIZE, labelpad=2)
+
+    bins = np.linspace(0, 1, 21)
+    for marginal, values, orientation in ((ax_top, fwd[ok], "vertical"), (ax_right, can[ok], "horizontal")):
+        counts = np.histogram(values, bins)[0]
+        marginal.stairs(counts, bins, orientation=orientation, fill=True, facecolor="#9A9A9A", alpha=0.35, linewidth=0)
+        marginal.stairs(counts, bins, orientation=orientation, color="#6F6F6F", linewidth=0.6)
+    for marginal, line in ((ax_top, ax_top.axvline), (ax_right, ax_right.axhline)):
+        for cut in cuts[1:3]:
+            line(cut, color="#bcbcbc", lw=0.45)
+        _its_axis_style(marginal, left=False)
+        marginal.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+    ax_right.spines["bottom"].set_visible(False)
+    ax_right.spines["left"].set_visible(True)
+    ax_top.set_xlim(ax.get_xlim())
+    ax_right.set_ylim(ax.get_ylim())
 
 
-def _style_table(tab):
-    """Compact table style: small text, thin horizontal-only rules, no vertical lines."""
-    tab.auto_set_font_size(False)
-    tab.set_fontsize(TABLE_TEXT_SIZE)
-    for cell in tab.get_celld().values():
-        cell.set_linewidth(0.3)
-        cell.set_edgecolor("#cccccc")
-        cell.visible_edges = "horizontal"
+def _draw_its_size_key(ax, lengths, dense):
+    """Three reference markers for the length-to-area scale of the joint panel."""
+    longest = lengths.max()
+    top = 10 ** np.floor(np.log10(max(longest, 1)))
+    refs = [v for v in (top / 100, top / 10, top) if v >= max(lengths.min(), 1)] or [longest]
+    xs = np.arange(len(refs)) - (len(refs) - 1) / 2.0  # centred on the axes whatever the count
+    ax.scatter(xs, np.zeros(len(refs)), s=_its_marker_area(np.array(refs), longest, dense),
+               facecolors="none", edgecolors="#555555", linewidths=0.5)
+    for x, ref in zip(xs, refs):
+        ax.text(x, -0.9, _fmt_bp(ref), ha="center", va="top", fontsize=LEGEND_TEXT_SIZE, color="#222222")
+    ax.text(0, 1.0, "Marker area scales with length", ha="center", va="bottom",
+            fontsize=LEGEND_TEXT_SIZE, color="#222222")
+    ax.set_xlim(-1.6, 1.6)
+    ax.set_ylim(-2.2, 1.6)
+    ax.axis("off")
 
 
-def _draw_its_summary_tables(ax_long, ax_cluster, ax_fusion, df, clusters, pairs, ax_height_in):
-    """Panels b-d: Long ITS / Clusters / Candidate fusions, compact ax.table renders."""
-    for ax in (ax_long, ax_cluster, ax_fusion):
-        ax.axis("off")
+def _draw_its_composition(fig, df, params):
+    """Summary panel c: joint composition and class totals in the same nine regions."""
+    threshold = params.get("label_threshold", LABEL_THRESHOLD)
+    lengths = df["teloLen"].to_numpy(dtype=float)
+    joint = _inch_axes(fig, 5.21, 0.63, 1.66, 1.66)
+    top = _inch_axes(fig, 5.21, 2.33, 1.66, 0.28)
+    right = _inch_axes(fig, 6.91, 0.63, 0.16, 1.66)
+    _draw_its_joint_panel(joint, top, right, df, threshold)
+    _panel_title(top, "ITS composition", "c")
+    strand, canon = composition_class(df["fwdCan"], df["revCan"], df["fwdNonCan"], df["revNonCan"], threshold)
+    counts, bp = np.zeros((3, 3)), np.zeros((3, 3))
+    np.add.at(counts, (canon, strand), 1)
+    np.add.at(bp, (canon, strand), lengths)
+    cuts = (-0.04, 1 - threshold, threshold, 1.04)
+    for c in range(3):
+        for s in range(3):
+            share = 100 * bp[c, s] / lengths.sum() if lengths.sum() > 0 else 0
+            joint.text((cuts[s] + cuts[s + 1]) / 2, (cuts[c] + cuts[c + 1]) / 2,
+                       f"{int(counts[c, s]):,}\n{share:.0f}%", ha="center", va="center",
+                       fontsize=MIN_TEXT_SIZE, color="black", zorder=4)
 
-    ax_long.set_title("Long ITS, ranked by canonical bp", loc="left", fontsize=PANEL_TITLE_SIZE, pad=2)
-    top_long = rank_long_its(df, 5)
-    if top_long.empty:
-        ax_long.text(0.02, 0.9, "none", fontsize=TABLE_TEXT_SIZE, va="top", color="black")
-    else:
-        short_names = [df.attrs.get("display_labels", {}).get(c, c) for c in top_long["chr"]]
-        rows = [[f"L{i + 1}", name, f"{(row.start + row.end) / 2e6:.3f}", _fmt_bp(int(row.teloLen)),
-                f"{int(row.canonical_bp):,}", _fmt_frac(row.can_prop),
-                row.teloLabel if row.teloLabel in ("p", "q", "b") else "other",
-                CLASS_SHORT.get(row.teloType, "other")]
-               for i, (row, name) in enumerate(zip(top_long.itertuples(index=False), short_names))]
-        tab = ax_long.table(
-            cellText=rows,
-            colLabels=["#", "scaffold", "pos (Mb)", "length", "can. bp", "ratio", "strand", "class"],
-            colWidths=[0.08, 0.23, 0.13, 0.13, 0.12, 0.11, 0.10, 0.10],
-            loc="upper left", cellLoc="left", colLoc="left",
-            bbox=_table_bbox(len(rows), ax_height_in),
-        )
-        _style_table(tab)
 
-    ax_cluster.set_title("ITS clusters (≥3 rows within 50 kb)", loc="left",
-                         fontsize=PANEL_TITLE_SIZE, pad=2)
-    top_clusters = clusters.head(5)
-    if top_clusters.empty:
-        ax_cluster.text(0.02, 0.9, "none", fontsize=TABLE_TEXT_SIZE, va="top", color="black")
-    else:
-        short_names = [df.attrs.get("display_labels", {}).get(c, c) for c in top_clusters["chr"]]
-        rows = [[f"C{i + 1}", name, f"{row.start / 1e6:.3f}-{row.end / 1e6:.3f}", f"{row.rows}",
-                _fmt_bp(int(row.span)), _fmt_bp(int(row.its_bp)), _fmt_bp(int(row.canonical_bp))]
-               for i, (row, name) in enumerate(zip(top_clusters.itertuples(index=False), short_names))]
-        tab = ax_cluster.table(
-            cellText=rows,
-            colLabels=["#", "scaffold", "start-end (Mb)", "rows", "span", "ITS bp", "can. bp"],
-            colWidths=[0.07, 0.19, 0.25, 0.09, 0.14, 0.13, 0.13],
-            loc="upper left", cellLoc="left", colLoc="left",
-            bbox=_table_bbox(len(rows), ax_height_in),
-        )
-        _style_table(tab)
+_ITS_SEGMENT_KEYS = (("fwdCan", 2, 2), ("fwdNonCan", 0, 2), ("revNonCan", 0, 0), ("revCan", 2, 0))
+ITS_GLYPH_BAR = 0.15  # candidate bar height in rows of a square five-row panel: label line over a thin bar
 
-    ax_fusion.set_title("Candidate fusions (q→p), ranked by shorter arm", loc="left",
-                        fontsize=PANEL_TITLE_SIZE, pad=2)
-    top_pairs = pairs.head(5)
-    if top_pairs.empty:
-        ax_fusion.text(0.02, 0.9, "none", fontsize=TABLE_TEXT_SIZE, va="top", color="black")
-    else:
-        short_names = [df.attrs.get("display_labels", {}).get(c, c) for c in top_pairs["chr"]]
-        rows = [[f"F{i + 1}", name, f"{(row.start + row.end) / 2e6:.3f}",
-                f"{row.q_bp:,}", f"{row.p_bp:,}", f"{row.spacer_bp:,}",
-                f"{_fmt_frac(row.q_can_prop)}/{_fmt_frac(row.p_can_prop)}"]
-               for i, (row, name) in enumerate(zip(top_pairs.itertuples(index=False), short_names))]
-        tab = ax_fusion.table(
-            cellText=rows,
-            colLabels=["#", "scaffold", "pos (Mb)", "q bp", "p bp", "spacer", "ratio q/p"],
-            colWidths=[0.06, 0.25, 0.13, 0.13, 0.13, 0.11, 0.19],
-            loc="upper left", cellLoc="left", colLoc="left",
-            bbox=_table_bbox(len(rows), ax_height_in),
-        )
-        _style_table(tab)
+
+def _its_glyph_axes(ax, lo, hi, label):
+    """Five glyph rows on a bp axis with plain numeric ticks and the unit in the axis label."""
+    divisor, unit = _pick_bp_unit(max(-lo, hi, 1))
+    ax.set_xlim(lo * 1.02, max(hi, 1) * 1.02)
+    ax.set_ylim(4.5, -0.5)
+    ax.set_yticks([])
+    ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=6))
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{abs(v) / divisor:g}"))
+    ax.set_xlabel(label.format(unit if unit == "bp" else unit + "p"), fontsize=AXIS_LABEL_SIZE, labelpad=1.5)
+    _its_axis_style(ax, left=False)
+
+
+def _its_row_labels(ax, i, left, right):
+    """Identity label and one self-describing value on a line above a glyph row."""
+    row_y = transforms.blended_transform_factory(ax.transAxes, ax.transData)
+    for x, text, ha, color in ((0, left, "left", "#222222"), (1, right, "right", "#555555")):
+        ax.text(x, i - ITS_GLYPH_BAR / 2 - 0.08, text, transform=row_y, ha=ha, va="bottom", fontsize=AXIS_TICK_SIZE, color=color)
+
+
+def _its_locus_name(df, chrom):
+    """Display scaffold name, trimmed to fit the label column."""
+    name = df.attrs.get("display_labels", {}).get(chrom, chrom)
+    return name if len(name) <= 18 else name[:17] + "…"
+
+
+def _draw_its_long_glyphs(ax, df):
+    """Panel c: top ITS as to-scale bars split into their four strand/canonical segments, fwd first."""
+    top = rank_long_its(df, 5)
+    counts = [k for k, _, _ in _ITS_SEGMENT_KEYS]
+    _its_glyph_axes(ax, 0, top["teloLen"].max(), "ITS length ({})")
+    colors = np.array([DOUBLE_KEY_COLORS[c][s] for _, c, s in _ITS_SEGMENT_KEYS])
+    for i, row in enumerate(top.itertuples(index=False)):
+        values = np.array([getattr(row, k) for k in counts], dtype=float)
+        total = values.sum()
+        if total > 0:
+            widths = row.teloLen * values / total
+            keep = widths > 0
+            ax.barh(np.full(keep.sum(), i), widths[keep], left=np.r_[0, np.cumsum(widths)[:-1]][keep],
+                    height=ITS_GLYPH_BAR, color=colors[keep], linewidth=0)
+        else:
+            ax.barh(i, row.teloLen, height=ITS_GLYPH_BAR, color=DOUBLE_KEY_COLORS[1][1], linewidth=0)
+        # Count-based share, the composition page's y axis: canonical over all matches.
+        _its_row_labels(ax, i, f"L{i + 1}  {_its_locus_name(df, row.chr)}",
+                        f"{100 * (row.fwdCan + row.revCan) / total:.0f}% canonical" if total > 0 else "NA")
+
+
+def _draw_its_cluster_glyphs(ax, df, clusters, threshold):
+    """Panel a: each cluster as a to-scale track of its span with ITS cells in class colours."""
+    top = clusters.head(5)
+    _its_glyph_axes(ax, 0, float(top["span"].max()), "Position in cluster ({})")
+    width_in = ax.get_position().width * ax.figure.get_size_inches()[0]
+    min_width = ax.get_xlim()[1] * (1.2 / 72) / width_in
+    for i, row in enumerate(top.itertuples(index=False)):
+        ax.add_patch(Rectangle((0, i - 0.02), row.span, 0.04, facecolor=COLORS["gap"], linewidth=0))
+        members = df[(df["chr"] == row.chr) & (df["start"] >= row.start) & (df["end"] <= row.end)]
+        members = members.assign(dk_color=double_key_colors(members, threshold)).sort_values("teloLen", ascending=False)
+        for m in members.itertuples(index=False):
+            ax.add_patch(Rectangle((m.start - row.start, i - ITS_GLYPH_BAR / 2), max(m.end - m.start, min_width), ITS_GLYPH_BAR,
+                                   facecolor=m.dk_color, linewidth=0))
+        _its_row_labels(ax, i, f"C{i + 1}  {_its_locus_name(df, row.chr)}", f"{row.rows:,} ITS")
+
+
+def _overlap_color(frame, start, end):
+    """Class colour of the ITS overlapping [start, end) most, or the neutral ITS grey when none does."""
+    overlap = np.minimum(frame["end"].to_numpy(), end) - np.maximum(frame["start"].to_numpy(), start)
+    if not len(overlap) or overlap.max() <= 0:
+        return COLORS["its"]
+    return frame["dk_color"].iloc[int(np.argmax(overlap))]
+
+
+def _draw_its_fusion_glyphs(ax, df, pairs, threshold):
+    """Panel b: q block left and p block right of their junction, to scale."""
+    top = pairs.head(5)
+    half = top["spacer_bp"] / 2
+    reach = float(np.maximum(top["q_bp"] + half, top["p_bp"] + half).max())
+    _its_glyph_axes(ax, -reach, reach, "q  ←  Distance to junction ({})  →  p")
+    ax.axvline(0, color="#dddddd", lw=0.45, zorder=0)
+    colored = df.assign(dk_color=double_key_colors(df, threshold))
+    for i, (row, h) in enumerate(zip(top.itertuples(index=False), half)):
+        scaffold = colored[colored["chr"] == row.chr]
+        ax.plot([-h, h], [i, i], color="#555555", lw=0.6, solid_capstyle="butt")
+        for lo, x0, width in ((row.start, -h - row.q_bp, row.q_bp), (row.end - row.p_bp, h, row.p_bp)):
+            ax.add_patch(Rectangle((x0, i - ITS_GLYPH_BAR / 2), width, ITS_GLYPH_BAR, facecolor=_overlap_color(scaffold, lo, lo + width),
+                                   linewidth=0))
+        _its_row_labels(ax, i, f"F{i + 1}  {_its_locus_name(df, row.chr)}", f"{row.spacer_bp:,} bp spacer")
+
+
+def _its_segment_legend(ax):
+    """One centred line naming the segment colours: hue is strand, lighter is less canonical."""
+    handles = [Patch(facecolor=DOUBLE_KEY_COLORS[c][s], label=label) for c, s, label in
+               ((2, 2, "fwd canonical"), (0, 2, "fwd non-canonical"), (2, 1, "both strands"),
+                (0, 0, "rev non-canonical"), (2, 0, "rev canonical"))]
+    ax.legend(handles=handles, loc="center", ncol=len(handles), frameon=False, fontsize=LEGEND_TEXT_SIZE,
+              handlelength=0.9, handleheight=0.9, handletextpad=0.4, columnspacing=1.4, borderaxespad=0)
+    ax.axis("off")
 
 
 def plot_its_composition_page(df, pairs, clusters, params):
-    """Compact ranked tables; population statistics live on their own page."""
-    fig = plt.figure(figsize=(FIG_WIDTH_DOUBLE, REPORT_PAGE_HEIGHT))
-    gs = fig.add_gridspec(3, 1, left=0.06, right=0.98, top=0.77, bottom=0.13, hspace=0.42)
-    axes = [fig.add_subplot(gs[i, 0]) for i in range(3)]
-    height = axes[0].get_position().height * REPORT_PAGE_HEIGHT
-    _draw_its_summary_tables(*axes, df, clusters, pairs, height)
-    _its_header(fig, "Interstitial telomeres: selected candidates",
-                f"Top 5 per table; {len(df):,} observed rows; {len(clusters):,} clusters; {len(pairs):,} candidate pairs")
-    distance = params.get("max_block_dist", 1000)
-    assumed = "" if "max_block_dist" in params.get("known_params", set()) else " (assumed)"
-    fig.text(0.5, 0.028, f"Pairs: q→p, distance ≤{distance:,} bp{assumed}, engine fusion label; candidates are not confirmed fusions.",
-             ha="center", fontsize=MIN_TEXT_SIZE)
+    """ITS candidates: clusters, candidate fusions and long ITS as to-scale glyph rows, in three columns."""
+    fig = plt.figure(figsize=SLIDE_SIZE)
+    _page_title(fig, "ITS candidates")
+    threshold = params.get("label_threshold", LABEL_THRESHOLD)
+    panels = (("Top ITS clusters", clusters, _draw_its_cluster_glyphs, (df, clusters, threshold)),
+              ("Candidate fusions", pairs, _draw_its_fusion_glyphs, (df, pairs, threshold)),
+              ("Longest canonical ITS", df, _draw_its_long_glyphs, (df,)))
+    width, gap, x = 1.86, 0.44, 0.60
+    for letter, (title, frame, draw, args) in zip("abc", panels):
+        ax = _inch_axes(fig, x, 2.60 - width, width, width)  # square, however many rows
+        x += width + gap
+        if frame.empty:
+            _hide_panel(ax, "None")
+        else:
+            draw(ax, *args)
+        _panel_title(ax, title, letter, x_in=PANEL_LETTER_X_IN if letter == "a" else None)
+    if not df.empty:
+        _its_segment_legend(_inch_axes(fig, 0, 3.02, SLIDE_SIZE[0], 0.14))
     return fig
 
 # ---------------------------------------------------------------------------
@@ -2425,30 +2712,40 @@ def plot_its_composition_page(df, pairs, clusters, params):
 # ---------------------------------------------------------------------------
 
 def resolve_its_loci(clusters, df, pairs, chrom_sizes):
-    """Resolve up to 3 (label, chrom, start, end) windows for C1, L1, F1; skip missing ones."""
+    """Resolve up to five padded locus windows per category, preserving candidate ranks."""
     loci = []
-    if not clusters.empty:
-        c0 = clusters.iloc[0]
-        s, e = pad_window(int(c0["start"]), int(c0["end"]), chrom_sizes.get(c0["chr"], c0["end"]))
-        loci.append(("C1", c0["chr"], s, e))
-    long_its = rank_long_its(df, 1)
-    if not long_its.empty:
-        l0 = long_its.iloc[0]
-        s, e = pad_window(int(l0["start"]), int(l0["end"]), chrom_sizes.get(l0["chr"], l0["end"]))
-        loci.append(("L1", l0["chr"], s, e))
-    if not pairs.empty:
-        f0 = pairs.iloc[0]
-        s, e = pad_window(int(f0["start"]), int(f0["end"]), chrom_sizes.get(f0["chr"], f0["end"]))
-        loci.append(("F1", f0["chr"], s, e))
+    for prefix, frame in (("C", clusters.head(5)), ("F", pairs.head(5)), ("L", rank_long_its(df, 5))):
+        for rank, row in enumerate(frame.itertuples(index=False), 1):
+            s, e = pad_window(int(row.start), int(row.end), chrom_sizes.get(row.chr, row.end))
+            loci.append((f"{prefix}{rank}", row.chr, s, e))
     return loci
+
+
+def _fmt_region(start, end):
+    """Window as '117–171 kbp' in the locus axis unit, with just enough decimals to tell the ends apart."""
+    divisor, unit = _region_unit(start, end)
+    span = max(end - start, 1) / divisor
+    dec = 0 if unit == "bp" else min(3, max(0, int(np.ceil(np.log10(10.0 / span)))))
+    return f"{start / divisor:.{dec}f}–{end / divisor:.{dec}f} {unit}"
+
+
+LOCUS_KEY_SIDE, LOCUS_KEY_TOP = 0.45, 0.14  # inches; a tiny key in the header's top-right corner
+
+
+def _place_locus_key(fig, key_ax, side=LOCUS_KEY_SIDE, top=LOCUS_KEY_TOP):
+    """Park the drawn 3x3 key in the header's top-right corner, its labels right-aligned with the tracks."""
+    w, h = fig.get_size_inches()
+    key_ax.set_position([0.97 - side / w, 1 - (top + side) / h, side / w, side / h])
+    overhang = key_ax.get_tightbbox(fig.canvas.get_renderer()).x1 / fig.bbox.width - 0.97
+    key_ax.set_position([0.97 - side / w - overhang, 1 - (top + side) / h, side / w, side / h])
 
 
 def plot_its_loci_page(loci, chrom_sizes, arm_blocks, its_blocks, gap_blocks,
                        density_data, canonical_data, strand_data, gc_data, entropy_data,
-                       unknown_extents=(), display_labels=None):
-    """ITS-3 'Top loci': one terminal-style track-stack column per locus (C1, L1, F1)."""
+                       unknown_extents=(), display_labels=None, threshold=LABEL_THRESHOLD):
+    """Selected ITS locus: one terminal-style track-stack column per ranked locus."""
     if not loci:
-        return _placeholder_figure("Interstitial telomeres: top loci", "No ITS loci to show.")
+        return _placeholder_figure("ITS loci", "No ITS loci to show.")
 
     track_specs = [("blocks", None)]
     if density_data:
@@ -2466,13 +2763,12 @@ def plot_its_loci_page(loci, chrom_sizes, arm_blocks, its_blocks, gap_blocks,
                  "gc": 0.34, "entropy": 0.34}
     height_ratios = [0.34] + [height_map[name] for name, _ in track_specs]
     n_cols = len(loci)
-    fig_h = REPORT_PAGE_HEIGHT
     fig, axes = plt.subplots(
-        len(height_ratios), n_cols, figsize=(FIG_WIDTH_DOUBLE, fig_h),
+        len(height_ratios), n_cols, figsize=SLIDE_SIZE,
         gridspec_kw={"height_ratios": height_ratios, "hspace": 0.35,
                     "wspace": 0.30 if n_cols > 1 else 0.0},
         squeeze=False)
-    fig.subplots_adjust(left=0.145, right=0.97, top=0.76, bottom=0.16)
+    fig.subplots_adjust(left=0.145, right=0.97, top=0.775, bottom=0.16)  # terminal page margins
 
     for col, (label, chrom, start, end) in enumerate(loci):
         size = int(chrom_sizes.get(chrom, end))
@@ -2484,18 +2780,26 @@ def plot_its_loci_page(loci, chrom_sizes, arm_blocks, its_blocks, gap_blocks,
         ideo_ax = axes[0][col]
         box_l, box_r, box_bottom = _draw_locus_ideogram(
             ideo_ax, size, start, end, blist, itslist,
-            label=("Observed\nextent*" if chrom in unknown_extents else "Scaffold") if show_label else None)
-        if chrom in unknown_extents:
-            ideo_ax.set_xlabel("Observed extent (Mbp); scaffold length unknown", fontsize=AXIS_TICK_SIZE)
+            label=("Observed\nextent (Mbp)" if chrom in unknown_extents else "Scaffold\n(Mbp)")
+            if show_label else None, threshold=threshold)
+        ideo_ax.set_xlabel("")  # the blocks row would hide it; the unit sits in the track label
+        _set_mb_ticks(ideo_ax, size)  # same ticks as the atlas
+        # Trim the empty band under the bar so its tick labels clear the blocks row.
+        cut = box_bottom - 0.04
+        pos = ideo_ax.get_position()
+        ideo_ax.set_position([pos.x0, pos.y0 + cut * pos.height, pos.width, (1 - cut) * pos.height])
+        ideo_ax.set_ylim(cut, 1)
+        ideo_ax.tick_params(axis="x", pad=2.0)
 
-        axis_spec = _region_axis_spec(start, end)
+        axis_spec = _region_axis_spec(start, end, plain=True)
         visible_rows = []
         for i, (name, _) in enumerate(track_specs):
             row = i + 1
             ax = axes[row][col]
             if name == "blocks":
                 visible = _draw_its_blocks_track(ax, start, end, blist, itslist, gaplist,
-                                                 label="Blocks" if show_label else None)
+                                                 label="Blocks" if show_label else None,
+                                                 threshold=threshold)
             elif name == "density":
                 visible = _draw_fraction_track(ax, density_data.get(chrom), start, end, size,
                                                "full", COLORS["density"],
@@ -2519,7 +2823,7 @@ def plot_its_loci_page(loci, chrom_sizes, arm_blocks, its_blocks, gap_blocks,
                 visible = _draw_fraction_track(ax, entropy_data.get(chrom), start, end, size,
                                                "full", COLORS["entropy"],
                                                label="Shannon\nentropy" if show_label else None,
-                                               y_max=2.0, y_min=1.5)
+                                               y_max=2.0, y_min=1.0)
             else:
                 visible = _draw_strand_track(ax, strand_data.get(chrom), start, end, size,
                                              "full", label="Strand\nbias" if show_label else None)
@@ -2532,27 +2836,19 @@ def plot_its_loci_page(loci, chrom_sizes, arm_blocks, its_blocks, gap_blocks,
                 _hide_x_axis(axes[row][col])
             _apply_terminal_x_axis(axes[visible_rows[-1]][col], axis_spec, "full")
 
-        target_row = visible_rows[0] if visible_rows else 1
-        target_ax = axes[target_row][col]
-        for x_ideo, x_ax in ((box_l, 0.0), (box_r, 1.0)):
-            fig.add_artist(ConnectionPatch(
-                xyA=(x_ideo, box_bottom), coordsA=ideo_ax.transData,
-                xyB=(x_ax, 1.0), coordsB=target_ax.transAxes,
-                color=ZOOM_COLOR, linewidth=0.5, linestyle=(0, (3, 2)), alpha=0.55, zorder=0))
+        _panel_title(ideo_ax, f"{label}  {_fmt_region(start, end)}",
+                     "abc"[col] if n_cols > 1 else None, x_in=PANEL_LETTER_X_IN if col == 0 else None)
 
-        short = (display_labels or {}).get(chrom, _short_scaffold_labels([chrom], width=20)[0])
-        ideo_ax.set_title(f"{label}   {short}", fontsize=PANEL_TITLE_SIZE, pad=3, loc="center")
-
-    fig.suptitle("Interstitial telomeres: top loci", fontsize=FIGURE_TITLE_SIZE,
-                fontweight="bold", y=1 - 0.20 / fig_h, x=0.5, ha="center")
-    fig.text(0.5, 1 - 0.44 / fig_h,
-            "   |   ".join(f"{lbl}: {s:,}-{e:,} bp" for lbl, chrom, s, e in loci),
-            ha="center", va="top", fontsize=FIGURE_SUMMARY_SIZE, color="black")
-
-    label_style = dict(fontsize=PANEL_LABEL_SIZE, fontweight="bold", va="bottom", ha="left")
-    for col in range(n_cols):
-        bbox = axes[0][col].get_position()
-        fig.text(max(0.005, bbox.x0 - 0.02), bbox.y1 + 0.030, "abc"[col], **label_style)
+    chroms = {chrom for _, chrom, _, _ in loci}
+    if len(chroms) == 1:
+        chrom = loci[0][1]
+        size = int(chrom_sizes.get(chrom, loci[0][3]))
+        _page_title(fig, f"{chrom}  ({'≥' if chrom in unknown_extents else ''}{_fmt_bp(size)})")
+    else:
+        _page_title(fig, "ITS loci")
+    key_ax = fig.add_axes([0, 0, 1, 1])
+    _draw_double_key(key_ax)
+    _place_locus_key(fig, key_ax)
     return fig
 
 # ---------------------------------------------------------------------------
@@ -2751,21 +3047,20 @@ def _draw_fraction_track(ax, track_data, view_start, view_end, chrom_size, arm, 
     no_data = ~valid
 
     if np.any(no_data):
-        for start, end in zip(starts[no_data], ends[no_data]):
-            ax.axvspan(start, end, ymin=0, ymax=1,
-                       facecolor=COLORS["no_data"], alpha=0.22,
-                       linewidth=0, zorder=0)
+        # One collection for all no-data spans, full axes height like axvspan.
+        spans = [((a, 0), (b, 0), (b, 1), (a, 1)) for a, b in zip(starts[no_data], ends[no_data])]
+        ax.add_collection(PolyCollection(spans, facecolor=COLORS["no_data"], alpha=0.22, linewidth=0, zorder=0,
+                                         transform=ax.get_xaxis_transform()), autolim=False)
 
-    for run_start, run_end in _iter_true_runs(valid):
-        xs, ys = _bedgraph_to_step(
-            starts[run_start:run_end],
-            ends[run_start:run_end],
-            values[run_start:run_end],
-        )
-        ax.fill_between(xs, ys, step="post", color=color,
-                        alpha=0.16, linewidth=0)
-        ax.plot(xs, ys, drawstyle="steps-post", color=color,
-                linewidth=0.6)
+    # One fill (runs split by NaN) and one line collection per track, however fragmented the data.
+    pieces = [_bedgraph_to_step(starts[a:b], ends[a:b], values[a:b]) for a, b in _iter_true_runs(valid)]
+    if pieces:
+        ax.fill_between(np.concatenate([np.append(xs, xs[-1]) for xs, _ in pieces]),
+                        np.concatenate([np.append(ys, np.nan) for _, ys in pieces]),
+                        step="post", color=color, alpha=0.16, linewidth=0)
+        ax.add_collection(LineCollection([np.column_stack(cbook.pts_to_poststep(xs, ys)) for xs, ys in pieces],
+                                         colors=color, linewidths=0.6, capstyle=plt.rcParams["lines.solid_capstyle"],
+                                         joinstyle=plt.rcParams["lines.solid_joinstyle"]), autolim=False)
 
     _style_fraction_axis(ax, label, y_max=y_max, y_min=y_min)
     return True
@@ -2999,15 +3294,17 @@ def plot_terminal_zoom(chrom, chrom_size, blocks_list,
 def main():
     parser = argparse.ArgumentParser(
         description="Generate publication-ready figures from Teloscope output.",
-        epilog="Example: python teloscope_report.py output/ -o report.pdf",
+        epilog="Example: python teloscope_report.py results/",
     )
-    parser.add_argument("directory", help="Teloscope output directory")
+    parser.add_argument("directory",
+                        help="Teloscope output directory, or one run's file stem (results/asm.fa) to plot it again")
     parser.add_argument("-o", "--output", default=None,
-                        help="PDF stem in split mode, exact path for one PDF, or PNG directory")
+                        help="Directory for the PDFs or PNGs (default: the output directory)")
+    parser.add_argument("-j", "--jobs", type=int,
+                        default=len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count() or 1,
+                        help="Runs plotted at once, one process each (default: all cores)")
     parser.add_argument("--png", action="store_true",
-                        help="Save individual PNG files instead of a single PDF")
-    parser.add_argument("--section", choices=("split", "all", "terminal", "its"), default="split",
-                        help="Default: separate PDFs; all: combined PDF; terminal/its: one section")
+                        help="Save individual PNG files instead of one PDF per section")
     parser.add_argument("--dpi", type=int, default=450,
                         help="DPI for raster output (default: 450)")
     parser.add_argument("--draft", action="store_true",
@@ -3018,23 +3315,60 @@ def main():
         args.dpi = 150
     if args.dpi <= 0:
         parser.error("--dpi must be positive")
+    if args.jobs <= 0:
+        parser.error("--jobs must be positive")
+    if args.output and os.path.splitext(args.output)[1].lower() == ".pdf":
+        parser.error("-o is a directory; each report is named after its run")
 
-    if not os.path.isdir(args.directory):
-        sys.exit(f"Error: '{args.directory}' is not a directory.")
+    directory, runs = resolve_runs(args.directory)
+    out_dir = args.output or directory
+    os.makedirs(out_dir, exist_ok=True)
 
-    files = find_files(args.directory)
-    if (args.section == "terminal" and "terminal" not in files or
-            args.section == "its" and "interstitial" not in files or
-            not ({"terminal", "interstitial"} & set(files))):
-        sys.exit(f"Error: Missing teloscope output files in '{args.directory}'.\n"
-                 f"Run teloscope first to generate output files.")
-    if "report" not in files and args.section != "its":
-        _warn(f"No '*_report.tsv' file found in '{args.directory}'; the overview classification panel will show no data.")
+    # a named run and PNGs are always written; a directory's runs only when a report is missing
+    if args.png or not os.path.isdir(args.directory):
+        todo = runs
+    else:
+        todo = {run: files for run, files in runs.items()
+                if not all(os.path.exists(pdf) for pdf in report_paths(run, files, out_dir).values())}
+        if len(runs) > 1 or not todo:
+            print(f"Found {len(runs)} run(s) in '{directory}': {len(todo)} without a report"
+                  f"{'' if todo else f'; name one as {os.path.join(directory, next(iter(runs)))} to plot it again'}.",
+                  file=sys.stderr)
 
-    print(f"Found files: {', '.join(files.keys())}", file=sys.stderr)
+    # matplotlib holds the GIL, so runs render in parallel processes, not threads
+    jobs = min(args.jobs, len(todo))
+    if os.name == "nt":
+        jobs = min(jobs, 61)  # the largest process pool Windows accepts
+    failed = {}
+    if jobs <= 1:
+        for run, files in todo.items():
+            try:
+                plot_run(args, run, files, out_dir)
+            except Exception as error:
+                failed[run] = error
+    else:
+        with ProcessPoolExecutor(jobs) as pool:
+            done = {run: pool.submit(plot_run, args, run, files, out_dir) for run, files in todo.items()}
+            try:
+                wait(done.values())
+            except KeyboardInterrupt:
+                for job in done.values():
+                    job.cancel()  # runs that have not started never start
+                raise
+        failed = {run: job.exception() for run, job in done.items() if job.exception() is not None}
+    for run, error in failed.items():
+        _warn(f"{run} failed:\n" + "".join(traceback.format_exception(type(error), error, error.__traceback__)).rstrip())
+    if failed:
+        sys.exit(f"Error: {len(failed)} of {len(todo)} run(s) failed: {', '.join(failed)}.")
+
+
+def plot_run(args, run, files, out_dir):
+    """Write the reports of one run into *out_dir*, named after its input."""
+    if "report" not in files and "terminal" in files:
+        _warn(f"No '{run}_report.tsv' beside the BEDs; the overview classification panel will show no data.")
 
     blocks = parse_terminal_bed(files["terminal"]) if "terminal" in files else {}
-    include_terminal = args.section != "its" and "terminal" in files
+    include_terminal = "terminal" in files
 
     # Split terminal blocks into arm telomeres (scaffold) and contig-terminal rows (contig)
     arm_blocks = {}
@@ -3047,25 +3381,18 @@ def main():
         if contig_blist:
             contig_blocks[chrom] = contig_blist
 
-    density_data = parse_bedgraph(files["density"]) if "density" in files else None
-    canonical_data = parse_bedgraph(files["canonical_ratio"]) if "canonical_ratio" in files else None
-    strand_data  = parse_bedgraph(files["strand_ratio"]) if "strand_ratio" in files else None
-    its_blocks = parse_terminal_bed(files["interstitial"]) if "interstitial" in files else None
-    gap_blocks = parse_interval_bed(files["gaps"]) if "gaps" in files else None
-    gc_data = parse_bedgraph(files["gc"]) if "gc" in files else None
-    entropy_data = parse_bedgraph(files["entropy"]) if "entropy" in files else None
+    # The C parser releases the GIL while tokenising, so the five BEDgraph tracks load concurrently.
+    tracks = ("density", "canonical_ratio", "strand_ratio", "gc", "entropy")
+    with ThreadPoolExecutor(max_workers=len(tracks)) as pool:
+        loading = {k: pool.submit(parse_bedgraph, files[k]) for k in tracks if k in files}
+        its_blocks = parse_terminal_bed(files["interstitial"]) if "interstitial" in files else None
+        gap_blocks = parse_interval_bed(files["gaps"]) if "gaps" in files else None
+    density_data, canonical_data, strand_data, gc_data, entropy_data = (
+        loading[k].result() if k in loading else None for k in tracks)
 
     chrom_sizes = get_chrom_sizes(blocks, density_data, canonical_data, strand_data)
 
     classifications = parse_report(files["report"]) if "report" in files else OrderedDict()
-    # a flagged scaffold appears under its completeness class and its anomaly, so count it once
-    total_chroms = len({chrom for v in classifications.values() for chrom in v})
-    total_telo = sum(len(blist) for blist in arm_blocks.values())
-    cat_summary = ", ".join(f"{k}={len(v)}" for k, v in classifications.items()) or "none"
-    print(f"Chromosomes: {total_chroms}  |  Telomere blocks: {total_telo}  |  "
-          f"Categories: {cat_summary}",
-          file=sys.stderr)
-
     # Only generate figures for chromosomes that have telomere blocks
     profile_chroms = [chrom for chrom in sorted(arm_blocks.keys(),
                                                 key=lambda c: chrom_sizes.get(c, 0), reverse=True)
@@ -3075,52 +3402,29 @@ def main():
         _warn(f"Skipping {len(skipped_no_size)} chromosome(s) with no usable size: {', '.join(skipped_no_size[:5])}"
               f"{' ...' if len(skipped_no_size) > 5 else ''}.")
 
-    # ITS pages: skipped entirely when the interstitial BED is missing or empty.
+    # ITS pages whenever the interstitial BED exists, so an empty scan still gets its summary
     its_page = None
-    if "interstitial" in files and args.section != "terminal":
+    if "interstitial" in files:
         params = read_params(files.get("report"))
         its_frame = load_its_frame(files["interstitial"], motif_len=params["motif_len"], blocks=its_blocks)
-        if len(its_frame) or args.section in ("its", "split") or not include_terminal:
-            extents = its_frame.groupby("chr").agg(size=("chrSize", "max"), end=("end", "max"))
-            for chrom, row in extents.iterrows():
-                chrom_sizes[chrom] = max(chrom_sizes.get(chrom, 0), int(row["size"]), int(row["end"]))
-            gaps_frame = load_gaps_frame(files["gaps"]) if "gaps" in files else pd.DataFrame(columns=["chr", "start", "end"])
-            pairs = pair_fusions(its_frame, gaps_frame, params["max_block_dist"])
-            clusters = summarize_its_clusters(its_frame)
-            print(f"ITS rows: {len(its_frame)}  |  Candidate fusions: {len(pairs)}  |  "
-                  f"Clusters: {len(clusters)}", file=sys.stderr)
-            its_page = (its_frame, pairs, clusters, params)
-            its_frame.attrs["display_labels"] = _its_labels(its_frame, chrom_sizes, arm_blocks)
+        extents = its_frame.groupby("chr").agg(size=("chrSize", "max"), end=("end", "max"))
+        for chrom, row in extents.iterrows():
+            chrom_sizes[chrom] = max(chrom_sizes.get(chrom, 0), int(row["size"]), int(row["end"]))
+        gaps_frame = load_gaps_frame(files["gaps"]) if "gaps" in files else pd.DataFrame(columns=["chr", "start", "end"])
+        pairs = pair_fusions(its_frame, gaps_frame, params["max_block_dist"])
+        clusters = summarize_its_clusters(its_frame)
+        its_page = (its_frame, pairs, clusters, params)
+        its_frame.attrs["display_labels"] = _its_labels(its_frame, chrom_sizes, arm_blocks)
 
     fallback_pages = []
 
-    if args.png:
-        out_dir = args.output or args.directory
-    else:
-        default_name = ("teloscope_report.pdf" if args.section in ("all", "split")
-                        else f"teloscope_{args.section}_report.pdf")
-        out_path = args.output or os.path.join(args.directory, default_name)
-        out_dir = os.path.dirname(out_path) or "."
-    os.makedirs(out_dir, exist_ok=True)
-
-    if its_page is not None:
-        interstitial_base = os.path.basename(files["interstitial"])
-        suffix = "_interstitial_telomeres.bed"
-        prefix = interstitial_base[:-len(suffix)] if interstitial_base.endswith(suffix) else os.path.splitext(interstitial_base)[0]
-        its_frame, pairs, clusters, params = its_page
-        os.makedirs(out_dir, exist_ok=True)
-        its_top_hits(os.path.join(out_dir, f"{prefix}_its_top_hits.tsv"), its_frame, pairs, clusters)
-        its_frame.to_csv(os.path.join(out_dir, f"{prefix}_its_rows.tsv"), sep="\t", index=False, na_rep="NA")
-        its_scaffold_summary(its_frame, arm_blocks, chrom_sizes).to_csv(
-            os.path.join(out_dir, f"{prefix}_its_scaffolds.tsv"), sep="\t", index=False)
-
     # --- One page list shared by the PDF and PNG branches ---
     pages = [
-        ("overview-1", "teloscope_overview_1.png",
+        ("overview-1", f"{run}_overview_1.png",
          lambda: plot_overview_page1(classifications, arm_blocks, chrom_sizes),
          "Assembly overview (page 1)",
          "Failed to render overview page 1. A placeholder page was written instead."),
-        ("overview-2", "teloscope_overview_2.png",
+        ("overview-2", f"{run}_overview_2.png",
          lambda: plot_overview_page2(arm_blocks, chrom_sizes),
          "Assembly overview (page 2)",
          "Failed to render overview page 2. A placeholder page was written instead."),
@@ -3141,7 +3445,7 @@ def main():
         gc = gc_data.get(chrom) if gc_data else None
         ent = entropy_data.get(chrom) if entropy_data else None
         pages.append((
-            chrom, f"teloscope_{_sanitize_filename(chrom)}.png",
+            chrom, f"{run}_{_sanitize_filename(chrom)}.png",
             lambda chrom=chrom, csize=csize, arm_blist=arm_blist, contig_blist=contig_blist,
                    den=den, can=can, strand=strand, its=its, gc=gc, ent=ent, gaps=gaps:
                 plot_terminal_zoom(chrom, csize, arm_blist, den, can, strand, its, gc, ent,
@@ -3156,52 +3460,48 @@ def main():
         loci = resolve_its_loci(clusters, its_frame, pairs, chrom_sizes)
         unknown_extents = set(its_frame.loc[its_frame["chrSize"] == 0, "chr"])
         pages.append((
-            "its-statistics", "teloscope_its_statistics.png",
-            lambda: plot_its_statistics_page(its_frame, pairs, clusters, params),
-            "ITS distributions", "Failed to render ITS distributions.",
+            "its-summary", f"{run}_its_summary.png",
+            lambda: plot_its_summary_page(its_frame, pairs, clusters, chrom_sizes, params),
+            "ITS summary", "Failed to render ITS summary.",
         ))
-        # Atlas geometry and rankings are dataset-wide; compute once here rather than per page.
+        # Atlas scaffolds, cells and rankings, computed once here.
         atlas = _its_atlas_chroms(its_frame, arm_blocks, chrom_sizes)
-        position_counts = _its_position_counts(its_frame, chrom_sizes)
+        cells = _its_atlas_cells(its_frame, params["label_threshold"])
         top_hits = _its_top_hits(its_frame, pairs, clusters)
         known_sizes = its_frame.groupby("chr")["chrSize"].max().to_dict()
-        atlas_count = max(1, (len(atlas) + ITS_ATLAS_ROWS - 1) // ITS_ATLAS_ROWS)
-        for page_idx in range(atlas_count):
-            chroms = atlas[page_idx * ITS_ATLAS_ROWS:(page_idx + 1) * ITS_ATLAS_ROWS]
-            pages.append((
-                f"its-atlas-{page_idx + 1}", f"teloscope_its_atlas_{page_idx + 1:03d}.png",
-                lambda chroms=chroms, page_idx=page_idx: plot_its_overview_page(
-                    its_frame, pairs, clusters, arm_blocks, chrom_sizes, params,
-                    chroms, page_idx + 1, atlas_count, position_counts, atlas, top_hits, known_sizes),
-                f"ITS atlas {page_idx + 1}/{atlas_count}", "Failed to render ITS atlas.",
-            ))
         pages.append((
-            "its-candidates", "teloscope_its_candidates.png",
+            "its-atlas", f"{run}_its_atlas.png",
+            lambda: plot_its_overview_page(its_frame, pairs, clusters, arm_blocks, chrom_sizes, params,
+                                           atlas, cells, top_hits, known_sizes),
+            "ITS atlas", "Failed to render ITS atlas.",
+        ))
+        pages.append((
+            "its-candidates", f"{run}_its_candidates.png",
             lambda: plot_its_composition_page(its_frame, pairs, clusters, params),
-            "ITS selected candidates", "Failed to render ITS candidates.",
+            "ITS candidates", "Failed to render ITS candidates.",
         ))
         for locus in loci:
             pages.append((
-                f"its-locus-{locus[0]}", f"teloscope_its_locus_{locus[0]}.png",
+                f"its-locus-{locus[0]}", f"{run}_its_locus_{locus[0]}.png",
                 lambda locus=locus: plot_its_loci_page(
                     [locus], chrom_sizes, arm_blocks, its_blocks, gap_blocks,
                     density_data, canonical_data, strand_data, gc_data, entropy_data,
-                    unknown_extents, its_frame.attrs["display_labels"]),
-                f"ITS selected locus {locus[0]}", "Failed to render ITS locus.",
+                    unknown_extents, its_frame.attrs["display_labels"], params["label_threshold"]),
+                f"ITS locus {locus[0]}", "Failed to render ITS locus.",
             ))
 
     n_figures = len(pages)
+    print("\n+++ Plot Report +++", file=sys.stderr)
 
     def emit_page(save_fig, builder, title, message, name, index):
         """Build, save via save_fig, and report progress/fallback for one page."""
         ok, error_text = _save_figure_with_fallback(save_fig, builder, title, message)
         if not ok:
             fallback_pages.append((name, error_text))
-        print(f"[{index}/{n_figures}] {title}{' [warning]' if not ok else ''}", file=sys.stderr)
+        print(f"[{run} {index}/{n_figures}] {title}{' [warning]' if not ok else ''}", file=sys.stderr)
 
     # --- Write-and-close pattern: one figure in memory at a time ---
     if args.png:
-        os.makedirs(out_dir, exist_ok=True)
         used_names = set()
         for i, (name, png_name, builder, title, message) in enumerate(pages, start=1):
             if png_name in used_names:
@@ -3209,28 +3509,24 @@ def main():
             used_names.add(png_name)
             path = os.path.join(out_dir, png_name)
             emit_page(lambda fig, path=path: fig.savefig(path, dpi=args.dpi), builder, title, message, name, i)
-        print(f"Figures saved to {out_dir}/", file=sys.stderr)
+        print(f"Saved: {out_dir}/", file=sys.stderr)
     else:
-        if args.section == "split":
-            stem = os.path.splitext(out_path)[0]
-            groups = [(stem + "_terminal.pdf", pages[:terminal_page_count]),
-                      (stem + "_its.pdf", pages[terminal_page_count:])]
-        else:
-            groups = [(out_path, pages)]
+        pdfs = report_paths(run, files, out_dir)
+        groups = [(pdfs[key], section) for key, section in (("terminal", pages[:terminal_page_count]),
+                                                            ("interstitial", pages[terminal_page_count:]))
+                  if key in pdfs]
         i = 0
         for pdf_path, section_pages in groups:
-            if not section_pages:
-                continue
             with PdfPages(pdf_path) as pdf:
                 for name, png_name, builder, title, message in section_pages:
                     i += 1
                     emit_page(lambda fig: pdf.savefig(fig, dpi=args.dpi), builder, title, message, name, i)
-            print(f"Report saved to {pdf_path}", file=sys.stderr)
+            print(f"Saved: {pdf_path}", file=sys.stderr)
 
     if fallback_pages:
         preview = ", ".join(f"{name} ({err})" for name, err in fallback_pages[:5])
         more = " ..." if len(fallback_pages) > 5 else ""
-        _warn(f"Report generation completed with {len(fallback_pages)} placeholder figure(s): {preview}{more}")
+        _warn(f"Report generation for {run} completed with {len(fallback_pages)} placeholder figure(s): {preview}{more}")
 
 
 if __name__ == "__main__":
