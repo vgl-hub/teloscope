@@ -1483,6 +1483,21 @@ class ResilientITSReportTests(unittest.TestCase):
             self.assertIn("0 without a report", second.stderr)
             self.assertNotIn("Plot Report", second.stderr)
 
+            # one failing run is named, and the others still finish, with -j 1 as in a pool
+            (root / "bad.fa_terminal_telomeres.bed").mkdir()
+            (root / "asm.fa_plot_report_its.pdf").unlink()
+            with mock.patch.object(sys, "argv", ["report", tmpdir, "-j", "1", "--draft"]):
+                with contextlib.redirect_stderr(io.StringIO()) as log, self.assertRaises(SystemExit) as stop:
+                    REPORT.main()
+            self.assertIn("Found 3 run(s)", log.getvalue())
+            self.assertIn("2 without a report", log.getvalue())
+            self.assertIn("[asm.fa ", log.getvalue())
+            self.assertNotIn("[asm.fa.gz ", log.getvalue())
+            self.assertTrue((root / "asm.fa_plot_report_its.pdf").is_file())
+            self.assertIn("bad.fa failed", log.getvalue())
+            self.assertIn("1 of 2 run(s) failed: bad.fa", str(stop.exception))
+            (root / "bad.fa_terminal_telomeres.bed").rmdir()
+
 
 if __name__ == "__main__":
     unittest.main()

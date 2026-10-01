@@ -21,8 +21,9 @@ import re
 import argparse
 import textwrap
 import inspect
+import traceback
 from collections import Counter, defaultdict, OrderedDict
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, wait
 
 import numpy as np
 import pandas as pd
@@ -3336,17 +3337,29 @@ def main():
 
     # matplotlib holds the GIL, so runs render in parallel processes, not threads
     jobs = min(args.jobs, len(todo))
+    if os.name == "nt":
+        jobs = min(jobs, 61)  # the largest process pool Windows accepts
+    failed = {}
     if jobs <= 1:
         for run, files in todo.items():
-            plot_run(args, run, files, out_dir)
-        return
-    with ProcessPoolExecutor(jobs) as pool:
-        done = {run: pool.submit(plot_run, args, run, files, out_dir) for run, files in todo.items()}
-    failed = [run for run, job in done.items() if job.exception() is not None]
-    for run in failed:
-        _warn(f"{run}: {done[run].exception()!r}")
+            try:
+                plot_run(args, run, files, out_dir)
+            except Exception as error:
+                failed[run] = error
+    else:
+        with ProcessPoolExecutor(jobs) as pool:
+            done = {run: pool.submit(plot_run, args, run, files, out_dir) for run, files in todo.items()}
+            try:
+                wait(done.values())
+            except KeyboardInterrupt:
+                for job in done.values():
+                    job.cancel()  # runs that have not started never start
+                raise
+        failed = {run: job.exception() for run, job in done.items() if job.exception() is not None}
+    for run, error in failed.items():
+        _warn(f"{run} failed:\n" + "".join(traceback.format_exception(type(error), error, error.__traceback__)).rstrip())
     if failed:
-        sys.exit(f"Error: {len(failed)} of {len(todo)} run(s) failed.")
+        sys.exit(f"Error: {len(failed)} of {len(todo)} run(s) failed: {', '.join(failed)}.")
 
 
 def plot_run(args, run, files, out_dir):

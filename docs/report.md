@@ -40,7 +40,7 @@ python3 scripts/teloscope_report.py results/
 python3 scripts/teloscope_report.py results/ --png -o figures/
 ```
 
-Every run in the directory that has no report yet gets `<input>_plot_report_terminal.pdf` and `<input>_plot_report_its.pdf` beside its files, as with `--plot-report`, several at once. Name one run by its file stem, `results/asm.fa`, to plot it again. Reads-mode runs are left out.
+Every run in the directory that has no report yet gets `<input>_plot_report_terminal.pdf` and `<input>_plot_report_its.pdf` beside its files, as with `--plot-report`, several at once; a run that fails is named while the others finish. Name one run by its file stem, `results/asm.fa`, to plot it again. Reads-mode runs are left out.
 
 To plot a single ITS locus:
 
