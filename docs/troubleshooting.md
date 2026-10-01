@@ -50,7 +50,7 @@ make -j
 
 ## Calls
 
-Terminal calls depend most on `-c`, `--terminal-tolerance`, `-l`, `-y`, `-d`, and `-x`; interstitial rows on `-k`, `-d`, and `-y`.
+Terminal calls depend most on `-c`, `--terminal-tolerance`, `-k`, `-d`, `-l`, `-y`, and `-x`; interstitial rows on `-k` and `-y`, and their junction class on `-d`.
 
 - **No telomeres:** check that `-c` matches the organism and that the start zone (`-t`, `--terminal-tolerance`) reaches the telomere. Try a permissive run, then restore one threshold at a time:
 
@@ -58,7 +58,7 @@ Terminal calls depend most on `-c`, `--terminal-tolerance`, `-l`, `-y`, `-d`, an
   teloscope asm.fa -t 100000 --terminal-tolerance 100000 -l 200 -y 0.3 --verbose
   ```
 
-- **A telomere in pieces:** raise `-d`, the longest stretch a telomere may bridge.
+- **A telomere in pieces:** raise `-k` to chain matches across longer interruptions, or `-d` to join pieces that lie further apart.
 - **Wrong class:** `type` and `anomaly` come from the two scaffold arms only. Recheck `-c`, `-t`, and `--terminal-tolerance`, and don't compare them with `contig` rows.
 - **Wrong `p`/`q` labels:** `-c` sets the canonical motif and with it the strand labels.
 

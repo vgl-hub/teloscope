@@ -81,7 +81,7 @@ char closestEnd(uint64_t start, uint32_t blockLen, uint64_t pathSize, char ancho
 
 constexpr uint32_t minCanonicalCount = 4;
 
-enum class Orient { Fwd, Rev, All };
+enum class Orient { Fwd, Rev, All, FwdAny, RevAny };
 
 struct Seed {
     uint64_t start;
@@ -90,18 +90,21 @@ struct Seed {
     bool isForward;
 };
 
-// per-base coverage, overlapping matches OR-ed instead of summed
-void getCoverRuns(const std::vector<MatchInfo>& matches, Orient orient, std::vector<CoverRun>& runs) {
+// per-base coverage, overlapping matches OR-ed instead of summed; a slack of -k joins one strand's matches into its chains
+void getCoverRuns(const std::vector<MatchInfo>& matches, Orient orient, std::vector<CoverRun>& runs,
+                  uint32_t slack = 0) {
     for (const MatchInfo& match : matches) {
         bool keep;
         switch (orient) {
             case Orient::Fwd: keep = match.isCanonical && match.isForward; break;
             case Orient::Rev: keep = match.isCanonical && !match.isForward; break;
+            case Orient::FwdAny: keep = match.isForward; break;
+            case Orient::RevAny: keep = !match.isForward; break;
             default:          keep = true; break;
         }
         if (!keep) continue;
         uint64_t end = match.position + match.matchSize;
-        if (!runs.empty() && match.position <= runs.back().start + runs.back().len) {
+        if (!runs.empty() && match.position <= runs.back().start + runs.back().len + slack) {
             if (end > runs.back().start + runs.back().len) {
                 runs.back().len = static_cast<uint32_t>(end - runs.back().start);
             }
@@ -196,111 +199,110 @@ void tallyBlock(const std::vector<MatchInfo>& matches, TelomereBlock& block) {
     }
 }
 
-// walk inward from the anchor and cut where the cumulative score peaks (no gap bookkeeping: a contig has none)
-uint64_t trimInward(const std::vector<CoverRun>& runs, uint64_t anchor, uint64_t limit,
-                    uint32_t maxBlockDist, float weight, bool toRight, uint64_t& probe) {
-    double cumulative = 0.0;
+// walk the anchor's -k chain inward and cut where the cumulative score peaks, the furthest peak on a tie
+uint64_t trimInward(const std::vector<CoverRun>& runs, const std::vector<CoverRun>& chains,
+                    uint64_t anchor, uint64_t limit, float weight, bool toRight, uint64_t& probe) {
+    double cumulative = 0.0, best = 0.0;
     uint64_t bestPos = anchor, prev = anchor;
-    bool bridging = false; // only true once a covered run is behind us
-    probe = anchor; // furthest run edge visited; unchanged if none
+    probe = anchor; // inner edge of the chain walked; unchanged if the anchor sits in none
 
     if (toRight) {
-        for (const CoverRun& run : runs) {
-            if (run.start + run.len <= anchor) continue;
-            probe = std::max(probe, run.start + run.len);
-            if (run.start >= limit) break;
-            uint64_t from = std::max(run.start, anchor);
-            if (bridging && (from - prev) > maxBlockDist) break;
-            uint64_t end = std::min<uint64_t>(run.start + run.len, limit);
+        auto chain = std::upper_bound(chains.begin(), chains.end(), anchor,
+            [](uint64_t v, const CoverRun& c) { return v < c.start + c.len; });
+        if (chain == chains.end() || chain->start > anchor) return bestPos;
+        probe = chain->start + chain->len;
+        uint64_t bound = std::min<uint64_t>(probe, limit);
+        auto run = std::upper_bound(runs.begin(), runs.end(), anchor,
+            [](uint64_t v, const CoverRun& r) { return v < r.start + r.len; });
+        for (; run != runs.end() && run->start < bound; ++run) {
+            uint64_t from = std::max(run->start, anchor);
+            uint64_t end = std::min<uint64_t>(run->start + run->len, bound);
             cumulative -= weight * static_cast<double>(from - prev);
-            if (end > from) cumulative += end - from;
-            if (cumulative >= 0.0) bestPos = end;
-            bridging = true;
-            prev = run.start + run.len;
+            cumulative += static_cast<double>(end - from);
+            if (cumulative >= best) { best = cumulative; bestPos = end; }
+            prev = end;
         }
     } else {
-        for (auto run = runs.rbegin(); run != runs.rend(); ++run) {
+        auto chain = std::lower_bound(chains.begin(), chains.end(), anchor,
+            [](const CoverRun& c, uint64_t v) { return c.start + c.len < v; });
+        if (chain == chains.end() || chain->start >= anchor) return bestPos;
+        probe = chain->start;
+        uint64_t bound = std::max<uint64_t>(probe, limit);
+        auto first = std::lower_bound(runs.begin(), runs.end(), anchor,
+            [](const CoverRun& r, uint64_t v) { return r.start < v; });
+        for (auto run = std::make_reverse_iterator(first); run != runs.rend(); ++run) {
             uint64_t end = run->start + run->len;
-            if (run->start >= anchor) continue;
-            probe = std::min(probe, run->start);
-            if (end <= limit) break;
+            if (end <= bound) break;
             uint64_t to = std::min(end, anchor);
-            if (bridging && (prev - to) > maxBlockDist) break;
-            uint64_t start = std::max(run->start, limit);
+            uint64_t start = std::max(run->start, bound);
             cumulative -= weight * static_cast<double>(prev - to);
-            if (to > start) cumulative += to - start;
-            if (cumulative >= 0.0) bestPos = start;
-            bridging = true;
-            prev = run->start;
+            cumulative += static_cast<double>(to - start);
+            if (cumulative >= best) { best = cumulative; bestPos = start; }
+            prev = start;
         }
     }
     return bestPos;
 }
 
-// every locally maximal qualifying segment, so neighbouring arrays stay separate
+// cut one seed where its score peaks, then start again past the peak, so no dense part pays for a sparse one
 void getMaximalSegments(const std::vector<CoverRun>& runs, uint64_t from, uint64_t to,
-                        uint32_t maxBlockDist, float weight, size_t& cursor,
+                        float weight, size_t& cursor,
                         std::vector<std::pair<uint64_t, uint64_t>>& segments) {
-    double cumulative = 0.0;
-    uint64_t segStart = 0, segEnd = 0, prev = 0;
-    bool open = false;
-
-    auto closeSegment = [&]() {
-        if (open && segEnd > segStart) segments.push_back({segStart, segEnd});
-        open = false;
-    };
-
     while (cursor < runs.size() && runs[cursor].start + runs[cursor].len <= from) ++cursor;
-    for (size_t i = cursor; i < runs.size(); ++i) {
-        const CoverRun& run = runs[i];
-        uint64_t start = std::max(from, run.start);
-        uint64_t end = std::min(to, run.start + run.len);
-        if (run.start >= to) break;
-        if (end <= start) continue;
-
-        if (open) {
-            if ((start - prev) > maxBlockDist) {
-                closeSegment();
-            } else {
-                cumulative -= weight * static_cast<double>(start - prev);
-                if (cumulative < 0.0) closeSegment();
-            }
+    size_t i = cursor;
+    while (i < runs.size() && runs[i].start < to) {
+        double cumulative = 0.0, best = 0.0;
+        uint64_t segStart = std::max(from, runs[i].start);
+        uint64_t segEnd = segStart, prev = segStart;
+        size_t peak = i;
+        for (size_t j = i; j < runs.size() && runs[j].start < to; ++j) {
+            uint64_t start = std::max(from, runs[j].start);
+            uint64_t end = std::min(to, runs[j].start + runs[j].len);
+            cumulative -= weight * static_cast<double>(start - prev);
+            if (cumulative < 0.0) break;
+            cumulative += static_cast<double>(end - start);
+            if (cumulative >= best) { best = cumulative; segEnd = end; peak = j; }
+            prev = end;
         }
-        if (!open) {
-            open = true;
-            segStart = start;
-            segEnd = start;
-            cumulative = 0.0;
-        }
-        cumulative += static_cast<double>(end - start);
-        if (cumulative >= 0.0) segEnd = end;
-        prev = end;
+        if (segEnd > segStart) segments.push_back({segStart, segEnd});
+        i = peak + 1;
     }
-    closeSegment();
 }
 
-// junction class of each interstitial row against its nearest row within -d; rows are start-ascending
+// junction class of each interstitial row: the nearest other-strand row within -d decides, else a same-strand row there
 void assignJunctions(std::vector<TelomereBlock*>& rows, uint32_t maxBlockDist) {
     for (size_t i = 0; i < rows.size(); ++i) {
         if (rows[i]->pieces > 0) continue;
-        uint64_t prevEnd = (i > 0) ? rows[i - 1]->start + rows[i - 1]->blockLen : 0;
-        uint64_t nextStart = (i + 1 < rows.size()) ? rows[i + 1]->start : 0;
-        uint64_t curEnd = rows[i]->start + rows[i]->blockLen;
-        uint64_t distPrev = (i > 0) ? (rows[i]->start > prevEnd ? rows[i]->start - prevEnd : 0) : UINT64_MAX;
-        uint64_t distNext = (i + 1 < rows.size())
-            ? (nextStart > curEnd ? nextStart - curEnd : 0) : UINT64_MAX;
-        bool useNext = distNext < distPrev;
-        uint64_t dist = useNext ? distNext : distPrev;
-        if (dist > maxBlockDist) {
-            rows[i]->junction = 's';
-            continue;
+        rows[i]->junction = 's';
+        const char label = rows[i]->strandLabel;
+        if (label == 'b') continue;
+        const uint64_t curStart = rows[i]->start, curEnd = curStart + rows[i]->blockLen;
+        uint64_t bestDist = UINT64_MAX;
+        bool sameStrand = false;
+
+        // rows are start-ascending and disjoint; a mixed row ends the search on its side
+        for (size_t j = i; j-- > 0; ) {
+            uint64_t end = rows[j]->start + rows[j]->blockLen;
+            uint64_t dist = curStart > end ? curStart - end : 0;
+            char other = rows[j]->strandLabel;
+            if (dist > maxBlockDist || other == 'b') break;
+            if (other == label) { sameStrand = true; continue; }
+            bestDist = dist;
+            rows[i]->junction = (other == 'q') ? 'f' : 't';
+            break;
         }
-        char first  = useNext ? rows[i]->strandLabel     : rows[i - 1]->strandLabel;
-        char second = useNext ? rows[i + 1]->strandLabel : rows[i]->strandLabel;
-        if (first == 'b' || second == 'b') rows[i]->junction = 's';
-        else if (first == 'q' && second == 'p') rows[i]->junction = 'f';
-        else if (first == 'p' && second == 'q') rows[i]->junction = 't';
-        else rows[i]->junction = 'r';
+        for (size_t j = i + 1; j < rows.size(); ++j) {
+            uint64_t dist = rows[j]->start > curEnd ? rows[j]->start - curEnd : 0;
+            char other = rows[j]->strandLabel;
+            if (dist > maxBlockDist || other == 'b') break;
+            if (other == label) { sameStrand = true; continue; }
+            if (dist < bestDist) {
+                bestDist = dist;
+                rows[i]->junction = (label == 'q') ? 'f' : 't';
+            }
+            break;
+        }
+        if (bestDist == UINT64_MAX && sameStrand) rows[i]->junction = 'r';
     }
 }
 } // namespace
@@ -404,6 +406,7 @@ void writeReadTlReport(std::ofstream& reportFile, const UserInputTeloscope& user
 // per contig: chain qualifying same-strand pieces inward from the anchored end, stopping at a real opposite array
 TelomereBlock Teloscope::getTerminalBlocks(const std::vector<MatchInfo>& matches,
         const std::vector<CoverRun>& runsFwd, const std::vector<CoverRun>& runsRev,
+        const std::vector<CoverRun>& chainsFwd, const std::vector<CoverRun>& chainsRev,
         uint64_t contigStart, uint64_t contigEnd, bool fromStart, uint64_t& outProbe) {
     TelomereBlock chain;
 
@@ -413,46 +416,81 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<MatchInfo>& matches
     const float density = userInput.minBlockDensity;
     const float weight = (density >= 1.0f) ? 1e9f : density / (1.0f - density);
     const uint32_t zone = std::min(userInput.terminalTolerance, userInput.terminalLimit);
+    // a later match can still join a chain within -k or start a piece within -d
+    const uint32_t margin = std::max(maxBlockDist, userInput.maxMatchDist);
 
-    // furthest coordinate any trim looked toward the interior, plus its bridging margin
+    // furthest coordinate any piece or reach looked toward the interior, plus that margin
     uint64_t probeBound = fromStart ? contigStart : contigEnd;
     auto trackProbe = [&](uint64_t probe) {
-        probeBound = fromStart ? std::max(probeBound, probe + maxBlockDist)
-                                : std::min(probeBound, probe > maxBlockDist ? probe - maxBlockDist : 0);
+        probeBound = fromStart ? std::max(probeBound, probe + margin)
+                                : std::min(probeBound, probe > margin ? probe - margin : 0);
     };
 
-    // an array is real when its own unclamped trim reaches -l, -c and is strand-pure
-    auto isRealArray = [&](const std::vector<CoverRun>& runs, uint64_t anchorEdge) -> bool {
-        uint64_t farEdge = fromStart ? contigEnd : contigStart;
-        uint64_t probe;
-        uint64_t trimmed = trimInward(runs, anchorEdge, farEdge, maxBlockDist, weight, fromStart, probe);
-        trackProbe(probe);
-        uint64_t lo = fromStart ? anchorEdge : trimmed, hi = fromStart ? trimmed : anchorEdge;
-        if (hi <= lo || (hi - lo) < minLen) return false;
-        TelomereBlock tally;
+    // a piece counts when it holds -c repeats of its strand and is strand-pure
+    auto tallyPiece = [&](uint64_t lo, uint64_t hi, bool fwd, TelomereBlock& tally) -> bool {
+        if (hi <= lo) return false;
+        tally = TelomereBlock();
         tally.start = lo;
         tally.blockLen = static_cast<uint32_t>(hi - lo);
         tallyBlock(matches, tally);
-        bool isFwd = (&runs == &runsFwd);
-        uint32_t count = isFwd ? tally.fwdCanCount : tally.revCanCount;
+        uint32_t count = fwd ? tally.fwdCanCount : tally.revCanCount;
         char label = computeStrandLabel(tally.fwdCanCount, tally.fwdCanCount + tally.revCanCount, userInput.labelThreshold);
-        return count >= minCounts && label == (isFwd ? 'p' : 'q');
+        return count >= minCounts && label == (fwd ? 'p' : 'q');
+    };
+
+    // an array is real when unclamped pieces chained from its edge within -d sum to -l
+    auto isRealArray = [&](const std::vector<CoverRun>& runs, uint64_t anchorEdge) -> bool {
+        const bool isFwd = (&runs == &runsFwd);
+        const std::vector<CoverRun>& chains = isFwd ? chainsFwd : chainsRev;
+        const uint64_t farEdge = fromStart ? contigEnd : contigStart;
+        uint64_t sum = 0, edge = anchorEdge, keptEdge = anchorEdge;
+        for (bool first = true; ; first = false) {
+            uint64_t probe;
+            uint64_t trimmed = trimInward(runs, chains, edge, farEdge, weight, fromStart, probe);
+            trackProbe(probe);
+            uint64_t lo = fromStart ? edge : trimmed, hi = fromStart ? trimmed : edge;
+            TelomereBlock tally;
+            if (tallyPiece(lo, hi, isFwd, tally)) {
+                sum += hi - lo;
+                if (sum >= minLen) return true;
+                keptEdge = trimmed;
+                trackProbe(keptEdge);
+            } else if (first) {
+                return false;
+            }
+            // the next run of this strand past the chain just walked, while still within -d of the last kept piece
+            if (fromStart) {
+                auto next = std::lower_bound(runs.begin(), runs.end(), std::max(probe, edge + 1),
+                    [](const CoverRun& r, uint64_t v) { return r.start < v; });
+                if (next == runs.end() || next->start > keptEdge + maxBlockDist) return false;
+                edge = next->start;
+            } else {
+                auto next = std::upper_bound(runs.begin(), runs.end(), std::min(probe, edge - 1),
+                    [](uint64_t v, const CoverRun& r) { return v < r.start + r.len; });
+                if (next == runs.begin()) return false;
+                --next;
+                if (next->start + next->len + maxBlockDist < keptEdge) return false;
+                edge = next->start + next->len;
+            }
+        }
     };
 
     // trim one piece from its anchor, stopping at the first real opposite-strand array
-    auto trimPiece = [&](uint64_t anchorEdge, bool fwd, uint64_t farEdge) -> uint64_t {
+    auto trimPiece = [&](uint64_t anchorEdge, bool fwd, uint64_t farEdge, uint64_t& chainEdge) -> uint64_t {
         const std::vector<CoverRun>& runsSame = fwd ? runsFwd : runsRev;
         const std::vector<CoverRun>& runsOpp  = fwd ? runsRev : runsFwd;
+        const std::vector<CoverRun>& chains   = fwd ? chainsFwd : chainsRev;
         uint64_t probe;
-        uint64_t trimmed = trimInward(runsSame, anchorEdge, farEdge, maxBlockDist, weight, fromStart, probe);
+        uint64_t trimmed = trimInward(runsSame, chains, anchorEdge, farEdge, weight, fromStart, probe);
         trackProbe(probe);
+        chainEdge = probe;
 
         if (fromStart) {
             for (const CoverRun& r : runsOpp) {
                 if (r.start <= anchorEdge) continue;
                 if (r.start >= trimmed) break;
                 if (isRealArray(runsOpp, r.start)) {
-                    trimmed = trimInward(runsSame, anchorEdge, r.start, maxBlockDist, weight, fromStart, probe);
+                    trimmed = trimInward(runsSame, chains, anchorEdge, r.start, weight, fromStart, probe);
                     trackProbe(probe);
                     break;
                 }
@@ -463,7 +501,7 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<MatchInfo>& matches
                 if (rEnd >= anchorEdge) continue;
                 if (rEnd <= trimmed) break;
                 if (isRealArray(runsOpp, rEnd)) {
-                    trimmed = trimInward(runsSame, anchorEdge, rEnd, maxBlockDist, weight, fromStart, probe);
+                    trimmed = trimInward(runsSame, chains, anchorEdge, rEnd, weight, fromStart, probe);
                     trackProbe(probe);
                     break;
                 }
@@ -478,63 +516,74 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<MatchInfo>& matches
     size_t n = canon.size();
     if (n == 0) { outProbe = probeBound; return chain; }
 
-    uint64_t reach = fromStart ? std::min(contigEnd, contigStart + zone)
-                                : (contigEnd > zone ? std::max(contigStart, contigEnd - zone) : contigStart);
-    bool haveStrand = false;
+    const uint64_t zoneReach = fromStart ? std::min(contigEnd, contigStart + zone)
+                                          : (contigEnd > zone ? std::max(contigStart, contigEnd - zone) : contigStart);
+    uint64_t reach = zoneReach;
     bool curFwd = false;
     std::vector<std::pair<uint64_t, uint64_t>> pieces;
 
-    for (size_t k = 0; k < n; ++k) {
-        const MatchInfo& m = fromStart ? canon[k] : canon[n - 1 - k];
-        uint64_t edge = fromStart ? static_cast<uint64_t>(m.position)
-                                   : static_cast<uint64_t>(m.position) + m.matchSize;
-        if (fromStart ? (edge > reach) : (edge < reach)) break; // a match exactly at reach is still within -d
+    // a chain short of -l is dropped and the search resumes past its first piece, so a stub cannot hide a telomere
+    for (size_t first = 0; first < n; ) {
+        chain = TelomereBlock();
+        pieces.clear();
+        reach = zoneReach;
+        bool haveStrand = false;
+        size_t resume = n;
+        uint64_t chainEdge = fromStart ? contigStart : contigEnd;
 
-        bool mFwd = m.isForward;
-        if (haveStrand && mFwd != curFwd) {
-            if (isRealArray(mFwd ? runsFwd : runsRev, edge)) break;
-            continue;
+        for (size_t k = first; k < n; ++k) {
+            const MatchInfo& m = fromStart ? canon[k] : canon[n - 1 - k];
+            uint64_t edge = fromStart ? static_cast<uint64_t>(m.position)
+                                       : static_cast<uint64_t>(m.position) + m.matchSize;
+            if (fromStart ? (edge > reach) : (edge < reach)) break; // a match exactly at reach is still within -d
+
+            bool mFwd = m.isForward;
+            if (haveStrand && mFwd != curFwd) {
+                if (isRealArray(mFwd ? runsFwd : runsRev, edge)) break;
+                continue;
+            }
+            // what is left of a cut chain is not this telomere: it goes to the interstitial rows
+            if (haveStrand && (fromStart ? edge < chainEdge : edge > chainEdge)) continue;
+
+            uint64_t farEdge = fromStart ? contigEnd : contigStart;
+            uint64_t pieceChain;
+            uint64_t trimmed = trimPiece(edge, mFwd, farEdge, pieceChain);
+            uint64_t pStart = fromStart ? edge : trimmed;
+            uint64_t pEnd = fromStart ? trimmed : edge;
+            TelomereBlock tally;
+            if (!tallyPiece(pStart, pEnd, mFwd, tally)) continue;
+
+            pieces.push_back({pStart, pEnd});
+            chain.fwdCanCount += tally.fwdCanCount;
+            chain.revCanCount += tally.revCanCount;
+            chain.fwdNonCanCount += tally.fwdNonCanCount;
+            chain.revNonCanCount += tally.revNonCanCount;
+            chain.teloLen += (pEnd - pStart);
+            curFwd = mFwd;
+            haveStrand = true;
+            chainEdge = pieceChain;
+            reach = fromStart ? (pEnd + maxBlockDist) : (pStart > maxBlockDist ? pStart - maxBlockDist : 0);
+            probeBound = fromStart ? std::max(probeBound, reach) : std::min(probeBound, reach);
+
+            // past the last piece: skip everything it already consumed
+            while (k + 1 < n) {
+                const MatchInfo& m2 = fromStart ? canon[k + 1] : canon[n - 1 - (k + 1)];
+                uint64_t edge2 = fromStart ? static_cast<uint64_t>(m2.position)
+                                            : static_cast<uint64_t>(m2.position) + m2.matchSize;
+                bool inside = fromStart ? (edge2 < pEnd) : (edge2 > pStart);
+                if (!inside) break;
+                ++k;
+            }
+            if (pieces.size() == 1) resume = k + 1;
         }
 
-        uint64_t farEdge = fromStart ? contigEnd : contigStart;
-        uint64_t trimmed = trimPiece(edge, mFwd, farEdge);
-        uint64_t pStart = fromStart ? edge : trimmed;
-        uint64_t pEnd = fromStart ? trimmed : edge;
-        if (pEnd <= pStart || (pEnd - pStart) < minLen) continue;
-
-        TelomereBlock tally;
-        tally.start = pStart;
-        tally.blockLen = static_cast<uint32_t>(pEnd - pStart);
-        tallyBlock(matches, tally);
-        uint32_t canCount = mFwd ? tally.fwdCanCount : tally.revCanCount;
-        if (canCount < minCounts) continue;
-        char pieceLabel = computeStrandLabel(tally.fwdCanCount, tally.fwdCanCount + tally.revCanCount, userInput.labelThreshold);
-        if (pieceLabel != (mFwd ? 'p' : 'q')) continue; // pieces are strand-pure
-
-        pieces.push_back({pStart, pEnd});
-        chain.fwdCanCount += tally.fwdCanCount;
-        chain.revCanCount += tally.revCanCount;
-        chain.fwdNonCanCount += tally.fwdNonCanCount;
-        chain.revNonCanCount += tally.revNonCanCount;
-        chain.teloLen += (pEnd - pStart);
-        curFwd = mFwd;
-        haveStrand = true;
-        reach = fromStart ? (pEnd + maxBlockDist) : (pStart > maxBlockDist ? pStart - maxBlockDist : 0);
-
-        // past the last piece: skip everything it already consumed
-        while (k + 1 < n) {
-            const MatchInfo& m2 = fromStart ? canon[k + 1] : canon[n - 1 - (k + 1)];
-            uint64_t edge2 = fromStart ? static_cast<uint64_t>(m2.position)
-                                        : static_cast<uint64_t>(m2.position) + m2.matchSize;
-            bool inside = fromStart ? (edge2 < pEnd) : (edge2 > pStart);
-            if (!inside) break;
-            ++k;
-        }
+        if (pieces.empty() || chain.teloLen >= minLen) break;
+        first = resume;
     }
 
-    // the furthest of every trim's reach and the final anchor-search bound
+    // the furthest of every piece's reach and the final anchor-search bound
     outProbe = fromStart ? std::max(probeBound, reach) : std::min(probeBound, reach);
-    if (pieces.empty()) return chain;
+    if (pieces.empty() || chain.teloLen < minLen) return TelomereBlock();
     uint64_t lo = pieces.front().first, hi = pieces.front().second;
     for (const auto& p : pieces) {
         lo = std::min(lo, p.first);
@@ -542,12 +591,12 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<MatchInfo>& matches
     }
     chain.start = lo;
     chain.blockLen = static_cast<uint32_t>(hi - lo);
-    chain.pieces = static_cast<uint16_t>(pieces.size());
+    chain.pieces = static_cast<uint16_t>(std::min<size_t>(pieces.size(), UINT16_MAX));
     chain.strandLabel = curFwd ? 'p' : 'q';
     chain.anchorSide = fromStart ? 'p' : 'q';
     return chain;
 }
-// outside the terminal chains' spans: -k seeds with the inversion cut, grouped within -d, trimmed by getMaximalSegments
+// outside the terminal chains' spans: -k seeds with the inversion cut, each cut by getMaximalSegments
 void Teloscope::getInterstitialBlocks(const std::vector<MatchInfo>& matches,
         const std::vector<CoverRun>& allRuns, uint64_t regionStart, uint64_t regionEnd,
         std::vector<TelomereBlock>& outBlocks) {
@@ -564,25 +613,15 @@ void Teloscope::getInterstitialBlocks(const std::vector<MatchInfo>& matches,
 
     const float density = userInput.minBlockDensity;
     const float weight = (density >= 1.0f) ? 1e9f : density / (1.0f - density);
-    const uint32_t maxBlockDist = userInput.maxBlockDist;
-    size_t segCursor = 0, tallyCursor = 0, coverCursor = 0; // groups/segments are start-ascending
+    size_t segCursor = 0, tallyCursor = 0, coverCursor = 0; // seeds and segments are start-ascending
 
-    size_t i = 0;
-    while (i < seeds.size()) {
-        size_t j = i;
-        uint64_t groupStart = seeds[i].start, groupEnd = seeds[i].end;
-        bool fwd = seeds[i].isForward;
-        while (j + 1 < seeds.size() && seeds[j + 1].isForward == fwd &&
-               seeds[j + 1].start <= groupEnd + maxBlockDist) {
-            ++j;
-            groupEnd = std::max(groupEnd, seeds[j].end);
-        }
-        groupStart = std::max(groupStart, regionStart);
-        groupEnd = std::min(groupEnd, regionEnd);
+    for (const Seed& seed : seeds) {
+        uint64_t seedStart = std::max(seed.start, regionStart);
+        uint64_t seedEnd = std::min(seed.end, regionEnd);
 
         std::vector<std::pair<uint64_t, uint64_t>> segments;
-        if (groupEnd > groupStart) {
-            getMaximalSegments(allRuns, groupStart, groupEnd, maxBlockDist, weight, segCursor, segments);
+        if (seedEnd > seedStart) {
+            getMaximalSegments(allRuns, seedStart, seedEnd, weight, segCursor, segments);
         }
 
         for (const auto& seg : segments) {
@@ -602,7 +641,6 @@ void Teloscope::getInterstitialBlocks(const std::vector<MatchInfo>& matches,
             block.teloLen = block.blockLen;
             outBlocks.push_back(block);
         }
-        i = j + 1;
     }
 }
 
@@ -850,11 +888,13 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos,
             while (grew) {
                 grew = false;
                 if (buildP && h < t0) {
-                    std::vector<CoverRun> hFwd, hRev;
+                    std::vector<CoverRun> hFwd, hRev, hFwdAny, hRevAny;
                     getCoverRuns(headMatches, Orient::Fwd, hFwd);
                     getCoverRuns(headMatches, Orient::Rev, hRev);
+                    getCoverRuns(headMatches, Orient::FwdAny, hFwdAny, userInput.maxMatchDist);
+                    getCoverRuns(headMatches, Orient::RevAny, hRevAny, userInput.maxMatchDist);
                     uint64_t probeP;
-                    getTerminalBlocks(headMatches, hFwd, hRev, absPos, absPos + segmentSize, true, probeP);
+                    getTerminalBlocks(headMatches, hFwd, hRev, hFwdAny, hRevAny, absPos, absPos + segmentSize, true, probeP);
                     if (probeP + longestPatternSize >= absPos + h) {
                         uint64_t newH = std::min<uint64_t>(h + t, t0);
                         processRegion(h, newH, headMatches);
@@ -863,11 +903,13 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos,
                     }
                 }
                 if (buildQ && t0 > h) {
-                    std::vector<CoverRun> tFwd, tRev;
+                    std::vector<CoverRun> tFwd, tRev, tFwdAny, tRevAny;
                     getCoverRuns(tailMatches, Orient::Fwd, tFwd);
                     getCoverRuns(tailMatches, Orient::Rev, tRev);
+                    getCoverRuns(tailMatches, Orient::FwdAny, tFwdAny, userInput.maxMatchDist);
+                    getCoverRuns(tailMatches, Orient::RevAny, tRevAny, userInput.maxMatchDist);
                     uint64_t probeQ;
-                    getTerminalBlocks(tailMatches, tFwd, tRev, absPos, absPos + segmentSize, false, probeQ);
+                    getTerminalBlocks(tailMatches, tFwd, tRev, tFwdAny, tRevAny, absPos, absPos + segmentSize, false, probeQ);
                     if (probeQ <= absPos + t0 + longestPatternSize) {
                         uint64_t newT0 = (t0 > t) ? std::max<uint64_t>(t0 - t, h) : h;
                         std::vector<MatchInfo> extra;
@@ -949,16 +991,18 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos,
     }
 
     // ========== block building, per contig ==========
-    std::vector<CoverRun> runsFwd, runsRev, allRuns;
+    std::vector<CoverRun> runsFwd, runsRev, allRuns, chainsFwd, chainsRev;
     getCoverRuns(segmentData.allMatches, Orient::Fwd, runsFwd);
     getCoverRuns(segmentData.allMatches, Orient::Rev, runsRev);
     getCoverRuns(segmentData.allMatches, Orient::All, allRuns);
+    getCoverRuns(segmentData.allMatches, Orient::FwdAny, chainsFwd, userInput.maxMatchDist);
+    getCoverRuns(segmentData.allMatches, Orient::RevAny, chainsRev, userInput.maxMatchDist);
 
     uint64_t contigStart = absPos, contigEnd = absPos + segmentSize;
     TelomereBlock chainP, chainQ;
     uint64_t probeP, probeQ;
-    if (buildP) chainP = getTerminalBlocks(segmentData.allMatches, runsFwd, runsRev, contigStart, contigEnd, true, probeP);
-    if (buildQ) chainQ = getTerminalBlocks(segmentData.allMatches, runsFwd, runsRev, contigStart, contigEnd, false, probeQ);
+    if (buildP) chainP = getTerminalBlocks(segmentData.allMatches, runsFwd, runsRev, chainsFwd, chainsRev, contigStart, contigEnd, true, probeP);
+    if (buildQ) chainQ = getTerminalBlocks(segmentData.allMatches, runsFwd, runsRev, chainsFwd, chainsRev, contigStart, contigEnd, false, probeQ);
 
     bool haveP = chainP.pieces > 0, haveQ = chainQ.pieces > 0;
     if (haveP && haveQ && chainP.strandLabel == chainQ.strandLabel &&

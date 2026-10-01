@@ -316,6 +316,7 @@ public:
     TelomereBlock getTerminalBlocks(
         const std::vector<MatchInfo>& matches,
         const std::vector<CoverRun>& runsFwd, const std::vector<CoverRun>& runsRev,
+        const std::vector<CoverRun>& chainsFwd, const std::vector<CoverRun>& chainsRev,
         uint64_t contigStart, uint64_t contigEnd, bool fromStart, uint64_t& outProbe);
 
     void getInterstitialBlocks(

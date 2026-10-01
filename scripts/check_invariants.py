@@ -244,7 +244,7 @@ def check_one_arm_per_end(rec, subject, terminal, gaps_by_chrom, manual_curation
 
 
 def check_junction_class(rec, subject, terminal, interstitial, gaps_by_chrom, max_block_dist):
-    """Recompute each interstitial row's junction class from its nearest same-contig neighbour."""
+    """Recompute each interstitial row's junction class: the nearest other-strand row within -d, else a same-strand one."""
     by_chrom = {}
     for b in terminal + interstitial:
         by_chrom.setdefault(b["chrom"], []).append(b)
@@ -255,21 +255,32 @@ def check_junction_class(rec, subject, terminal, interstitial, gaps_by_chrom, ma
         for i, b in enumerate(ordered):
             if id(b) not in its_ids:
                 continue
-            candidates = []
-            if i > 0 and not gap_index.has_gap_between(ordered[i - 1]["end"], b["start"]):
-                candidates.append((b["start"] - ordered[i - 1]["end"], ordered[i - 1], b))
-            if i + 1 < len(ordered) and not gap_index.has_gap_between(b["end"], ordered[i + 1]["start"]):
-                candidates.append((ordered[i + 1]["start"] - b["end"], b, ordered[i + 1]))
-            candidates = [c for c in candidates if c[0] <= max_block_dist]
-            if not candidates:
-                expect = "single"
-            else:
-                _, left_b, right_b = min(candidates, key=lambda c: c[0])
-                l, r = left_b["teloLabel"], right_b["teloLabel"]
-                expect = ("single" if "b" in (l, r) else
-                          "fusion" if (l, r) == ("q", "p") else
-                          "tail_to_tail" if (l, r) == ("p", "q") else
-                          "fragmentation" if l == r else "single")
+            label = b["teloLabel"]
+            best, same = None, False
+            if label != "b":
+                # a gap, a mixed row, or more than -d ends the search on that side
+                for o in reversed(ordered[:i]):
+                    dist = max(0, b["start"] - o["end"])
+                    if (dist > max_block_dist or o["teloLabel"] == "b"
+                            or gap_index.has_gap_between(o["end"], b["start"])):
+                        break
+                    if o["teloLabel"] == label:
+                        same = True
+                        continue
+                    best = (dist, "fusion" if o["teloLabel"] == "q" else "tail_to_tail")
+                    break
+                for o in ordered[i + 1:]:
+                    dist = max(0, o["start"] - b["end"])
+                    if (dist > max_block_dist or o["teloLabel"] == "b"
+                            or gap_index.has_gap_between(b["end"], o["start"])):
+                        break
+                    if o["teloLabel"] == label:
+                        same = True
+                        continue
+                    if best is None or dist < best[0]:
+                        best = (dist, "fusion" if label == "q" else "tail_to_tail")
+                    break
+            expect = best[1] if best else "fragmentation" if same else "single"
             rec.eq("DER-20-junction-class", f"{subject}:{chrom}:{b['start']}", b["teloType"], expect)
 
 

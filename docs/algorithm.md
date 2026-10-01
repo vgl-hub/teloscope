@@ -14,12 +14,12 @@ Teloscope has three input modes:
 2. Expand the patterns: IUPAC codes, `-x` substitutions, and reverse complements.
 3. Split each sequence into contigs at gaps (runs of `N`, `n`, `X`, or `x`) and scan each contig with a multi-pattern trie, collecting each strand's canonical matches and the stretches they cover.
 4. Build a telomere at each of the scaffold's two ends, or at every contig end with `-n`:
-   - The first exact canonical repeat inside the start zone anchors it.
-   - A block runs inward while its strand's canonical coverage still averages `-y`, bridges at most `-d` of non-telomeric sequence, and stops at the outer edge of a real array of the other strand.
-   - A block must be strand-pure: more than `--label-threshold` of its exact repeats on its own strand.
-   - The next exact repeat within `-d` of the block's end starts another block of the same strand, or ends the chain if it begins a real array of the other strand.
-   - `teloLen` sums the blocks. A telomere never crosses `N`, and `-t` never bounds it.
-5. Outside the telomeres, `-k` chains matches into seeds, and same-strand seeds within `-d` join into one span. The span is trimmed to where all-match coverage averages `-y`, and kept with at least four exact canonical repeats. Its [junction class](outputs.md#telomere-block-bed) comes from the nearest row within `-d` on the same contig.
+   - `-k` chains one strand's matches, exact and variant: a match joins while it starts within `-k` of the chain's end.
+   - The first exact canonical repeat inside the start zone anchors a piece. The piece runs inward along its chain: a base covered by an exact repeat of its strand scores 1, any other base costs `y / (1 - y)` for `-y` of `y`, and the piece ends where the running score peaks, the furthest peak on a tie. A dense array is neither stretched into a sparse tail nor dropped because of one, and what is left of the chain goes to step 5.
+   - A piece must hold `--min-block-counts` exact repeats and be strand-pure: more than `--label-threshold` of its exact repeats on its own strand. It stops at the outer edge of a real array of the other strand.
+   - The next exact repeat of the same strand, in another chain and within `-d` of the piece's end, anchors another piece. A real array of the other strand ends the telomere; an array is real when pieces from its edge, each within `-d` of the last, sum to `-l`.
+   - `teloLen` sums the pieces and must reach `-l`. Pieces that fall short are dropped, and the search resumes behind the first of them. A telomere never crosses `N`, and `-t` never bounds it.
+5. Outside the telomeres, `-k` chains the matches of both strands into seeds, and three opposite-strand matches in a row start a new seed. Each seed is cut the same way on the coverage of all its matches, starting again behind every peak, and a cut part is kept with at least four exact canonical repeats. Its [junction class](outputs.md#telomere-block-bed) comes from the rows within `-d` on the same contig.
 6. Label every block by strand and by the end it belongs to, then [classify](classification.md) the sequence.
 7. Write the BED files, the report, and the optional window tracks.
 

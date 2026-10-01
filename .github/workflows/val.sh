@@ -141,7 +141,7 @@ check_output_contains "incomplete_q classification" "1	q	0	incomplete	." "$OUT"
 OUT=$(build/bin/teloscope -f testFiles/no_telo.fa 2>/dev/null)
 check_output_contains "no_telo classification" "0	none	0	none	." "$OUT"
 
-# fragmented arms: a small array behind a gap longer than the tip drags coverage below -y and chains as a second block
+# fragmented arms: a second array within -d of the tip chains as another piece
 OUT=$(build/bin/teloscope -f testFiles/misassembly.fa 2>/dev/null)
 check_output_contains "fragmented_p classification" "1	p	0	incomplete	fragmented_p" "$OUT"
 
