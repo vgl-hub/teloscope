@@ -24,7 +24,7 @@ fx mo_inc_q_disc synthetic/mo_inc_q_disc.fa \
    'type=incomplete;anom=discordant_q;telo=1;labels=q;gaps=0' \
    'One inverted q arm'
 
-# Interleaved orientations never qualify as a chain piece: no telomere at either end.
+# Interleaved orientations never qualify as a block piece: no telomere at either end.
 fx mo_inc_p_bal_gapped synthetic/mo_inc_p_bal_gapped.fa \
    'chr_mo_inc_p_bal_gapped=M:CCCTAATTAGGGx50+L:1300+N:200+L:1300' '-' \
    'type=none;anom=.;telo=0;labels=none;gaps=1' \
@@ -130,46 +130,46 @@ fx mo_dense_short synthetic/mo_dense_short.fa \
    'type=none;anom=.;telo=0;labels=none;gaps=0' \
    'A fully dense 240 bp array still fails -l: density does not buy length'
 
-# ---- pieces: a -k chain that meets -y is one piece, a chain below -y is cut to its dense segments; -l is compared on the span ----
+# ---- pieces: a -k block that meets -y is one piece, a block below -y is cut to its dense segments; -l is compared on the span ----
 
-# A chain below -y is cut: the long variant tail takes the whole chain under -y, so only the exact array is kept and the tail is left to the interstitial rows.
+# A block below -y is cut: the long variant tail takes the whole block under -y, so only the exact array is kept and the tail is left to the interstitial rows.
 fx pc_chain_tail synthetic/pc_chain_tail.fa \
    'chr_pc_chain_tail=F:CCCTAAx100+V:CTCTAAx40+F:CCCTAAx1+V:CTCTAAx40+F:CCCTAAx1+V:CTCTAAx40+F:CCCTAAx1+V:CTCTAAx40+F:CCCTAAx1+V:CTCTAAx40+F:CCCTAAx1+L:5000' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=1;telolen=600' \
-   'A 600 bp exact array chained to a 1230 bp tail of one-mismatch repeats with five exact ones: the chain is 34% exact, below -y, so the arm is the exact array alone and the tail is an interstitial row'
+   'A 600 bp exact array followed within -k by a 1230 bp tail of one-mismatch repeats with five exact ones: the block is 34% exact, below -y, so the arm is the exact array alone and the tail is an interstitial row'
 
-# A chain that meets -y is kept whole, so a telomere ends on its last repeat, exact or variant.
+# A block that meets -y is kept whole, so a telomere ends on its last repeat, exact or variant.
 fx pc_tvr_kept synthetic/pc_tvr_kept.fa \
    'chr_pc_tvr_kept=F:CCCTAAx300+V:CTCTAAx200+L:5000' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=3000' \
-   'An 1800 bp exact array followed by 1200 bp of one-mismatch repeats is one chain, 60% exact: the arm is the whole chain, 0-3000, ending on a variant repeat'
+   'An 1800 bp exact array followed by 1200 bp of one-mismatch repeats is one block, 60% exact: the arm is the whole block, 0-3000, ending on a variant repeat'
 
 fx pc_tvr_exact synthetic/pc_tvr_exact.fa \
    'chr_pc_tvr_exact=F:CCCTAAx300+V:CTCTAAx300+L:5000' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=3600' \
-   'With 1800 bp of variant repeats the chain is exactly 50% exact and still meets -y 0.5: the arm is the whole chain, 0-3600'
+   'With 1800 bp of variant repeats the block is exactly 50% exact and still meets -y 0.5: the arm is the whole block, 0-3600'
 
 fx pc_tvr_over synthetic/pc_tvr_over.fa \
    'chr_pc_tvr_over=F:CCCTAAx300+V:CTCTAAx301+L:5000' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=1800' \
-   'One variant repeat more puts the chain below -y: it is cut to its dense segment, the 1800 bp exact array, and the variant tail holds no exact repeat, so it is no interstitial row'
+   'One variant repeat more puts the block below -y: it is cut to its dense segment, the 1800 bp exact array, and the variant tail holds no exact repeat, so it is no interstitial row'
 
-# -y is read as typed: a chain at exactly 60% exact meets -y 0.6, whatever the float holds.
+# -y is read as typed: a block at exactly 60% exact meets -y 0.6, whatever the float holds.
 fx pc_y_exact_06 synthetic/pc_y_06.fa \
    'chr_pc_y_06=F:CCCTAAx60+V:CTCTAAx40+L:5000' '-i -y 0.6' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=600' \
-   'A 360 bp exact array followed by 240 bp of one-mismatch repeats is one chain at exactly 60% exact: at -y 0.6 it is kept whole, 0-600'
+   'A 360 bp exact array followed by 240 bp of one-mismatch repeats is one block at exactly 60% exact: at -y 0.6 it is kept whole, 0-600'
 
 fx pc_y_over_06 synthetic/pc_y_06.fa \
    'chr_pc_y_06=F:CCCTAAx60+V:CTCTAAx40+L:5000' '-i -y 0.61' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=360' \
-   'At -y 0.61 the same chain is below -y and is cut to its exact array, 0-360; the variant tail holds no exact repeat, so it is no interstitial row'
+   'At -y 0.61 the same block is below -y and is cut to its exact array, 0-360; the variant tail holds no exact repeat, so it is no interstitial row'
 
-# A chain of fewer than --min-block-counts repeats makes no piece, however regular.
+# A block of fewer than --min-block-counts repeats makes no piece, however regular.
 fx pc_single_every200 synthetic/pc_single_every200.fa \
    'chr_pc_single_every200=F:CCCTAAx100+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:5000' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=600' \
-   'Single exact repeats every 200 bp behind a 600 bp array are chains of one repeat, below --min-block-counts: the arm is the array alone, not fragmented, and no row is left'
+   'Single exact repeats every 200 bp behind a 600 bp array are blocks of one repeat, below --min-block-counts: the arm is the array alone, not fragmented, and no row is left'
 
 fx pc_pairs_every200 synthetic/pc_pairs_every200.fa \
    'chr_pc_pairs_every200=F:CCCTAAx100+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:5000' '-i' \
@@ -187,27 +187,27 @@ fx pc_tiny_sum synthetic/pc_tiny_sum.fa \
    'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=300' \
    'Five 60 bp arrays, each as long as the 60 bp gap before it, all join: one fragmented p arm with span 0-540 and teloLen 300'
 
-# A variant lead-in is scored as non-repeat: the exact array behind it must outweigh it for the chain to meet -y.
+# A variant lead-in is scored as non-repeat: the exact array behind it must outweigh it for the block to meet -y.
 fx pc_leadin_heavy synthetic/pc_leadin_heavy.fa \
    'chr_pc_leadin_heavy=F:CCCTAAx2+V:CTCTAAx500+F:CCCTAAx600+L:6000' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=6612' \
-   'Two exact repeats at the tip, 3000 bp of one-mismatch repeats, then a 3600 bp exact array: the chain is 55% exact and is kept whole, from the tip through the variants (6612 bp)'
+   'Two exact repeats at the tip, 3000 bp of one-mismatch repeats, then a 3600 bp exact array: the block is 55% exact and is kept whole, from the tip through the variants (6612 bp)'
 
 fx pc_leadin_light synthetic/pc_leadin_light.fa \
    'chr_pc_leadin_light=F:CCCTAAx2+V:CTCTAAx500+F:CCCTAAx100+L:6000' '-i' \
    'type=none;anom=.;telo=0;labels=none;gaps=0;its=1' \
-   'The same lead-in with a 600 bp exact array: the chain is 17% exact and is cut; the 12 bp tip piece cannot pay for the variants and is short of -l, and the array starts at 3012, beyond the 3000 bp start zone: no arm, one interstitial row'
+   'The same lead-in with a 600 bp exact array: the block is 17% exact and is cut; the 12 bp tip piece cannot pay for the variants and is short of -l, and the array starts at 3012, beyond the 3000 bp start zone: no arm, one interstitial row'
 
-# -k is inclusive: a match starting exactly -k past the chain end joins it.
+# -k is inclusive: a match starting exactly -k past the block end joins it.
 fx pc_k_50 synthetic/pc_k_50.fa \
    'chr_pc_k_50=F:CCCTAAx50+L:50+F:CCCTAAx50+L:6000' '-' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;telolen=650' \
-   'Two 300 bp arrays 50 bp apart are one -k chain, 92% exact and kept whole: not fragmented, teloLen equals the span 0-650'
+   'Two 300 bp arrays 50 bp apart are one -k block, 92% exact and kept whole: not fragmented, teloLen equals the span 0-650'
 
 fx pc_k_51 synthetic/pc_k_51.fa \
    'chr_pc_k_51=F:CCCTAAx50+L:51+F:CCCTAAx50+L:6000' '-' \
    'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;telolen=600' \
-   'Two 300 bp arrays 51 bp apart are two chains: two pieces within -d, so a fragmented p arm with teloLen 600 over span 0-651'
+   'Two 300 bp arrays 51 bp apart are two blocks: two pieces within -d, so a fragmented p arm with teloLen 600 over span 0-651'
 
 # -l is compared on the span, not on the sum of the pieces.
 fx pc_sum_300 synthetic/pc_sum_300.fa \
@@ -267,27 +267,27 @@ fx pc_sat_no_join synthetic/pc_sat_no_join.fa \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=10;telolen=600' \
    'Ten 54 bp blocks, each 55% exact and 51 bp apart, behind a 600 bp array: each block is a whole piece worth 6, less than the 51 bp before it, so none joins; the arm is the array alone and the ten blocks are interstitial rows'
 
-# A chain kept whole carries its near-threshold part across the next gap; -d is the distance between the two chains.
+# A block kept whole carries its near-threshold part across the next gap; -d is the distance between the two blocks.
 fx pc_rest_bridges synthetic/pc_rest_bridges.fa \
    'chr_pc_rest_bridges=F:CCCTAAx80+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+L:291+F:CCCTAAx500+L:6000' '-i -d 500' \
    'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=4740' \
-   'A 1740 bp chain, a 480 bp exact array followed by 1260 bp at 48% exact, is 62% exact as a whole and kept whole; the 3 kb array 291 bp behind it pays for the gap: one fragmented p arm of teloLen 4740, span 0-5031'
+   'A 1740 bp block, a 480 bp exact array followed by 1260 bp at 48% exact, is 62% exact as a whole and kept whole; the 3 kb array 291 bp behind it pays for the gap: one fragmented p arm of teloLen 4740, span 0-5031'
 
 fx pc_rest_bridges_d250 synthetic/pc_rest_bridges.fa \
    'chr_pc_rest_bridges=F:CCCTAAx80+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+L:291+F:CCCTAAx500+L:6000' '-i -d 250' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=1;telolen=1740' \
-   'At -d 250 the 291 bp between the two chains is too far: the p arm is the first chain alone and the 3 kb array is an interstitial row'
+   'At -d 250 the 291 bp between the two blocks is too far: the p arm is the first block alone and the 3 kb array is an interstitial row'
 
-# -d is measured between the -k chains, so variant repeats at a chain edge do not count as distance.
+# -d is measured between the -k blocks, so variant repeats at a block edge do not count as distance.
 fx pc_d_chains_300 synthetic/pc_d_chains.fa \
    'chr_pc_d_chains=F:CCCTAAx100+V:CTCTAAx40+L:300+V:CTCTAAx40+F:CCCTAAx500+L:6000' '-i -d 300' \
    'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=4080' \
-   'Two chains 300 bp apart, each ending or starting with 240 bp of variant repeats, so their exact arrays are 780 bp apart: at -d 300 they join into one fragmented p arm of teloLen 4080, span 0-4380'
+   'Two blocks 300 bp apart, each ending or starting with 240 bp of variant repeats, so their exact arrays are 780 bp apart: at -d 300 they join into one fragmented p arm of teloLen 4080, span 0-4380'
 
 fx pc_d_chains_299 synthetic/pc_d_chains.fa \
    'chr_pc_d_chains=F:CCCTAAx100+V:CTCTAAx40+L:300+V:CTCTAAx40+F:CCCTAAx500+L:6000' '-i -d 299' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=1;telolen=840' \
-   'At -d 299 the chains are one base too far apart: the p arm is the first chain, 0-840, and the second chain is an interstitial row'
+   'At -d 299 the blocks are one base too far apart: the p arm is the first block, 0-840, and the second block is an interstitial row'
 
 # Ten 180 bp arrays 420 bp apart: each is shorter than the gap before it, so the score never returns to its peak.
 fx pc_gap_train synthetic/pc_gap_train.fa \

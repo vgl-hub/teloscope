@@ -41,7 +41,7 @@ fx th_tol_2500 synthetic/th_tol_2500.fa \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0' \
    'An array starting 2500 bp in is within --terminal-tolerance 3000 and is called'
 
-# ---- -d / --max-block-distance, default 500 (the furthest the next chain may start from the last one) ----
+# ---- -d / --max-block-distance, default 500 (the furthest the next block may start from the last one) ----
 fx th_bridge_plain_exact synthetic/th_bridge_plain_exact.fa \
    'chr_th_bridge_plain_exact=F:CCCTAAx50+L:500+F:CCCTAAx167+L:5000' '-' \
    'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;telolen=1302' \
@@ -52,7 +52,7 @@ fx th_bridge_plain_beyond synthetic/th_bridge_plain_beyond.fa \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;telolen=300' \
    'A 1002 bp array starts 501 bp behind a 300 bp piece, beyond -d, so it joins nothing however long it is: the arm is the 300 bp piece and the array is left to the interstitial rows'
 
-# N runs are hard contig boundaries: pieces never chain across one, at any length.
+# N runs are hard contig boundaries: pieces never join across one, at any length.
 fx th_bridge_gap synthetic/th_bridge_gap.fa \
    'chr_th_bridge_gap=F:CCCTAAx50+N:500+F:CCCTAAx50+L:3600' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=1;its=1' \

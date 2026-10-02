@@ -65,7 +65,7 @@ fx short_contig short_contig.fa \
    'type=none;anom=.;telo=0;labels=none;gaps=0' \
    'Contig shorter than one window'
 
-# Interleaved orientations never qualify as a chain piece: moved to the interior.
+# Interleaved orientations never qualify as a block piece: moved to the interior.
 fx balanced balanced.fa \
    'chr_balanced=L:3500+M:CCCTAATTAGGGx100+L:3500' '-i' \
    'type=none;anom=.;telo=0;labels=none;gaps=0;its=1' \
@@ -136,13 +136,13 @@ fx mirror_rev_start_long mirror_rev_start_long.fa \
 fx mirror_both_start mirror_both_start.fa \
    'chr_mirror_both_start=F:CCCTAAx100+R:TTAGGGx100+L:7000' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=1' \
-   'An abutting reverse array ends the p chain at once and is reported as an interstitial row'
+   'An abutting reverse array ends the p block at once and is reported as an interstitial row'
 
-# The mirror: a real forward array ahead of the q arm ends its chain, out of reach from p.
+# The mirror: a real forward array ahead of the q arm ends its block, out of reach from p.
 fx mirror_both_end mirror_both_end.fa \
    'chr_mirror_both_end=L:7000+F:CCCTAAx100+R:TTAGGGx100' '-i' \
    'type=incomplete;anom=.;telo=1;labels=q;gaps=0;its=1' \
-   'An abutting forward array ends the q chain at once and is reported as an interstitial row'
+   'An abutting forward array ends the q block at once and is reported as an interstitial row'
 
 fx mirror_extend mirror_extend.fa \
    'chr_mirror_extend=F:CCCTAAx100+L:2400' '-t 300' \
@@ -188,7 +188,7 @@ fx boundary_zone_shift_narrow boundary_zone_shift.fa \
 fx boundary_its_at_edge boundary_its_at_edge.fa \
    'chr_boundary_edge=F:CCCTAAx100+R:TTAGGGx10+L:2200+R:TTAGGGx100' '-i -t 1000' \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=0;its=1' \
-   'A 60 bp array abutting the p arm is too short to be a real array and does not clamp the chain, but it clears the interstitial gate: no length floor there any more'
+   'A 60 bp array abutting the p arm is too short to be a real array and does not clamp the block, but it clears the interstitial gate: no length floor there any more'
 
 fx boundary_multiple_p boundary_multiple_p.fa \
    'chr_boundary_multi_p=F:CCCTAAx100+L:300+F:CCCTAAx100+L:5700' '-d 200' \
@@ -300,7 +300,7 @@ xfx vgp_probe_mega vgp_probe.fa.gz mega_OZ124247.1_p_0-600000 '-i' \
 
 xfx vgp_probe_frag32 vgp_probe.fa.gz frag32_OZ221982.1_q_302227075-302307075 '-i -d 500' \
    'type=t2t;anom=discordant_p;telo=2;labels=pq;gaps=0;its=77;telolen=312' \
-   'Frog OZ221982.1 last 80 kb, a satellite-like train of about 720 bp arrays 670 bp apart: at -d 500 no gap is within reach, so the 312 bp reverse tip is a discordant p arm and the q arm is one chain, 76613-78065; teloLen 312 is the p arm, derived, while its 77 and the q arm teloLen 1452 are observed, not derived'
+   'Frog OZ221982.1 last 80 kb, a satellite-like train of about 720 bp arrays 670 bp apart: at -d 500 no gap is within reach, so the 312 bp reverse tip is a discordant p arm and the q arm is one block, 76613-78065; teloLen 312 is the p arm, derived, while its 77 and the q arm teloLen 1452 are observed, not derived'
 
 xfx vgp_probe_frag32_d1000 vgp_probe.fa.gz frag32_OZ221982.1_q_302227075-302307075 '-i -d 1000' \
    'type=t2t;anom=discordant_p,fragmented_p,fragmented_q;telo=2;labels=pq;gaps=0;its=55;telolen=5610' \
@@ -316,7 +316,7 @@ xfx vgp_turtle vgp_turtle.fa.gz giant_CM098529.1_84917045-85927174 '-i' \
 
 xfx vgp_turtle_n vgp_turtle.fa.gz giant_CM098529.1_84917045-85927174 '-i -n' \
    'type=none;anom=.;telo=0;labels=none;gaps=1;its=0' \
-   'Same file with -n: the array anchors its own contig'"'"'s internal end as one contig row, 20000-990129: the chain is 63% exact as a whole and is kept whole, so no interstitial row is left; the 0 is observed, not derived'
+   'Same file with -n: the array anchors its own contig'"'"'s internal end as one contig row, 20000-990129: the block is 63% exact as a whole and is kept whole, so no interstitial row is left; the 0 is observed, not derived'
 
 # Combinatorial axes
 source "$SCRIPT_DIR/synthetic_axis_anomaly.sh"

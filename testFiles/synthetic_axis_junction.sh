@@ -43,7 +43,7 @@ fx jn_short_p_then_q synthetic/jn_short_p_then_q.fa \
 fx jn_short_p_then_p_gap synthetic/jn_short_p_then_p_gap.fa \
    'chr_jn_short_p_then_p_gap=L:1500+F:CCCTAAx60+N:100+F:CCCTAAx60+L:3200' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=1;its=1' \
-   'A 100 bp N run splits the array into two contigs; pieces never chain across it, so the p arm is only the first piece and the second contig'"'"'s array is an interstitial row'
+   'A 100 bp N run splits the array into two contigs; pieces never join across it, so the p arm is only the first piece and the second contig'"'"'s array is an interstitial row'
 
 # Both ends find the same two pieces, and the 360 bp array outweighs the 300 bp gap, so the strand gives the telomere to p.
 fx jn_short_p_then_p_far synthetic/jn_short_p_then_p_far.fa \
@@ -57,7 +57,7 @@ fx jn_short_p_then_p_wide synthetic/jn_short_p_then_p_wide.fa \
    'type=t2t;anom=discordant_q;telo=2;labels=pq;gaps=0;its=0;telolen=360' \
    'Two 360 bp forward arrays 600 bp apart do not join: the p end takes the first as a p arm and the q end takes the second as a discordant q arm, each of teloLen 360'
 
-# Interior junctions sit 4000+ bp from both record ends so neither array is reachable by a terminal chain.
+# Interior junctions sit 4000+ bp from both record ends so neither array is reachable by a terminal block.
 fx jn_interior_q_then_p synthetic/jn_interior_q_then_p.fa \
    'chr_jn_interior_q_then_p=L:4000+R:TTAGGGx60+F:CCCTAAx60+L:4000' '-i' \
    'type=none;anom=.;telo=0;labels=none;gaps=0;its=2' \
@@ -97,7 +97,7 @@ fx jn_its_96bp synthetic/jn_its_96bp.fa \
 fx jn_gap_inside_telomere synthetic/jn_gap_inside_telomere.fa \
    'chr_jn_gap_inside_telomere=F:CCCTAAx50+N:100+F:CCCTAAx50+L:2000+R:TTAGGGx100' '-' \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=1;telolen=300' \
-   'A 100 bp N run splits the p array into two contigs; pieces never chain across a gap, so the p arm is only the first piece (teloLen 300)'
+   'A 100 bp N run splits the p array into two contigs; pieces never join across a gap, so the p arm is only the first piece (teloLen 300)'
 
 # Internal contig-end telomere: an ordinary interstitial row without -n, a terminal-BED contig row with -n.
 fx jn_contig_end_telomere synthetic/jn_contig_end_telomere.fa \
@@ -121,7 +121,7 @@ fx jn_contig_middle_n synthetic/jn_contig_middle.fa \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=2;its=0' \
    'With -n the middle contig'"'"'s telomere becomes a contig row and leaves the interstitial BED'
 
-# An array flanked by N on both sides forms its own contig; -n chains from both ends, which R3 collapses to one row.
+# An array flanked by N on both sides forms its own contig; -n builds telomeres from both ends, which R3 collapses to one row.
 fx jn_flanked_both synthetic/jn_flanked_both.fa \
    'chr_jn_flanked_both=L:1500+N:100+F:CCCTAAx60+N:100+L:1500' '-i' \
    'type=none;anom=.;telo=0;labels=none;gaps=2;its=1' \
@@ -130,10 +130,10 @@ fx jn_flanked_both synthetic/jn_flanked_both.fa \
 fx jn_flanked_both_n synthetic/jn_flanked_both.fa \
    'chr_jn_flanked_both=L:1500+N:100+F:CCCTAAx60+N:100+L:1500' '-n -i' \
    'type=none;anom=.;telo=0;labels=none;gaps=2;its=0' \
-   'With -n both of the contig'"'"'s own internal chains find the same array; R3 keeps one contig row'
+   'With -n both of the contig'"'"'s own internal blocks find the same array; R3 keeps one contig row'
 
 # A 300 bp inverted tip anchors the p end; the forward telomere 1500 bp behind it is beyond -d and stays an interstitial row.
 fx jn_tip_beats_giant synthetic/jn_tip_beats_giant.fa \
    'chr_jn_tip_beats_giant=R:TTAGGGx50+L:1500+F:CCCTAAx500+L:3200' '-i' \
    'type=incomplete;anom=discordant_p;telo=1;labels=p;gaps=0;its=1;telolen=300' \
-   'A 300 bp reverse tip is the outermost qualifying piece and becomes the (discordant) p arm; the 3 kb forward telomere behind it is too far to end the chain and is reported as an interstitial row'
+   'A 300 bp reverse tip is the outermost qualifying piece and becomes the (discordant) p arm; the 3 kb forward telomere behind it is too far to end the block and is reported as an interstitial row'

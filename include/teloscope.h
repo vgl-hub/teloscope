@@ -108,7 +108,7 @@ struct GapInfo {
 };
 
 struct CoverRun; // defined in teloscope.cpp; the block builder only passes it through
-struct Piece; // defined in teloscope.cpp; one telomeric stretch of a -k chain
+struct Piece; // defined in teloscope.cpp; one telomeric stretch of a -k block
 
 
 struct TelomereBlock {
@@ -316,7 +316,7 @@ public:
 
     void getPieces(
         const std::vector<MatchInfo>& matches, const std::vector<CoverRun>& runs,
-        const std::vector<CoverRun>& chains, bool isForward, std::vector<Piece>& pieces);
+        const std::vector<CoverRun>& blocks, bool isForward, std::vector<Piece>& pieces);
 
     TelomereBlock getTerminalBlocks(
         const std::vector<Piece>& piecesFwd, const std::vector<Piece>& piecesRev,

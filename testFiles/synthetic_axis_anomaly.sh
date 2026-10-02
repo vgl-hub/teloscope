@@ -24,7 +24,7 @@ fx ax_t2t_disc_pq synthetic/ax_t2t_disc_pq.fa \
    'type=t2t;anom=discordant_p,discordant_q;telo=2;labels=pq;gaps=0' \
    'Both arms inverted: an inverted terminal repeat at each end'
 
-# R1: interleaved orientations never qualify as a chain piece, so they read as one interstitial 'b' row.
+# R1: interleaved orientations never qualify as a block piece, so they read as one interstitial 'b' row.
 fx ax_t2t_bal_p synthetic/ax_t2t_bal_p.fa \
    'chr_ax_t2t_bal_p=L:3500+M:CCCTAATTAGGGx50+L:3500+R:TTAGGGx100' '-i' \
    'type=incomplete;anom=.;telo=1;labels=q;gaps=0;its=1' \

@@ -207,7 +207,7 @@ check_output_contains "-y 0.3 keeps 50% density block" "2	pq	0	t2t	." "$OUT"
 
 # -k flag: small merge distance prevents block formation
 OUT=$(build/bin/teloscope -f testFiles/density_edge.fa -k 1 2>/dev/null)
-check_output_contains "-k 1 stops chaining across spaced matches" "incomplete" "$OUT"
+check_output_contains "-k 1 stops grouping matches across spaced matches" "incomplete" "$OUT"
 
 # Multi-contig counts
 OUT=$(build/bin/teloscope -f testFiles/multi.fa 2>/dev/null)

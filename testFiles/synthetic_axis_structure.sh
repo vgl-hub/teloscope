@@ -98,7 +98,7 @@ fx st_inner_array_its synthetic/st_inner_array_far.fa \
 fx st_its_abuts_terminal synthetic/st_inner_array_far.fa \
    'chr_st_inner_array_far=F:CCCTAAx100+L:1200+F:CCCTAAx50+L:1800+R:TTAGGGx100' '-i -t 1000' \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=0;its=1' \
-   'The same file at -t 1000: chaining is decided by -d, not -t, so the outcome does not move'
+   'The same file at -t 1000: joining is decided by -d, not -t, so the outcome does not move'
 
 fx st_its_true_interior synthetic/st_its_true_interior.fa \
    'chr_st_its_true_interior=F:CCCTAAx100+L:3000+F:CCCTAAx100+L:3000+R:TTAGGGx100' '-i -t 1000' \
