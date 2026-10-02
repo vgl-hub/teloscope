@@ -37,14 +37,14 @@ fx mo_inc_q_disc_gapped synthetic/mo_inc_q_disc_gapped.fa \
 
 # Two same-strand arrays within -d are two pieces of one fragmented arm.
 fx mo_inc_p_extra synthetic/mo_inc_p_extra.fa \
-   'chr_mo_inc_p_extra=F:CCCTAAx100+L:600+F:CCCTAAx100+L:5400' '-' \
+   'chr_mo_inc_p_extra=F:CCCTAAx100+L:400+F:CCCTAAx100+L:5400' '-' \
    'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;telolen=1200' \
-   'Two p arrays 600 bp apart are two pieces of one fragmented p arm (teloLen 1200); no q arm'
+   'Two p arrays 400 bp apart are two pieces of one fragmented p arm (teloLen 1200); no q arm'
 
 fx mo_inc_q_extra synthetic/mo_inc_q_extra.fa \
-   'chr_mo_inc_q_extra=L:5400+R:TTAGGGx100+L:600+R:TTAGGGx100' '-' \
+   'chr_mo_inc_q_extra=L:5400+R:TTAGGGx100+L:400+R:TTAGGGx100' '-' \
    'type=incomplete;anom=fragmented_q;telo=1;labels=q;gaps=0;telolen=1200' \
-   'Two q arrays 600 bp apart are two pieces of one fragmented q arm (teloLen 1200); no p arm'
+   'Two q arrays 400 bp apart are two pieces of one fragmented q arm (teloLen 1200); no p arm'
 
 # Each 600 bp array outweighs the 500 bp gap before it, so all three join.
 fx mo_inc_p_three_piece synthetic/mo_inc_p_three_piece.fa \
@@ -54,20 +54,20 @@ fx mo_inc_p_three_piece synthetic/mo_inc_p_three_piece.fa \
 
 # Filler > tolerance 3000 keeps the q end from reaching and reclaiming this structure.
 fx mo_inc_p_extra_disc synthetic/mo_inc_p_extra_disc.fa \
-   'chr_mo_inc_p_extra_disc=R:TTAGGGx100+L:600+R:TTAGGGx100+L:6600' '-' \
+   'chr_mo_inc_p_extra_disc=R:TTAGGGx100+L:400+R:TTAGGGx100+L:6600' '-' \
    'type=incomplete;anom=discordant_p,fragmented_p;telo=1;labels=p;gaps=0;telolen=1200' \
-   'Two inverted arrays 600 bp apart are two pieces of one arm that is both discordant and fragmented'
+   'Two inverted arrays 400 bp apart are two pieces of one arm that is both discordant and fragmented'
 
 fx mo_inc_p_extra_bal synthetic/mo_inc_p_extra_bal.fa \
    'chr_mo_inc_p_extra_bal=M:CCCTAATTAGGGx50+L:1200+F:CCCTAAx100+L:4800' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=1' \
    'Interleaved orientations at the very start fail every anchor attempt and are skipped; the plain forward array 1200 bp in, beyond -d, is the p arm, and the interleaved run is a single interstitial b row'
 
-# The plain array outweighs the 506 bp between the first piece's last exact repeat and its start.
+# The plain array outweighs the 406 bp between the first piece's last exact repeat and its start.
 fx mo_elect_longer_loses synthetic/mo_elect_longer_loses.fa \
-   'chr_mo_elect_longer_loses=M:CCCTAAACGATCx60+L:500+F:CCCTAAx100+L:5380' '-' \
+   'chr_mo_elect_longer_loses=M:CCCTAAACGATCx60+L:400+F:CCCTAAx100+L:5380' '-' \
    'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;telolen=1314' \
-   'A dense alternating array and a plain array 500 bp behind it are two pieces of one fragmented arm, the plain 600 bp piece outweighing the 506 bp gap; the first piece ends at its last exact repeat (714 bp), not the trailing filler unit'
+   'A dense alternating array and a plain array 400 bp behind it are two pieces of one fragmented arm, the plain 600 bp piece outweighing the 406 bp gap; the first piece ends at its last exact repeat (714 bp), not the trailing filler unit'
 
 fx mo_none_gapped_two synthetic/mo_none_gapped_two.fa \
    'chr_mo_none_gapped_two=L:900+N:150+L:900+N:150+L:900' '-' \
@@ -130,70 +130,107 @@ fx mo_dense_short synthetic/mo_dense_short.fa \
    'type=none;anom=.;telo=0;labels=none;gaps=0' \
    'A fully dense 240 bp array still fails -l: density does not buy length'
 
-# ---- piece rule: -k chains, exact-repeat score, pieces joined within -d, -l summed over the pieces ----
+# ---- pieces: a -k chain that meets -y is one piece, a chain below -y is cut to its dense segments; -l is compared on the span ----
 
-# The score only counts exact repeats, so a variant-only tail chained to the array costs more than its few exact repeats earn; the tail is left to the interstitial rows.
+# A chain below -y is cut: the long variant tail takes the whole chain under -y, so only the exact array is kept and the tail is left to the interstitial rows.
 fx pc_chain_tail synthetic/pc_chain_tail.fa \
    'chr_pc_chain_tail=F:CCCTAAx100+V:CTCTAAx40+F:CCCTAAx1+V:CTCTAAx40+F:CCCTAAx1+V:CTCTAAx40+F:CCCTAAx1+V:CTCTAAx40+F:CCCTAAx1+V:CTCTAAx40+F:CCCTAAx1+L:5000' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=1;telolen=600' \
-   'A 600 bp exact array chained to a 1230 bp tail of one-mismatch repeats with five exact ones: the arm is the exact array alone, the tail is an interstitial row'
+   'A 600 bp exact array chained to a 1230 bp tail of one-mismatch repeats with five exact ones: the chain is 34% exact, below -y, so the arm is the exact array alone and the tail is an interstitial row'
 
-# Fewer than --min-block-counts exact repeats make no piece, however regular.
+# A chain that meets -y is kept whole, so a telomere ends on its last repeat, exact or variant.
+fx pc_tvr_kept synthetic/pc_tvr_kept.fa \
+   'chr_pc_tvr_kept=F:CCCTAAx300+V:CTCTAAx200+L:5000' '-i' \
+   'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=3000' \
+   'An 1800 bp exact array followed by 1200 bp of one-mismatch repeats is one chain, 60% exact: the arm is the whole chain, 0-3000, ending on a variant repeat'
+
+fx pc_tvr_exact synthetic/pc_tvr_exact.fa \
+   'chr_pc_tvr_exact=F:CCCTAAx300+V:CTCTAAx300+L:5000' '-i' \
+   'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=3600' \
+   'With 1800 bp of variant repeats the chain is exactly 50% exact and still meets -y 0.5: the arm is the whole chain, 0-3600'
+
+fx pc_tvr_over synthetic/pc_tvr_over.fa \
+   'chr_pc_tvr_over=F:CCCTAAx300+V:CTCTAAx301+L:5000' '-i' \
+   'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=1800' \
+   'One variant repeat more puts the chain below -y: it is cut to its dense segment, the 1800 bp exact array, and the variant tail holds no exact repeat, so it is no interstitial row'
+
+# -y is read as typed: a chain at exactly 60% exact meets -y 0.6, whatever the float holds.
+fx pc_y_exact_06 synthetic/pc_y_06.fa \
+   'chr_pc_y_06=F:CCCTAAx60+V:CTCTAAx40+L:5000' '-i -y 0.6' \
+   'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=600' \
+   'A 360 bp exact array followed by 240 bp of one-mismatch repeats is one chain at exactly 60% exact: at -y 0.6 it is kept whole, 0-600'
+
+fx pc_y_over_06 synthetic/pc_y_06.fa \
+   'chr_pc_y_06=F:CCCTAAx60+V:CTCTAAx40+L:5000' '-i -y 0.61' \
+   'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=360' \
+   'At -y 0.61 the same chain is below -y and is cut to its exact array, 0-360; the variant tail holds no exact repeat, so it is no interstitial row'
+
+# A chain of fewer than --min-block-counts repeats makes no piece, however regular.
 fx pc_single_every200 synthetic/pc_single_every200.fa \
    'chr_pc_single_every200=F:CCCTAAx100+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:194+F:CCCTAAx1+L:5000' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=600' \
-   'Single exact repeats every 200 bp behind a 600 bp array are no pieces (one exact repeat each): the arm is the array alone, not fragmented, and no row is left'
+   'Single exact repeats every 200 bp behind a 600 bp array are chains of one repeat, below --min-block-counts: the arm is the array alone, not fragmented, and no row is left'
 
 fx pc_pairs_every200 synthetic/pc_pairs_every200.fa \
    'chr_pc_pairs_every200=F:CCCTAAx100+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:188+F:CCCTAAx2+L:5000' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=600' \
-   'Pairs of exact repeats every 200 bp behind a 600 bp array are pieces, but each 12 bp pair is shorter than the gap in front of it and none joins: the arm is the array alone, and a pair holds too few repeats for an interstitial row'
+   'Pairs of exact repeats every 200 bp behind a 600 bp array are pieces, but a 12 bp pair never pays for the 188 bp before it and the score never returns to its peak: the arm is the array alone, and a pair holds too few repeats for an interstitial row'
 
-# Pieces add up to -l: four 60 bp arrays 60 bp apart sum to 240, five to 300.
+# -l is compared on the span: four 60 bp arrays 60 bp apart span 420 bp.
 fx pc_tiny_below synthetic/pc_tiny_below.fa \
    'chr_pc_tiny_below=F:CCCTAAx10+L:60+F:CCCTAAx10+L:60+F:CCCTAAx10+L:60+F:CCCTAAx10+L:5000' '-i' \
-   'type=none;anom=.;telo=0;labels=none;gaps=0;its=4' \
-   'Four 60 bp arrays, each as long as the 60 bp gap before it, join into 240 bp, short of -l: no telomere, and each array is an interstitial row'
+   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=240' \
+   'Four 60 bp arrays, each as long as the 60 bp gap before it, keep the score level and join: the span 0-420 reaches -l although the pieces sum to 240 bp, so this is one fragmented p arm'
 
 fx pc_tiny_sum synthetic/pc_tiny_sum.fa \
    'chr_pc_tiny_sum=F:CCCTAAx10+L:60+F:CCCTAAx10+L:60+F:CCCTAAx10+L:60+F:CCCTAAx10+L:60+F:CCCTAAx10+L:5000' '-i' \
    'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=300' \
-   'Five 60 bp arrays, each as long as the 60 bp gap before it, all join and sum to 300 bp, reaching -l: one fragmented p arm with hull 0-540'
+   'Five 60 bp arrays, each as long as the 60 bp gap before it, all join: one fragmented p arm with span 0-540 and teloLen 300'
 
-# A variant lead-in is scored as non-repeat: the exact array behind it must outweigh it for the piece to reach the array.
+# A variant lead-in is scored as non-repeat: the exact array behind it must outweigh it for the chain to meet -y.
 fx pc_leadin_heavy synthetic/pc_leadin_heavy.fa \
    'chr_pc_leadin_heavy=F:CCCTAAx2+V:CTCTAAx500+F:CCCTAAx600+L:6000' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=6612' \
-   'Two exact repeats at the tip, 3000 bp of one-mismatch repeats, then a 3600 bp exact array: the array outweighs the lead-in and the piece starts at the tip and runs through it (6612 bp)'
+   'Two exact repeats at the tip, 3000 bp of one-mismatch repeats, then a 3600 bp exact array: the chain is 55% exact and is kept whole, from the tip through the variants (6612 bp)'
 
 fx pc_leadin_light synthetic/pc_leadin_light.fa \
    'chr_pc_leadin_light=F:CCCTAAx2+V:CTCTAAx500+F:CCCTAAx100+L:6000' '-i' \
    'type=none;anom=.;telo=0;labels=none;gaps=0;its=1' \
-   'The same lead-in with a 600 bp exact array: it does not outweigh the variants, the tip piece is 12 bp and dropped, and the array starts at 3012, beyond the 3000 bp start zone: no arm, one interstitial row'
+   'The same lead-in with a 600 bp exact array: the chain is 17% exact and is cut; the 12 bp tip piece cannot pay for the variants and is short of -l, and the array starts at 3012, beyond the 3000 bp start zone: no arm, one interstitial row'
 
 # -k is inclusive: a match starting exactly -k past the chain end joins it.
 fx pc_k_50 synthetic/pc_k_50.fa \
    'chr_pc_k_50=F:CCCTAAx50+L:50+F:CCCTAAx50+L:6000' '-' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;telolen=650' \
-   'Two 300 bp arrays 50 bp apart are one -k chain and one piece (300 + 300 - 50 filler = 550 at its peak, hull 0-650): not fragmented, teloLen equals the hull'
+   'Two 300 bp arrays 50 bp apart are one -k chain, 92% exact and kept whole: not fragmented, teloLen equals the span 0-650'
 
 fx pc_k_51 synthetic/pc_k_51.fa \
    'chr_pc_k_51=F:CCCTAAx50+L:51+F:CCCTAAx50+L:6000' '-' \
    'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;telolen=600' \
-   'Two 300 bp arrays 51 bp apart are two chains: two pieces within -d, so a fragmented p arm with teloLen 600 over hull 0-651'
+   'Two 300 bp arrays 51 bp apart are two chains: two pieces within -d, so a fragmented p arm with teloLen 600 over span 0-651'
 
-# -l is compared on the sum of the pieces.
+# -l is compared on the span, not on the sum of the pieces.
 fx pc_sum_300 synthetic/pc_sum_300.fa \
    'chr_pc_sum_300=F:CCCTAAx25+L:150+F:CCCTAAx25+L:6050' '-i' \
    'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=300' \
-   'Two 150 bp arrays 150 bp apart join and sum to exactly -l 300: a fragmented p arm'
+   'Two 150 bp arrays 150 bp apart join: a fragmented p arm with span 0-450 and teloLen 300'
 
 fx pc_sum_294 synthetic/pc_sum_294.fa \
    'chr_pc_sum_294=F:CCCTAAx25+L:144+F:CCCTAAx24+L:6056' '-i' \
-   'type=none;anom=.;telo=0;labels=none;gaps=0;its=2' \
-   'Two arrays of 150 and 144 bp, the second as long as the 144 bp gap before it, join into 294 bp, short of -l: no telomere, two interstitial rows'
+   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=294' \
+   'Two arrays of 150 and 144 bp, 144 bp apart, join: the span 0-438 reaches -l although the pieces sum to 294 bp'
 
-# A chain that falls short of -l is dropped and the search resumes behind its first piece, still inside the start zone.
+fx pc_span_300 synthetic/pc_span_300.fa \
+   'chr_pc_span_300=F:CCCTAAx20+L:60+F:CCCTAAx20+L:5000' '-i' \
+   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=240' \
+   'Two 120 bp arrays 60 bp apart span exactly -l 300: a fragmented p arm of teloLen 240'
+
+fx pc_span_299 synthetic/pc_span_299.fa \
+   'chr_pc_span_299=F:CCCTAAx20+L:59+F:CCCTAAx20+L:5000' '-i' \
+   'type=none;anom=.;telo=0;labels=none;gaps=0;its=2' \
+   'The same arrays 59 bp apart span 299 bp, one short of -l: no telomere, two interstitial rows'
+
+# A telomere whose span falls short of -l is dropped and the search resumes at the next piece, still inside the start zone.
 fx pc_restart_stub synthetic/pc_restart_stub.fa \
    'chr_pc_restart_stub=R:TTAGGGx8+L:1500+F:CCCTAAx500+L:6000' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=1;telolen=3000' \
@@ -205,7 +242,7 @@ fx pc_h2h_pairs synthetic/pc_h2h_pairs.fa \
    'type=none;anom=.;telo=0;labels=none;gaps=0;its=4' \
    'Two reverse arrays 100 bp apart, then two forward arrays 20 bp after them and 100 bp apart, all far from both ends: no arm and four interstitial rows (the inversion cut splits the 20 bp junction)'
 
-# ---- piece rule: a later piece joins only when it is at least as long as the gap behind the last joined piece, times y/(1-y) ----
+# ---- joining: walking inward, a piece adds its score and each base of the gap before it costs y/(1-y); the telomere ends where the sum peaks ----
 
 # At -y 0.5 the weight is 1: a 300 bp array exactly 300 bp behind the 600 bp array joins.
 fx pc_gap_300_joins synthetic/pc_gap_300_joins.fa \
@@ -218,13 +255,41 @@ fx pc_gap_301_skips synthetic/pc_gap_301_skips.fa \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=1;telolen=600' \
    'A 300 bp array one base shorter than the 301 bp gap before it does not join: the p arm is the 600 bp array alone, and the 300 bp array is an interstitial row classed fragmentation by the p arm within -d'
 
-# The skipped 48 bp piece does not end the search: the next piece is measured from the last joined piece, 448 bp away.
+# A piece that cannot pay for its own gap still counts once a later piece pays for both gaps.
 fx pc_gap_skip_continue synthetic/pc_gap_skip_continue.fa \
    'chr_pc_gap_skip_continue=F:CCCTAAx100+L:200+F:CCCTAAx8+L:200+F:CCCTAAx100+L:5000' '-i' \
-   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=1200' \
-   'A 48 bp array 200 bp behind the 600 bp array is too small for its gap and is skipped, but the 600 bp array 448 bp from the last joined piece outweighs that gap and joins: one fragmented p arm of teloLen 1200, hull 0-1648, with the 48 bp array inside the hull and no interstitial row'
+   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=1248' \
+   'A 48 bp array 200 bp behind the 600 bp array cannot pay for its gap, but the 600 bp array 200 bp further in pays for both gaps: one fragmented p arm of teloLen 1248, span 0-1648, with all three arrays in it and no interstitial row'
 
-# Ten 180 bp arrays 420 bp apart: each is shorter than the gap before it, and from the second on the gap exceeds -d.
+# The currency is exact-repeat bases, not piece length: 55%-exact blocks 51 bp apart are each longer than their gap and still never pay for it.
+fx pc_sat_no_join synthetic/pc_sat_no_join.fa \
+   'chr_pc_sat_no_join=F:CCCTAAx100+L:51+F:CCCTAAx5+V:CTCTAAx4+L:51+F:CCCTAAx5+V:CTCTAAx4+L:51+F:CCCTAAx5+V:CTCTAAx4+L:51+F:CCCTAAx5+V:CTCTAAx4+L:51+F:CCCTAAx5+V:CTCTAAx4+L:51+F:CCCTAAx5+V:CTCTAAx4+L:51+F:CCCTAAx5+V:CTCTAAx4+L:51+F:CCCTAAx5+V:CTCTAAx4+L:51+F:CCCTAAx5+V:CTCTAAx4+L:51+F:CCCTAAx5+V:CTCTAAx4+L:5000' '-i' \
+   'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=10;telolen=600' \
+   'Ten 54 bp blocks, each 55% exact and 51 bp apart, behind a 600 bp array: each block is a whole piece worth 6, less than the 51 bp before it, so none joins; the arm is the array alone and the ten blocks are interstitial rows'
+
+# A chain kept whole carries its near-threshold part across the next gap; -d is the distance between the two chains.
+fx pc_rest_bridges synthetic/pc_rest_bridges.fa \
+   'chr_pc_rest_bridges=F:CCCTAAx80+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+L:291+F:CCCTAAx500+L:6000' '-i -d 500' \
+   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=4740' \
+   'A 1740 bp chain, a 480 bp exact array followed by 1260 bp at 48% exact, is 62% exact as a whole and kept whole; the 3 kb array 291 bp behind it pays for the gap: one fragmented p arm of teloLen 4740, span 0-5031'
+
+fx pc_rest_bridges_d250 synthetic/pc_rest_bridges.fa \
+   'chr_pc_rest_bridges=F:CCCTAAx80+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+V:CTCTAAx11+F:CCCTAAx10+L:291+F:CCCTAAx500+L:6000' '-i -d 250' \
+   'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=1;telolen=1740' \
+   'At -d 250 the 291 bp between the two chains is too far: the p arm is the first chain alone and the 3 kb array is an interstitial row'
+
+# -d is measured between the -k chains, so variant repeats at a chain edge do not count as distance.
+fx pc_d_chains_300 synthetic/pc_d_chains.fa \
+   'chr_pc_d_chains=F:CCCTAAx100+V:CTCTAAx40+L:300+V:CTCTAAx40+F:CCCTAAx500+L:6000' '-i -d 300' \
+   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=4080' \
+   'Two chains 300 bp apart, each ending or starting with 240 bp of variant repeats, so their exact arrays are 780 bp apart: at -d 300 they join into one fragmented p arm of teloLen 4080, span 0-4380'
+
+fx pc_d_chains_299 synthetic/pc_d_chains.fa \
+   'chr_pc_d_chains=F:CCCTAAx100+V:CTCTAAx40+L:300+V:CTCTAAx40+F:CCCTAAx500+L:6000' '-i -d 299' \
+   'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=1;telolen=840' \
+   'At -d 299 the chains are one base too far apart: the p arm is the first chain, 0-840, and the second chain is an interstitial row'
+
+# Ten 180 bp arrays 420 bp apart: each is shorter than the gap before it, so the score never returns to its peak.
 fx pc_gap_train synthetic/pc_gap_train.fa \
    'chr_pc_gap_train=F:CCCTAAx100+L:420+F:CCCTAAx30+L:420+F:CCCTAAx30+L:420+F:CCCTAAx30+L:420+F:CCCTAAx30+L:420+F:CCCTAAx30+L:420+F:CCCTAAx30+L:420+F:CCCTAAx30+L:420+F:CCCTAAx30+L:420+F:CCCTAAx30+L:420+F:CCCTAAx30+L:5000' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=10;telolen=600' \
@@ -235,14 +300,14 @@ fx pc_gap_train_tip synthetic/pc_gap_train_tip.fa \
    'type=none;anom=.;telo=0;labels=none;gaps=0;its=10' \
    'The same train of ten 180 bp arrays starting at the tip: the first is a piece but nothing outweighs its gap and 180 bp is short of -l, so there is no telomere and the ten arrays are interstitial rows'
 
-# At -y 0.25 a gap weighs 1/3: 300 >= 600/3, while at the default -y 0.5 it weighs 1 and 300 < 600.
+# At -y 0.25 a gap weighs 1/3: 300 >= 600/3, while at the default -y 0.5 it weighs 1 and 300 < 600; -d 1000 keeps the 600 bp gap within reach.
 fx pc_gap_y_025 synthetic/pc_gap_y.fa \
-   'chr_pc_gap_y=F:CCCTAAx100+L:600+F:CCCTAAx50+L:5000' '-i -y 0.25' \
+   'chr_pc_gap_y=F:CCCTAAx100+L:600+F:CCCTAAx50+L:5000' '-i -y 0.25 -d 1000' \
    'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=900' \
    'At -y 0.25 the 600 bp gap weighs 200 and the 300 bp array behind it outweighs it: one fragmented p arm of teloLen 900'
 
 fx pc_gap_y_default synthetic/pc_gap_y.fa \
-   'chr_pc_gap_y=F:CCCTAAx100+L:600+F:CCCTAAx50+L:5000' '-i' \
+   'chr_pc_gap_y=F:CCCTAAx100+L:600+F:CCCTAAx50+L:5000' '-i -d 1000' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=1;telolen=600' \
    'At -y 0.5 the 600 bp gap weighs 600 and the 300 bp array behind it does not outweigh it: the p arm is the 600 bp array alone and the 300 bp array is an interstitial row'
 

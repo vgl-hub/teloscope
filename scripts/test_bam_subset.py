@@ -552,11 +552,11 @@ def test_exact_math_boundaries(tmp):
     names = assert_fastq_bam_parity(tmp, "unit_boundary", lengths, ["-x", "0", "-y", "1", "-k", "10", "-d", "10"])
     require(names == ["seven_repeats"], "42bp/7-unit boundary failed")
 
-    # density boundary: at -y 2/3 a gap costs twice its length, so 18bp is the most a 36bp array can pay for; alone, each array is under the 42bp floor
-    density = {"two_thirds": "TTAGGG" * 6 + "AAAAAA" * 3 + "TTAGGG" * 6}
-    pass_options = ["-x", "0", "-y", "0.666", "-k", "40", "-d", "40"]
-    fail_options = ["-x", "0", "-y", "0.667", "-k", "40", "-d", "40"]
-    require(assert_fastq_bam_parity(tmp, "density_pass", density, pass_options) == ["two_thirds"],
+    # density boundary: two 36bp arrays 24bp apart are one -k chain of 96bp, exactly 3/4 exact; at -y 0.75 it is kept whole, at -y 0.76 it is cut and the 24bp gap costs more than the 36bp behind it, so each array stands alone under the 42bp floor
+    density = {"three_quarters": "TTAGGG" * 6 + "AAAAAA" * 4 + "TTAGGG" * 6}
+    pass_options = ["-x", "0", "-y", "0.75", "-k", "40", "-d", "40"]
+    fail_options = ["-x", "0", "-y", "0.76", "-k", "40", "-d", "40"]
+    require(assert_fastq_bam_parity(tmp, "density_pass", density, pass_options) == ["three_quarters"],
             "density lower boundary failed")
     require(assert_fastq_bam_parity(tmp, "density_fail", density, fail_options) == [],
             "density upper boundary failed")

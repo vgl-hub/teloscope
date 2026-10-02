@@ -12,6 +12,7 @@ Usage:
 import argparse
 import bisect
 import fnmatch
+import gzip
 import os
 import pathlib
 import re
@@ -325,9 +326,24 @@ def check_derivations(rec, subject, terminal, interstitial, gaps, rows, summary,
             rec.eq("DER-09-its-count", where, int(row["its"]),
                    len(its_by_chrom.get(chrom, [])))
 
+    # what the builder guarantees for every telomere: its span reaches -l and is at least -y exact repeats of its strand
+    min_len = int(params.get("min_block_len", 300))
+    density = float(params.get("min_block_density", 0.5))
+    unit = len(params.get("canonical", "CCCTAA/TTAGGG").split("/")[0])
+    for b in terminal:
+        where = f"{subject}:{b['chrom']}:{b['start']}"
+        span = b["end"] - b["start"]
+        exact = b["fwdCan"] if b["teloLabel"] == "p" else b["revCan"]
+        rec.check("DER-21-span-reaches-l", where, span >= min_len,
+                  f"span {span} is below -l {min_len}")
+        rec.check("DER-22-span-meets-y", where, exact * unit >= density * span * (1 - 1e-6),
+                  f"{exact} exact repeats of {unit} bp over a span of {span} is below -y {density}")
+        rec.check("DER-23-telolen-within-span", where, 0 < b["teloLen"] <= span,
+                  f"teloLen {b['teloLen']} against span {span}")
+
     manual_curation = params.get("manual_curation") == "true"
     check_one_arm_per_end(rec, subject, terminal, gaps_by_chrom, manual_curation)
-    max_block_dist = int(params.get("max_block_dist", 1000))
+    max_block_dist = int(params.get("max_block_dist", 500))
     check_junction_class(rec, subject, terminal, interstitial, gaps_by_chrom, max_block_dist)
 
     if summary:
@@ -352,6 +368,32 @@ FULL_SCAN_FLAGS = {"-r", "-g", "-e", "-m", "-i", "--out-win-repeats", "--out-gc"
 def shared_report(rows):
     keys = ["telomeres", "labels", "gaps", "type", "anomaly"]
     return {h: tuple(r.get(k) for k in keys) for h, r in rows.items()}
+
+
+COMPLEMENT = str.maketrans("ACGTRYKMBVDHacgtrykmbvdh", "TGCAYRMKVBHDtgcayrmkvbhd")
+
+
+def write_reverse_complement(src, dest):
+    """Same records, same order, each sequence reverse-complemented."""
+    opener = gzip.open if str(src).endswith(".gz") else open
+    with opener(src, "rt") as fh, open(dest, "w") as out:
+        header, chunks = None, []
+
+        def flush():
+            if header is not None:
+                seq = "".join(chunks).translate(COMPLEMENT)[::-1]
+                out.write(header + "\n")
+                for i in range(0, len(seq), 80):
+                    out.write(seq[i:i + 80] + "\n")
+
+        for line in fh:
+            line = line.rstrip("\r\n")
+            if line.startswith(">"):
+                flush()
+                header, chunks = line, []
+            elif line:
+                chunks.append(line)
+        flush()
 
 
 def check_metamorphic(rec, subject, fasta_path, base_flags, stem):
@@ -481,6 +523,51 @@ def check_metamorphic(rec, subject, fasta_path, base_flags, stem):
             rec.check("MET-07-manual-curation", subject + ":its", not overlap,
                       f"contig rows {sorted(overlap)[:3]} also appear in the -n run's "
                       f"own interstitial BED")
+
+        # every telomere edge is the edge of an exact repeat, canonical or variant
+        d11, with_matches = once(["-m"])
+        dirs.append(d11)
+        if with_matches:
+            _, _, m_params = read_report(outputs(d11, stem)["report"])
+            limit = int(m_params.get("terminal_limit", 50000)) - int(m_params.get("window", 1000))
+            starts, ends = {}, {}
+            for name in (f"{stem}_canonical_matches.bed", f"{stem}_noncanonical_matches.bed"):
+                for line in _significant_lines(pathlib.Path(d11) / name):
+                    f = line.split("\t")
+                    starts.setdefault(f[0], set()).add(int(f[1]))
+                    ends.setdefault(f[0], set()).add(int(f[2]))
+            bad = []
+            for b in read_block_bed(outputs(d11, stem)["terminal"]):
+                # variant matches are only written for the terminal windows, so an edge deeper than that cannot be checked
+                for edge, known in ((b["start"], starts), (b["end"], ends)):
+                    deep = limit <= edge <= b["chrSize"] - limit
+                    if edge not in known.get(b["chrom"], ()) and not deep:
+                        bad.append((b["chrom"], b["start"], b["end"], edge))
+            rec.check("MET-09-edges-on-repeats", subject, not bad,
+                      f"telomere edges off any repeat edge: {bad[:3]}")
+
+        # the reverse complement gives the mirror image
+        if str(fasta_path).endswith((".fa", ".fasta", ".fa.gz", ".fasta.gz", ".fna.gz")):
+            d12 = tempfile.mkdtemp(prefix="telo_inv_")
+            dirs.append(d12)
+            rc_path = pathlib.Path(d12) / fasta_path.name.replace(".gz", "")
+            write_reverse_complement(fasta_path, rc_path)
+            d13 = tempfile.mkdtemp(prefix="telo_inv_")
+            dirs.append(d13)
+            p = run(["-f", str(rc_path), *base_flags], d13)
+            if p.returncode == 0:
+                # counts are left out: a match is counted by its start, so one straddling an edge belongs to a different side on each strand
+                swap = {"p": "q", "q": "p"}
+                want = {(b["chrom"], b["start"], b["end"], b["teloLen"], b["teloLabel"], b["closestEnd"], b["teloType"])
+                        for b in read_block_bed(outputs(d1, stem)["terminal"])}
+                got = {(b["chrom"], b["chrSize"] - b["end"], b["chrSize"] - b["start"], b["teloLen"],
+                        swap.get(b["teloLabel"], b["teloLabel"]), swap.get(b["closestEnd"], b["closestEnd"]), b["teloType"])
+                       for b in read_block_bed(outputs(d13, rc_path.name)["terminal"])}
+                rec.check("MET-10-reverse-complement-mirror", subject, got == want,
+                          f"only forward {sorted(want - got)[:2]}, only mirrored {sorted(got - want)[:2]}")
+            else:
+                rec.check("MET-10-reverse-complement-mirror", subject, False,
+                          "teloscope exited non-zero on the reverse complement")
 
         if not any(f in FULL_SCAN_FLAGS for f in base_flags):
             d9, nf = once(["-n"])

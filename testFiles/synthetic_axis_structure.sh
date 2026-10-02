@@ -80,9 +80,9 @@ fx st_variant_halo synthetic/st_variant_halo.fa \
 
 # -d and the gap rule decide whether a nearby array is another piece of the arm or stays an interstitial row.
 fx st_inner_array_terminal synthetic/st_inner_array.fa \
-   'chr_st_inner_array=F:CCCTAAx100+L:600+F:CCCTAAx100+L:3000+R:TTAGGGx100' '-i' \
+   'chr_st_inner_array=F:CCCTAAx100+L:400+F:CCCTAAx100+L:3000+R:TTAGGGx100' '-i' \
    'type=t2t;anom=fragmented_p;telo=2;labels=pq;gaps=0;its=0;telolen=1200' \
-   'A second forward array as long as the 600 bp gap before it is the p arm'"'"'s second piece: fragmented p arm of teloLen 1200, no ITS left over'
+   'A second forward array 400 bp behind the first, longer than that gap, is the p arm'"'"'s second piece: fragmented p arm of teloLen 1200, no ITS left over'
 
 # The earlier geometry with a 300 bp second array: shorter than its 600 bp gap, it does not join and is left as a row.
 fx st_inner_array_short synthetic/st_inner_array_short.fa \

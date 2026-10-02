@@ -298,9 +298,13 @@ xfx vgp_probe_mega vgp_probe.fa.gz mega_OZ124247.1_p_0-600000 '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=538092' \
    'Pochard OZ124247.1 first 600 kb: a single uncapped p arm in one piece, 4-538096; teloLen 538092 is observed, not derived'
 
-xfx vgp_probe_frag32 vgp_probe.fa.gz frag32_OZ221982.1_q_302227075-302307075 '-i' \
-   'type=t2t;anom=discordant_p,fragmented_q;telo=2;labels=pq;gaps=0;its=75;telolen=312' \
-   'Frog OZ221982.1 last 80 kb, a satellite-like train: the 312 bp reverse tip is a discordant p arm because the arrays behind it are shorter than their gaps; the q end drops a 161 bp tip piece below -l and joins the 182, 143 and 1452 bp arrays behind it into a fragmented q arm; teloLen 312 is the p arm, derived, while its 75 and the q arm teloLen 1715 are observed, not derived'
+xfx vgp_probe_frag32 vgp_probe.fa.gz frag32_OZ221982.1_q_302227075-302307075 '-i -d 500' \
+   'type=t2t;anom=discordant_p;telo=2;labels=pq;gaps=0;its=77;telolen=312' \
+   'Frog OZ221982.1 last 80 kb, a satellite-like train of about 720 bp arrays 670 bp apart: at -d 500 no gap is within reach, so the 312 bp reverse tip is a discordant p arm and the q arm is one chain, 76613-78065; teloLen 312 is the p arm, derived, while its 77 and the q arm teloLen 1452 are observed, not derived'
+
+xfx vgp_probe_frag32_d1000 vgp_probe.fa.gz frag32_OZ221982.1_q_302227075-302307075 '-i -d 1000' \
+   'type=t2t;anom=discordant_p,fragmented_p,fragmented_q;telo=2;labels=pq;gaps=0;its=55;telolen=5610' \
+   'The same end at -d 1000: the 670 bp gaps are within reach and the arrays that pay for them join, a p arm 0-9418 of teloLen 5610 and a q arm 62942-79994 of teloLen 10043; every value is observed, not derived'
 
 xfx vgp_probe_mito vgp_probe.fa.gz mito_CM010492.2_whole '-i' \
    'type=none;anom=.;telo=0;labels=none;gaps=0;its=0' \
@@ -311,8 +315,8 @@ xfx vgp_turtle vgp_turtle.fa.gz giant_CM098529.1_84917045-85927174 '-i' \
    'Turtle CM098529.1: a near-1 Mb reverse array on the first contig, too far from either scaffold end to be an arm, reported as three interstitial rows; never joined across the 200 bp gap'
 
 xfx vgp_turtle_n vgp_turtle.fa.gz giant_CM098529.1_84917045-85927174 '-i -n' \
-   'type=none;anom=.;telo=0;labels=none;gaps=1;its=3' \
-   'Same file with -n: the array anchors its own contig'"'"'s internal end as a contig row (110454-990129), but its inner 90 kb has exact-repeat coverage below -y and is cut from that row, leaving 3 interstitial rows; the 3 is observed, not derived'
+   'type=none;anom=.;telo=0;labels=none;gaps=1;its=0' \
+   'Same file with -n: the array anchors its own contig'"'"'s internal end as one contig row, 20000-990129: the chain is 63% exact as a whole and is kept whole, so no interstitial row is left; the 0 is observed, not derived'
 
 # Combinatorial axes
 source "$SCRIPT_DIR/synthetic_axis_anomaly.sh"

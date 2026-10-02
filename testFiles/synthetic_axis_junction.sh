@@ -80,12 +80,12 @@ fx jn_interior_p_then_p_far synthetic/jn_interior_p_then_p_far.fa \
    'Two forward arrays 2500 bp and 3160 bp in, 300 bp apart: two pieces of one p arm, hull 2500-3520, reachable at tolerance 3000, teloLen 720'
 
 fx jn_fragmented_p synthetic/jn_fragmented_p.fa \
-   'chr_jn_fragmented_p=F:CCCTAAx317+L:598+F:CCCTAAx2917+L:3000+R:TTAGGGx100' '-i' \
+   'chr_jn_fragmented_p=F:CCCTAAx317+L:498+F:CCCTAAx2917+L:3000+R:TTAGGGx100' '-i' \
    'type=t2t;anom=fragmented_p;telo=2;labels=pq;gaps=0;its=0;telolen=19404' \
-   'A 598 bp run between two arrays is not part of either piece: one fragmented p arm with hull 0-20002 and teloLen 19404, no ITS left over'
+   'A 498 bp run between two arrays is not part of either piece: one fragmented p arm with hull 0-19902 and teloLen 19404, no ITS left over'
 
 fx jn_fragmented_p_plain synthetic/jn_fragmented_p.fa \
-   'chr_jn_fragmented_p=F:CCCTAAx317+L:598+F:CCCTAAx2917+L:3000+R:TTAGGGx100' '-' \
+   'chr_jn_fragmented_p=F:CCCTAAx317+L:498+F:CCCTAAx2917+L:3000+R:TTAGGGx100' '-' \
    'type=t2t;anom=fragmented_p;telo=2;labels=pq;gaps=0;telolen=19404' \
    'Same file without -i: fast mode covers this short record whole, identically to full scan; its is not checked'
 
