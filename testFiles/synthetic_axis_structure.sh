@@ -76,18 +76,18 @@ fx st_explicit_patterns synthetic/st_explicit_patterns.fa \
 fx st_variant_halo synthetic/st_variant_halo.fa \
    'chr_st_variant_halo=V:CTCTAAx20+F:CCCTAAx80+L:2800+R:TTAGGGx100' '-x 1' \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=0' \
-   'A degenerate outer edge on an otherwise canonical arm, as subtelomeres really look'
+   'A variant-only outer edge on an otherwise canonical arm: the piece starts at the first exact repeat, as subtelomeres really look'
 
-# -d decides whether a nearby array bridges into the arm or stays an interstitial row.
+# -d decides whether a nearby array is another piece of the arm or stays an interstitial row.
 fx st_inner_array_terminal synthetic/st_inner_array.fa \
    'chr_st_inner_array=F:CCCTAAx100+L:600+F:CCCTAAx50+L:2400+R:TTAGGGx100' '-i' \
-   'type=t2t;anom=.;telo=2;labels=pq;gaps=0;its=0;telolen=1500' \
-   'A second forward array 600 bp behind the p arm is bridged into it: no ITS is left over'
+   'type=t2t;anom=fragmented_p;telo=2;labels=pq;gaps=0;its=0;telolen=900' \
+   'A second forward array 600 bp behind the p arm is its second piece: fragmented p arm of teloLen 900, no ITS left over'
 
 fx st_inner_array_its synthetic/st_inner_array_far.fa \
    'chr_st_inner_array_far=F:CCCTAAx100+L:1200+F:CCCTAAx50+L:1800+R:TTAGGGx100' '-i' \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=0;its=1' \
-   'The same second array moved 1200 bp behind the p arm is beyond -d: it stays a plain interstitial row'
+   'The same second array moved 1200 bp behind the p arm starts more than -d past the first piece: it stays a plain interstitial row'
 
 fx st_its_abuts_terminal synthetic/st_inner_array_far.fa \
    'chr_st_inner_array_far=F:CCCTAAx100+L:1200+F:CCCTAAx50+L:1800+R:TTAGGGx100' '-i -t 1000' \

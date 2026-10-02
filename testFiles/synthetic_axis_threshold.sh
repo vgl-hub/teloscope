@@ -41,16 +41,16 @@ fx th_tol_2500 synthetic/th_tol_2500.fa \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0' \
    'An array starting 2500 bp in is within --terminal-tolerance 3000 and is called'
 
-# ---- -d / --max-block-distance, default 1000 (bridges called sequence within a piece) ----
+# ---- -d / --max-block-distance, default 1000 (the furthest the next piece may start from the last one) ----
 fx th_bridge_plain_exact synthetic/th_bridge_plain_exact.fa \
    'chr_th_bridge_plain_exact=F:CCCTAAx50+L:1000+F:CCCTAAx50+L:5600' '-' \
    'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;telolen=600' \
-   'A 1000 bp run is exactly -d: the second array chains as a second block of a fragmented arm'
+   'A 1000 bp run is exactly -d: the second array anchors a second piece of a fragmented arm'
 
 fx th_bridge_plain_beyond synthetic/th_bridge_plain_beyond.fa \
    'chr_th_bridge_plain_beyond=F:CCCTAAx50+L:1001+F:CCCTAAx50+L:5599' '-' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;telolen=300' \
-   'A 1001 bp run exceeds -d: the second array stays an interstitial row'
+   'A 1001 bp run exceeds -d: the second array starts no piece and stays an interstitial row'
 
 # N runs are hard contig boundaries: pieces never chain across one, at any length.
 fx th_bridge_gap synthetic/th_bridge_gap.fa \

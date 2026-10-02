@@ -31,7 +31,7 @@ fx no_telo no_telo.fa \
 fx misassembly misassembly.fa \
    'chr_misassembly=F:CCCTAAx100+L:950+F:CCCTAAx50+L:5000' '-' \
    'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;telolen=900' \
-   'A 300 bp array 950 bp behind a 600 bp tip drags coverage below -y, so it chains as a second block: one fragmented p arm'
+   'A 300 bp array 950 bp behind a 600 bp tip is a second piece within -d, so the p arm is fragmented: teloLen 900, hull 0-1850'
 
 # Filler > tolerance 3000, so the p end never reaches this array too and reclaims it.
 fx discordant discordant.fa \
@@ -79,7 +79,7 @@ fx its its.fa \
 fx density_edge density_edge.fa \
    'chr_density=M:CCCTAAACGATCx100+L:2000+R:TTAGGGx100' '-' \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=0' \
-   'p-arm alternating 6 bp match and 6 bp filler: density exactly at -y, kept on the tie' \
+   'p-arm alternating 6 bp match and 6 bp filler: each filler base costs exactly what a repeat base scores, so the running score ties at every repeat and the piece runs to the last one' \
 
 fx misassembly_qq misassembly_qq.fa \
    'chr_misassembly_qq=L:5000+R:TTAGGGx50+L:950+R:TTAGGGx100' '-' \
@@ -151,8 +151,8 @@ fx mirror_extend mirror_extend.fa \
 
 fx mirror_merge mirror_merge.fa \
    'chr_mirror_merge=F:CCCTAAx50+L:100+F:CCCTAAx50+L:6500' '-d 200' \
-   'type=incomplete;anom=.;telo=1;labels=p;gaps=0' \
-   'Two clusters closer than -d merge into one block'
+   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;telolen=600' \
+   'Two clusters 100 bp apart, closer than -d, are two pieces of one telomere: a fragmented p arm'
 
 # -d 200 keeps the two 240 bp clusters separate; each is below -l on its own.
 fx mirror_no_merge mirror_no_merge.fa \
@@ -199,7 +199,7 @@ fx boundary_multiple_p boundary_multiple_p.fa \
 fx boundary_extend_its boundary_extend_its.fa \
    'chr_boundary_ext_its=F:CCCTAAx100+L:2000+R:TTAGGGx50+L:1000+R:TTAGGGx100' '-i -t 300' \
    'type=t2t;anom=fragmented_q;telo=2;labels=pq;gaps=0;its=0;telolen=900' \
-   'Terminal blocks extend past the -t zone: the middle array chains into the q arm, not interstitial'
+   'Terminal pieces extend past the -t zone: the middle array ends exactly -d from the q piece and is its second piece, so the q arm is fragmented (teloLen 900) and nothing is interstitial'
 
 # R2: nothing bounds the extent; R6's fast-scan window extension keeps fast and full scan in agreement.
 fx uncapped_extent_fast uncapped_extent.fa \
@@ -237,8 +237,8 @@ fx its_headtohead its_headtohead.fa \
 
 fx discordant_pp discordant_pp.fa \
    'chr_discordant_pp=L:2996+F:CCCTAAx84+L:900+F:CCCTAAx100' '-' \
-   'type=incomplete;anom=.;telo=1;labels=p;gaps=0;telolen=2004' \
-   'Both forward arrays bridge into one block reachable from either end; strand decides: one p arm, no q telomere'
+   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;telolen=1104' \
+   'Two forward arrays 900 bp apart are two pieces of one telomere reachable from either end; strand decides: one fragmented p arm, no q telomere'
 
 fx extra_invalid_p extra_invalid_p.fa \
    'chr_extra_invalid_p=F:CCCTAAx100+L:3396+F:CCCTAAx84+L:500' '-d 200' \
@@ -295,12 +295,12 @@ xfx bTaeGut7_pat bTaeGut7_chr33_pat.fa.gz chr33_pat '-' \
 
 # VGP excerpts from the 26.09.12 edge-case panel (notebook section in brackets).
 xfx vgp_probe_mega vgp_probe.fa.gz mega_OZ124247.1_p_0-600000 '-i' \
-   'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=538251' \
-   'Pochard OZ124247.1 first 600 kb: a single uncapped p arm, 4-538255'
+   'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=538092' \
+   'Pochard OZ124247.1 first 600 kb: a single uncapped p arm in one piece, 4-538096; teloLen 538092 is observed, not derived'
 
 xfx vgp_probe_frag32 vgp_probe.fa.gz frag32_OZ221982.1_q_302227075-302307075 '-i' \
-   'type=incomplete;anom=fragmented_q;telo=1;labels=q;gaps=0;its=0;telolen=73964' \
-   'Frog OZ221982.1 last 80 kb: ten blocks chain into one fragmented q arm, 0-79994'
+   'type=incomplete;anom=fragmented_q;telo=1;labels=q;gaps=0;its=0;telolen=40666' \
+   'Frog OZ221982.1 last 80 kb: several pieces within -d form one fragmented q arm with hull 0-79994; teloLen 40666 is observed, not derived'
 
 xfx vgp_probe_mito vgp_probe.fa.gz mito_CM010492.2_whole '-i' \
    'type=none;anom=.;telo=0;labels=none;gaps=0;its=0' \
@@ -308,11 +308,11 @@ xfx vgp_probe_mito vgp_probe.fa.gz mito_CM010492.2_whole '-i' \
 
 xfx vgp_turtle vgp_turtle.fa.gz giant_CM098529.1_84917045-85927174 '-i' \
    'type=none;anom=.;telo=0;labels=none;gaps=1;its=3' \
-   'Turtle CM098529.1: a near-1 Mb reverse array on the first contig, too far from either scaffold end to be an arm, reported as three interstitial rows; never bridged across the 200 bp gap'
+   'Turtle CM098529.1: a near-1 Mb reverse array on the first contig, too far from either scaffold end to be an arm, reported as three interstitial rows; never joined across the 200 bp gap'
 
 xfx vgp_turtle_n vgp_turtle.fa.gz giant_CM098529.1_84917045-85927174 '-i -n' \
-   'type=none;anom=.;telo=0;labels=none;gaps=1;its=0' \
-   'Same file with -n: the array anchors its own contig'"'"'s internal end and becomes a contig row, leaving the interstitial BED'
+   'type=none;anom=.;telo=0;labels=none;gaps=1;its=3' \
+   'Same file with -n: the array anchors its own contig'"'"'s internal end as a contig row (110454-990129), but its inner 90 kb has exact-repeat coverage below -y and is cut from that row, leaving 3 interstitial rows; the 3 is observed, not derived'
 
 # Combinatorial axes
 source "$SCRIPT_DIR/synthetic_axis_anomaly.sh"
