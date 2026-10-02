@@ -47,7 +47,7 @@ Both block files share one 12-column layout, with zero-based, half-open coordina
 
 The junction class looks at the rows within `-d` of an interstitial row on the same contig. The nearest row of the other strand makes it `fusion` (a reverse array then a forward one) or `tail_to_tail` (forward then reverse). With none, a row of the same strand makes it `fragmentation`, and `single` means nothing is that close.
 
-Coverage counts each covered base once, however many matches overlap it. A terminal piece needs `-y` canonical coverage over its length; an interstitial row needs `-y` coverage from all its matches.
+Coverage counts each covered base once, however many matches overlap it. A telomere and each of its pieces hold `-y` canonical coverage of their strand over their span; an interstitial row holds `-y` coverage from all its matches.
 
 Forward and reverse are a sequence convention, not a `+` strand: of the canonical motif and its reverse complement, the lexicographically smaller one is forward. By default that is `CCCTAA`, found at chromosome starts, and reverse is `TTAGGG`, found at ends. Each expanded seed takes the closer orientation (ties go to forward), and its variants inherit it.
 
