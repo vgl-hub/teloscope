@@ -33,7 +33,7 @@ Every pattern is also searched as its reverse complement. `-c` decides canonical
 | `-t` | `--terminal-limit` | fast-scan window at each end, grown while a telomere reaches its edge; also caps the start zone | `50000` |
 |  | `--terminal-tolerance` | how far from an end a telomere may start | `3000` |
 | `-k` | `--max-match-distance` | matches this close chain into one piece | `50` |
-| `-d` | `--max-block-distance` | pieces this close join into one telomere | `1000` |
+| `-d` | `--max-block-distance` | pieces this close join into one telomere, when the joining piece outweighs the gap | `1000` |
 | `-l` | `--min-block-length` | shortest telomere kept, summed over its pieces | `300` |
 | `-y` | `--min-block-density` | exact-repeat coverage a piece needs, in `(0,1]` | `0.5` |
 |  | `--min-block-counts` | canonical matches a telomere piece needs | `2` |

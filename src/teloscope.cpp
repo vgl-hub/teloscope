@@ -450,7 +450,9 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<MatchInfo>& matches
             trackProbe(probe);
             uint64_t lo = fromStart ? edge : trimmed, hi = fromStart ? trimmed : edge;
             TelomereBlock tally;
-            if (tallyPiece(lo, hi, isFwd, tally)) {
+            // a piece joins only when it outweighs the gap back to the last kept piece
+            const uint64_t gap = first ? 0 : (fromStart ? lo - keptEdge : keptEdge - hi);
+            if (tallyPiece(lo, hi, isFwd, tally) && static_cast<double>(hi - lo) >= weight * static_cast<double>(gap)) {
                 sum += hi - lo;
                 if (sum >= minLen) return true;
                 keptEdge = trimmed;
@@ -530,6 +532,7 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<MatchInfo>& matches
         bool haveStrand = false;
         size_t resume = n;
         uint64_t chainEdge = fromStart ? contigStart : contigEnd;
+        uint64_t lastEdge = chainEdge;
 
         for (size_t k = first; k < n; ++k) {
             const MatchInfo& m = fromStart ? canon[k] : canon[n - 1 - k];
@@ -552,6 +555,11 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<MatchInfo>& matches
             uint64_t pEnd = fromStart ? trimmed : edge;
             TelomereBlock tally;
             if (!tallyPiece(pStart, pEnd, mFwd, tally)) continue;
+            // a piece joins only when it outweighs the gap back to the last piece
+            if (haveStrand) {
+                const uint64_t gap = fromStart ? pStart - lastEdge : lastEdge - pEnd;
+                if (static_cast<double>(pEnd - pStart) < weight * static_cast<double>(gap)) continue;
+            }
 
             pieces.push_back({pStart, pEnd});
             chain.fwdCanCount += tally.fwdCanCount;
@@ -562,6 +570,7 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<MatchInfo>& matches
             curFwd = mFwd;
             haveStrand = true;
             chainEdge = pieceChain;
+            lastEdge = fromStart ? pEnd : pStart;
             reach = fromStart ? (pEnd + maxBlockDist) : (pStart > maxBlockDist ? pStart - maxBlockDist : 0);
             probeBound = fromStart ? std::max(probeBound, reach) : std::min(probeBound, reach);
 
