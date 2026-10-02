@@ -3,7 +3,7 @@ embedded
 
 +++ Path Summary Report +++
 pos	header	telomeres	labels	gaps	type	anomaly
-1	chr_boundary_ext_its	2	pq	0	t2t	fragmented_q
+1	chr_boundary_ext_its	2	pq	0	t2t	.
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -13,10 +13,10 @@ Contig N50:	4500
 Total telomeres:	2
 
 +++ Telomere Statistics +++
-Mean length:	750
-Median length:	750
+Mean length:	600
+Median length:	600
 Min length:	600
-Max length:	900
+Max length:	600
 
 +++ Chromosome Telomere Counts +++
 Two telomeres:	1
@@ -32,7 +32,7 @@ No telomeres:	0
 Gapped no telomeres:	0
 
 +++ Scaffold Anomalies +++
-Scaffolds flagged:	1
-Scaffolds clean:	0
+Scaffolds flagged:	0
+Scaffolds clean:	1
 Discordant arms:	0
-Fragmented arms:	1
+Fragmented arms:	0
