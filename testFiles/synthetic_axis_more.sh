@@ -242,7 +242,7 @@ fx pc_h2h_pairs synthetic/pc_h2h_pairs.fa \
    'type=none;anom=.;telo=0;labels=none;gaps=0;its=4' \
    'Two reverse arrays 100 bp apart, then two forward arrays 20 bp after them and 100 bp apart, all far from both ends: no arm and four interstitial rows (the inversion cut splits the 20 bp junction)'
 
-# ---- joining: walking inward, a piece adds its score and each base of the gap before it costs y/(1-y); the telomere ends where the sum peaks ----
+# ---- joining: walking inward, a piece adds its score and each base of the gap before it costs y, against 1 - y for a base in an exact repeat; the telomere ends where the sum peaks ----
 
 # At -y 0.5 the weight is 1: a 300 bp array exactly 300 bp behind the 600 bp array joins.
 fx pc_gap_300_joins synthetic/pc_gap_300_joins.fa \

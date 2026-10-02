@@ -503,6 +503,10 @@ int main(int argc, char **argv) {
                     fprintf(stderr, "Error: Min block density (-y/--min-block-density) must be in the range (0,1].\n");
                     exit(EXIT_FAILURE);
                 }
+                if (v < 0.000001f) {
+                    fprintf(stderr, "Error: Min block density (-y/--min-block-density) must be at least 0.000001.\n");
+                    exit(EXIT_FAILURE);
+                }
                 userInput.minBlockDensity = v;
                 break;
             }

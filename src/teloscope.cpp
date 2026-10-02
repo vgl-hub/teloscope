@@ -41,7 +41,7 @@ struct Piece {
     uint64_t end;
     uint64_t chainStart;
     uint64_t chainEnd;
-    double score; // canonical bases of its strand minus weighted other bases
+    int64_t score; // scaled: exact-repeat bases of its strand times (1 - y), minus every other base times y
     uint32_t fwdCanCount;
     uint32_t revCanCount;
     uint32_t fwdNonCanCount;
@@ -95,9 +95,9 @@ char closestEnd(uint64_t start, uint32_t blockLen, uint64_t pathSize, char ancho
 
 constexpr uint32_t minCanonicalCount = 4;
 
-// -y as typed, free of float noise, and the cost of a base outside an exact repeat at that density: a stretch scores zero at exactly -y
-double typedDensity(float density) { return std::round(static_cast<double>(density) * 1e6) / 1e6; }
-double scoreWeight(double density) { return density >= 1.0 ? 1e9 : density / (1.0 - density); }
+// -y in millionths, as typed: a base inside an exact repeat scores scoreScale - density and any other base -density, so a stretch scores (its exact fraction - y) times its length, in integers
+constexpr int64_t scoreScale = 1000000;
+int64_t densityMillionths(float density) { return std::llround(static_cast<double>(density) * scoreScale); }
 
 enum class Orient { Fwd, Rev, All, FwdAny, RevAny };
 
@@ -194,46 +194,50 @@ void tallyBlock(const std::vector<MatchInfo>& matches, TelomereBlock& block, siz
     }
 }
 
-// a stretch whose covered bases outweigh the rest; score is covered bases minus weighted other bases
+// a stretch whose covered bases outweigh the rest, with its scaled score
 struct ScoredSegment {
     uint64_t start;
     uint64_t end;
-    double score;
+    int64_t score;
 };
 
 // getScoringSegments work entry: running score before and after the segment, and the last earlier entry that starts no higher
 struct OpenSegment {
     uint64_t start;
     uint64_t end;
-    double left;
-    double right;
-    long lower;
+    int64_t left;
+    int64_t right;
+    std::ptrdiff_t lower;
 };
 
-// maximal scoring segments of the runs inside [from, to), in one pass (Ruzzo and Tompa): a covered base scores 1, any other costs weight
+// maximal scoring segments of the runs inside [from, to), in one pass (Ruzzo and Tompa); returns the covered bases
 uint64_t getScoringSegments(const std::vector<CoverRun>& runs, size_t& cursor, uint64_t from, uint64_t to,
-                            double weight, std::vector<OpenSegment>& open, std::vector<ScoredSegment>& segments) {
-    while (cursor < runs.size() && runs[cursor].start + runs[cursor].len <= from) ++cursor;
+                            int64_t density, std::vector<OpenSegment>& open, std::vector<ScoredSegment>& segments) {
     open.clear();
-    double cumulative = 0.0;
+    if (to <= from) return 0;
+    while (cursor < runs.size() && runs[cursor].start + runs[cursor].len <= from) ++cursor;
+    int64_t cumulative = 0;
     uint64_t prevEnd = from, covered = 0;
     for (size_t i = cursor; i < runs.size() && runs[i].start < to; ++i) {
         uint64_t start = std::max(from, runs[i].start);
         uint64_t end = std::min<uint64_t>(to, runs[i].start + runs[i].len);
-        if (!open.empty()) cumulative -= weight * static_cast<double>(start - prevEnd);
-        OpenSegment seg{start, end, cumulative, cumulative + static_cast<double>(end - start), -1};
+        if (!open.empty()) cumulative -= density * static_cast<int64_t>(start - prevEnd);
+        OpenSegment seg{start, end, cumulative, cumulative + (scoreScale - density) * static_cast<int64_t>(end - start), -1};
         cumulative = seg.right;
         prevEnd = end;
         covered += end - start;
         // merge leftward while an earlier segment starts no higher and ends no higher, so a tie extends the segment
+        std::ptrdiff_t j = static_cast<std::ptrdiff_t>(open.size()) - 1;
         while (true) {
-            long j = static_cast<long>(open.size()) - 1;
             while (j >= 0 && open[j].left > seg.left) j = open[j].lower;
             seg.lower = j;
             if (j < 0 || open[j].right > seg.right) break;
             seg.start = open[j].start;
             seg.left = open[j].left;
+            // the search goes on below the merged entry; everything between started higher and is dropped with it
+            std::ptrdiff_t next = open[j].lower;
             open.resize(static_cast<size_t>(j));
+            j = next;
         }
         open.push_back(seg);
     }
@@ -242,7 +246,7 @@ uint64_t getScoringSegments(const std::vector<CoverRun>& runs, size_t& cursor, u
 }
 
 // one strand's pieces: a chain of at least minCounts repeats stays whole when it meets -y, else it is cut to its dense segments
-void cutChains(const std::vector<CoverRun>& runs, const std::vector<CoverRun>& chains, double weight, double density,
+void cutChains(const std::vector<CoverRun>& runs, const std::vector<CoverRun>& chains, int64_t density,
                uint32_t minCounts, std::vector<Piece>& pieces) {
     std::vector<OpenSegment> open;
     std::vector<ScoredSegment> segments;
@@ -251,11 +255,11 @@ void cutChains(const std::vector<CoverRun>& runs, const std::vector<CoverRun>& c
         if (chain.counts < minCounts) continue;
         const uint64_t chainEnd = chain.start + chain.len;
         segments.clear();
-        uint64_t canonical = getScoringSegments(runs, cursor, chain.start, chainEnd, weight, open, segments);
+        uint64_t canonical = getScoringSegments(runs, cursor, chain.start, chainEnd, density, open, segments);
         if (segments.empty()) continue;
         // the whole chain, first repeat to last, variant repeats included
-        if (static_cast<double>(canonical) >= density * static_cast<double>(chain.len)) {
-            double score = static_cast<double>(canonical) - weight * static_cast<double>(chain.len - canonical);
+        const int64_t score = scoreScale * static_cast<int64_t>(canonical) - density * static_cast<int64_t>(chain.len);
+        if (score >= 0) {
             pieces.push_back({chain.start, chainEnd, chain.start, chainEnd, score, 0, 0, 0, 0});
             continue;
         }
@@ -417,9 +421,7 @@ void writeReadTlReport(std::ofstream& reportFile, const UserInputTeloscope& user
 // one strand's pieces on a contig, counted and kept when strand-pure
 void Teloscope::getPieces(const std::vector<MatchInfo>& matches, const std::vector<CoverRun>& runs,
         const std::vector<CoverRun>& chains, bool isForward, std::vector<Piece>& pieces) {
-    const double density = typedDensity(userInput.minBlockDensity);
-    const double weight = scoreWeight(density);
-    cutChains(runs, chains, weight, density, userInput.minBlockCounts, pieces);
+    cutChains(runs, chains, densityMillionths(userInput.minBlockDensity), userInput.minBlockCounts, pieces);
     tallyPieces(matches, pieces);
     // strand-pure: more than --label-threshold of its exact repeats on its own strand
     pieces.erase(std::remove_if(pieces.begin(), pieces.end(), [&](const Piece& piece) {
@@ -433,15 +435,16 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<Piece>& piecesFwd, 
         uint64_t contigStart, uint64_t contigEnd, bool fromStart, uint64_t& outProbe) {
     const uint32_t maxBlockDist = userInput.maxBlockDist;
     const uint32_t minLen = userInput.minBlockLen;
-    const double density = typedDensity(userInput.minBlockDensity);
-    const double weight = scoreWeight(density);
+    const int64_t density = densityMillionths(userInput.minBlockDensity);
     const uint32_t zone = std::min(userInput.terminalTolerance, userInput.terminalLimit);
-    // a later match can still join a chain within -k or start a chain within -d
-    const uint32_t margin = std::max(maxBlockDist, userInput.maxMatchDist);
+    // a later match can still join a chain within -k or start one within -d, and a chain needs --min-block-counts matches to be a piece
+    const uint32_t margin = std::max(maxBlockDist, userInput.maxMatchDist) + (userInput.minBlockCounts - 1) * userInput.maxMatchDist;
     const uint64_t outerEnd = fromStart ? contigStart : contigEnd;
+    const uint64_t zoneReach = fromStart ? std::min(contigEnd, contigStart + zone)
+                                          : (contigEnd > zone ? std::max(contigStart, contigEnd - zone) : contigStart);
 
     TelomereBlock telomere;
-    outProbe = outerEnd;
+    outProbe = zoneReach;
 
     // each strand's pieces in inward order: 0 forward, 1 reverse
     std::vector<const Piece*> view[2];
@@ -473,12 +476,12 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<Piece>& piecesFwd, 
         const size_t n = v.size();
         best.assign(n, 0);
         last.assign(n, 0);
-        std::vector<double> sum(n);
+        std::vector<int64_t> sum(n);
         for (size_t s = 0; s < n; ) {
             size_t e = s;
             sum[s] = v[s]->score;
             while (e + 1 < n && !cut[e + 1]) {
-                sum[e + 1] = sum[e] - weight * static_cast<double>(gapOf(v[e], v[e + 1])) + v[e + 1]->score;
+                sum[e + 1] = sum[e] - density * static_cast<int64_t>(gapOf(v[e], v[e + 1])) + v[e + 1]->score;
                 ++e;
             }
             size_t top = e;
@@ -533,9 +536,14 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<Piece>& piecesFwd, 
         }
     }
 
-    const uint64_t zoneReach = fromStart ? std::min(contigEnd, contigStart + zone)
-                                          : (contigEnd > zone ? std::max(contigStart, contigEnd - zone) : contigStart);
+    // a chain that starts in the zone must be scanned whole before its density is judged, wherever its pieces begin
     uint64_t probe = outerEnd;
+    for (int s = 0; s < 2; ++s) {
+        for (const Piece* p : view[s]) {
+            if (before(zoneReach, fromStart ? p->chainStart : p->chainEnd)) break;
+            probe = further(probe, chainInner(p));
+        }
+    }
 
     // the first piece of either strand in the start zone whose walk spans -l is the telomere; a shorter walk is skipped, so a stub cannot hide a telomere
     size_t next[2] = {0, 0};
@@ -593,8 +601,7 @@ void Teloscope::getInterstitialBlocks(const std::vector<MatchInfo>& matches,
     getSeeds(lo, hi, userInput.maxMatchDist, seeds);
     if (seeds.empty()) return;
 
-    const double density = typedDensity(userInput.minBlockDensity);
-    const double weight = scoreWeight(density);
+    const int64_t density = densityMillionths(userInput.minBlockDensity);
     size_t segCursor = 0, tallyCursor = 0; // seeds and segments are start-ascending
     std::vector<OpenSegment> open;
     std::vector<ScoredSegment> segments;
@@ -605,7 +612,7 @@ void Teloscope::getInterstitialBlocks(const std::vector<MatchInfo>& matches,
 
         segments.clear();
         if (seedEnd > seedStart) {
-            getScoringSegments(allRuns, segCursor, seedStart, seedEnd, weight, open, segments);
+            getScoringSegments(allRuns, segCursor, seedStart, seedEnd, density, open, segments);
         }
 
         for (const ScoredSegment& seg : segments) {
