@@ -13,9 +13,9 @@ Contig N50:	4788276
 Total telomeres:	2
 
 +++ Telomere Statistics +++
-Mean length:	14326
-Median length:	14326
-Min length:	9810
+Mean length:	14436
+Median length:	14436
+Min length:	10030
 Max length:	18842
 
 +++ Chromosome Telomere Counts +++

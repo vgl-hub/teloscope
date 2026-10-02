@@ -4,7 +4,7 @@ embedded
 +++ Path Summary Report +++
 pos	header	telomeres	labels	gaps	type	anomaly
 1	mega_OZ124247.1_p_0-600000	1	p	0	incomplete	.
-2	frag32_OZ221982.1_q_302227075-302307075	2	pq	0	t2t	discordant_p,fragmented_q
+2	frag32_OZ221982.1_q_302227075-302307075	2	pq	0	t2t	discordant_p
 3	mito_CM010492.2_whole	0	none	0	none	.
 
 +++ Assembly Summary Report +++
@@ -15,8 +15,8 @@ Contig N50:	600000
 Total telomeres:	3
 
 +++ Telomere Statistics +++
-Mean length:	180040
-Median length:	1715
+Mean length:	179952
+Median length:	1452
 Min length:	312
 Max length:	538092
 
@@ -37,4 +37,4 @@ Gapped no telomeres:	0
 Scaffolds flagged:	1
 Scaffolds clean:	2
 Discordant arms:	1
-Fragmented arms:	1
+Fragmented arms:	0
