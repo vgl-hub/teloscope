@@ -552,8 +552,8 @@ def test_exact_math_boundaries(tmp):
     names = assert_fastq_bam_parity(tmp, "unit_boundary", lengths, ["-x", "0", "-y", "1", "-k", "10", "-d", "10"])
     require(names == ["seven_repeats"], "42bp/7-unit boundary failed")
 
-    # density boundary, scaled up so the whole block clears the 42bp floor either way
-    density = {"two_thirds": "TTAGGG" * 6 + "AAAAAA" * 6 + "TTAGGG" * 6}
+    # density boundary: at -y 2/3 a gap costs twice its length, so 18bp is the most a 36bp array can pay for; alone, each array is under the 42bp floor
+    density = {"two_thirds": "TTAGGG" * 6 + "AAAAAA" * 3 + "TTAGGG" * 6}
     pass_options = ["-x", "0", "-y", "0.666", "-k", "40", "-d", "40"]
     fail_options = ["-x", "0", "-y", "0.667", "-k", "40", "-d", "40"]
     require(assert_fastq_bam_parity(tmp, "density_pass", density, pass_options) == ["two_thirds"],

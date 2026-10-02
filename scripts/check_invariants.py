@@ -259,7 +259,8 @@ def check_junction_class(rec, subject, terminal, interstitial, gaps_by_chrom, ma
             best, same = None, False
             if label != "b":
                 # a gap, a mixed row, or more than -d ends the search on that side
-                for o in reversed(ordered[:i]):
+                for j in range(i - 1, -1, -1):
+                    o = ordered[j]
                     dist = max(0, b["start"] - o["end"])
                     if (dist > max_block_dist or o["teloLabel"] == "b"
                             or gap_index.has_gap_between(o["end"], b["start"])):
@@ -269,7 +270,8 @@ def check_junction_class(rec, subject, terminal, interstitial, gaps_by_chrom, ma
                         continue
                     best = (dist, "fusion" if o["teloLabel"] == "q" else "tail_to_tail")
                     break
-                for o in ordered[i + 1:]:
+                for j in range(i + 1, len(ordered)):
+                    o = ordered[j]
                     dist = max(0, o["start"] - b["end"])
                     if (dist > max_block_dist or o["teloLabel"] == "b"
                             or gap_index.has_gap_between(b["end"], o["start"])):

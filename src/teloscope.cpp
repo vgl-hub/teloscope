@@ -452,7 +452,8 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<MatchInfo>& matches
             TelomereBlock tally;
             // a piece joins only when it outweighs the gap back to the last kept piece
             const uint64_t gap = first ? 0 : (fromStart ? lo - keptEdge : keptEdge - hi);
-            if (tallyPiece(lo, hi, isFwd, tally) && static_cast<double>(hi - lo) >= weight * static_cast<double>(gap)) {
+            const bool kept = tallyPiece(lo, hi, isFwd, tally) && static_cast<double>(hi - lo) >= weight * static_cast<double>(gap);
+            if (kept) {
                 sum += hi - lo;
                 if (sum >= minLen) return true;
                 keptEdge = trimmed;
@@ -460,14 +461,14 @@ TelomereBlock Teloscope::getTerminalBlocks(const std::vector<MatchInfo>& matches
             } else if (first) {
                 return false;
             }
-            // the next run of this strand past the chain just walked, while still within -d of the last kept piece
+            // the next run of this strand, past the chain of a kept piece, while still within -d of the last kept piece
             if (fromStart) {
-                auto next = std::lower_bound(runs.begin(), runs.end(), std::max(probe, edge + 1),
+                auto next = std::lower_bound(runs.begin(), runs.end(), kept ? std::max(probe, edge + 1) : edge + 1,
                     [](const CoverRun& r, uint64_t v) { return r.start < v; });
                 if (next == runs.end() || next->start > keptEdge + maxBlockDist) return false;
                 edge = next->start;
             } else {
-                auto next = std::upper_bound(runs.begin(), runs.end(), std::min(probe, edge - 1),
+                auto next = std::upper_bound(runs.begin(), runs.end(), kept ? std::min(probe, edge - 1) : edge - 1,
                     [](uint64_t v, const CoverRun& r) { return v < r.start + r.len; });
                 if (next == runs.begin()) return false;
                 --next;
@@ -1033,15 +1034,25 @@ SegmentData Teloscope::scanSegment(std::string &sequence, uint64_t absPos,
     getInterstitialBlocks(segmentData.allMatches, allRuns, qTo, contigEnd, segmentData.interstitialBlocks);
 
     if (fastTiled) {
-        // fast mode: drop interstitial rows that a wider window could still extend, only at a real cut
+        // fast mode: drop interstitial rows whose -k chain a wider window could still extend, only at a real cut
         const uint64_t margin = userInput.maxBlockDist + userInput.maxMatchDist + longestPatternSize;
         bool met = fastHeadActive && fastTailActive && fastHeadEnd >= fastTailStart;
         bool headIsCut = fastHeadActive && !met && fastHeadEnd != contigEnd;
         bool tailIsCut = fastTailActive && !met && fastTailStart != contigStart;
+        std::vector<CoverRun> allChains;
+        getCoverRuns(segmentData.allMatches, Orient::All, allChains, userInput.maxMatchDist);
         auto& rows = segmentData.interstitialBlocks;
         rows.erase(std::remove_if(rows.begin(), rows.end(), [&](const TelomereBlock& b) {
-            bool nearHead = headIsCut && b.start < fastHeadEnd && (b.start + b.blockLen + margin >= fastHeadEnd);
-            bool nearTail = tailIsCut && b.start >= fastTailStart && (b.start <= fastTailStart + margin);
+            // a row is cut from a seed, and a seed truncated at the cut can shift every row cut from it
+            auto chain = std::upper_bound(allChains.begin(), allChains.end(), b.start,
+                [](uint64_t v, const CoverRun& c) { return v < c.start + c.len; });
+            uint64_t from = b.start, to = b.start + b.blockLen;
+            if (chain != allChains.end()) {
+                from = std::min<uint64_t>(from, chain->start);
+                to = std::max<uint64_t>(to, chain->start + chain->len);
+            }
+            bool nearHead = headIsCut && b.start < fastHeadEnd && (to + margin >= fastHeadEnd);
+            bool nearTail = tailIsCut && b.start >= fastTailStart && (from <= fastTailStart + margin);
             return nearHead || nearTail;
         }), rows.end());
     }
