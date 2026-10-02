@@ -78,11 +78,17 @@ fx st_variant_halo synthetic/st_variant_halo.fa \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=0' \
    'A variant-only outer edge on an otherwise canonical arm: the piece starts at the first exact repeat, as subtelomeres really look'
 
-# -d decides whether a nearby array is another piece of the arm or stays an interstitial row.
+# -d and the gap rule decide whether a nearby array is another piece of the arm or stays an interstitial row.
 fx st_inner_array_terminal synthetic/st_inner_array.fa \
-   'chr_st_inner_array=F:CCCTAAx100+L:600+F:CCCTAAx50+L:2400+R:TTAGGGx100' '-i' \
-   'type=t2t;anom=fragmented_p;telo=2;labels=pq;gaps=0;its=0;telolen=900' \
-   'A second forward array 600 bp behind the p arm is its second piece: fragmented p arm of teloLen 900, no ITS left over'
+   'chr_st_inner_array=F:CCCTAAx100+L:600+F:CCCTAAx100+L:3000+R:TTAGGGx100' '-i' \
+   'type=t2t;anom=fragmented_p;telo=2;labels=pq;gaps=0;its=0;telolen=1200' \
+   'A second forward array as long as the 600 bp gap before it is the p arm'"'"'s second piece: fragmented p arm of teloLen 1200, no ITS left over'
+
+# The earlier geometry with a 300 bp second array: shorter than its 600 bp gap, it does not join and is left as a row.
+fx st_inner_array_short synthetic/st_inner_array_short.fa \
+   'chr_st_inner_array_short=F:CCCTAAx100+L:600+F:CCCTAAx50+L:2400+R:TTAGGGx100' '-i' \
+   'type=t2t;anom=.;telo=2;labels=pq;gaps=0;its=1;telolen=600' \
+   'A 300 bp array shorter than the 600 bp gap before it does not join the p arm: the arm is the 600 bp array alone and the shorter array is a plain interstitial row'
 
 fx st_inner_array_its synthetic/st_inner_array_far.fa \
    'chr_st_inner_array_far=F:CCCTAAx100+L:1200+F:CCCTAAx50+L:1800+R:TTAGGGx100' '-i' \

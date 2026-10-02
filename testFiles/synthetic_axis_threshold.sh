@@ -43,14 +43,14 @@ fx th_tol_2500 synthetic/th_tol_2500.fa \
 
 # ---- -d / --max-block-distance, default 1000 (the furthest the next piece may start from the last one) ----
 fx th_bridge_plain_exact synthetic/th_bridge_plain_exact.fa \
-   'chr_th_bridge_plain_exact=F:CCCTAAx50+L:1000+F:CCCTAAx50+L:5600' '-' \
-   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;telolen=600' \
-   'A 1000 bp run is exactly -d: the second array anchors a second piece of a fragmented arm'
+   'chr_th_bridge_plain_exact=F:CCCTAAx50+L:1000+F:CCCTAAx167+L:5000' '-' \
+   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;telolen=1302' \
+   'A 1002 bp array starts exactly -d (1000 bp) behind a 300 bp piece and outweighs that gap: it joins, a fragmented arm of teloLen 1302'
 
 fx th_bridge_plain_beyond synthetic/th_bridge_plain_beyond.fa \
-   'chr_th_bridge_plain_beyond=F:CCCTAAx50+L:1001+F:CCCTAAx50+L:5599' '-' \
+   'chr_th_bridge_plain_beyond=F:CCCTAAx50+L:1001+F:CCCTAAx167+L:5000' '-' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;telolen=300' \
-   'A 1001 bp run exceeds -d: the second array starts no piece and stays an interstitial row'
+   'A 1002 bp array starts 1001 bp behind a 300 bp piece, beyond -d, so it joins nothing however long it is: the arm is the 300 bp piece and the array is left to the interstitial rows'
 
 # N runs are hard contig boundaries: pieces never chain across one, at any length.
 fx th_bridge_gap synthetic/th_bridge_gap.fa \

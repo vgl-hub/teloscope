@@ -45,11 +45,17 @@ fx jn_short_p_then_p_gap synthetic/jn_short_p_then_p_gap.fa \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=1;its=1' \
    'A 100 bp N run splits the array into two contigs; pieces never chain across it, so the p arm is only the first piece and the second contig'"'"'s array is an interstitial row'
 
-# The q-side chain finds the identical two pieces the p-side chain does, so R3's strand tie-break gives it all to p.
+# Both ends find the same two pieces, and the 360 bp array outweighs the 300 bp gap, so the strand gives the telomere to p.
 fx jn_short_p_then_p_far synthetic/jn_short_p_then_p_far.fa \
-   'chr_jn_short_p_then_p_far=L:1500+F:CCCTAAx60+L:600+F:CCCTAAx60+L:1500' '-i' \
+   'chr_jn_short_p_then_p_far=L:1500+F:CCCTAAx60+L:300+F:CCCTAAx60+L:1500' '-i' \
    'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=720' \
-   'Two forward arrays 600 bp apart are two pieces of one telomere reachable from either end: strand decides, one fragmented p arm (teloLen 720)'
+   'Two forward arrays 300 bp apart are two pieces of one telomere reachable from either end, the second outweighing the gap: strand decides, one fragmented p arm (teloLen 720)'
+
+# The same two arrays 600 bp apart: each end claims the array nearest to it, since neither outweighs the gap.
+fx jn_short_p_then_p_wide synthetic/jn_short_p_then_p_wide.fa \
+   'chr_jn_short_p_then_p_wide=L:1500+F:CCCTAAx60+L:600+F:CCCTAAx60+L:1500' '-i' \
+   'type=t2t;anom=discordant_q;telo=2;labels=pq;gaps=0;its=0;telolen=360' \
+   'Two 360 bp forward arrays 600 bp apart do not join: the p end takes the first as a p arm and the q end takes the second as a discordant q arm, each of teloLen 360'
 
 # Interior junctions sit 4000+ bp from both record ends so neither array is reachable by a terminal chain.
 fx jn_interior_q_then_p synthetic/jn_interior_q_then_p.fa \
@@ -67,11 +73,11 @@ fx jn_interior_p_then_p_gap synthetic/jn_interior_p_then_p_gap.fa \
    'type=none;anom=.;telo=0;labels=none;gaps=1;its=2' \
    'Interior array split by an N run: two separate single-contig interstitial rows, since spans never cross a gap'
 
-# Tolerance 3000 reaches this array, and the second array is a piece within -d of the first.
+# Tolerance 3000 reaches this array, and the second array outweighs the 300 bp gap to the first.
 fx jn_interior_p_then_p_far synthetic/jn_interior_p_then_p_far.fa \
-   'chr_jn_interior_p_then_p_far=L:2500+F:CCCTAAx60+L:600+F:CCCTAAx60+L:2500' '-i' \
+   'chr_jn_interior_p_then_p_far=L:2500+F:CCCTAAx60+L:300+F:CCCTAAx60+L:2500' '-i' \
    'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=720' \
-   'Two forward arrays 2500 bp and 3460 bp in, 600 bp apart: two pieces of one p arm, hull 2500-3820, reachable at tolerance 3000, teloLen 720'
+   'Two forward arrays 2500 bp and 3160 bp in, 300 bp apart: two pieces of one p arm, hull 2500-3520, reachable at tolerance 3000, teloLen 720'
 
 fx jn_fragmented_p synthetic/jn_fragmented_p.fa \
    'chr_jn_fragmented_p=F:CCCTAAx317+L:598+F:CCCTAAx2917+L:3000+R:TTAGGGx100' '-i' \

@@ -30,8 +30,8 @@ fx no_telo no_telo.fa \
 
 fx misassembly misassembly.fa \
    'chr_misassembly=F:CCCTAAx100+L:950+F:CCCTAAx50+L:5000' '-' \
-   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;telolen=900' \
-   'A 300 bp array 950 bp behind a 600 bp tip is a second piece within -d, so the p arm is fragmented: teloLen 900, hull 0-1850'
+   'type=incomplete;anom=.;telo=1;labels=p;gaps=0;telolen=600' \
+   'A 300 bp array 950 bp behind a 600 bp tip is shorter than that gap and does not join it: the p arm is the 600 bp tip alone, not fragmented'
 
 # Filler > tolerance 3000, so the p end never reaches this array too and reclaims it.
 fx discordant discordant.fa \
@@ -83,13 +83,13 @@ fx density_edge density_edge.fa \
 
 fx misassembly_qq misassembly_qq.fa \
    'chr_misassembly_qq=L:5000+R:TTAGGGx50+L:950+R:TTAGGGx100' '-' \
-   'type=incomplete;anom=fragmented_q;telo=1;labels=q;gaps=0;telolen=900' \
-   'The q-end mirror of misassembly: one fragmented q arm'
+   'type=incomplete;anom=.;telo=1;labels=q;gaps=0;telolen=600' \
+   'A 300 bp array 950 bp ahead of a 600 bp q tip is shorter than that gap and does not join it: the q arm is the 600 bp tip alone, not fragmented'
 
 fx gapped_misassembly gapped_misassembly.fa \
    'chr_gapped_misassembly=F:CCCTAAx100+L:950+F:CCCTAAx50+L:2000+N:100+L:3000' '-' \
-   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=1;telolen=900' \
-   'A fragmented p arm; an unrelated N-gap sits in the tail contig'
+   'type=incomplete;anom=.;telo=1;labels=p;gaps=1;telolen=600' \
+   'A 300 bp array 950 bp behind a 600 bp tip does not join it, so the p arm is the tip alone; an unrelated N-gap sits in the tail contig'
 
 fx gapped_incomplete gapped_incomplete.fa \
    'chr_gapped_incomplete=F:CCCTAAx100+L:1000+N:100+L:2000' '-' \
@@ -195,11 +195,11 @@ fx boundary_multiple_p boundary_multiple_p.fa \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=0;telolen=600' \
    'Two p arrays 300 bp apart exceed -d 200: the outer one is the arm, the inner one an interstitial row'
 
-# The 1000 bp gap is exactly -d (inclusive): the two q pieces chain regardless of -t, leaving nothing for the interstitial file.
+# The middle 300 bp array is 1000 bp from the q piece, so it is shorter than the gap and stays out of the q arm.
 fx boundary_extend_its boundary_extend_its.fa \
    'chr_boundary_ext_its=F:CCCTAAx100+L:2000+R:TTAGGGx50+L:1000+R:TTAGGGx100' '-i -t 300' \
-   'type=t2t;anom=fragmented_q;telo=2;labels=pq;gaps=0;its=0;telolen=900' \
-   'Terminal pieces extend past the -t zone: the middle array ends exactly -d from the q piece and is its second piece, so the q arm is fragmented (teloLen 900) and nothing is interstitial'
+   'type=t2t;anom=.;telo=2;labels=pq;gaps=0;its=1;telolen=600' \
+   'The middle 300 bp array is shorter than the 1000 bp gap before the q piece and does not join it: the q arm is the 600 bp piece alone and the array is an interstitial row'
 
 # R2: nothing bounds the extent; R6's fast-scan window extension keeps fast and full scan in agreement.
 fx uncapped_extent_fast uncapped_extent.fa \
@@ -237,8 +237,8 @@ fx its_headtohead its_headtohead.fa \
 
 fx discordant_pp discordant_pp.fa \
    'chr_discordant_pp=L:2996+F:CCCTAAx84+L:900+F:CCCTAAx100' '-' \
-   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;telolen=1104' \
-   'Two forward arrays 900 bp apart are two pieces of one telomere reachable from either end; strand decides: one fragmented p arm, no q telomere'
+   'type=t2t;anom=discordant_q;telo=2;labels=pq;gaps=0;telolen=504' \
+   'A 504 bp forward array inside the p start zone is a p arm and the 600 bp forward array at the q end a discordant q arm: each is shorter than the 900 bp gap between them, so neither joins the other'
 
 fx extra_invalid_p extra_invalid_p.fa \
    'chr_extra_invalid_p=F:CCCTAAx100+L:3396+F:CCCTAAx84+L:500' '-d 200' \
@@ -257,8 +257,8 @@ fx gapped_incomplete_q gapped_incomplete_q.fa \
 
 fx gapped_misassembly_qq gapped_misassembly_qq.fa \
    'chr_gapped_misassembly_qq=L:500+N:100+L:2000+R:TTAGGGx50+L:950+R:TTAGGGx100+L:600' '-' \
-   'type=incomplete;anom=fragmented_q;telo=1;labels=q;gaps=1;telolen=900' \
-   'A fragmented q arm; an unrelated leading N-gap sits in the head contig'
+   'type=incomplete;anom=.;telo=1;labels=q;gaps=1;telolen=600' \
+   'A 300 bp array 950 bp ahead of a 600 bp q tip does not join it, so the q arm is the tip alone; an unrelated leading N-gap sits in the head contig'
 
 fx multi_gap_t2t multi_gap_t2t.fa \
    'chr_multi_gap_t2t=F:CCCTAAx100+L:400+N:50+L:400+N:50+L:400+R:TTAGGGx100' '-' \
@@ -299,8 +299,8 @@ xfx vgp_probe_mega vgp_probe.fa.gz mega_OZ124247.1_p_0-600000 '-i' \
    'Pochard OZ124247.1 first 600 kb: a single uncapped p arm in one piece, 4-538096; teloLen 538092 is observed, not derived'
 
 xfx vgp_probe_frag32 vgp_probe.fa.gz frag32_OZ221982.1_q_302227075-302307075 '-i' \
-   'type=incomplete;anom=fragmented_q;telo=1;labels=q;gaps=0;its=0;telolen=40666' \
-   'Frog OZ221982.1 last 80 kb: several pieces within -d form one fragmented q arm with hull 0-79994; teloLen 40666 is observed, not derived'
+   'type=t2t;anom=discordant_p,fragmented_q;telo=2;labels=pq;gaps=0;its=75;telolen=312' \
+   'Frog OZ221982.1 last 80 kb, a satellite-like train: the 312 bp reverse tip is a discordant p arm because the arrays behind it are shorter than their gaps; the q end drops a 161 bp tip piece below -l and joins the 182, 143 and 1452 bp arrays behind it into a fragmented q arm; teloLen 312 is the p arm, derived, while its 75 and the q arm teloLen 1715 are observed, not derived'
 
 xfx vgp_probe_mito vgp_probe.fa.gz mito_CM010492.2_whole '-i' \
    'type=none;anom=.;telo=0;labels=none;gaps=0;its=0' \
