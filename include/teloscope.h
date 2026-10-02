@@ -108,17 +108,18 @@ struct GapInfo {
 };
 
 struct CoverRun; // defined in teloscope.cpp; the block builder only passes it through
+struct Piece; // defined in teloscope.cpp; one telomeric stretch of a -k block
 
 
 struct TelomereBlock {
     uint64_t start = 0;
     uint32_t blockLen = 0; // end = start + blockLen
-    uint64_t teloLen = 0; // sum of piece lengths; < blockLen when the chain is fragmented
+    uint64_t teloLen = 0; // sum of piece lengths; < blockLen when the pieces leave gaps
     uint32_t fwdCanCount = 0;
     uint32_t revCanCount = 0;
     uint32_t fwdNonCanCount = 0;
     uint32_t revNonCanCount = 0;
-    uint16_t pieces = 0; // terminal/contig chains only; 0 means no qualifying chain
+    uint16_t pieces = 0; // terminal rows only: pieces the telomere holds; 0 means no telomere
     bool isScaffold = false; // a record arm, rather than a contig-internal row
     char anchorSide = '\0'; // contig end this row is anchored to: 'p' start, 'q' end
     char strandLabel = '\0'; // teloLabel: strand found, 'p' forward, 'q' reverse, 'b' balanced
@@ -313,9 +314,12 @@ public:
         });
     }
 
+    void getPieces(
+        const std::vector<MatchInfo>& matches, const std::vector<CoverRun>& runs,
+        const std::vector<CoverRun>& blocks, bool isForward, std::vector<Piece>& pieces);
+
     TelomereBlock getTerminalBlocks(
-        const std::vector<MatchInfo>& matches,
-        const std::vector<CoverRun>& runsFwd, const std::vector<CoverRun>& runsRev,
+        const std::vector<Piece>& piecesFwd, const std::vector<Piece>& piecesRev,
         uint64_t contigStart, uint64_t contigEnd, bool fromStart, uint64_t& outProbe);
 
     void getInterstitialBlocks(

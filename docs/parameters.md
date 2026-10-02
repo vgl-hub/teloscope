@@ -32,14 +32,14 @@ Every pattern is also searched as its reverse complement. `-c` decides canonical
 | --- | --- | --- | --- |
 | `-t` | `--terminal-limit` | fast-scan window at each end, grown while a telomere reaches its edge; also caps the start zone | `50000` |
 |  | `--terminal-tolerance` | how far from an end a telomere may start | `3000` |
-| `-k` | `--max-match-distance` | matches this close chain into one interstitial seed | `50` |
-| `-d` | `--max-block-distance` | longest non-telomeric stretch inside a telomere | `1000` |
-| `-l` | `--min-block-length` | shortest telomere piece kept | `300` |
-| `-y` | `--min-block-density` | repeat-covered fraction a piece needs, in `(0,1]` | `0.5` |
-|  | `--min-block-counts` | canonical matches a telomere piece needs | `2` |
+| `-k` | `--max-match-distance` | matches this close form one block | `50` |
+| `-d` | `--max-block-distance` | blocks this close join into one telomere, when the exact repeats behind the gap pay for it | `500` |
+| `-l` | `--min-block-length` | shortest telomere kept, start to end | `300` |
+| `-y` | `--min-block-density` | exact-repeat coverage of a telomere and of each of its pieces, in `(0,1]` | `0.5` |
+|  | `--min-block-counts` | matches a block needs | `2` |
 |  | `--label-threshold` | forward-strand share for a `p` or `q` label, in `(0.5,1]` | `0.667` |
 
-The start zone is the smaller of `--terminal-tolerance` and `-t`, counted in called bases. A value exactly at `-l` or `--min-block-counts` passes. Interstitial rows ignore both and need four exact canonical repeats instead.
+The start zone is the smaller of `--terminal-tolerance` and `-t`, counted in called bases. A value exactly at `-l`, `-y`, or `--min-block-counts` passes. Interstitial rows ignore `-l` and `--min-block-counts` and need four exact canonical repeats instead. [Algorithm](algorithm.md) gives the score behind `-y` and `-d`.
 
 ## Windows
 

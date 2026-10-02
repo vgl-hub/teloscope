@@ -33,7 +33,7 @@ CI never runs `test-gaps` or `test-n50`; run them before a release.
 
 ## Synthetic fixtures
 
-`scripts/test_synthetic_intent.py` checks the binary against `testFiles/synthetic/manifest.tsv`. `scripts/check_invariants.py` needs no expected values. It re-derives report fields from the BED files and compares runs: repeated runs, thread counts, fast against full scan, a higher `-x` never losing matches, a small `-t` giving the same terminal BED, and `-n` adding only contig rows, leaving every arm as it was.
+`scripts/test_synthetic_intent.py` checks the binary against `testFiles/synthetic/manifest.tsv`. `scripts/check_invariants.py` needs no expected values. It re-derives report fields from the BED files, checks the builder's guarantees (span at least `-l`, exact-repeat coverage at least `-y`, `teloLen` within the span, edges on repeat edges), and compares runs: repeats, thread counts, fast against full scan, a higher `-x` never losing matches, a small `-t` giving the same terminal BED, the reverse complement giving the mirror image, and `-n` adding only contig rows.
 
 ```sh
 bash testFiles/generate_synthetic.sh          # write the fixtures and the manifest

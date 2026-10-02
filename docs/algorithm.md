@@ -13,13 +13,13 @@ Teloscope has three input modes:
 1. Read the assembly.
 2. Expand the patterns: IUPAC codes, `-x` substitutions, and reverse complements.
 3. Split each sequence into contigs at gaps (runs of `N`, `n`, `X`, or `x`) and scan each contig with a multi-pattern trie, collecting each strand's canonical matches and the stretches they cover.
-4. Build a telomere at each of the scaffold's two ends, or at every contig end with `-n`:
-   - The first exact canonical repeat inside the start zone anchors it.
-   - A block runs inward while its strand's canonical coverage still averages `-y`, bridges at most `-d` of non-telomeric sequence, and stops at the outer edge of a real array of the other strand.
-   - A block must be strand-pure: more than `--label-threshold` of its exact repeats on its own strand.
-   - The next exact repeat within `-d` of the block's end starts another block of the same strand, or ends the chain if it begins a real array of the other strand.
-   - `teloLen` sums the blocks. A telomere never crosses `N`, and `-t` never bounds it.
-5. Outside the telomeres, `-k` chains matches into seeds, and same-strand seeds within `-d` join into one span. The span is trimmed to where all-match coverage averages `-y`, and kept with at least four exact canonical repeats. Its [junction class](outputs.md#telomere-block-bed) comes from the nearest row within `-d` on the same contig.
+4. Build a telomere at each of the scaffold's two ends, or at every contig end with `-n`. One integer score (in millionths) runs through every step: a base in an exact repeat of the strand earns `1 - y`, any other base costs `y`, so a stretch scores zero or more exactly when exact repeats cover at least `-y` of it.
+   - **Blocks.** `-k` groups one strand's matches, exact and variant: a match joins while it starts within `-k` of the block's end. A block needs `--min-block-counts` matches.
+   - **Pieces.** A block that meets `-y` as a whole is one piece, variant edges included. One below `-y` is cut into its maximal scoring segments (Ruzzo and Tompa), each a piece, so a dense array is neither stretched into a sparse tail nor dropped for it. A piece is strand-pure: more than `--label-threshold` of its exact repeats on its own strand.
+   - **Walk.** The first piece of either strand inside the start zone starts the telomere, which walks inward over the pieces of its strand, adding each piece's score and paying `y` per base between pieces. It reaches a piece only when its block lies within `-d` of the last block, stops at a real array of the other strand (one whose own walk spans `-l`), and ends at the score peak, the furthest on a tie. Every part of the telomere that runs to its inner end therefore meets `-y`, and nothing within `-d` beyond it would.
+   - **Length.** `-l` applies to the span. A walk short of `-l` is dropped and the search resumes at the next piece in the zone, so a stub cannot hide a telomere. A telomere never crosses `N`, and `-t` never bounds it.
+   - `teloLen` sums the pieces; more than one piece is `fragmented`.
+5. Outside the telomere spans, `-k` groups the matches of both strands into seeds, and three opposite-strand matches in a row start a new seed. Each seed is cut into its maximal scoring segments on the coverage of all its matches; a segment is kept with at least four exact canonical repeats. Its [junction class](outputs.md#telomere-block-bed) comes from the rows within `-d` on the same contig.
 6. Label every block by strand and by the end it belongs to, then [classify](classification.md) the sequence.
 7. Write the BED files, the report, and the optional window tracks.
 
@@ -27,7 +27,7 @@ Teloscope has three input modes:
 
 A scaffold's ends are the start of its first contig and the end of its last contig.
 
-- **Fast**, the default: reads the first `-t` bases of the first contig and the last `-t` bases of the last contig, growing inward by `-t` while a repeat lies within reach of the inner edge. This builds both arms and keeps whole-genome runs fast. The interstitial file holds what these windows found.
+- **Fast**, the default: reads the first `-t` bases of the first contig and the last `-t` bases of the last contig, growing inward while the telomere builder still looks that far, so both arms come out as in the full scan and whole-genome runs stay fast. The interstitial file holds what these windows found.
 - **Full**: any of `-r`, `-g`, `-e`, `-m`, or `-i` reads every contig whole, and every other array that passes step 5 becomes an interstitial row.
 - **Contig ends** (`-n`): keeps the fast scan but reads both end windows of every contig. A telomere at an internal contig end becomes a `contig` row in the terminal BED instead of an interstitial row.
 

@@ -29,7 +29,7 @@ make -j
 
 | Task | Command |
 | --- | --- |
-| Scan a vertebrate assembly (FASTA or FASTA.gz) | `teloscope asm.fa.gz` |
+| Scan a genome assembly (FASTA or FASTA.gz) | `teloscope asm.fa.gz` |
 | Write every output and the PDF reports | `teloscope asm.fa -o results/ -r -g -e -m -a -i --plot-report` |
 | Switch to a plant canonical repeat | `teloscope asm.fa -c CCCTAAA` |
 | Search explicit motif variants | `teloscope asm.fa -c TTAGGG -p TTAGGG,TCAGGG,TGAGGG,TTGGGG` |

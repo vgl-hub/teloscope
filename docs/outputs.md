@@ -45,9 +45,9 @@ Both block files share one 12-column layout, with zero-based, half-open coordina
 
 `teloLen` equals `end - start` except on a fragmented telomere, one built from more than one piece. No block crosses a gap.
 
-The junction class compares an interstitial row with the nearest row within `-d` on the same contig: `fusion` is a reverse array then a forward one, `tail_to_tail` forward then reverse, `fragmentation` two arrays of the same strand, and `single` means nothing is that close.
+The junction class comes from the rows within `-d` on the same contig: the nearest row of the other strand makes it `fusion` (reverse then forward) or `tail_to_tail` (forward then reverse); failing that, a same-strand row makes it `fragmentation`, and `single` means nothing is that close.
 
-Coverage counts each covered base once, however many matches overlap it. A terminal piece needs `-y` canonical coverage over its length; an interstitial row needs `-y` coverage from all its matches.
+Coverage counts each covered base once, however many matches overlap it. A telomere and each of its pieces have `-y` exact-repeat coverage of their strand; an interstitial row has `-y` coverage from all its matches.
 
 Forward and reverse are a sequence convention, not a `+` strand: of the canonical motif and its reverse complement, the lexicographically smaller one is forward. By default that is `CCCTAA`, found at chromosome starts, and reverse is `TTAGGG`, found at ends. Each expanded seed takes the closer orientation (ties go to forward), and its variants inherit it.
 

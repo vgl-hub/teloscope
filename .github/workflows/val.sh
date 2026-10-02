@@ -141,12 +141,19 @@ check_output_contains "incomplete_q classification" "1	q	0	incomplete	." "$OUT"
 OUT=$(build/bin/teloscope -f testFiles/no_telo.fa 2>/dev/null)
 check_output_contains "no_telo classification" "0	none	0	none	." "$OUT"
 
-# fragmented arms: a small array behind a gap longer than the tip drags coverage below -y and chains as a second block
-OUT=$(build/bin/teloscope -f testFiles/misassembly.fa 2>/dev/null)
+# fragmented arms: a second array within -d that outweighs the gap joins as another piece
+OUT=$(build/bin/teloscope -f testFiles/boundary_multiple_p.fa 2>/dev/null)
 check_output_contains "fragmented_p classification" "1	p	0	incomplete	fragmented_p" "$OUT"
 
-OUT=$(build/bin/teloscope -f testFiles/misassembly_qq.fa 2>/dev/null)
+OUT=$(build/bin/teloscope -f testFiles/synthetic/mo_inc_q_extra.fa 2>/dev/null)
 check_output_contains "fragmented_q classification" "1	q	0	incomplete	fragmented_q" "$OUT"
+
+# a 300 bp array 950 bp behind the tip is shorter than the gap: it does not join, and the arm is plain
+OUT=$(build/bin/teloscope -f testFiles/misassembly.fa 2>/dev/null)
+check_output_contains "misassembly classification" "1	p	0	incomplete	." "$OUT"
+
+OUT=$(build/bin/teloscope -f testFiles/misassembly_qq.fa 2>/dev/null)
+check_output_contains "misassembly_qq classification" "1	q	0	incomplete	." "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/discordant.fa 2>/dev/null)
 check_output_contains "discordant classification" "1	q	0	incomplete	discordant_q" "$OUT"
@@ -154,9 +161,9 @@ check_output_contains "discordant classification" "1	q	0	incomplete	discordant_q
 OUT=$(build/bin/teloscope -f testFiles/gapped_t2t.fa 2>/dev/null)
 check_output_contains "gapped_t2t classification" "2	pq	1	t2t	." "$OUT"
 
-# fragmented-arm detection: an unrelated N-gap sits in the tail contig
+# the same arm with an unrelated N-gap in the tail contig
 OUT=$(build/bin/teloscope -f testFiles/gapped_misassembly.fa 2>/dev/null)
-check_output_contains "gapped_misassembly classification" "1	p	1	incomplete	fragmented_p" "$OUT"
+check_output_contains "gapped_misassembly classification" "1	p	1	incomplete	." "$OUT"
 
 OUT=$(build/bin/teloscope -f testFiles/gapped_incomplete.fa 2>/dev/null)
 check_output_contains "gapped_incomplete classification" "1	p	1	incomplete	." "$OUT"
@@ -200,7 +207,7 @@ check_output_contains "-y 0.3 keeps 50% density block" "2	pq	0	t2t	." "$OUT"
 
 # -k flag: small merge distance prevents block formation
 OUT=$(build/bin/teloscope -f testFiles/density_edge.fa -k 1 2>/dev/null)
-check_output_contains "-k 1 stops chaining across spaced matches" "incomplete" "$OUT"
+check_output_contains "-k 1 stops grouping matches across spaced matches" "incomplete" "$OUT"
 
 # Multi-contig counts
 OUT=$(build/bin/teloscope -f testFiles/multi.fa 2>/dev/null)

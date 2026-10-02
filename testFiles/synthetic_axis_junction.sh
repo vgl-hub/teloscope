@@ -2,26 +2,26 @@
 
 # Axis F -- junction geometry. Sourced by generate_synthetic.sh.
 
-# Axis F: a lone opposite match inside a p array is never "real" unless it reaches -l, so it's absorbed as gap.
+# Axis F: opposite-strand matches inside a p array are no real array (they stay short of -l), so they only cost score and the forward piece runs across them.
 fx jn_p_then_q_k1 synthetic/jn_p_then_q_k1.fa \
    'chr_jn_p_then_q_k1=F:CCCTAAx100+R:TTAGGGx1+F:CCCTAAx100+L:2000+R:TTAGGGx100' '-' \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=0' \
-   'One opposite match inside the p array is absorbed: forward share 200/201'
+   'One opposite match inside the p array stays inside one piece: forward share 200/201'
 
 fx jn_p_then_q_k2 synthetic/jn_p_then_q_k2.fa \
    'chr_jn_p_then_q_k2=F:CCCTAAx100+R:TTAGGGx2+F:CCCTAAx100+L:2000+R:TTAGGGx100' '-' \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=0' \
-   'Two opposite matches inside the p array are absorbed: forward share 200/202'
+   'Two opposite matches inside the p array stay inside one piece: forward share 200/202'
 
 fx jn_p_then_q_k3 synthetic/jn_p_then_q_k3.fa \
    'chr_jn_p_then_q_k3=F:CCCTAAx100+R:TTAGGGx3+F:CCCTAAx100+L:2000+R:TTAGGGx100' '-' \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=0' \
-   'Three opposite matches (18 bp) are still far short of a real reverse array (< -l) and are absorbed the same way'
+   'Three opposite matches (18 bp) are still far short of a real reverse array (< -l) and stay inside the piece the same way'
 
 fx jn_p_then_q_k4 synthetic/jn_p_then_q_k4.fa \
    'chr_jn_p_then_q_k4=F:CCCTAAx100+R:TTAGGGx4+F:CCCTAAx100+L:2000+R:TTAGGGx100' '-' \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=0' \
-   'Four opposite matches (24 bp) are still far short of a real reverse array and are absorbed the same way'
+   'Four opposite matches (24 bp) are still far short of a real reverse array and stay inside the piece the same way'
 
 fx jn_lone_opposite synthetic/jn_lone_opposite.fa \
    'chr_jn_lone_opposite=F:CCCTAAx100+L:60+R:TTAGGGx1+L:2400' '-' \
@@ -43,15 +43,21 @@ fx jn_short_p_then_q synthetic/jn_short_p_then_q.fa \
 fx jn_short_p_then_p_gap synthetic/jn_short_p_then_p_gap.fa \
    'chr_jn_short_p_then_p_gap=L:1500+F:CCCTAAx60+N:100+F:CCCTAAx60+L:3200' '-i' \
    'type=incomplete;anom=.;telo=1;labels=p;gaps=1;its=1' \
-   'A 100 bp N run splits the array into two contigs; pieces never chain across it, so the p arm is only the first piece and the second contig'"'"'s array is an interstitial row'
+   'A 100 bp N run splits the array into two contigs; pieces never join across it, so the p arm is only the first piece and the second contig'"'"'s array is an interstitial row'
 
-# The q-side chain finds the identical two pieces the p-side chain does, so R3's strand tie-break gives it all to p.
+# Both ends find the same two pieces, and the 360 bp array outweighs the 300 bp gap, so the strand gives the telomere to p.
 fx jn_short_p_then_p_far synthetic/jn_short_p_then_p_far.fa \
-   'chr_jn_short_p_then_p_far=L:1500+F:CCCTAAx60+L:600+F:CCCTAAx60+L:1500' '-i' \
-   'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=1320' \
-   'Two forward arrays 600 bp apart bridge into one block reachable from either end: strand decides, one p arm'
+   'chr_jn_short_p_then_p_far=L:1500+F:CCCTAAx60+L:300+F:CCCTAAx60+L:1500' '-i' \
+   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=720' \
+   'Two forward arrays 300 bp apart are two pieces of one telomere reachable from either end, the second outweighing the gap: strand decides, one fragmented p arm (teloLen 720)'
 
-# Interior junctions sit 4000+ bp from both record ends so neither array is reachable by a terminal chain.
+# The same two arrays 600 bp apart: each end claims the array nearest to it, since neither outweighs the gap.
+fx jn_short_p_then_p_wide synthetic/jn_short_p_then_p_wide.fa \
+   'chr_jn_short_p_then_p_wide=L:1500+F:CCCTAAx60+L:600+F:CCCTAAx60+L:1500' '-i' \
+   'type=t2t;anom=discordant_q;telo=2;labels=pq;gaps=0;its=0;telolen=360' \
+   'Two 360 bp forward arrays 600 bp apart do not join: the p end takes the first as a p arm and the q end takes the second as a discordant q arm, each of teloLen 360'
+
+# Interior junctions sit 4000+ bp from both record ends so neither array is reachable by a terminal block.
 fx jn_interior_q_then_p synthetic/jn_interior_q_then_p.fa \
    'chr_jn_interior_q_then_p=L:4000+R:TTAGGGx60+F:CCCTAAx60+L:4000' '-i' \
    'type=none;anom=.;telo=0;labels=none;gaps=0;its=2' \
@@ -65,22 +71,22 @@ fx jn_interior_p_then_q synthetic/jn_interior_p_then_q.fa \
 fx jn_interior_p_then_p_gap synthetic/jn_interior_p_then_p_gap.fa \
    'chr_jn_interior_p_then_p_gap=L:4000+F:CCCTAAx60+N:100+F:CCCTAAx60+L:4000' '-i' \
    'type=none;anom=.;telo=0;labels=none;gaps=1;its=2' \
-   'Interior array split by an N run: two separate single-contig interstitial rows, since spans never bridge a gap'
+   'Interior array split by an N run: two separate single-contig interstitial rows, since spans never cross a gap'
 
-# Tolerance 3000 reaches this array, and the trim walk bridges the 600 bp gap into one block.
+# Tolerance 3000 reaches this array, and the second array outweighs the 300 bp gap to the first.
 fx jn_interior_p_then_p_far synthetic/jn_interior_p_then_p_far.fa \
-   'chr_jn_interior_p_then_p_far=L:2500+F:CCCTAAx60+L:600+F:CCCTAAx60+L:2500' '-i' \
-   'type=incomplete;anom=.;telo=1;labels=p;gaps=0;its=0;telolen=1320' \
-   'Two forward arrays 2500 bp and 3460 bp in, 600 bp apart: one block 2500-3820, reachable at tolerance 3000, one p arm'
+   'chr_jn_interior_p_then_p_far=L:2500+F:CCCTAAx60+L:300+F:CCCTAAx60+L:2500' '-i' \
+   'type=incomplete;anom=fragmented_p;telo=1;labels=p;gaps=0;its=0;telolen=720' \
+   'Two forward arrays 2500 bp and 3160 bp in, 300 bp apart: two pieces of one p arm, hull 2500-3520, reachable at tolerance 3000, teloLen 720'
 
 fx jn_fragmented_p synthetic/jn_fragmented_p.fa \
-   'chr_jn_fragmented_p=F:CCCTAAx317+L:598+F:CCCTAAx2917+L:3000+R:TTAGGGx100' '-i' \
-   'type=t2t;anom=.;telo=2;labels=pq;gaps=0;its=0;telolen=20002' \
-   'A 598 bp run is bridged: one p arm 0-20002, no ITS left over'
+   'chr_jn_fragmented_p=F:CCCTAAx317+L:498+F:CCCTAAx2917+L:3000+R:TTAGGGx100' '-i' \
+   'type=t2t;anom=fragmented_p;telo=2;labels=pq;gaps=0;its=0;telolen=19404' \
+   'A 498 bp run between two arrays is not part of either piece: one fragmented p arm with hull 0-19902 and teloLen 19404, no ITS left over'
 
 fx jn_fragmented_p_plain synthetic/jn_fragmented_p.fa \
-   'chr_jn_fragmented_p=F:CCCTAAx317+L:598+F:CCCTAAx2917+L:3000+R:TTAGGGx100' '-' \
-   'type=t2t;anom=.;telo=2;labels=pq;gaps=0;telolen=20002' \
+   'chr_jn_fragmented_p=F:CCCTAAx317+L:498+F:CCCTAAx2917+L:3000+R:TTAGGGx100' '-' \
+   'type=t2t;anom=fragmented_p;telo=2;labels=pq;gaps=0;telolen=19404' \
    'Same file without -i: fast mode covers this short record whole, identically to full scan; its is not checked'
 
 fx jn_its_96bp synthetic/jn_its_96bp.fa \
@@ -91,7 +97,7 @@ fx jn_its_96bp synthetic/jn_its_96bp.fa \
 fx jn_gap_inside_telomere synthetic/jn_gap_inside_telomere.fa \
    'chr_jn_gap_inside_telomere=F:CCCTAAx50+N:100+F:CCCTAAx50+L:2000+R:TTAGGGx100' '-' \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=1;telolen=300' \
-   'A 100 bp N run splits the p array into two contigs; pieces never chain across a gap, so the p arm is only the first piece (teloLen 300, not the old gap-bridged 700)'
+   'A 100 bp N run splits the p array into two contigs; pieces never join across a gap, so the p arm is only the first piece (teloLen 300)'
 
 # Internal contig-end telomere: an ordinary interstitial row without -n, a terminal-BED contig row with -n.
 fx jn_contig_end_telomere synthetic/jn_contig_end_telomere.fa \
@@ -115,7 +121,7 @@ fx jn_contig_middle_n synthetic/jn_contig_middle.fa \
    'type=t2t;anom=.;telo=2;labels=pq;gaps=2;its=0' \
    'With -n the middle contig'"'"'s telomere becomes a contig row and leaves the interstitial BED'
 
-# An array flanked by N on both sides forms its own contig; -n chains from both ends, which R3 collapses to one row.
+# An array flanked by N on both sides forms its own contig; -n builds telomeres from both ends, which R3 collapses to one row.
 fx jn_flanked_both synthetic/jn_flanked_both.fa \
    'chr_jn_flanked_both=L:1500+N:100+F:CCCTAAx60+N:100+L:1500' '-i' \
    'type=none;anom=.;telo=0;labels=none;gaps=2;its=1' \
@@ -124,10 +130,10 @@ fx jn_flanked_both synthetic/jn_flanked_both.fa \
 fx jn_flanked_both_n synthetic/jn_flanked_both.fa \
    'chr_jn_flanked_both=L:1500+N:100+F:CCCTAAx60+N:100+L:1500' '-n -i' \
    'type=none;anom=.;telo=0;labels=none;gaps=2;its=0' \
-   'With -n both of the contig'"'"'s own internal chains find the same array; R3 keeps one contig row'
+   'With -n both of the contig'"'"'s own internal blocks find the same array; R3 keeps one contig row'
 
 # A 300 bp inverted tip anchors the p end; the forward telomere 1500 bp behind it is beyond -d and stays an interstitial row.
 fx jn_tip_beats_giant synthetic/jn_tip_beats_giant.fa \
    'chr_jn_tip_beats_giant=R:TTAGGGx50+L:1500+F:CCCTAAx500+L:3200' '-i' \
    'type=incomplete;anom=discordant_p;telo=1;labels=p;gaps=0;its=1;telolen=300' \
-   'A 300 bp reverse tip is the outermost qualifying piece and becomes the (discordant) p arm; the 3 kb forward telomere behind it is too far to end the chain and is reported as an interstitial row'
+   'A 300 bp reverse tip is the outermost qualifying piece and becomes the (discordant) p arm; the 3 kb forward telomere behind it is too far to end the block and is reported as an interstitial row'

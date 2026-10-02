@@ -24,7 +24,7 @@ When one array runs from a contig's start to its end, both arms would claim it. 
 | --- | --- |
 | `.` | nothing to report |
 | `discordant_p`, `discordant_q` | that arm's strand points the wrong way for its end, as at a head-to-head fusion or an inverted terminal repeat |
-| `fragmented_p`, `fragmented_q` | that arm is built from more than one piece (`teloLen` below `end - start`), split by a short non-telomeric stretch |
+| `fragmented_p`, `fragmented_q` | that arm is more than one piece (`teloLen` below `end - start`): a break longer than `-k` or a stretch below `-y`, paid for by the exact repeats behind it |
 
 Flags are comma-separated, and are for a curator to judge, not errors.
 

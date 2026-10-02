@@ -3,7 +3,7 @@ embedded
 
 +++ Path Summary Report +++
 pos	header	telomeres	labels	gaps	type	anomaly
-1	chr_mirror_merge	1	p	0	incomplete	.
+1	chr_mirror_merge	1	p	0	incomplete	fragmented_p
 
 +++ Assembly Summary Report +++
 Total paths:	1
@@ -13,10 +13,10 @@ Contig N50:	7200
 Total telomeres:	1
 
 +++ Telomere Statistics +++
-Mean length:	700
-Median length:	700
-Min length:	700
-Max length:	700
+Mean length:	600
+Median length:	600
+Min length:	600
+Max length:	600
 
 +++ Chromosome Telomere Counts +++
 Two telomeres:	0
@@ -32,7 +32,7 @@ No telomeres:	0
 Gapped no telomeres:	0
 
 +++ Scaffold Anomalies +++
-Scaffolds flagged:	0
-Scaffolds clean:	1
+Scaffolds flagged:	1
+Scaffolds clean:	0
 Discordant arms:	0
-Fragmented arms:	0
+Fragmented arms:	1

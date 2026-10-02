@@ -503,6 +503,10 @@ int main(int argc, char **argv) {
                     fprintf(stderr, "Error: Min block density (-y/--min-block-density) must be in the range (0,1].\n");
                     exit(EXIT_FAILURE);
                 }
+                if (v < 0.000001f) {
+                    fprintf(stderr, "Error: Min block density (-y/--min-block-density) must be at least 0.000001.\n");
+                    exit(EXIT_FAILURE);
+                }
                 userInput.minBlockDensity = v;
                 break;
             }
@@ -598,14 +602,14 @@ int main(int argc, char **argv) {
                 printf("\t'-p'\t--patterns\tSet patterns to explore, separate them by commas [Default: TTAGGG]\n");
                 printf("\t'-j'\t--threads\tSet maximum number of threads. [Default: max. available]\n");
                 printf("\t'-t'\t--terminal-limit\tSet how far in from each end to look; also the read tile size. [Default: 50000 assembly, 2000 reads]\n");
-                printf("\t'-k'\t--max-match-distance\tSet maximum distance for merging matches. [Default: 50]\n");
-                printf("\t'-d'\t--max-block-distance\tSet maximum non-telomeric stretch inside a telomere. [Default: 1000]\n");
-                printf("\t'-l'\t--min-block-length\tSet minimum block length. [Default: 300]\n");
-                printf("\t'-y'\t--min-block-density\tSet minimum block density. [Default: 0.5]\n");
+                printf("\t'-k'\t--max-match-distance\tSet maximum distance between matches of one block. [Default: 50]\n");
+                printf("\t'-d'\t--max-block-distance\tSet maximum distance between blocks joined into one telomere. [Default: 500]\n");
+                printf("\t'-l'\t--min-block-length\tSet minimum telomere length, start to end. [Default: 300]\n");
+                printf("\t'-y'\t--min-block-density\tSet minimum canonical density of a telomere and of each of its pieces. [Default: 0.5]\n");
                 printf("\t'-x'\t--edit-distance\tSet edit distance for pattern matching (0-2). [Default: 1]\n");
                 printf("\t\t--terminal-tolerance\tSet how far from an end a telomere may start. [Default: 3000 assembly, 300 reads]\n");
                 printf("\t\t--label-threshold\tSet forward-strand fraction for the p/q label. [Default: 0.667]\n");
-                printf("\t\t--min-block-counts\tSet minimum canonical matches per block. [Default: 2]\n");
+                printf("\t\t--min-block-counts\tSet minimum matches per block. [Default: 2]\n");
 
                 printf("\nOptional Parameters:\n");
                 printf("\t'-w'\t--window\tSet sliding window size. [Default: 1000]\n");

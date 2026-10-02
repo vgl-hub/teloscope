@@ -3,37 +3,37 @@ embedded
 
 +++ Path Summary Report +++
 pos	header	telomeres	labels	gaps	type	anomaly	its
-1	chr_discordant_pp	1	p	0	incomplete	.	0
+1	chr_discordant_pp	2	pq	0	t2t	discordant_q	0
 
 +++ Assembly Summary Report +++
 Total paths:	1
 Total gaps:	0
 Scaffold N50:	5000
 Contig N50:	5000
-Total telomeres:	1
+Total telomeres:	2
 Total ITS blocks:	0
 
 +++ Telomere Statistics +++
-Mean length:	2004
-Median length:	2004
-Min length:	2004
-Max length:	2004
+Mean length:	552
+Median length:	552
+Min length:	504
+Max length:	600
 
 +++ Chromosome Telomere Counts +++
-Two telomeres:	0
-One telomere:	1
+Two telomeres:	1
+One telomere:	0
 Zero telomeres:	0
 
 +++ Chromosome Telomere/Gap Completeness +++
-T2T:	0
+T2T:	1
 Gapped T2T:	0
-Incomplete:	1
+Incomplete:	0
 Gapped incomplete:	0
 No telomeres:	0
 Gapped no telomeres:	0
 
 +++ Scaffold Anomalies +++
-Scaffolds flagged:	0
-Scaffolds clean:	1
-Discordant arms:	0
+Scaffolds flagged:	1
+Scaffolds clean:	0
+Discordant arms:	1
 Fragmented arms:	0

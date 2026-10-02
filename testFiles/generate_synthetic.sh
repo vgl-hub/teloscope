@@ -37,7 +37,7 @@ assert_default() {
 
 check_defaults() {
     assert_default maxMatchDist   50    include/input.h     'maxMatchDist *= *\([0-9]*\)'
-    assert_default maxBlockDist   1000  include/input.h     'maxBlockDist *= *\([0-9]*\)'
+    assert_default maxBlockDist   500   include/input.h     'maxBlockDist *= *\([0-9]*\)'
     assert_default minBlockLen    300   include/input.h     'minBlockLen *= *\([0-9]*\)'
     assert_default minBlockCounts 2     include/input.h     'minBlockCounts *= *\([0-9]*\)'
     assert_default terminalLimit  50000 include/input.h     'terminalLimit *= *\([0-9]*\)'

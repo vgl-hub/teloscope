@@ -24,7 +24,7 @@ fx ax_t2t_disc_pq synthetic/ax_t2t_disc_pq.fa \
    'type=t2t;anom=discordant_p,discordant_q;telo=2;labels=pq;gaps=0' \
    'Both arms inverted: an inverted terminal repeat at each end'
 
-# R1: interleaved orientations never qualify as a chain piece, so they read as one interstitial 'b' row.
+# R1: interleaved orientations never qualify as a block piece, so they read as one interstitial 'b' row.
 fx ax_t2t_bal_p synthetic/ax_t2t_bal_p.fa \
    'chr_ax_t2t_bal_p=L:3500+M:CCCTAATTAGGGx50+L:3500+R:TTAGGGx100' '-i' \
    'type=incomplete;anom=.;telo=1;labels=q;gaps=0;its=1' \
@@ -50,21 +50,21 @@ fx ax_t2t_bal_p_disc_q synthetic/ax_t2t_bal_p_disc_q.fa \
    'type=incomplete;anom=discordant_q;telo=1;labels=q;gaps=0;its=1' \
    'The mirror: an interior interleaved array and an inverted q arm'
 
-# Same-strand pieces bridge into one continuous block, not two chained pieces.
+# Same-strand arrays within -d of each other are separate pieces of one fragmented telomere.
 fx ax_t2t_extra_p synthetic/ax_t2t_extra_p.fa \
-   'chr_ax_t2t_extra_p=F:CCCTAAx100+L:600+F:CCCTAAx100+L:2200+R:TTAGGGx100' '-' \
-   'type=t2t;anom=.;telo=2;labels=pq;gaps=0;telolen=1800' \
-   'Two p arrays 600 bp apart bridge into one p arm'
+   'chr_ax_t2t_extra_p=F:CCCTAAx100+L:400+F:CCCTAAx100+L:2200+R:TTAGGGx100' '-' \
+   'type=t2t;anom=fragmented_p;telo=2;labels=pq;gaps=0;telolen=1200' \
+   'Two p arrays 400 bp apart are two pieces of one p arm, which is fragmented (teloLen 1200, hull 0-1600)'
 
 fx ax_t2t_extra_q synthetic/ax_t2t_extra_q.fa \
-   'chr_ax_t2t_extra_q=F:CCCTAAx100+L:2200+R:TTAGGGx100+L:600+R:TTAGGGx100' '-' \
-   'type=t2t;anom=.;telo=2;labels=pq;gaps=0;telolen=1800' \
-   'Two q arrays 600 bp apart bridge into one q arm'
+   'chr_ax_t2t_extra_q=F:CCCTAAx100+L:2200+R:TTAGGGx100+L:400+R:TTAGGGx100' '-' \
+   'type=t2t;anom=fragmented_q;telo=2;labels=pq;gaps=0;telolen=1200' \
+   'Two q arrays 400 bp apart are two pieces of one q arm, which is fragmented (teloLen 1200, hull 2800-4400)'
 
 fx ax_t2t_extra_p_disc_q synthetic/ax_t2t_extra_p_disc_q.fa \
-   'chr_ax_t2t_extra_p_disc_q=F:CCCTAAx100+L:600+F:CCCTAAx100+L:2200+F:CCCTAAx100' '-' \
-   'type=t2t;anom=discordant_q;telo=2;labels=pq;gaps=0' \
-   'A p arm of two bridged arrays and an unrelated forward array at the q end'
+   'chr_ax_t2t_extra_p_disc_q=F:CCCTAAx100+L:400+F:CCCTAAx100+L:2200+F:CCCTAAx100' '-' \
+   'type=t2t;anom=discordant_q,fragmented_p;telo=2;labels=pq;gaps=0' \
+   'A fragmented p arm of two arrays and an unrelated forward array at the q end, which reads as a discordant q arm'
 
 # Filler > tolerance 3000, so the q end never reaches this array too and reclaims it.
 fx ax_incomplete_disc_p synthetic/ax_incomplete_disc_p.fa \
