@@ -33,9 +33,9 @@ Every pattern is also searched as its reverse complement. `-c` decides canonical
 | `-t` | `--terminal-limit` | fast-scan window at each end, grown while a telomere reaches its edge; also caps the start zone | `50000` |
 |  | `--terminal-tolerance` | how far from an end a telomere may start | `3000` |
 | `-k` | `--max-match-distance` | matches this close form one block | `50` |
-| `-d` | `--max-block-distance` | blocks this close may join into one telomere, when the exact repeats behind the gap pay for it | `500` |
+| `-d` | `--max-block-distance` | blocks this close join into one telomere, when the exact repeats behind the gap pay for it | `500` |
 | `-l` | `--min-block-length` | shortest telomere kept, start to end | `300` |
-| `-y` | `--min-block-density` | exact-repeat coverage a telomere and each of its pieces hold, in `(0,1]` | `0.5` |
+| `-y` | `--min-block-density` | exact-repeat coverage of a telomere and of each of its pieces, in `(0,1]` | `0.5` |
 |  | `--min-block-counts` | matches a block needs | `2` |
 |  | `--label-threshold` | forward-strand share for a `p` or `q` label, in `(0.5,1]` | `0.667` |
 

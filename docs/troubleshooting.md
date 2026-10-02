@@ -58,7 +58,7 @@ Terminal calls depend most on `-c`, `--terminal-tolerance`, `-k`, `-d`, `-l`, `-
   teloscope asm.fa -t 100000 --terminal-tolerance 100000 -l 200 -y 0.3 --verbose
   ```
 
-- **A telomere in pieces:** raise `-k` to group matches across longer interruptions into one block, or `-d` to reach blocks that lie further apart. A piece whose exact repeats do not pay for the gap in front of it never joins, whatever `-d` is.
+- **A telomere in pieces:** raise `-k` to bridge longer interruptions within a block, or `-d` to reach blocks further apart. A piece whose exact repeats do not pay for the gap before it never joins, whatever `-d`.
 - **Wrong class:** `type` and `anomaly` come from the two scaffold arms only. Recheck `-c`, `-t`, and `--terminal-tolerance`, and don't compare them with `contig` rows.
 - **Wrong `p`/`q` labels:** `-c` sets the canonical motif and with it the strand labels.
 
